@@ -1,287 +1,190 @@
 import * as pdfjsLib from "pdfjs-dist";
 import pdfjsWorker from "pdfjs-dist/build/pdf.worker.min.mjs?url";
-
+import { PageView } from "./page.js";
+import { GestureDetector } from "./helpers.js";
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfjsWorker;
 
-export function createCanvasPlaceholders(numPages, viewerEl) {
-  const canvases = [];
-  for (let i = 1; i <= numPages; i++) {
-    const wrapper = document.createElement("div");
-    wrapper.className = "page-wrapper";
-    wrapper.style.margin = "10px 0";
-    wrapper.style.display = "flex";
-    wrapper.style.flexDirection = "column";
-    wrapper.style.alignItems = "center";
-
-    const label = document.createElement("div");
-    label.textContent = `Page ${i}`;
-    label.style.color = "#888";
-    label.style.fontSize = "0.8rem";
-
-    const canvas = document.createElement("canvas");
-    canvas.dataset.pageNumber = i;
-
-    wrapper.appendChild(canvas);
-    wrapper.appendChild(label);
-    viewerEl.appendChild(wrapper);
-
-    canvases.push(canvas);
-  }
-  return canvases;
-}
-
-function ensureAnnotationLayer(wrapper) {
-  wrapper.style.position = "relative";
-  let layer = wrapper.querySelector(".annotationLayer");
-  if (!layer) {
-    layer = document.createElement("div");
-    layer.className = "annotationLayer";
-    layer.style.position = "absolute";
-    layer.style.top = "0";
-    layer.style.left = "0";
-    layer.style.right = "0";
-    layer.style.bottom = "0";
-    layer.style.pointerEvents = "none";
-    wrapper.style.position = "relative";
-    wrapper.appendChild(layer);
-  }
-  layer.innerHTML = "";
-  return layer;
-}
-
-function ensureTextLayer(wrapper) {
-  let layer = wrapper.querySelector(".textLayer");
-  if (!layer) {
-    layer = document.createElement("div");
-    layer.className = "textLayer";
-    layer.style.position = "absolute";
-    // layer.style.top = "0";
-    // layer.style.left = "0";
-    layer.style.right = "0";
-    layer.style.bottom = "0";
-    wrapper.style.position = "relative";
-    wrapper.appendChild(layer);
-  }
-  layer.innerHTML = "";
-  return layer;
-}
-
-async function resolveDestToPosition(pdfDoc, dest, allNamedDests) {
-  const explicitDest = allNamedDests[dest];
-  if (Array.isArray(explicitDest)) {
-    const [ref, kind, left, top, zoom] = explicitDest;
-    const pageIndex = await pdfDoc.getPageIndex(ref);
-
-    return { pageIndex, left: left ?? 0, top: top ?? 0, zoom };
-  }
-  return null;
-}
-
-async function scrollToPoint(
-  viewerEl,
-  canvas,
-  pdfDoc,
-  scale,
-  pageIndex,
-  left,
-  top,
-) {
-  if (!canvas) return;
-
-  const page = await pdfDoc.getPage(pageIndex + 1);
-  const viewport = page.getViewport({ scale });
-  const [, y] = viewport.convertToViewportPoint(left, top);
-  const wrapper = canvas.parentElement;
-
-  //have to manually set the offset to 35 somehow otherwise there's a scaled offset
-  const targetTop = wrapper.offsetTop + Math.max(0, y - 35);
-  viewerEl.scrollTo({ top: targetTop, behavior: "smooth" });
-}
-
-function renderPage(
-  canvas,
-  renderTasks,
-  pdfDoc,
-  scale,
-  allNamedDests,
-  pageCanvases,
-  viewerEl,
-) {
-  const prevTask = renderTasks.get(canvas);
-  if (prevTask) {
-    prevTask.cancel();
+export class PDFViewer {
+  constructor(viewerEl) {
+    this.viewerEl = viewerEl;
+    this.pages = [];
+    this.scale = 1;
+    this.observer = null;
+    this.pdfDoc = null;
   }
 
-  const num = parseInt(canvas.dataset.pageNumber);
-  pdfDoc.getPage(num).then((page) => {
-    const viewport = page.getViewport({ scale });
-    const outputScale = window.devicePixelRatio || 1;
-    const highResViewport = page.getViewport({ scale: scale * outputScale });
-    const context = canvas.getContext("2d");
-    canvas.width = highResViewport.width;
-    canvas.height = highResViewport.height;
-    canvas.style.width = `${viewport.width}px`;
-    canvas.style.height = `${viewport.height}px`;
-    const transform =
-      outputScale !== 1 ? [outputScale, 0, 0, outputScale, 0, 0] : null;
+  async loadDocument(pdfDoc, allNamedDests) {
+    this.pdfDoc = pdfDoc;
+    const canvases = await this.#createCanvasPlaceholders(pdfDoc.numPages, this.viewerEl);
 
-    const renderContext = {
-      canvasContext: context,
-      transform: transform,
-      viewport: viewport,
-    };
-    const task = page.render(renderContext);
+    this.pages = canvases.map((canvas, idx) => {
+      const wrapper = canvas.parentElement;
+      return new PageView(pdfDoc, idx + 1, wrapper, allNamedDests);
+    });
 
-    renderTasks.set(canvas, task);
+    this.#resizeAllCanvases(this.scale);
 
-    task.promise
-      .then(async () => {
-        const viewportForRects = page.getViewport({ scale, dontFlip: true });
-        const wrapper = canvas.parentElement;
-        const annotationLayer = ensureAnnotationLayer(wrapper);
-        annotationLayer.style.width = `${viewport.width}px`;
-        annotationLayer.style.height = `${viewport.height}px`;
-        const annotations = await page.getAnnotations({ intent: "display" });
+    this.setupLazyRender();
 
-        const textContent = await page.getTextContent();
-        const textLayer = ensureTextLayer(wrapper);
-        textLayer.style.setProperty("--total-scale-factor", `${scale}`);
-        const textLayerInstance = new pdfjsLib.TextLayer({
-          textContentSource: textContent,
-          container: textLayer,
-          viewport: viewport,
-        });
-        await textLayerInstance.render();
-        textLayer.style.width = `${viewport.width}px`;
-        textLayer.style.height = `${viewport.height}px`;
-
-        //customed annotation handling
-        for (const a of annotations) {
-          if (a.subtype != "Link") continue;
-
-          const rect = pdfjsLib.Util.normalizeRect(a.rect);
-          const [x1, y1, x2, y2] =
-            viewportForRects.convertToViewportRectangle(rect);
-          const left = Math.min(x1, x2);
-          const bottom = Math.min(y1, y2);
-          const width = Math.abs(x1 - x2);
-          const height = Math.abs(y1 - y2);
-          const top = viewport.height - bottom - height;
-
-          const anchor = document.createElement("a");
-          anchor.style.position = "absolute";
-          anchor.style.left = `${left}px`;
-          anchor.style.top = `${top}px`;
-          anchor.style.width = `${width}px`;
-          anchor.style.height = `${height}px`;
-          anchor.style.pointerEvents = "auto";
-          anchor.style.backgroundColor = "transparent";
-          anchor.setAttribute("aria-label", "PDF link");
-
-          if (a.url) {
-            anchor.href = a.url;
-            anchor.target = "_blank";
-            anchor.rel = "noopener noreferrer";
-          } else if (a.dest) {
-            anchor.href = "javascript:void(0)";
-            anchor.addEventListener("click", async (e) => {
-              e.preventDefault();
-              try {
-                const result = await resolveDestToPosition(
-                  pdfDoc,
-                  a.dest,
-                  allNamedDests,
-                );
-                if (!result) return;
-
-                const { pageIndex, left, top } = result;
-                const targetCanvas = pageCanvases[pageIndex];
-                await scrollToPoint(
-                  viewerEl,
-                  targetCanvas,
-                  pdfDoc,
-                  scale,
-                  pageIndex,
-                  left,
-                  top,
-                );
-              } catch (err) {
-                console.error("Failed to navigate to destination:", err);
-              }
-            });
-          } else {
-            continue;
-          }
-          annotationLayer.appendChild(anchor);
+    this.viewerEl.addEventListener("scroll", () => {
+      let currentPage = 1;
+      for (const canvas of canvases) {
+        const rect = canvas.getBoundingClientRect();
+        if (rect.top < window.innerHeight / 2 && rect.bottom > 0) {
+          currentPage = parseInt(canvas.dataset.pageNumber);
         }
-      })
-      .catch((err) => {
-        if (err?.name !== "RenderingCancelledException") {
-          console.error("Render error:", err);
-        }
-      })
-      .finally(() => {
-        renderTasks.delete(canvas);
-        canvas.dataset.rendered = "true";
-      });
-  });
-}
+      }
+      document.getElementById("page-num").textContent = currentPage;
+    });
 
-export function setupLazyRender(
-  viewerEl,
-  pageCanvases,
-  pdfDoc,
-  scale,
-  allNamedDests,
-  renderTasks,
-) {
-  const observer = new IntersectionObserver(
-    (entries) => {
-      entries.forEach((entry) => {
-        if (entry.isIntersecting) {
-          const canvas = entry.target;
-          if (!canvas.dataset.rendered) {
-            renderPage(
-              canvas,
-              renderTasks,
-              pdfDoc,
-              scale,
-              allNamedDests,
-              pageCanvases,
-              viewerEl,
+    window.addEventListener("resize", () => {
+      this.#renderAtScale(this.scale);
+    });
+    
+    let tempScale = this.scale;
+    const gesture = new GestureDetector(document.getElementById("viewer-container"));
+    
+    gesture.getEventTarget().addEventListener("pinchupdate", (e) => {
+      const ratio = e.detail.startScaleRatio;
+      tempScale = Math.max(0.5, Math.min(3, this.scale * ratio));
+    });
+
+    gesture.getEventTarget().addEventListener("pinchend", (e) => {
+      const containerRect = this.viewerEl.getBoundingClientRect();
+      console.log(e.detail);
+      const focusX = e.detail.center.x - containerRect.left;
+      const focusY = e.detail.center.y - containerRect.top;
+      this.#zoomAt(tempScale, focusX, focusY);
+    });
+  }
+
+  async #createCanvasPlaceholders(numPages, viewerEl) {
+    const canvases = [];
+    for (let i = 1; i <= numPages; i++) {
+      const wrapper = document.createElement("div");
+      wrapper.className = "page-wrapper";
+      wrapper.style.margin = "10px 0";
+      wrapper.style.display = "flex";
+      wrapper.style.flexDirection = "column";
+      wrapper.style.alignItems = "center";
+
+      const label = document.createElement("div");
+      label.textContent = `Page ${i}`;
+      label.style.color = "#888";
+      label.style.fontSize = "0.8rem";
+
+      const canvas = document.createElement("canvas");
+      canvas.dataset.pageNumber = i;
+
+      wrapper.appendChild(canvas);
+      wrapper.appendChild(label);
+      viewerEl.appendChild(wrapper);
+
+      canvases.push(canvas);
+    }
+    return canvases;
+  }
+
+  setupLazyRender() {
+    const observer = new IntersectionObserver(
+      (entries) => {
+        // console.log(entries[0]);
+        for (const entry of entries) {
+          if (entry.isIntersecting) {
+            const pageView = this.pages.find(
+              (p) => p.wrapper === entry.target
             );
-            canvas.dataset.rendered = "true";
+            if (!pageView) continue;
+
+            if (entry.isIntersecting) {
+                if(pageView.canvas.dataset.rendered === "false") {
+                  pageView.render(this.scale);
+                }
+            } else {
+              this.#maybeRelease(pageView);
+            }
           }
         }
+      },
+      {
+        // root: this.viewerEl,
+        // rootMargin: "500px 0px",
+        threshold: 0.1,
       });
-    },
-    {
-      root: viewerEl,
-      rootMargin: "500px 0px",
-      threshold: 0.1,
-    },
-  );
-  pageCanvases.forEach((canvas) => observer.observe(canvas));
+    this.observer = observer;
+
+    for (const pageView of this.pages) {
+      this.observer.observe(pageView.wrapper);
+    }
+  }
+
+  #refreshObserver() {
+    if (!this.observer) return;
+    
+    this.pages.forEach(p => {
+      this.observer.unobserve(p.wrapper);
+      this.observer.observe(p.wrapper);
+    });
+  }
+
+  #renderAtScale(scale) {
+    this.scale = scale
+    this.#resizeAllCanvases(scale);
+    this.#refreshObserver();
+  }
+
+  #zoomAt(scale, focusX, focusY) {
+    const viewer = this.viewerEl;
+    const prevScale = this.scale;
+
+    const docX = (viewer.scrollLeft + focusX) / prevScale;
+    const docY = (viewer.scrollTop + focusY)/ prevScale;
+    this.#resizeAllCanvases(scale);
+    this.scale = scale;
+    this.#refreshObserver();
+
+    viewer.scrollLeft = docX * scale - focusX;
+    viewer.scrollTop = docY * scale - focusY;
+  }
+
+  zoom(delta) {
+    this.observer.disconnect();
+    const viewer = this.viewerEl;
+    const rect = viewer.getBoundingClientRect();
+    const focusX = rect.width / 2;
+    const focusY = rect.height / 2;
+
+    const newScale = Math.min(Math.max(this.scale + delta, 0.5), 3);
+    this.#zoomAt(newScale, focusX, focusY);
+  }
+
+  #maybeRelease(page) {
+    const rect = page.wrapper.getBoundingClientRect();
+    if (rect.bottom < -window.innerHeight * 2 || rect.top > window.innerHeight * 3) {
+      page.cancel();
+      page.canvas.width = 0;
+      page.canvas.height = 0;
+      page.textLayer.innerHTML = "";
+      page.annotationLayer.innerHTML = "";
+      page.canvas.dataset.rendered = "false";
+    }
+  }
+  
+  scrollToRelative(delta) {
+    const current = parseInt(document.getElementById("page-num").textContent); 
+    const target = this.pages.find(
+      (p) => p.pageNumber === current + delta,
+    );
+    if (target) target.wrapper.scrollIntoView({ behavior: "smooth", block: "center" });
+  }
+
+  #resizeAllCanvases(scale) {
+    this.scale = scale;
+    for (const page of this.pages) {
+      page.canvas.dataset.rendered = "false";
+      page.resize(scale);
+    }
+  }
+
 }
 
-export function rerenderAll(
-  renderTasks,
-  pdfDoc,
-  scale,
-  allNamedDests,
-  pageCanvases,
-  viewerEl,
-) {
-  pageCanvases.forEach((canvas) => {
-    delete canvas.dataset.rendered;
-    renderPage(
-      canvas,
-      renderTasks,
-      pdfDoc,
-      scale,
-      allNamedDests,
-      pageCanvases,
-      viewerEl,
-    );
-  });
-}

@@ -26,13 +26,12 @@ export class PageView {
     return this.page;
   }
 
-  async render(scale) {
+  async render() {
     this.cancel();
-    this.scale = scale;
 
     const page = await this.#ensurePageLoaded();
     const outputScale = window.devicePixelRatio || 1;
-    const viewport = page.getViewport({ scale });
+    const viewport = page.getViewport({ scale: this.scale });
 
     const transform =
       outputScale !== 1 ? [outputScale, 0, 0, outputScale, 0, 0] : null;
@@ -45,7 +44,7 @@ export class PageView {
     }
 
     const renderContext = {
-      canvasContext: this.canvas.getContext("2d"),
+      canvasContext: this.canvas.getContext("2d", { alpha: false }),
       transform: transform,
       viewport: viewport,
     };
@@ -56,7 +55,7 @@ export class PageView {
       await this.renderTask.promise;
       this.#renderAnnotations(page, viewport);
 
-      this.textLayer.style.setProperty("--total-scale-factor", `${scale}`);
+      this.textLayer.style.setProperty("--total-scale-factor", `${this.scale}`);
       const textLayerInstance = new pdfjsLib.TextLayer({
         textContentSource: this.textContent,
         container: this.textLayer,
@@ -88,22 +87,106 @@ export class PageView {
 
     const page = await this.#ensurePageLoaded();
     const outputScale = window.devicePixelRatio || 1;
-    const viewport = page.getViewport({ scale });
-    const highResViewport = page.getViewport({
-      scale: scale * outputScale,
-    });
-    this.canvas.width = highResViewport.width;
-    this.canvas.height = highResViewport.height;
-    this.canvas.style.width = `${viewport.width}px`;
-    this.canvas.style.height = `${viewport.height}px`;
 
-    this.annotationLayer.style.width = `${viewport.width}px`;
-    this.annotationLayer.style.height = `${viewport.height}px`;
+    const MAX_RENDER_SCALE = 3.0;
+    const renderScale = Math.min(scale, MAX_RENDER_SCALE);
+
+    const renderViewport = page.getViewport({
+      scale: renderScale * outputScale,
+    });
+    const viewport = page.getViewport({ scale: renderScale });
+
+    this.canvas.width = renderViewport.width;
+    this.canvas.height = renderViewport.height;
+
+    Object.assign(this.wrapper.style, {
+      width: `${viewport.width}px`,
+      height: `${viewport.height}px`,
+      transformOrigin: "top left",
+      transform: `scale(${scale / renderScale})`,
+    });
+
+    Object.assign(this.canvas.style, {
+      width: `${viewport.width}px`,
+      height: `${viewport.height}px`,
+      transformOrigin: "top left",
+      transform: "",
+    });
+
+    const layerStyles = {
+      left: "0px",
+      top: "0px",
+      width: `${viewport.width}px`,
+      height: `${viewport.height}px`,
+      transformOrigin: "top left",
+      transform: "",
+    };
+
+    Object.assign(this.annotationLayer.style, layerStyles);
+    Object.assign(this.textLayer.style, layerStyles);
+
+    this.scale = renderScale;
   }
 
   async renderIfNeed() {
     if (this.canvas.dataset.rendered === "true") return;
-    await this.render(this.scale);
+    await this.render();
+  }
+
+  async #findCiteText(left, pageIndex, top) {
+    const page = await this.pdfDoc.getPage(pageIndex + 1);
+    const viewport = page.getViewport({ scale: this.scale });
+    const texts = await page.getTextContent();
+
+    const canvas = document.querySelector(
+      `[data-page-number="${pageIndex + 1}"]`,
+    );
+    const { pageWidth, pageHeight, pageX, pageY } = viewport.rawDims;
+
+    const transform = [1, 0, 0, -1, -pageX, pageY + pageHeight];
+
+    let closestSpan = null;
+    const minDistance = 20;
+    try{
+      for (const geom of texts.items) {
+        const tx = pdfjsLib.Util.transform(transform, geom.transform);
+        let angle = Math.atan2(tx[1], tx[0]);
+        const fontHeight = Math.hypot(tx[2], tx[3]);
+        const fontAscent = fontHeight * 0.8;
+
+        let l, t;
+        if (angle === 0) {
+          l = tx[4];
+          t = tx[5] - fontAscent;
+        } else {
+          l = tx[4] + fontAscent * Math.sin(angle);
+          t = tx[5] - fontAscent * Math.cos(angle);
+        }
+        const [x, y] = viewport.convertToViewportPoint(l, t);
+
+        const targetTop = canvas.offsetTop + Math.max(0, y);
+        const targetLeft = x;
+        const isClose = (Math.abs(targetLeft - left) <= minDistance && Math.abs(targetTop - top) <= minDistance);
+
+        if (isClose) {
+          closestSpan = {
+            text: geom.str,
+            left: targetLeft,
+            top: targetTop,
+            width: geom.width,
+            height: geom.height,
+            hasEOL: geom.hasEOL
+          };
+        }
+      }
+      if (closestSpan) {
+        console.log(closestSpan);
+      } 
+      return closestSpan;
+    } catch (err) {
+      console.error('Failed to find closest span', err);
+      return null;
+    }
   }
 
   #initLayer(layerType) {
@@ -115,9 +198,6 @@ export class PageView {
       layer.style.position = "absolute";
       layer.style.top = "0";
       layer.style.left = "0";
-      layer.style.right = "0";
-      layer.style.bottom = "0";
-      // layer.style.pointerEvents = "none";
       this.wrapper.style.position = "relative";
       this.wrapper.appendChild(layer);
     }
@@ -151,7 +231,7 @@ export class PageView {
       anchor.style.height = `${height}px`;
       anchor.style.pointerEvents = "auto";
       anchor.style.backgroundColor = "transparent";
-      anchor.setAttribute("aria-label", "PDF link");
+      anchor.setAttribute("data-dest", "");
 
       if (a.url) {
         anchor.href = a.url;
@@ -159,17 +239,25 @@ export class PageView {
         anchor.rel = "noopener noreferrer";
       } else if (a.dest) {
         anchor.href = "javascript:void(0)";
-        anchor.addEventListener("click", async (e) => {
+        anchor.addEventListener("mouseover", async (e) => {
           e.preventDefault();
           const result = await this.#resolveDestToPosition(a.dest);
           if (!result) return;
+          anchor.dataset.dest = `${result.left},${result.pageIndex},${result.top}`;
+          const text = await this.#findCiteText(result.left, result.pageIndex, result.top);
+        });
 
-          const { pageIndex, left, top } = result;
+        anchor.addEventListener("click", async (e) => {
+          e.preventDefault();
+          const [ left, page, top ] = anchor.dataset.dest
+            .split(",")
+            .map(item => parseFloat(item));
+          const pageIndex = Math.floor(page);
           const targetCanvas = document.querySelector(
             `[data-page-number="${pageIndex + 1}"]`,
           );
           await scrollToPoint(
-            this.wrapper.parentElement,
+            this.wrapper.parentElement.parentElement,
             targetCanvas,
             this.pdfDoc,
             this.scale,

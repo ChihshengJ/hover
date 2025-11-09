@@ -1,14 +1,10 @@
 import * as pdfjsLib from "pdfjs-dist";
 import pdfjsWorker from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 import "./style.css";
-import {
-  PDFViewer,
-  // createCanvasPlaceholders,
-  // setupLazyRender,
-  // rerenderAll,
-} from "./viewer.js";
+import { PDFViewer } from "./viewer.js";
 
-import { GestureDetector } from "./helpers.js";
+import { ViewerControls } from "./controls/viewer_controls.js";
+import { FloatingToolbar } from "./controls/floating_toolbar.js";
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfjsWorker;
 
@@ -30,25 +26,7 @@ pdfjsLib.getDocument(url).promise.then(async (pdfDoc) => {
   const viewer = new PDFViewer(el.viewer);
   await viewer.loadDocument(pdfDoc, allNamedDests);
   el.pageCount.textContent = pdfDoc.numPages;
-  el.zoomInBtn.onclick = () => viewer.zoom(+0.2);
-  el.zoomOutBtn.onclick = () => viewer.zoom(-0.2);
-  el.nextBtn.onclick = () => viewer.scrollToRelative(1);
-  el.prevBtn.onclick = () => viewer.scrollToRelative(-1);
-});
-
-//keyboard shotcuts
-document.addEventListener("keydown", (e) => {
-  const isZoomKey =
-    (e.metaKey || e.ctrlKey) &&
-    (e.key === "+" || e.key === "-" || e.key === "=" || e.key === "0");
-  const step = 100;
-
-  if (isZoomKey) {
-    e.preventDefault();
-    if (e.metaKey && (e.key === "=" || e.key === "+")) zoom(0.25);
-    else if (e.metaKey && (e.key === "-" || e.key === "_")) zoom(-0.25);
-  } else if (["ArrowDown", "j"].includes(e.key)) scrollToRelative(1);
-  else if (["ArrowUp", "k"].includes(e.key)) scrollToRelative(-1);
-  else if (e.key === "ArrowRight" || e.key === "l") document.scrollLeft -= step;
-  else if (e.key === "ArrowLeft" || e.key === "h") document.scrollleft += step;
+  const controls = new ViewerControls(viewer, el);
+  const floatingToolbar = new FloatingToolbar(viewer, el.viewer);
+  floatingToolbar.updatePageNumber();
 });

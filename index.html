@@ -1,16 +1,23 @@
 <!doctype html>
+
+
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>HoverCite PDF</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Elms+Sans:ital,wght@0,100..900;1,100..900&display=swap" rel="stylesheet">
   </head>
   <body>
-    <header>HoverCite PDF Viewer</header>
-
-    <div id="viewer-container"></div>
+    <div id="viewer-container">
+      <div id="viewer-stage"></div>
+    </div>
 
     <div id="controls">
+      <button id="drag">🤛</button>
+      <button id="select">\T</button>
       <button id="prev">☚ Prev</button>
       <span id="page-info"
         >Page <span id="page-num">1</span> /

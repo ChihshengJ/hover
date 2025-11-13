@@ -5,7 +5,7 @@
 <h1 align="center">Hover — A Super Lightweight PDF Viewer Extension</h1>
 
 <p align="center">
-  <img src="assets/R.png" width="96" alt="Hover Icon"/>
+  <img src="assets/H.png" width="96" alt="Hover Icon"/>
 </p>
 
 Hover is a minimalist PDF viewer extension designed for people who spend way too much time reading academic papers in the browser.

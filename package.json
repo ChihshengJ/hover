@@ -1,17 +1,9 @@
 {
-  "name": "hovercite",
-  "private": true,
-  "version": "0.0.0",
-  "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
+    "build:extension": "vite build && npm run copy-manifest",
+    "copy-manifest": "cp manifest.json background.js content.js dist/ && cp -r icons dist/",
     "preview": "vite preview"
-  },
-  "devDependencies": {
-    "vite": "^7.1.7"
-  },
-  "dependencies": {
-    "pdfjs-dist": "^5.4.394"
   }
 }

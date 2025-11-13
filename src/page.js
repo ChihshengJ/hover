@@ -1,5 +1,6 @@
 import * as pdfjsLib from "pdfjs-dist";
 import pdfjsWorker from "pdfjs-dist/build/pdf.worker.min.mjs?url";
+import { CitationPopup } from "./controls/link_viewer.js";
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfjsWorker;
 
@@ -135,25 +136,30 @@ export class PageView {
 
   async #findCiteText(left, pageIndex, top) {
     const page = await this.pdfDoc.getPage(pageIndex + 1);
-    const viewport = page.getViewport({ scale: this.scale });
+    const viewport = page.getViewport({ scale: this.scale, dontFlip: true });
     const texts = await page.getTextContent();
-
     const canvas = document.querySelector(
       `[data-page-number="${pageIndex + 1}"]`,
     );
     const { pageWidth, pageHeight, pageX, pageY } = viewport.rawDims;
-
     const transform = [1, 0, 0, -1, -pageX, pageY + pageHeight];
 
+    // convert target pdf coordinates to viewport coordinates at current scale
+    const [targetX, targetY] = viewport.convertToViewportPoint(left + 20, top + 2);
+    const targetLeft = targetX;
+    const targetTop = canvas.offsetTop + Math.max(0, viewport.height - targetY);
+
     let closestSpan = null;
-    const minDistance = 20;
-    try{
-      for (const geom of texts.items) {
+    let minDistance = 50;
+    let startIndex = 0;
+
+    try {
+      for (let i = 0; i < texts.items.length; i++) {
+        const geom = texts.items[i];
         const tx = pdfjsLib.Util.transform(transform, geom.transform);
         let angle = Math.atan2(tx[1], tx[0]);
         const fontHeight = Math.hypot(tx[2], tx[3]);
         const fontAscent = fontHeight * 0.8;
-
         let l, t;
         if (angle === 0) {
           l = tx[4];
@@ -162,29 +168,48 @@ export class PageView {
           l = tx[4] + fontAscent * Math.sin(angle);
           t = tx[5] - fontAscent * Math.cos(angle);
         }
-        const [x, y] = viewport.convertToViewportPoint(l, t);
 
-        const targetTop = canvas.offsetTop + Math.max(0, y);
-        const targetLeft = x;
-        const isClose = (Math.abs(targetLeft - left) <= minDistance && Math.abs(targetTop - top) <= minDistance);
+        // converting text span pdf coordinates to viewport coordinates
+        const [x, y] = viewport.convertToViewportPoint(l, t);
+        const spanLeft = x;
+        const spanTop = canvas.offsetTop + Math.max(0, y);
+
+        const isClose =
+          Math.abs(spanLeft - targetLeft) <= minDistance &&
+          Math.abs(spanTop - targetTop) <= minDistance;
 
         if (isClose) {
           closestSpan = {
             text: geom.str,
-            left: targetLeft,
-            top: targetTop,
+            left: spanLeft,
+            top: spanTop,
             width: geom.width,
             height: geom.height,
-            hasEOL: geom.hasEOL
+            hasEOL: geom.hasEOL,
           };
+          startIndex = i;
+          minDistance = Math.max(
+            Math.abs(spanLeft - targetLeft),
+            Math.abs(spanTop - targetTop),
+          );
         }
       }
+
       if (closestSpan) {
         console.log(closestSpan);
-      } 
-      return closestSpan;
+        let reference = [];
+        for (let i = startIndex; i < texts.items.length; i++) {
+          const span = texts.items[i];
+          reference.push(span.str);
+          if (span.str === ".") {
+            break;
+          }
+        }
+        return reference.join("");
+      }
+      return null;
     } catch (err) {
-      console.error('Failed to find closest span', err);
+      console.error("Failed to find closest span", err);
       return null;
     }
   }
@@ -207,6 +232,10 @@ export class PageView {
 
   #renderAnnotations(page, viewport) {
     this.annotationLayer.innerHTML = "";
+    if (!this.citationPopup) {
+      this.citationPopup = new CitationPopup();
+    }
+
     for (const a of this.annotations) {
       if (a.subtype != "Link") continue;
 
@@ -239,19 +268,39 @@ export class PageView {
         anchor.rel = "noopener noreferrer";
       } else if (a.dest) {
         anchor.href = "javascript:void(0)";
-        anchor.addEventListener("mouseover", async (e) => {
-          e.preventDefault();
-          const result = await this.#resolveDestToPosition(a.dest);
-          if (!result) return;
-          anchor.dataset.dest = `${result.left},${result.pageIndex},${result.top}`;
-          const text = await this.#findCiteText(result.left, result.pageIndex, result.top);
+        let hoverTimer = null;
+
+        anchor.addEventListener("mouseenter", async (e) => {
+          if (hoverTimer) clearTimeout(hoverTimer);
+          hoverTimer = setTimeout(async () => {
+            const result = await this.#resolveDestToPosition(a.dest);
+            if (!result) return;
+            anchor.dataset.dest = `${result.left},${result.pageIndex},${result.top}`;
+
+            this.citationPopup.show(
+              anchor,
+              this.#findCiteText.bind(this),
+              result.left,
+              result.pageIndex,
+              result.top
+            );
+          }, 300);
+        });
+
+        anchor.addEventListener("mouseleave", (e) => {
+          if (hoverTimer) {
+            clearTimeout(hoverTimer);
+            hoverTimer = null;
+          }
+
+          this.citationPopup.scheduleClose();
         });
 
         anchor.addEventListener("click", async (e) => {
           e.preventDefault();
-          const [ left, page, top ] = anchor.dataset.dest
+          const [left, page, top] = anchor.dataset.dest
             .split(",")
-            .map(item => parseFloat(item));
+            .map((item) => parseFloat(item));
           const pageIndex = Math.floor(page);
           const targetCanvas = document.querySelector(
             `[data-page-number="${pageIndex + 1}"]`,

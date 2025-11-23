@@ -9,12 +9,11 @@ pdfjsLib.GlobalWorkerOptions.workerSrc = pdfjsWorker;
 
 const el = {
   viewer: document.getElementById("viewer-container"),
-  pageNum: document.getElementById("page-num"),
-  pageCount: document.getElementById("page-count"),
-  prevBtn: document.getElementById("prev"),
-  nextBtn: document.getElementById("next"),
-  zoomInBtn: document.getElementById("zoom-in"),
-  zoomOutBtn: document.getElementById("zoom-out"),
+  pageNum: document.getElementById("current-page"),
+  // prevBtn: document.getElementById("prev"),
+  // nextBtn: document.getElementById("next"),
+  // zoomInBtn: document.getElementById("zoom-in"),
+  // zoomOutBtn: document.getElementById("zoom-out"),
 };
 
 function getPdfUrl() {
@@ -40,7 +39,7 @@ async function loadPdf(url) {
 
     const viewer = new PDFViewer(el.viewer);
     await viewer.loadDocument(pdfDoc, allNamedDests);
-    el.pageCount.textContent = pdfDoc.numPages;
+    // el.pageCount.textContent = pdfDoc.numPages;
 
     const controls = new ViewerControls(viewer, el);
     const floatingToolbar = new FloatingToolbar(viewer, el.viewer);

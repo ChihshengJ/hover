@@ -145,7 +145,10 @@ export class PageView {
     const transform = [1, 0, 0, -1, -pageX, pageY + pageHeight];
 
     // convert target pdf coordinates to viewport coordinates at current scale
-    const [targetX, targetY] = viewport.convertToViewportPoint(left + 20, top + 2);
+    const [targetX, targetY] = viewport.convertToViewportPoint(
+      left + 20,
+      top + 2,
+    );
     const targetLeft = targetX;
     const targetTop = canvas.offsetTop + Math.max(0, viewport.height - targetY);
 
@@ -282,7 +285,7 @@ export class PageView {
               this.#findCiteText.bind(this),
               result.left,
               result.pageIndex,
-              result.top
+              result.top,
             );
           }, 300);
         });

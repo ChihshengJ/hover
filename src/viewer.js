@@ -8,6 +8,7 @@ export class PDFViewer {
   constructor(viewerEl) {
     this.viewerEl = viewerEl;
     this.pages = [];
+    this.pageMap = new Map();
     this.scale = 1;
     this.observer = null;
     this.pdfDoc = null;
@@ -20,9 +21,12 @@ export class PDFViewer {
     this.canvases = await this.#createCanvasPlaceholders(pdfDoc.numPages);
     this.pages = this.canvases.map((canvas, idx) => {
       const wrapper = canvas.parentElement;
-      return new PageView(pdfDoc, idx + 1, wrapper, allNamedDests);
+      const pageView = new PageView(pdfDoc, idx + 1, wrapper, allNamedDests);
+      this.pageMap.set(wrapper, pageView);
+      return pageView;
     });
-    this.#resizeAllCanvases(this.scale);
+    await this.#resizeAllCanvases(this.scale);
+    await new Promise(resolve => setTimeout(resolve, 50));
     this.setupLazyRender();
   }
 
@@ -38,9 +42,9 @@ export class PDFViewer {
       wrapper.style.width = "fit-content";
 
       const label = document.createElement("div");
+      label.className = "page-num";
       label.textContent = `Page ${i}`;
-      label.style.color = "#888";
-      label.style.fontSize = "0.8rem";
+
       const canvas = document.createElement("canvas");
       canvas.dataset.pageNumber = i;
 
@@ -75,7 +79,7 @@ export class PDFViewer {
       },
       {
         root: this.viewerEl,
-        // rootMargin: "500px 0px",
+        rootMargin: "300px 0px",
         threshold: 0.1,
       },
     );
@@ -108,6 +112,8 @@ export class PDFViewer {
     const maxTop = Math.max(0, viewer.scrollHeight - viewer.clientHeight);
     viewer.scrollLeft = Math.min(Math.max(0, targetLeft), maxLeft);
     viewer.scrollTop = Math.min(Math.max(0, targetTop), maxTop);
+
+    this.#renderVisiblePages();
   }
 
   zoom(delta) {
@@ -123,15 +129,14 @@ export class PDFViewer {
 
   getCurrentPage() {
     const viewRect = this.viewerEl.getBoundingClientRect();
-    let currentPage = 1;
+    const viewportMidY = viewRect.top + viewRect.height / 2;
     for (const canvas of this.canvases) {
       const rect = canvas.getBoundingClientRect();
-      const midY = viewRect.top + viewRect.height / 2;
-      if (rect.top <= midY / 2 && rect.bottom >= viewRect.top) {
-        currentPage = parseInt(canvas.dataset.pageNumber);
+      if (rect.top <= viewportMidY && rect.bottom > viewportMidY) {
+        return parseInt(canvas.dataset.pageNumber);
       }
     }
-    return currentPage;
+    return 1;
   }
 
   getScale() {
@@ -145,8 +150,6 @@ export class PDFViewer {
       rect.top > window.innerHeight * 3
     ) {
       page.cancel();
-      page.canvas.width = 0;
-      page.canvas.height = 0;
       page.textLayer.innerHTML = "";
       page.annotationLayer.innerHTML = "";
       page.canvas.dataset.rendered = "false";
@@ -154,17 +157,33 @@ export class PDFViewer {
   }
 
   scrollToRelative(delta) {
-    const current = parseInt(document.getElementById("page-num").textContent);
+    const current = this.getCurrentPage();
     const target = this.pages.find((p) => p.pageNumber === current + delta);
     if (target)
       target.wrapper.scrollIntoView({ behavior: "smooth", block: "center" });
   }
 
-  #resizeAllCanvases(scale) {
+  scrollToTop() {
+    const target = this.pages.find((p) => p.pageNumber === 1);
+    if (target)
+      target.wrapper.scrollIntoView({ behavior: "smooth", block: "center" });
+  }
+
+  async #resizeAllCanvases(scale) {
     this.scale = scale;
-    for (const page of this.pages) {
-      page.canvas.dataset.rendered = "false";
-      page.resize(scale);
+    await Promise.all(
+      this.pages.map(async (page) => {
+        page.canvas.dataset.rendered = "false";
+        await page.resize(scale);
+      })
+    );
+  }
+
+  #renderVisiblePages() {
+    for (const pageView of this.visiblePages) {
+      if (pageView.canvas.dataset.rendered === "false") {
+        pageView.render(this.scale);
+      }
     }
   }
 

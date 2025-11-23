@@ -63,8 +63,8 @@ header {
 
 #viewer-container {
   flex: 1;
+  background-color: #ffffff80;
   overflow: auto;
-  background-color: #ffffff;
   display: block;
   overscroll-behavior: contain;
   -webkit-overflow-scrolling: touch;
@@ -73,6 +73,7 @@ header {
 #viewer-stage {
   position: relative;
   display: flex;
+  background-color: white;
   flex-direction: column;
   align-items: center;
   width: fit-content;
@@ -84,7 +85,7 @@ header {
 .page-wrapper {
   display: block;
   position: relative;
-  margin: 10px auto;
+  margin: 15px auto;
   box-shadow: 0px 4px 20px 5px rgba(0, 0, 0, 0.25);
 }
 
@@ -92,6 +93,14 @@ header {
   position: relative;
   background-color: white;
   z-index: 0;
+}
+
+.page-num {
+  position: relative;
+  text-align: center;
+  color: #888;
+  font-size: 12px;
+  padding: 0px 0px 3px 0px;
 }
 
 .annotationLayer {

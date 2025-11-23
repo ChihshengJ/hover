@@ -16,16 +16,15 @@ export class ViewerControls {
     this.el = el;
     this.gesture = new GestureDetector(el.viewer);
     this.#setupOnetimeListener();
-    this.#setupUIListeners();
+    // this.#setupUIListeners();
     this.#setupKeyboardShortcuts();
     this.#setupGestures();
   }
 
   #setupOnetimeListener() {
-    this.viewer.viewerEl.addEventListener("scroll", () => {
-      const currentPage = this.viewer.getCurrentPage();
-      this.el.pageNum.textContent = currentPage;
-    });
+    // this.el.viewer.addEventListener("scroll", () => {
+    //   const currentPage = this.viewer.getCurrentPage();
+    // });
     window.addEventListener("resize", () => {
       this.viewer.renderAtScale(this.viewer.getScale());
     });
@@ -85,51 +84,53 @@ export class ViewerControls {
     let startScale = 1;
     let isTransforming = false;
     let pageStates = new Map();
-    
+
     this.gesture.getEventTarget().addEventListener("pinchstart", (e) => {
       startScale = this.viewer.getScale();
       isTransforming = true;
       pageStates.clear();
-      
+
       // Get pinch center in viewport coordinates
       const containerRect = this.el.viewer.getBoundingClientRect();
       const pinchX = e.detail.center.x;
       const pinchY = e.detail.center.y;
-      
+
       // Store original state for each page wrapper
-      const wrappers = this.el.viewer.querySelectorAll('.page-wrapper');
-      wrappers.forEach(wrapper => {
+      const wrappers = this.el.viewer.querySelectorAll(".page-wrapper");
+      wrappers.forEach((wrapper) => {
         const wrapperRect = wrapper.getBoundingClientRect();
-        
+
         // Calculate pinch point as percentage of wrapper dimensions
-        const percentX = ((pinchX - wrapperRect.left) / wrapperRect.width) * 100;
-        const percentY = ((pinchY - wrapperRect.top) / wrapperRect.height) * 100;
-        
+        const percentX =
+          ((pinchX - wrapperRect.left) / wrapperRect.width) * 100;
+        const percentY =
+          ((pinchY - wrapperRect.top) / wrapperRect.height) * 100;
+
         pageStates.set(wrapper, {
           originalTransform: wrapper.style.transform,
           originalOrigin: wrapper.style.transformOrigin,
           percentX: percentX,
-          percentY: percentY
+          percentY: percentY,
         });
       });
     });
 
     this.gesture.getEventTarget().addEventListener("pinchupdate", (e) => {
       if (!isTransforming) return;
-      
+
       const ratio = e.detail.startScaleRatio;
       const newScale = Math.max(0.5, Math.min(4, startScale * ratio));
       const visualScaleDelta = newScale / startScale;
-      
+
       // Apply scale with fixed transform-origin for each wrapper
-      const wrappers = this.el.viewer.querySelectorAll('.page-wrapper');
-      wrappers.forEach(wrapper => {
+      const wrappers = this.el.viewer.querySelectorAll(".page-wrapper");
+      wrappers.forEach((wrapper) => {
         const state = pageStates.get(wrapper);
         if (!state) return;
-        
+
         // Use percentage-based transform-origin (stays consistent during scaling)
         wrapper.style.transformOrigin = `${state.percentX}% ${state.percentY}%`;
-        
+
         // Apply the pinch scale on top of the original transform
         if (state.originalTransform) {
           wrapper.style.transform = `${state.originalTransform} scale(${visualScaleDelta})`;
@@ -141,26 +142,26 @@ export class ViewerControls {
 
     this.gesture.getEventTarget().addEventListener("pinchend", (e) => {
       if (!isTransforming) return;
-      
+
       // Restore original state for all wrappers
-      const wrappers = this.el.viewer.querySelectorAll('.page-wrapper');
-      wrappers.forEach(wrapper => {
+      const wrappers = this.el.viewer.querySelectorAll(".page-wrapper");
+      wrappers.forEach((wrapper) => {
         const state = pageStates.get(wrapper);
         if (!state) return;
-        
+
         wrapper.style.transform = state.originalTransform;
         wrapper.style.transformOrigin = state.originalOrigin;
       });
-      
+
       const ratio = e.detail.startScaleRatio;
       const finalScale = Math.max(0.5, Math.min(4, startScale * ratio));
-      
+
       // Apply actual zoom (re-renders canvases)
       const containerRect = this.el.viewer.getBoundingClientRect();
       const focusX = e.detail.center.x - containerRect.left;
       const focusY = e.detail.center.y - containerRect.top;
       this.viewer.zoomAt(finalScale, focusX, focusY);
-      
+
       isTransforming = false;
       pageStates.clear();
     });

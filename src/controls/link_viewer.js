@@ -8,14 +8,16 @@ export class CitationPopup {
   }
 
   init() {
-    this.popup = document.createElement('div');
-    this.popup.className = 'citation-popup';
+    this.popup = document.createElement("div");
+    this.popup.className = "citation-popup";
     document.body.appendChild(this.popup);
 
-    document.addEventListener('click', (e) => {
-      if (this.popup.style.display !== 'none' && 
-          !this.popup.contains(e.target) && 
-          !this.currentAnchor?.contains(e.target)) {
+    document.addEventListener("click", (e) => {
+      if (
+        this.popup.style.display !== "none" &&
+        !this.popup.contains(e.target) &&
+        !this.currentAnchor?.contains(e.target)
+      ) {
         this.scheduleClose();
       }
     });
@@ -29,7 +31,7 @@ export class CitationPopup {
 
     this.popup.addEventListener("mouseleave", () => {
       this.scheduleClose();
-    })
+    });
   }
 
   async show(anchor, findCiteTextCallback, left, pageIndex, top) {
@@ -43,53 +45,53 @@ export class CitationPopup {
 
     this.popup.style.left = `${popupX}px`;
     this.popup.style.top = `${popupY}px`;
-    this.popup.style.display = 'block';
-    this.popup.className = 'citation-popup loading';
-    this.popup.innerHTML = 'Loading reference...';
+    this.popup.style.display = "block";
+    this.popup.className = "citation-popup loading";
+    this.popup.innerHTML = "Loading reference...";
 
     try {
       const result = await findCiteTextCallback(left, pageIndex, top);
 
       if (!result) {
-        this.showError('Reference not found');
+        this.showError("Reference not found");
         return;
       }
       this.renderContent(result);
       this.adjustPosition();
     } catch (error) {
-      console.error('Error loading citation:', error);
-      this.showError('Failed to load reference');
+      console.error("Error loading citation:", error);
+      this.showError("Failed to load reference");
     }
   }
 
   renderContent(text) {
-    this.popup.className = 'citation-popup';
+    this.popup.className = "citation-popup";
     const needsCollapse = text.length > 250;
 
-    const textElement = document.createElement('p');
-    textElement.className = 'citation-popup-text';
+    const textElement = document.createElement("p");
+    textElement.className = "citation-popup-text";
     if (needsCollapse) {
-      textElement.classList.add('collapsed');
+      textElement.classList.add("collapsed");
     }
     // textElement.textContent = text;
     this.renderTextWithLinks(textElement, text);
 
-    this.popup.innerHTML = '';
+    this.popup.innerHTML = "";
     this.popup.appendChild(textElement);
 
     if (needsCollapse) {
-      const toggleBtn = document.createElement('button');
-      toggleBtn.className = 'citation-popup-toggle';
-      toggleBtn.textContent = 'Show more';
-      toggleBtn.addEventListener('click', (e) => {
+      const toggleBtn = document.createElement("button");
+      toggleBtn.className = "citation-popup-toggle";
+      toggleBtn.textContent = "Show more";
+      toggleBtn.addEventListener("click", (e) => {
         e.stopPropagation();
         this.isExpanded = !this.isExpanded;
         if (this.isExpanded) {
-          textElement.classList.remove('collapsed');
-          toggleBtn.textContent = 'Show less';
+          textElement.classList.remove("collapsed");
+          toggleBtn.textContent = "Show less";
         } else {
-          textElement.classList.add('collapsed');
-          toggleBtn.textContent = 'Show more';
+          textElement.classList.add("collapsed");
+          toggleBtn.textContent = "Show more";
         }
         this.adjustPosition();
       });
@@ -101,25 +103,25 @@ export class CitationPopup {
     // Regex to match URLs
     const urlRegex = /(https?:\/\/[^\s]+)./g;
     const parts = text.split(urlRegex);
-    
-    element.innerHTML = ''; // Clear existing content
-    
+
+    element.innerHTML = ""; // Clear existing content
+
     parts.forEach((part, index) => {
       if (part.match(urlRegex)) {
         // This is a URL, create a link
-        const link = document.createElement('a');
+        const link = document.createElement("a");
         link.href = part;
         link.textContent = part;
-        link.target = '_blank';
-        link.rel = 'noopener noreferrer';
-        link.style.color = '#1a73e8';
-        link.style.textDecoration = 'none';
-        link.style.borderBottom = '1px solid #1a73e8';
-        link.addEventListener('mouseenter', () => {
-          link.style.borderBottom = '1px solid transparent';
+        link.target = "_blank";
+        link.rel = "noopener noreferrer";
+        link.style.color = "#1a73e8";
+        link.style.textDecoration = "none";
+        link.style.borderBottom = "1px solid #1a73e8";
+        link.addEventListener("mouseenter", () => {
+          link.style.borderBottom = "1px solid transparent";
         });
-        link.addEventListener('mouseleave', () => {
-          link.style.borderBottom = '1px solid #1a73e8';
+        link.addEventListener("mouseleave", () => {
+          link.style.borderBottom = "1px solid #1a73e8";
         });
         element.appendChild(link);
       } else {
@@ -130,7 +132,7 @@ export class CitationPopup {
   }
 
   showError(message) {
-    this.popup.className = 'citation-popup error';
+    this.popup.className = "citation-popup error";
     this.popup.innerHTML = `
       <button class="citation-popup-close" onclick="this.closest('.citation-popup').style.display='none'">×</button>
       ${message}
@@ -138,7 +140,7 @@ export class CitationPopup {
   }
 
   adjustPosition() {
-    // Ensure popup stays within viewport
+    // Ensure pop-up stays within viewport
     const rect = this.popup.getBoundingClientRect();
     const viewportWidth = window.innerWidth;
     const viewportHeight = window.innerHeight;
@@ -172,7 +174,7 @@ export class CitationPopup {
   }
 
   hide() {
-    this.popup.style.display = 'none';
+    this.popup.style.display = "none";
     this.currentAnchor = null;
     this.isExpanded = false;
     if (this.hoverTimer) {
@@ -180,6 +182,4 @@ export class CitationPopup {
       this.hoverTimer = null;
     }
   }
-
 }
-

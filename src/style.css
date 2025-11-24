@@ -63,7 +63,13 @@ header {
 
 #viewer-container {
   flex: 1;
-  background-color: #ffffff80;
+  background: #e6e6e6;
+  background: linear-gradient(
+    210deg,
+    rgba(210, 210, 210, 1) 13%,
+    rgba(179, 179, 179, 1) 48%,
+    rgba(150, 150, 150, 1) 90%
+  );
   overflow: auto;
   display: block;
   overscroll-behavior: contain;
@@ -163,15 +169,15 @@ header {
   position: relative;
   background: linear-gradient(
     143.5deg,
-    rgba(255, 64, 163, 0.2) 17.38%,
-    rgba(255, 141, 153, 0.2) 62.76%,
-    rgba(255, 149, 83, 0.2) 91.49%
+    rgba(255, 255, 255, 0.2) 17.38%,
+    rgba(190, 190, 190, 0.2) 62.76%,
+    rgba(150, 150, 150, 0.2) 91.49%
   );
   box-shadow:
     inset 2px 2px 1px 0 #ffffff80,
     inset -1px -1px 1px 1px #ffffff80,
-    outset 0 6px 6px #00000033,
-    outset 0 0 20px #0000001a;
+    0 6px 6px #00000045,
+    0 0 20px #0000001a;
   width: 75px;
   height: 75px;
   border-radius: 50%;
@@ -181,9 +187,7 @@ header {
   pointer-events: auto;
   cursor: grab;
   user-select: none;
-  transition:
-    transform 0.2s ease-in-out,
-    background-color 0.2s ease;
+  transition: all 0.2s ease-out;
   z-index: 12;
 }
 
@@ -193,14 +197,18 @@ header {
   z-index: 0;
   inset: 0;
   overflow: hidden;
-  backdrop-filter: blur(2px);
-  filter: url(#glass-distortion);
+  backdrop-filter: blur(4px);
+  filter: url("glass-distortion");
   -webkit-filter: url("glass-distortion");
 }
 
 .floating-ball:hover {
-  background-color: rgba(255, 141, 153, 0.3);
   transform: scale(1.1);
+  box-shadow:
+    inset 5px 2px 2px 0 #ffffff80,
+    inset -1px -1px 1px 1px #ffffff80,
+    0 10px 10px #00000045,
+    0 0 20px #0000001a;
 }
 
 .floating-ball.dragging {
@@ -247,100 +255,103 @@ header {
   top: calc(100% + 10px);
 }
 
+
 .tool-btn {
   width: 45px;
   height: 45px;
   border-radius: 50%;
   border: none;
-  background: #ff955330;
-  color: #222;
+  background: rgba(255, 255, 255, 0.60);
+  color: #333;
   font-size: 20px;
   font-weight: regular;
   cursor: pointer;
   box-shadow:
-    inset 2px 2px 1px 0 #ffffff80,
+    inset 5px 3px 1px 0 #ffffff70,
     inset -1px -1px 1px 1px #ffffff80,
-    outset 0 4px 20px rgba(0, 0, 0, 0.2);
-  transition: all 0.2s cubic-bezier(0.68, -0.55, 0.265, 1.55);
+    inset -2px -1px 1px 0px rgba(0, 0, 0, 0.05),
+    0 4px 20px rgba(0, 0, 0, 0.4);
   display: flex;
   align-items: center;
   justify-content: center;
   pointer-events: auto;
   opacity: 0;
+  transform: scale(0);
+  transition: none;
 }
 
-.floating-toolbar-wrapper.expanded .floating-toolbar-top .tool-btn {
+/* Expanding animation */
+.floating-toolbar-wrapper.expanding .tool-btn {
   opacity: 1;
   transform: scale(1);
-  transition-delay: 0.2s;
+  transition: opacity 0.3s cubic-bezier(0.68, -0.55, 0.265, 1.55),
+              transform 0.3s cubic-bezier(0.68, -0.55, 0.265, 1.55);
 }
 
-.floating-toolbar-wrapper.expanded .floating-toolbar-bottom .tool-btn {
+.floating-toolbar-wrapper.expanding .tool-btn:nth-child(1) {
+  transition-delay: 0.1s;
+}
+
+.floating-toolbar-wrapper.expanding .tool-btn:nth-child(2) {
+  transform: scale(0.77);
+  transition-delay: 0.15s;
+}
+
+/* Expanded state - enable hover transitions only */
+.floating-toolbar-wrapper.expanded .tool-btn {
   opacity: 1;
+  transition: transform 0.2s cubic-bezier(0.68, -0.55, 0.265, 1.55);
+}
+
+.floating-toolbar-wrapper.expanded .tool-btn:nth-child(1) {
   transform: scale(1);
-  transition-delay: 0.2s;
 }
 
-.floating-toolbar-wrapper.expanded
-  .floating-toolbar-top
-  .tool-btn:nth-child(1) {
-  transition-delay: 0.2s;
+.floating-toolbar-wrapper.expanded .tool-btn:nth-child(2) {
+  transform: scale(0.77);
 }
 
-.floating-toolbar-wrapper.expanded
-  .floating-toolbar-top
-  .tool-btn:nth-child(2) {
-  transform: scale(0.8);
-  transition-delay: 0.25s;
+.floating-toolbar-wrapper.expanded .tool-btn:nth-child(1):hover {
+  transform: scale(1.1);
 }
 
-.floating-toolbar-wrapper.expanded
-  .floating-toolbar-bottom
-  .tool-btn:nth-child(1) {
-  transition-delay: 0.2s;
+.floating-toolbar-wrapper.expanded .tool-btn:nth-child(2):hover {
+  transform: scale(0.9);
 }
 
-.floating-toolbar-wrapper.expanded
-  .floating-toolbar-bottom
-  .tool-btn:nth-child(2) {
-  transform: scale(0.8);
-  transition-delay: 0.25s;
-}
+/* .floating-toolbar-wrapper.expanded .tool-btn:active { */
+/*   transform: scale(0.95); */
+/* } */
 
+/* Collapsing animation */
 .floating-toolbar-wrapper.collapsing .tool-btn {
-  transition: all 0.25s cubic-bezier(0.6, 0.04, 0.98, 0.335);
+  opacity: 0;
+  transition: opacity 0.25s cubic-bezier(0.6, 0.04, 0.98, 0.335),
+              transform 0.25s cubic-bezier(0.6, 0.04, 0.98, 0.335);
 }
 
-.floating-toolbar-wrapper.collapsing
-  .floating-toolbar-top
-  .tool-btn:nth-child(1) {
+.floating-toolbar-wrapper.collapsing .floating-toolbar-top .tool-btn:nth-child(1) {
   transform: translateY(30px);
-  transition-delay: 0.3s;
+  transition-delay: 0.1s;
 }
 
-.floating-toolbar-wrapper.collapsing
-  .floating-toolbar-top
-  .tool-btn:nth-child(2) {
+.floating-toolbar-wrapper.collapsing .floating-toolbar-top .tool-btn:nth-child(2) {
   transform: translateY(50px);
-  transition-delay: 0.2s;
+  transition-delay: 0s;
 }
 
-.floating-toolbar-wrapper.collapsing
-  .floating-toolbar-bottom
-  .tool-btn:nth-child(1) {
+.floating-toolbar-wrapper.collapsing .floating-toolbar-bottom .tool-btn:nth-child(1) {
   transform: translateY(-30px);
-  transition-delay: 0.3s;
+  transition-delay: 0.1s;
 }
 
-.floating-toolbar-wrapper.collapsing
-  .floating-toolbar-bottom
-  .tool-btn:nth-child(2) {
+.floating-toolbar-wrapper.collapsing .floating-toolbar-bottom .tool-btn:nth-child(2) {
   transform: translateY(-50px);
-  transition-delay: 0.2s;
+  transition-delay: 0s;
 }
 
 .floating-toolbar-wrapper.expanded .tool-btn:hover {
-  background: #ff955380;
+  transform: scale(1.05);
 }
 
 .floating-toolbar-wrapper.expanded .tool-btn:active {
@@ -349,14 +360,6 @@ header {
 
 /* popup window */
 .citation-popup {
-  position: fixed;
-  background: white;
-  border: 1px solid #ddd;
-  border-radius: 10px;
-  padding: 12px 16px;
-  background: rgba(255, 255, 255, 1);
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
-  transition: all 0.1s cubic-bezier(0.68, -0.55, 0.265, 1.55);
   z-index: 10000;
   max-width: 400px;
   font-size: 14px;
@@ -364,11 +367,25 @@ header {
   color: #333;
   display: none;
   pointer-events: auto;
-}
-
-.citation-popup.loading {
-  color: #999;
-  font-style: italic;
+  padding: 12px 14px;
+  position: absolute;
+  -webkit-border-radius: 16px;
+  border-radius: 16px;
+  -webkit-box-shadow:
+    0 10px 45px 0px rgba(0, 0, 0, 0.7),
+    0 0 0 1px rgba(255, 255, 255, 0.5),
+    inset 0 5px 20px rgba(255, 255, 255, 0.8);
+  background: rgba(255, 255, 255, 0.75);
+  background-clip: padding-box;
+  backdrop-filter: blur(5px);
+  /* force hardware acceleration */
+  -webkit-transform: translate3d(0, 0, 0);
+  -webkit-filter: url("glass-distortion");
+  -webkit-backface-visibility: hidden;
+  -webkit-perspective: 1000;
+  -webkit-transition:
+    opacity 0.3s ease-in-out,
+    translate3d 0.3s ease-in-out;
 }
 
 .citation-popup.error {

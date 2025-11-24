@@ -76,7 +76,6 @@ export class FloatingToolbar {
     // drag to scroll
     this.ball.addEventListener("mousedown", (e) => {
       if (e.button === 0) {
-        // Left button
         this.dragStartTime = Date.now();
         this.wasDragged = false;
         this.#startDrag(e);
@@ -109,7 +108,6 @@ export class FloatingToolbar {
       }
     });
 
-    // Right click on toolbars to collapse
     this.toolbarTop.addEventListener("contextmenu", (e) => {
       e.preventDefault();
       this.#collapse();
@@ -141,17 +139,23 @@ export class FloatingToolbar {
 
   #expand() {
     this.isExpanded = true;
-    this.wrapper.classList.add("expanded");
+    this.wrapper.classList.remove("collapsing");
+    this.wrapper.classList.add("expanding");
+
+    setTimeout(() => {
+      this.wrapper.classList.remove("expanding");
+      this.wrapper.classList.add("expanded");
+    }, 500);
   }
 
   #collapse() {
     this.isExpanded = false;
-    this.wrapper.classList.remove("expanded");
+    this.wrapper.classList.remove("expanded", "expanding");
     this.wrapper.classList.add("collapsing");
 
     setTimeout(() => {
       this.wrapper.classList.remove("collapsing");
-    }, 700);
+    }, 600);
   }
 
   #handleClick() {
@@ -194,7 +198,6 @@ export class FloatingToolbar {
     if (Math.abs(deltaY) > 5) {
       this.wasDragged = true;
     }
-
     const deadZone = 10;
     const maxDragDistance = 100;
 
@@ -204,16 +207,13 @@ export class FloatingToolbar {
     } else {
       effectiveDelta = deltaY - Math.sign(deltaY) * deadZone;
     }
-
     const clampedDelta = Math.max(
       -maxDragDistance,
       Math.min(maxDragDistance, effectiveDelta),
     );
     const normalizedDistance = clampedDelta / maxDragDistance; // -1 to 1
-
     let scrollMultiplier;
     const mvRange = Math.abs(normalizedDistance);
-
     if (mvRange < 0.5) {
       //small move
       scrollMultiplier = mvRange * 2;
@@ -225,10 +225,8 @@ export class FloatingToolbar {
     }
 
     scrollMultiplier *= Math.sign(normalizedDistance);
-
     const maxScrollSpeed = 20;
     const scrollDelta = scrollMultiplier * maxScrollSpeed;
-
     const visualDelta = deltaY * 0.7;
     this.ball.style.transform = `translateY(${visualDelta}px)`;
     this.ball.style.transition = "none";
@@ -248,6 +246,7 @@ export class FloatingToolbar {
 
     setTimeout(() => {
       this.ball.style.transition = "";
+      this.ball.style.transform = "";
     }, 300);
   }
 
@@ -271,9 +270,9 @@ export class FloatingToolbar {
       case "zoom-out":
         this.viewer.zoom(-0.25);
         break;
-      case "fit-width":
+      case "text-selection":
         break;
-      case "fit-page":
+      case "drag":
         break;
     }
   }

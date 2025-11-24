@@ -11,6 +11,7 @@ export class CitationPopup {
     this.popup = document.createElement("div");
     this.popup.className = "citation-popup";
     document.body.appendChild(this.popup);
+    this.popup.style.opacity = "0";
 
     document.addEventListener("click", (e) => {
       if (
@@ -40,14 +41,13 @@ export class CitationPopup {
 
     // Position popup near the anchor
     const rect = anchor.getBoundingClientRect();
-    const popupX = rect.left;
+    const popupX = rect.left - 25;
     const popupY = rect.bottom + 8;
 
     this.popup.style.left = `${popupX}px`;
     this.popup.style.top = `${popupY}px`;
     this.popup.style.display = "block";
-    this.popup.className = "citation-popup loading";
-    this.popup.innerHTML = "Loading reference...";
+    this.popup.style.opacity = "1";
 
     try {
       const result = await findCiteTextCallback(left, pageIndex, top);
@@ -108,7 +108,6 @@ export class CitationPopup {
 
     parts.forEach((part, index) => {
       if (part.match(urlRegex)) {
-        // This is a URL, create a link
         const link = document.createElement("a");
         link.href = part;
         link.textContent = part;
@@ -125,7 +124,6 @@ export class CitationPopup {
         });
         element.appendChild(link);
       } else {
-        // This is regular text
         element.appendChild(document.createTextNode(part));
       }
     });

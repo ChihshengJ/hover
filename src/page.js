@@ -199,7 +199,6 @@ export class PageView {
       }
 
       if (closestSpan) {
-        console.log(closestSpan);
         let reference = [];
         for (let i = startIndex; i < texts.items.length; i++) {
           const span = texts.items[i];
@@ -280,14 +279,14 @@ export class PageView {
             if (!result) return;
             anchor.dataset.dest = `${result.left},${result.pageIndex},${result.top}`;
 
-            this.citationPopup.show(
+            await this.citationPopup.show(
               anchor,
               this.#findCiteText.bind(this),
               result.left,
               result.pageIndex,
               result.top,
             );
-          }, 300);
+          }, 200);
         });
 
         anchor.addEventListener("mouseleave", (e) => {

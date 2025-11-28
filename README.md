@@ -11,23 +11,23 @@
 Hover is a minimalist PDF viewer extension designed for people who spend way too much time reading academic papers in the browser.
 It intentionally keeps only the most essential features, but aims to make the actual _experience_ of reading papers smoother, faster, and uninterrupted by ---
 
-You've guessed it: **Hopping over the content and the references**  
+You've guessed it: **Hopping between the content and the references**  
 Hover solves that with inline citation preview popups that appear exactly where your cursor hovers, and lets you jump directly to the referenced paper in a new tab with one click.
 
-The project is based on PDFjs, which means that you can also directly access the texts as html elements, if you're interested in taking advantage of this feature, feel free to fork it!
+The project is based on PDF.js, which means that you can also directly access the texts as html elements, if you're interested in taking advantage of this feature, feel free to fork it!
 
 ---
 
-## ✨ Features
+## Features
 
-### 📎 Inline Citation Preview
+### Inline Citation Preview
 
 Just hover your mouse over a citation and Hover  
 → instantly shows the full reference **right there**, in-context.  
 And if the citation has a reachable URL or DOI?  
 → **Jump straight to the cited paper.**
 
-### ⚫ Floating Ball Navigation (Immersive Mode)
+### Floating Ball Navigation
 
 Hover introduces a small draggable floating ball that acts as your navigation hub.
 
@@ -38,28 +38,22 @@ Hover introduces a small draggable floating ball that acts as your navigation hu
 
 It sounds silly, but it really makes paper reading feel more direct and tactile.
 
-### 🛠️ Mini Toolbar
+### Split window
 
-When expanded, the floating toolbar gives you the essentials:
+Sometimes you gotta wonder, PDFs are longer than codes, so why isn't there a split window mode for most PDF readers?
+Hover's got you covered! You can enable split mode to view the two parts of the document at the same time.
+No more jumping between experiment results and metrics or figures and methodologies, enjoy doubling your reading speed without wasting time on scrolling around.
 
-- 🔍 **Zoom In**
-- 🔎 **Zoom Out**
-- 🖱️ **Text Selection Toggle**
-- ✋ **Drag/Pan Mode**
+### Full Dark mode
 
-### 🧪 Under Active Testing
-
-Hover already works nicely for most papers, but:
-
-- Some PDFs don’t render citations perfectly yet (working on it!)
-- Mobile support is in development
-- More stability improvements and accessibility features are coming
+Pulling an all-nighter reading papers? Sounds fun, why not dim the lights yourself!
+With a click of the button, hover not only turns the background dark, it also renders the page in a soft black tone with white texts.
 
 ---
 
-## 📦 Installation
+## Installation
 
-The project will be released as a browser extension.
+This project will be released as a browser extension.
 
 ---
 

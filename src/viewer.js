@@ -26,7 +26,7 @@ export class PDFViewer {
       return pageView;
     });
     await this.#resizeAllCanvases(this.scale);
-    await new Promise(resolve => setTimeout(resolve, 50));
+    await new Promise((resolve) => setTimeout(resolve, 50));
     this.setupLazyRender();
   }
 
@@ -37,13 +37,13 @@ export class PDFViewer {
     for (let i = 1; i <= numPages; i++) {
       const wrapper = document.createElement("div");
       wrapper.className = "page-wrapper";
-      wrapper.style.margin = "10px 0";
+      wrapper.style.margin = "14px 0";
       wrapper.style.display = "block";
       wrapper.style.width = "fit-content";
 
       const label = document.createElement("div");
       label.className = "page-num";
-      label.textContent = `Page ${i}`;
+      label.textContent = `| Page ${i}`;
 
       const canvas = document.createElement("canvas");
       canvas.dataset.pageNumber = i;
@@ -175,7 +175,7 @@ export class PDFViewer {
       this.pages.map(async (page) => {
         page.canvas.dataset.rendered = "false";
         await page.resize(scale);
-      })
+      }),
     );
   }
 

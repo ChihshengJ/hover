@@ -2,7 +2,7 @@ html,
 body {
   margin: 0;
   padding: 0;
-  background-color: #111;
+  background-color: white;
   color: #d0d0fd;
   font-family: "Elms Sans", monospace;
   display: flex;
@@ -79,7 +79,7 @@ header {
 #viewer-stage {
   position: relative;
   display: flex;
-  background-color: white;
+  background: transparent;
   flex-direction: column;
   align-items: center;
   width: fit-content;
@@ -91,22 +91,20 @@ header {
 .page-wrapper {
   display: block;
   position: relative;
-  margin: 15px auto;
+  background: transparent;
   box-shadow: 0px 4px 20px 5px rgba(0, 0, 0, 0.25);
 }
 
 .page-wrapper canvas {
   position: relative;
-  background-color: white;
   z-index: 0;
 }
 
 .page-num {
   position: relative;
-  text-align: center;
-  color: #888;
+  color: white;
+  font-weight: 100;
   font-size: 12px;
-  padding: 0px 0px 3px 0px;
 }
 
 .annotationLayer {
@@ -214,6 +212,7 @@ header {
 .floating-ball.dragging {
   cursor: grabbing;
   box-shadow: 0 6px 15px rgba(0, 0, 0, 0.3);
+  transition: all 0.2s ease-out;
 }
 
 .page-display {
@@ -223,7 +222,7 @@ header {
   font-family: "Elms Sans", monospace;
   color: black;
   font-size: 20px;
-  font-weight: thin;
+  font-weight: 300;
   line-height: 1;
   z-index: 13;
 }
@@ -242,7 +241,6 @@ header {
   flex-direction: column;
   gap: 10px;
   pointer-events: none;
-  font-weight: bold;
   z-index: 1;
 }
 
@@ -255,16 +253,15 @@ header {
   top: calc(100% + 10px);
 }
 
-
 .tool-btn {
   width: 45px;
   height: 45px;
   border-radius: 50%;
   border: none;
-  background: rgba(255, 255, 255, 0.60);
+  background: rgba(255, 255, 255, 0.6);
   color: #333;
   font-size: 20px;
-  font-weight: regular;
+  font-weight: 300;
   cursor: pointer;
   box-shadow:
     inset 5px 3px 1px 0 #ffffff70,
@@ -284,8 +281,9 @@ header {
 .floating-toolbar-wrapper.expanding .tool-btn {
   opacity: 1;
   transform: scale(1);
-  transition: opacity 0.3s cubic-bezier(0.68, -0.55, 0.265, 1.55),
-              transform 0.3s cubic-bezier(0.68, -0.55, 0.265, 1.55);
+  transition:
+    opacity 0.3s cubic-bezier(0.68, -0.55, 0.265, 1.55),
+    transform 0.3s cubic-bezier(0.68, -0.55, 0.265, 1.55);
 }
 
 .floating-toolbar-wrapper.expanding .tool-btn:nth-child(1) {
@@ -300,7 +298,7 @@ header {
 /* Expanded state - enable hover transitions only */
 .floating-toolbar-wrapper.expanded .tool-btn {
   opacity: 1;
-  transition: transform 0.2s cubic-bezier(0.68, -0.55, 0.265, 1.55);
+  transition: transform 0.2s cubic-bezier(0.2, -0.4, 0.2, 1.55);
 }
 
 .floating-toolbar-wrapper.expanded .tool-btn:nth-child(1) {
@@ -316,7 +314,7 @@ header {
 }
 
 .floating-toolbar-wrapper.expanded .tool-btn:nth-child(2):hover {
-  transform: scale(0.9);
+  transform: scale(0.85);
 }
 
 /* .floating-toolbar-wrapper.expanded .tool-btn:active { */
@@ -326,26 +324,35 @@ header {
 /* Collapsing animation */
 .floating-toolbar-wrapper.collapsing .tool-btn {
   opacity: 0;
-  transition: opacity 0.25s cubic-bezier(0.6, 0.04, 0.98, 0.335),
-              transform 0.25s cubic-bezier(0.6, 0.04, 0.98, 0.335);
+  transition:
+    opacity 0.25s cubic-bezier(0.6, 0.04, 0.98, 0.335),
+    transform 0.25s cubic-bezier(0.6, 0.04, 0.98, 0.335);
 }
 
-.floating-toolbar-wrapper.collapsing .floating-toolbar-top .tool-btn:nth-child(1) {
-  transform: translateY(30px);
+.floating-toolbar-wrapper.collapsing
+  .floating-toolbar-top
+  .tool-btn:nth-child(1) {
+  transform: translateY(25px);
   transition-delay: 0.1s;
 }
 
-.floating-toolbar-wrapper.collapsing .floating-toolbar-top .tool-btn:nth-child(2) {
+.floating-toolbar-wrapper.collapsing
+  .floating-toolbar-top
+  .tool-btn:nth-child(2) {
   transform: translateY(50px);
   transition-delay: 0s;
 }
 
-.floating-toolbar-wrapper.collapsing .floating-toolbar-bottom .tool-btn:nth-child(1) {
-  transform: translateY(-30px);
+.floating-toolbar-wrapper.collapsing
+  .floating-toolbar-bottom
+  .tool-btn:nth-child(1) {
+  transform: translateY(-25px);
   transition-delay: 0.1s;
 }
 
-.floating-toolbar-wrapper.collapsing .floating-toolbar-bottom .tool-btn:nth-child(2) {
+.floating-toolbar-wrapper.collapsing
+  .floating-toolbar-bottom
+  .tool-btn:nth-child(2) {
   transform: translateY(-50px);
   transition-delay: 0s;
 }
@@ -380,12 +387,18 @@ header {
   backdrop-filter: blur(5px);
   /* force hardware acceleration */
   -webkit-transform: translate3d(0, 0, 0);
-  -webkit-filter: url("glass-distortion");
   -webkit-backface-visibility: hidden;
   -webkit-perspective: 1000;
+  transition:
+    opacity 0.2s cubic-bezier(0.4, 0, 0.2, 1),
+    transform 0.2s cubic-bezier(0.4, 0, 0.2, 1);
   -webkit-transition:
-    opacity 0.3s ease-in-out,
-    translate3d 0.3s ease-in-out;
+    opacity 0.2s cubic-bezier(0.4, 0, 0.2, 1),
+    -webkit-transform 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+
+  /* Initial state for animation */
+  opacity: 0;
+  transform: translateY(-10px) scale(0.95);
 }
 
 .citation-popup.error {

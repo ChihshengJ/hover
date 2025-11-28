@@ -144,7 +144,8 @@ export class PageView {
     const { pageWidth, pageHeight, pageX, pageY } = viewport.rawDims;
     const transform = [1, 0, 0, -1, -pageX, pageY + pageHeight];
 
-    // convert target pdf coordinates to viewport coordinates at current scale
+    // Convert target PDF coordinates to viewport coordinates at current scale
+    // 20 and 2 are heuristically determined...
     const [targetX, targetY] = viewport.convertToViewportPoint(
       left + 20,
       top + 2,
@@ -172,7 +173,7 @@ export class PageView {
           t = tx[5] - fontAscent * Math.cos(angle);
         }
 
-        // converting text span pdf coordinates to viewport coordinates
+        // Converting text span PDF coordinates to viewport coordinates
         const [x, y] = viewport.convertToViewportPoint(l, t);
         const spanLeft = x;
         const spanTop = canvas.offsetTop + Math.max(0, y);
@@ -203,10 +204,14 @@ export class PageView {
         for (let i = startIndex; i < texts.items.length; i++) {
           const span = texts.items[i];
           reference.push(span.str);
+          if (span.str.match(/\d{4}\.$/) && !texts.items[i+1].str.match(/\s+$/)) {
+            break;
+          }
           if (span.str === ".") {
             break;
           }
         }
+        console.log(reference);
         return reference.join("");
       }
       return null;
@@ -270,15 +275,18 @@ export class PageView {
         anchor.rel = "noopener noreferrer";
       } else if (a.dest) {
         anchor.href = "javascript:void(0)";
-        let hoverTimer = null;
+        let showTimer = null;
 
         anchor.addEventListener("mouseenter", async (e) => {
-          if (hoverTimer) clearTimeout(hoverTimer);
-          hoverTimer = setTimeout(async () => {
+          if (showTimer) clearTimeout(showTimer);
+
+          this.citationPopup.onAnchorEnter();
+
+          showTimer = setTimeout(async () => {
             const result = await this.#resolveDestToPosition(a.dest);
             if (!result) return;
-            anchor.dataset.dest = `${result.left},${result.pageIndex},${result.top}`;
 
+            anchor.dataset.dest = `${result.left},${result.pageIndex},${result.top}`;
             await this.citationPopup.show(
               anchor,
               this.#findCiteText.bind(this),
@@ -290,12 +298,14 @@ export class PageView {
         });
 
         anchor.addEventListener("mouseleave", (e) => {
-          if (hoverTimer) {
-            clearTimeout(hoverTimer);
-            hoverTimer = null;
+          if (showTimer) {
+            clearTimeout(showTimer);
+            showTimer = null;
           }
 
-          this.citationPopup.scheduleClose();
+          if (this.citationPopup.currentAnchor === anchor) {
+            this.citationPopup.onAnchorLeave();
+          }
         });
 
         anchor.addEventListener("click", async (e) => {
@@ -320,6 +330,7 @@ export class PageView {
       } else {
         continue;
       }
+
       this.annotationLayer.appendChild(anchor);
     }
   }

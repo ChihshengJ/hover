@@ -12,6 +12,11 @@ export class FloatingToolbar {
     this.dragStartTime = 0;
     this.wrapper = null;
 
+    this.nightModeAnimating = false;
+    this.nightModeClip = document.createElement("div");
+    this.nightModeClip.id = "night-mode-clip";
+    document.body.appendChild(this.nightModeClip);
+
     this.#createToolbar();
     this.#setupEventListeners();
     this.#updatePosition();
@@ -38,16 +43,48 @@ export class FloatingToolbar {
     this.toolbarTop = document.createElement("div");
     this.toolbarTop.className = "floating-toolbar floating-toolbar-top";
     this.toolbarTop.innerHTML = `
-      <button class="tool-btn" data-action="drag">D</button>
-      <button class="tool-btn" data-action="select">\T</button>
+      <button class="tool-btn" data-action="horizontal-spread">
+        <div class="inner">
+          <img src="public/book.svg" width="25" />
+        </div>
+        <div class="effect"></div>
+      </button>
+      <button class="tool-btn" data-action="split-screen">
+        <div class="inner">
+          <img src="public/split.svg" width="25" />
+        </div>
+        <div class="effect"></div>
+      </button>
+      <button class="tool-btn" data-action="night-mode">
+        <div class="inner">
+          <div>☽</div>
+        </div>
+        <div class="effect"></div>
+      </button>
     `;
 
     // Create toolbar buttons below
     this.toolbarBottom = document.createElement("div");
     this.toolbarBottom.className = "floating-toolbar floating-toolbar-bottom";
     this.toolbarBottom.innerHTML = `
-      <button class="tool-btn" data-action="zoom-in">+</button>
-      <button class="tool-btn" data-action="zoom-out">-</button>
+      <button class="tool-btn" data-action="fit-screen">
+        <div class="inner">
+          <img src="public/fit.svg" width="23" />
+        </div>
+        <div class="effect"></div>
+      </button>
+      <button class="tool-btn" data-action="zoom-in">
+        <div class="inner">
+          <div>+</div>
+        </div>
+        <div class="effect"></div>
+      </button>
+      <button class="tool-btn" data-action="zoom-out">
+        <div class="inner">
+          <div>-</div>
+        </div>
+        <div class="effect"></div>
+      </button>
     `;
 
     this.wrapper.appendChild(this.toolbarTop);
@@ -125,7 +162,7 @@ export class FloatingToolbar {
 
     // Keep wrapper positioned on window resize
     window.addEventListener("resize", () => {
-      this.#updateWrapperPosition();
+      this.#updatePosition();
     });
   }
 
@@ -250,16 +287,12 @@ export class FloatingToolbar {
     }, 300);
   }
 
-  #updateWrapperPosition() {
+  #updatePosition() {
     const containerRect = this.viewerContainer.getBoundingClientRect();
     const centerY = containerRect.top + containerRect.height / 2;
 
     this.wrapper.style.top = `${centerY}px`;
-    this.wrapper.style.right = "20px";
-  }
-
-  #updatePosition() {
-    this.#updateWrapperPosition();
+    this.wrapper.style.right = "50px";
   }
 
   #handleToolAction(action) {
@@ -270,11 +303,109 @@ export class FloatingToolbar {
       case "zoom-out":
         this.viewer.zoom(-0.25);
         break;
-      case "text-selection":
+      case "night-mode":
+        this.#nightmode();
         break;
-      case "drag":
+      case "split-screen":
+        break;
+      case "horizontal-spread":
+        break;
+      case "split-screen":
         break;
     }
+  }
+
+  #nightmode() {
+    if (this.nightModeAnimating) return;
+    this.nightModeAnimating = true;
+
+    const btn = this.toolbarTop.querySelector('[data-action="night-mode"]');
+    const btns = this.wrapper.querySelectorAll(".tool-btn");
+    const pageInfo = this.ball.querySelector(".page-display");
+    const isCurrentlyNight = document.body.classList.contains("night-mode");
+    const scrollPos = this.viewerContainer.scrollTop;
+
+    const rect = btn.getBoundingClientRect();
+    const clipX = rect.left + rect.width / 2;
+    const clipY = rect.top + rect.height / 2;
+
+    this.nightModeClip.style.setProperty("--clip-x", `${clipX}px`);
+    this.nightModeClip.style.setProperty("--clip-y", `${clipY}px`);
+
+    const clone = this.viewerContainer.cloneNode(true);
+    clone.style.position = "fixed";
+    clone.style.inset = "0";
+
+    // Right now it's cloning every canvas, needs to come up with a way to only clone visible canvases
+    const originalCanvases = this.viewerContainer.querySelectorAll("canvas");
+    const clonedCanvases = clone.querySelectorAll("canvas");
+    originalCanvases.forEach((original, i) => {
+      const cloned = clonedCanvases[i];
+      if (cloned && original.width > 0 && original.height > 0) {
+        cloned.width = original.width;
+        cloned.height = original.height;
+        const ctx = cloned.getContext("2d");
+        ctx.drawImage(original, 0, 0);
+      }
+    });
+
+    // set cloned canvases to night mode
+    if (isCurrentlyNight) {
+      clone.classList.remove("night-mode-content");
+      this.nightModeClip.classList.add("to-light");
+      this.nightModeClip.classList.remove("to-dark");
+    } else {
+      clone.classList.add("night-mode-content");
+      this.nightModeClip.classList.add("to-dark");
+      this.nightModeClip.classList.remove("to-light");
+    }
+
+    this.nightModeClip.innerHTML = "";
+    this.nightModeClip.appendChild(clone);
+    clone.scrollTop = scrollPos;
+
+    const syncScroll = () => {
+      clone.scrollTop = this.viewerContainer.scrollTop;
+    };
+    this.viewerContainer.addEventListener("scroll", syncScroll);
+
+    this.nightModeClip.classList.remove("anim");
+    void this.nightModeClip.offsetWidth;
+    this.nightModeClip.classList.add("anim");
+
+    // floating toolbar animation
+    if (isCurrentlyNight) {
+      this.ball.classList.remove("night-mode");
+      pageInfo.classList.remove("night-mode");
+      for (const b of btns) {
+        b.classList.remove("night-mode");
+        b.firstElementChild.classList.remove("night-mode");
+      }
+      btn.firstElementChild.firstElementChild.textContent = "☽";
+    } else {
+      this.ball.classList.add("night-mode");
+      for (const b of btns) {
+        b.classList.add("night-mode");
+        b.firstElementChild.classList.add("night-mode");
+      }
+      btn.firstElementChild.firstElementChild.textContent = "☀";
+      pageInfo.classList.add("night-mode");
+    }
+
+    // document body animation
+    setTimeout(() => {
+      if (isCurrentlyNight) {
+        document.body.classList.remove("night-mode");
+      } else {
+        document.body.classList.add("night-mode");
+      }
+
+      this.viewerContainer.scrollTop = scrollPos;
+      this.nightModeClip.classList.remove("anim", "to-light", "to-dark");
+      this.nightModeClip.innerHTML = "";
+      this.viewerContainer.removeEventListener("scroll", syncScroll);
+      this.nightModeAnimating = false;
+    }, 800);
   }
 
   updatePageNumber() {

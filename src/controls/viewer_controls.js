@@ -16,30 +16,16 @@ export class ViewerControls {
     this.el = el;
     this.gesture = new GestureDetector(el.viewer);
     this.#setupOnetimeListener();
-    // this.#setupUIListeners();
     this.#setupKeyboardShortcuts();
     this.#setupGestures();
   }
 
   #setupOnetimeListener() {
-    // this.el.viewer.addEventListener("scroll", () => {
-    //   const currentPage = this.viewer.getCurrentPage();
-    // });
     window.addEventListener("resize", () => {
       this.viewer.renderAtScale(this.viewer.getScale());
     });
   }
 
-  #setupUIListeners() {
-    this.el.zoomInBtn.addEventListener("click", () => this.viewer.zoom(0.25));
-    this.el.zoomOutBtn.addEventListener("click", () => this.viewer.zoom(-0.25));
-    this.el.nextBtn.addEventListener("click", () =>
-      this.viewer.scrollToRelative(1),
-    );
-    this.el.prevBtn.addEventListener("click", () =>
-      this.viewer.scrollToRelative(-1),
-    );
-  }
 
   #setupKeyboardShortcuts() {
     const scroller = this.viewer.viewerEl;

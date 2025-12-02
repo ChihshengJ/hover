@@ -14,10 +14,14 @@ export class PDFViewer {
     this.pdfDoc = null;
     this.canvases = null;
     this.visiblePages = new Set();
+
+    this.pageDimensions = [];
   }
 
   async loadDocument(pdfDoc, allNamedDests) {
     this.pdfDoc = pdfDoc;
+
+    await this.#cachePageDimensions(pdfDoc.numPages);
     this.canvases = await this.#createCanvasPlaceholders(pdfDoc.numPages);
     this.pages = this.canvases.map((canvas, idx) => {
       const wrapper = canvas.parentElement;
@@ -25,7 +29,7 @@ export class PDFViewer {
       this.pageMap.set(wrapper, pageView);
       return pageView;
     });
-    await this.#resizeAllCanvases(this.scale);
+    this.#resizeAllCanvases(this.scale);
     await new Promise((resolve) => setTimeout(resolve, 50));
     this.setupLazyRender();
   }
@@ -57,23 +61,36 @@ export class PDFViewer {
     return canvases;
   }
 
+  async #cachePageDimensions(numPages) {
+    const firstPage = await this.pdfDoc.getPage(1);
+    const defaultViewport = firstPage.getViewport({ scale: 1 });
+    const defaultDims = {
+      width: defaultViewport.width,
+      height: defaultViewport.height,
+    };
+
+    this.pageDimensions = new Array(numPages).fill(defaultDims);
+  }
+
   setupLazyRender() {
+    if (this.observer) {
+      this.observer.disconnect();
+    }
+
     const observer = new IntersectionObserver(
       (entries) => {
         for (const entry of entries) {
-          if (entry.isIntersecting) {
-            const pageView = this.pages.find((p) => p.wrapper === entry.target);
-            if (!pageView) continue;
+          const pageView = this.pageMap.get(entry.target);
+          if (!pageView) continue;
 
-            if (entry.isIntersecting) {
-              this.visiblePages.add(pageView);
-              if (pageView.canvas.dataset.rendered === "false") {
-                pageView.render(this.scale);
-              }
-            } else {
-              this.visiblePages.delete(pageView);
-              this.#maybeRelease(pageView);
+          if (entry.isIntersecting) {
+            this.visiblePages.add(pageView);
+            if (pageView.canvas.dataset.rendered === "false") {
+              pageView.render(this.scale);
             }
+          } else {
+            this.visiblePages.delete(pageView);
+            this.#maybeRelease(pageView);
           }
         }
       },
@@ -93,7 +110,7 @@ export class PDFViewer {
   renderAtScale(scale) {
     this.scale = scale;
     this.#resizeAllCanvases(scale);
-    this.#refreshObserver();
+    this.#renderVisiblePages();
   }
 
   zoomAt(scale, focusX, focusY) {
@@ -102,10 +119,10 @@ export class PDFViewer {
 
     const docX = (viewer.scrollLeft + focusX) / prevScale;
     const docY = (viewer.scrollTop + focusY) / prevScale;
-    this.#resizeAllCanvases(scale);
     this.scale = scale;
-    this.#refreshObserver();
+    this.#resizeAllCanvases(scale);
 
+    // restore scroll position after resizing
     const targetLeft = docX * scale - focusX;
     const targetTop = docY * scale - focusY;
     const maxLeft = Math.max(0, viewer.scrollWidth - viewer.clientWidth);
@@ -117,7 +134,7 @@ export class PDFViewer {
   }
 
   zoom(delta) {
-    this.observer.disconnect();
+    // this.observer.disconnect();
     const viewer = this.viewerEl;
     const rect = viewer.getBoundingClientRect();
     const focusX = rect.width / 2;
@@ -145,14 +162,10 @@ export class PDFViewer {
 
   #maybeRelease(page) {
     const rect = page.wrapper.getBoundingClientRect();
-    if (
-      rect.bottom < -window.innerHeight * 2 ||
-      rect.top > window.innerHeight * 3
-    ) {
-      page.cancel();
-      page.textLayer.innerHTML = "";
-      page.annotationLayer.innerHTML = "";
-      page.canvas.dataset.rendered = "false";
+    const threshold = window.innerHeight * 2;
+
+    if (rect.bottom < -threshold || rect.top > window.innerHeight + threshold) {
+      page.release();
     }
   }
 
@@ -170,13 +183,42 @@ export class PDFViewer {
   }
 
   async #resizeAllCanvases(scale) {
-    this.scale = scale;
-    await Promise.all(
-      this.pages.map(async (page) => {
-        page.canvas.dataset.rendered = "false";
-        await page.resize(scale);
-      }),
-    );
+    const outputScale = window.devicePixelRatio || 1;
+    const MAX_RENDER_SCALE = 4.0;
+    const renderScale = Math.min(scale, MAX_RENDER_SCALE);
+    for (let i = 0; i < this.pages.length; i++) {
+      const page = this.pages[i];
+      const dims = this.pageDimensions[i];
+
+      page.canvas.dataset.rendered = "false";
+
+      const width = dims.width * renderScale;
+      const height = dims.height * renderScale;
+
+      page.canvas.width = width * outputScale;
+      page.canvas.height = height * outputScale;
+
+      Object.assign(page.wrapper.style, {
+        width: `${width}px`,
+        height: `${height}px`,
+        transformOrigin: "top left",
+        transform: `scale(${scale / renderScale})`,
+      });
+      Object.assign(page.canvas.style, {
+        width: `${width}px`,
+        height: `${height}px`,
+      });
+      const layerStyles = {
+        left: "0px",
+        top: "0px",
+        width: `${width}px`,
+        height: `${height}px`,
+      };
+      Object.assign(page.annotationLayer.style, layerStyles);
+      Object.assign(page.textLayer.style, layerStyles);
+
+      page.pendingRenderScale = renderScale;
+    }
   }
 
   #renderVisiblePages() {
@@ -185,6 +227,19 @@ export class PDFViewer {
         pageView.render(this.scale);
       }
     }
+  }
+
+  destroy() {
+    if (this.observer) {
+      this.observer.disconnect();
+      this.observer = null;
+    }
+    for (const page of this.pages) {
+      page.release();
+    }
+    this.pages = [];
+    this.pageMap.clear();
+    this.visiblePages.clear();
   }
 
   #refreshObserver() {

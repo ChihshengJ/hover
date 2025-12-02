@@ -28,39 +28,6 @@ header {
   flex-shrink: 0;
 }
 
-#controls {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background-color: #1a1a1a;
-  padding: 0.5rem;
-  width: 100%;
-  border-bottom: 1px solid #333;
-  gap: 0.5rem;
-  /* box-shadow: 0 -3px 30px 5px rgba(35,35,155,0.5); */
-}
-
-#controls button {
-  background-color: #333;
-  color: #ccc;
-  border: none;
-  padding: 5px 10px;
-  margin: 0 5px;
-  border-radius: 4px;
-  cursor: pointer;
-  transition: background-color 0.15s ease;
-}
-
-#controls button:hover {
-  background-color: #444;
-}
-
-#page-info {
-  margin: 0 10px;
-  font-size: 0.9rem;
-  color: #aaa;
-}
-
 #viewer-container {
   flex: 1;
   background: #e6e6e6;
@@ -115,6 +82,7 @@ header {
   height: 100%;
   pointer-events: none;
   z-index: 10;
+  user-select: none;
 }
 
 .annotationLayer a {
@@ -136,7 +104,7 @@ header {
   width: 100%;
   height: 100%;
   pointer-events: auto;
-  z-index: 5;
+  z-index: 9;
   user-select: text;
   -webkit-user-select: text;
 }
@@ -152,7 +120,10 @@ header {
   margin: 0;
 }
 
+/* ********************** */
 /* floating tool bar */
+/* ********************** */
+
 .floating-toolbar-wrapper {
   position: fixed;
   z-index: 1000;
@@ -186,7 +157,7 @@ header {
   cursor: grab;
   user-select: none;
   transition: all 0.2s ease-out;
-  z-index: 12;
+  z-index: 999;
 }
 
 .effect {
@@ -195,18 +166,31 @@ header {
   z-index: 0;
   inset: 0;
   overflow: hidden;
-  backdrop-filter: blur(4px);
+  backdrop-filter: blur(3px);
   filter: url("glass-distortion");
   -webkit-filter: url("glass-distortion");
 }
 
+.inner {
+  position: absolute;
+  z-index: 997;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
 .floating-ball:hover {
+  filter: brightness(1.1);
   transform: scale(1.1);
   box-shadow:
     inset 5px 2px 2px 0 #ffffff80,
     inset -1px -1px 1px 1px #ffffff80,
     0 10px 10px #00000045,
     0 0 20px #0000001a;
+}
+
+.floating-ball:active {
+  filter: brightness(1.1);
 }
 
 .floating-ball.dragging {
@@ -224,7 +208,7 @@ header {
   font-size: 20px;
   font-weight: 300;
   line-height: 1;
-  z-index: 13;
+  z-index: 998;
 }
 
 .page-divider {
@@ -239,9 +223,9 @@ header {
   transform: translateX(-50%);
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 8px;
   pointer-events: none;
-  z-index: 1;
+  z-index: 990;
 }
 
 .floating-toolbar-top {
@@ -274,7 +258,52 @@ header {
   pointer-events: auto;
   opacity: 0;
   transform: scale(0);
-  transition: none;
+}
+
+/* standalone night mode */
+
+.floating-ball.night-mode {
+  background: linear-gradient(
+    143.5deg,
+    rgba(150, 150, 150, 0.8) 17.38%,
+    rgba(190, 190, 190, 0.8) 62.76%,
+    rgba(250, 250, 250, 0.8) 91.49%
+  );
+  box-shadow:
+    inset -2px -2px 1px 0 #00000080,
+    inset 1px 1px 1px 1px #00000080,
+    0 6px 6px #ffffff10,
+    0 0 20px #ffffff05;
+}
+
+.floating-ball.night-mode:hover {
+  box-shadow:
+    inset -5px -2px 2px 0 #00000080,
+    inset 1px 1px 1px 1px #00000080,
+    0 0 10px 2px #ffffff20,
+    0 0 20px 10px #ffffff10;
+}
+
+.page-display.night-mode {
+  filter: invert(1);
+}
+
+.tool-btn.night-mode {
+  background: linear-gradient(
+    143.5deg,
+    rgba(150, 150, 150, 0.8) 17.38%,
+    rgba(190, 190, 190, 0.8) 62.76%,
+    rgba(250, 250, 250, 0.8) 91.49%
+  );
+  box-shadow:
+    inset -2px -2px 1px 0 #00000080,
+    inset 1px 1px 1px 1px #00000080,
+    0 3px 5px 2px #ffffff10,
+    0 0 10px 2px #ffffff05;
+}
+
+.inner.night-mode {
+  filter: invert(1);
 }
 
 /* Expanding animation */
@@ -282,7 +311,7 @@ header {
   opacity: 1;
   transform: scale(1);
   transition:
-    opacity 0.3s cubic-bezier(0.68, -0.55, 0.265, 1.55),
+    opacity 0.5s ease-out,
     transform 0.3s cubic-bezier(0.68, -0.55, 0.265, 1.55);
 }
 
@@ -295,10 +324,17 @@ header {
   transition-delay: 0.15s;
 }
 
+.floating-toolbar-wrapper.expanding .tool-btn:nth-child(3) {
+  transform: scale(0.68);
+  transition-delay: 0.2s;
+}
+
 /* Expanded state - enable hover transitions only */
 .floating-toolbar-wrapper.expanded .tool-btn {
   opacity: 1;
-  transition: transform 0.2s cubic-bezier(0.2, -0.4, 0.2, 1.55);
+  transition:
+    transform 0.2s cubic-bezier(0.2, -0.4, 0.2, 1.55),
+    brightness 0.2s ease-in-out;
 }
 
 .floating-toolbar-wrapper.expanded .tool-btn:nth-child(1) {
@@ -309,6 +345,10 @@ header {
   transform: scale(0.77);
 }
 
+.floating-toolbar-wrapper.expanded .tool-btn:nth-child(3) {
+  transform: scale(0.68);
+}
+
 .floating-toolbar-wrapper.expanded .tool-btn:nth-child(1):hover {
   transform: scale(1.1);
 }
@@ -317,29 +357,41 @@ header {
   transform: scale(0.85);
 }
 
-/* .floating-toolbar-wrapper.expanded .tool-btn:active { */
-/*   transform: scale(0.95); */
-/* } */
+.floating-toolbar-wrapper.expanded .tool-btn:nth-child(3):hover {
+  transform: scale(0.79);
+}
+
+.floating-toolbar-wrapper.expanded .tool-btn:active {
+  filter: brightness(1.1);
+  transform: scale(0.95);
+}
 
 /* Collapsing animation */
 .floating-toolbar-wrapper.collapsing .tool-btn {
   opacity: 0;
   transition:
-    opacity 0.25s cubic-bezier(0.6, 0.04, 0.98, 0.335),
-    transform 0.25s cubic-bezier(0.6, 0.04, 0.98, 0.335);
+    opacity 0.3s ease-out,
+    transform 0.2s cubic-bezier(0.6, 0.04, 0.98, 0.335);
 }
 
 .floating-toolbar-wrapper.collapsing
   .floating-toolbar-top
   .tool-btn:nth-child(1) {
   transform: translateY(25px);
-  transition-delay: 0.1s;
+  transition-delay: 0.15s;
 }
 
 .floating-toolbar-wrapper.collapsing
   .floating-toolbar-top
   .tool-btn:nth-child(2) {
   transform: translateY(50px);
+  transition-delay: 0.1s;
+}
+
+.floating-toolbar-wrapper.collapsing
+  .floating-toolbar-top
+  .tool-btn:nth-child(3) {
+  transform: translateY(70px);
   transition-delay: 0s;
 }
 
@@ -347,13 +399,20 @@ header {
   .floating-toolbar-bottom
   .tool-btn:nth-child(1) {
   transform: translateY(-25px);
-  transition-delay: 0.1s;
+  transition-delay: 0.15s;
 }
 
 .floating-toolbar-wrapper.collapsing
   .floating-toolbar-bottom
   .tool-btn:nth-child(2) {
   transform: translateY(-50px);
+  transition-delay: 0.1s;
+}
+
+.floating-toolbar-wrapper.collapsing
+  .floating-toolbar-bottom
+  .tool-btn:nth-child(3) {
+  transform: translateY(-70px);
   transition-delay: 0s;
 }
 
@@ -365,7 +424,10 @@ header {
   transform: scale(0.95);
 }
 
+/* ******************* */
 /* popup window */
+/* ******************* */
+
 .citation-popup {
   z-index: 10000;
   max-width: 400px;
@@ -435,4 +497,115 @@ header {
 .citation-popup-toggle:hover {
   background: #e0e0e0;
   color: #333;
+}
+
+/* ******************** */
+/* Night mode related */
+/* ******************** */
+#night-mode-clip {
+  z-index: 9;
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  pointer-events: none;
+  clip-path: circle(0% at var(--clip-x) var(--clip-y));
+}
+
+#night-mode-clip.anim {
+  animation: circle-reveal 0.8s ease-out forwards;
+}
+
+@keyframes circle-reveal {
+  0% {
+    clip-path: circle(0% at var(--clip-x) var(--clip-y));
+  }
+  100% {
+    clip-path: circle(150vmax at var(--clip-x) var(--clip-y));
+  }
+}
+
+#night-mode-clip.to-dark .night-mode-content {
+  background: black !important;
+}
+
+#night-mode-clip.to-dark .night-mode-content .page-wrapper canvas {
+  filter: invert(1) hue-rotate(75deg) brightness(1.2) contrast(0.9);
+}
+
+#night-mode-clip.to-dark .night-mode-content .page-wrapper {
+  box-shadow: 0px 0px 15px 4px rgba(255, 255, 255, 0.15);
+}
+
+#night-mode-clip.to-dark .night-mode-content .page-num {
+  color: #888;
+}
+
+#night-mode-clip.to-light > * {
+  background: linear-gradient(
+    210deg,
+    rgba(210, 210, 210, 1) 13%,
+    rgba(179, 179, 179, 1) 48%,
+    rgba(150, 150, 150, 1) 90%
+  ) !important;
+}
+
+#night-mode-clip.to-light .page-wrapper canvas {
+  filter: none;
+}
+
+#night-mode-clip.to-light .page-wrapper {
+  box-shadow: 0px 4px 20px 5px rgba(0, 0, 0, 0.25);
+}
+
+#night-mode-clip.to-light .page-num {
+  color: white;
+}
+
+/* ################### */
+/* styles */
+/* ################### */
+
+body.night-mode {
+  background-color: black;
+}
+
+body.night-mode #viewer-container {
+  background: black;
+}
+
+/* invert color */
+body.night-mode .page-wrapper canvas {
+  filter: invert(1) hue-rotate(75deg) brightness(1.1) contrast(0.9);
+}
+
+body.night-mode .page-wrapper {
+  box-shadow: 0px 0px 20px 4px rgba(255, 255, 255, 0.1);
+}
+
+body.night-mode .page-num {
+  color: #888;
+}
+
+/* Floating toolbar - invert to white */
+
+body.night-mode .citation-popup {
+  background: rgba(30, 30, 30, 0.9);
+  color: #ddd;
+  box-shadow:
+    0 10px 45px 0px rgba(255, 255, 255, 0.15),
+    0 0 0 1px rgba(0, 0, 0, 0.5),
+    inset 0 5px 20px rgba(0, 0, 0, 0.5);
+}
+
+body.night-mode .citation-popup-toggle {
+  background: #333;
+  border-color: #444;
+  color: #aaa;
+}
+
+body.night-mode .citation-popup-toggle:hover {
+  background: #444;
+  color: #ddd;
 }

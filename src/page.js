@@ -1,8 +1,16 @@
 import * as pdfjsLib from "pdfjs-dist";
 import pdfjsWorker from "pdfjs-dist/build/pdf.worker.min.mjs?url";
-import { CitationPopup } from "./controls/link_viewer.js";
+import { CitationPopup } from "./controls/citation_popup.js";
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfjsWorker;
+
+let sharedPopup = null;
+function getSharedPopup() {
+  if (!sharedPopup) {
+    sharedPopup = new CitationPopup();
+  }
+  return sharedPopup;
+}
 
 export class PageView {
   constructor(pdfDoc, pageNumber, wrapper, allNamedDests) {
@@ -20,6 +28,7 @@ export class PageView {
     this.annotations = null;
     this.renderTask = null;
     this.scale = 1;
+    this.pendingRenderScale = 1;
   }
 
   async #ensurePageLoaded() {
@@ -27,8 +36,10 @@ export class PageView {
     return this.page;
   }
 
-  async render() {
+  async render(requestedScale) {
     this.cancel();
+
+    this.scale = this.pendingRenderScale || requestedScale;
 
     const page = await this.#ensurePageLoaded();
     const outputScale = window.devicePixelRatio || 1;
@@ -44,16 +55,21 @@ export class PageView {
       ]);
     }
 
+    const ctx = this.canvas.getContext("2d", { alpha: false });
     const renderContext = {
-      canvasContext: this.canvas.getContext("2d", { alpha: false }),
+      canvasContext: ctx,
       transform: transform,
       viewport: viewport,
     };
+
+    ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
 
     this.renderTask = page.render(renderContext);
 
     try {
       await this.renderTask.promise;
+
+      this.textLayer.innerHTML = "";
       this.#renderAnnotations(page, viewport);
 
       this.textLayer.style.setProperty("--total-scale-factor", `${this.scale}`);
@@ -83,50 +99,25 @@ export class PageView {
     }
   }
 
+  release() {
+    this.cancel();
+    this.textLayer.innerHTML = "";
+    this.annotationLayer.innerHTML = "";
+
+    const ctx = this.canvas.getContext("2d");
+    ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+    if (this.page) {
+      this.page.cleanup();
+      this.page = null;
+    }
+    this.textContent = null;
+    this.annotations = null;
+    this.canvas.dataset.rendered = "false";
+  }
+
   async resize(scale) {
     this.scale = scale;
-
-    const page = await this.#ensurePageLoaded();
-    const outputScale = window.devicePixelRatio || 1;
-
-    const MAX_RENDER_SCALE = 3.0;
-    const renderScale = Math.min(scale, MAX_RENDER_SCALE);
-
-    const renderViewport = page.getViewport({
-      scale: renderScale * outputScale,
-    });
-    const viewport = page.getViewport({ scale: renderScale });
-
-    this.canvas.width = renderViewport.width;
-    this.canvas.height = renderViewport.height;
-
-    Object.assign(this.wrapper.style, {
-      width: `${viewport.width}px`,
-      height: `${viewport.height}px`,
-      transformOrigin: "top left",
-      transform: `scale(${scale / renderScale})`,
-    });
-
-    Object.assign(this.canvas.style, {
-      width: `${viewport.width}px`,
-      height: `${viewport.height}px`,
-      transformOrigin: "top left",
-      transform: "",
-    });
-
-    const layerStyles = {
-      left: "0px",
-      top: "0px",
-      width: `${viewport.width}px`,
-      height: `${viewport.height}px`,
-      transformOrigin: "top left",
-      transform: "",
-    };
-
-    Object.assign(this.annotationLayer.style, layerStyles);
-    Object.assign(this.textLayer.style, layerStyles);
-
-    this.scale = renderScale;
+    this.pendingRenderScale = scale;
   }
 
   async renderIfNeed() {
@@ -204,7 +195,10 @@ export class PageView {
         for (let i = startIndex; i < texts.items.length; i++) {
           const span = texts.items[i];
           reference.push(span.str);
-          if (span.str.match(/\d{4}\.$/) && !texts.items[i+1].str.match(/\s+$/)) {
+          if (
+            span.str.match(/\d{4}\.$/) &&
+            !texts.items[i + 1].str.match(/\s+$/)
+          ) {
             break;
           }
           if (span.str === ".") {
@@ -239,9 +233,7 @@ export class PageView {
 
   #renderAnnotations(page, viewport) {
     this.annotationLayer.innerHTML = "";
-    if (!this.citationPopup) {
-      this.citationPopup = new CitationPopup();
-    }
+    const citationPopup = getSharedPopup();
 
     for (const a of this.annotations) {
       if (a.subtype != "Link") continue;
@@ -280,14 +272,14 @@ export class PageView {
         anchor.addEventListener("mouseenter", async (e) => {
           if (showTimer) clearTimeout(showTimer);
 
-          this.citationPopup.onAnchorEnter();
+          citationPopup.onAnchorEnter();
 
           showTimer = setTimeout(async () => {
             const result = await this.#resolveDestToPosition(a.dest);
             if (!result) return;
 
             anchor.dataset.dest = `${result.left},${result.pageIndex},${result.top}`;
-            await this.citationPopup.show(
+            await citationPopup.show(
               anchor,
               this.#findCiteText.bind(this),
               result.left,
@@ -303,8 +295,8 @@ export class PageView {
             showTimer = null;
           }
 
-          if (this.citationPopup.currentAnchor === anchor) {
-            this.citationPopup.onAnchorLeave();
+          if (citationPopup.currentAnchor === anchor) {
+            citationPopup.onAnchorLeave();
           }
         });
 
@@ -363,7 +355,7 @@ async function scrollToPoint(
   const [, y] = viewport.convertToViewportPoint(left, top);
   const wrapper = canvas.parentElement;
 
-  //have to manually set the offset to 35 somehow otherwise there's a scaled offset
+  //Have to manually set the offset to 35 somehow otherwise there's a scaled offset
   const targetTop = wrapper.offsetTop + Math.max(0, y - 35);
   viewerEl.scrollTo({ top: targetTop, behavior: "instant" });
 }

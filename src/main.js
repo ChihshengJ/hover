@@ -8,12 +8,9 @@ import { FloatingToolbar } from "./controls/floating_toolbar.js";
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfjsWorker;
 
 const el = {
+  wd: document.getElementById("window-container"),
   viewer: document.getElementById("viewer-container"),
   pageNum: document.getElementById("current-page"),
-  // prevBtn: document.getElementById("prev"),
-  // nextBtn: document.getElementById("next"),
-  // zoomInBtn: document.getElementById("zoom-in"),
-  // zoomOutBtn: document.getElementById("zoom-out"),
 };
 
 function getPdfUrl() {
@@ -47,7 +44,7 @@ async function loadPdf(url) {
 
     const metadata = await pdfDoc.getMetadata();
     if (metadata.info.Title) {
-      document.title = metadata.info.Title + " - HoverCite PDF Viewer";
+      document.title = metadata.info.Title + " - Hover PDF";
     }
   } catch (error) {
     console.error("Error loading PDF:", error);
@@ -59,6 +56,10 @@ async function loadPdf(url) {
     `;
   }
 }
+
+const overlay = document.createElement("div");
+overlay.id = "night-mode-overlay";
+document.body.appendChild(overlay);
 
 const pdfUrl = getPdfUrl();
 loadPdf(pdfUrl);

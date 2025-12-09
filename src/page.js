@@ -205,7 +205,6 @@ export class PageView {
             break;
           }
         }
-        console.log(reference);
         return reference.join("");
       }
       return null;

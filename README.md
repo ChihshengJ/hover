@@ -46,7 +46,7 @@ No more jumping between experiment results and metrics or figures and methodolog
 
 ### Full Dark mode
 
-Pulling an all-nighter reading papers? Sounds fun, why not dim the lights yourself!
+Pulling an all-nighter reading papers? Sounds fun!
 With a click of the button, hover not only turns the background dark, it also renders the page in a soft black tone with white texts.
 
 ---

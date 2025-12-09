@@ -1,9 +1,9 @@
 /**
  * @typedef {import('../viewer.js').PDFViewer} PDFViewer
- * @typedef {import('../helpers.js').GestureDetector} GestureDetector;
+ * @typedef {import('../touch_controls.js').GestureDetector} GestureDetector;
  */
 
-import { GestureDetector } from "../helpers.js";
+import { GestureDetector } from "./touch_controls.js";
 
 export class ViewerControls {
   /**
@@ -25,7 +25,6 @@ export class ViewerControls {
       this.viewer.renderAtScale(this.viewer.getScale());
     });
   }
-
 
   #setupKeyboardShortcuts() {
     const scroller = this.viewer.viewerEl;

@@ -1,7 +1,7 @@
 export class FloatingToolbar {
-  constructor(viewer, viewerContainer) {
-    this.viewer = viewer;
-    this.viewerContainer = viewerContainer;
+  constructor(pane) {
+    this.viewer = pane;
+    this.viewerContainer = pane.viewerEl;
     this.isExpanded = false;
     this.isDragging = false;
     this.wasDragged = false;
@@ -11,6 +11,7 @@ export class FloatingToolbar {
     this.clickTimeout = null;
     this.dragStartTime = 0;
     this.wrapper = null;
+    this.isHidden = false;
 
     this.nightModeAnimating = false;
     this.nightModeClip = document.createElement("div");
@@ -410,10 +411,25 @@ export class FloatingToolbar {
 
   updatePageNumber() {
     const currentPage = this.viewer.getCurrentPage();
-    const totalPages = this.viewer.pdfDoc?.numPages || "?";
+    const totalPages = this.viewer.document.pdfDoc?.numPages || "?";
 
     this.ball.querySelector(".page-current").textContent = currentPage;
     this.ball.querySelector(".page-total").textContent = totalPages;
+  }
+
+  hide() {
+    if (this.isHidden) return;
+    this.isHidden = true;
+    this.#collapse();
+    this.wrapper.classList.add("hidden");
+  }
+
+  show() {
+    if (!this.isHidden) return;
+    this.isHidden = false;
+    this.wrapper.classList.remove("hidden");
+    this.#updatePosition();
+    this.updatePageNumber();
   }
 
   destroy() {

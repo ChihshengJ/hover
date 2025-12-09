@@ -8,8 +8,8 @@
   <img src="assets/H.png" width="120" alt="Hover Icon"/>
 </p>
 
-Hover is a minimalist PDF viewer extension designed for people who spend way too much time reading academic papers in the browser.
-It intentionally keeps only the most essential features, but aims to make the actual _experience_ of reading papers smoother, faster, and uninterrupted by ---
+Hover is a minimalist PDF reader extension designed for people who spend way too much time reading academic papers in the browser.
+It intentionally keeps only the most essential features, but aims to make the actual _experience_ of reading papers smoother, faster, and immersive by ---
 
 You've guessed it: **Hopping between the content and the references**  
 Hover solves that with inline citation preview popups that appear exactly where your cursor hovers, and lets you jump directly to the referenced paper in a new tab with one click.
@@ -22,21 +22,23 @@ The project is based on PDF.js, which means that you can also directly access th
 
 ### Inline Citation Preview
 
-Just hover your mouse over a citation and Hover  
-→ instantly shows the full reference **right there**, in-context.  
-And if the citation has a reachable URL or DOI?  
-→ **Jump straight to the cited paper.**
+Hover's main objective is to solve the LaTeX citation link that jumps between the content and the reference in most scientific papers.
+This process is highly disruptive of the flow of reading, but hard to tackle with in practice since the hyperlink in LaTeX usually only contains the position information within the document.
+Hover solves this problem by heuristically parse the PDF annotation and finds the text content of the citation.
+Just hover your mouse on the citation link, the content of the citation would appear right at the spot.
+You can even directly open up the URL in the citation or search the title of cited document in Google.
 
 ### Floating Ball Navigation
 
-Hover introduces a small draggable floating ball that acts as your navigation hub.
+PDF reader are boring as hell.
+Hover introduces a small but beautifully designed floating ball that acts as your navigation hub.
 
-- **Drag it vertically** → scroll the document
-- **Single click** → go to the **previous page**
-- **Double click** → go to the **next page**
-- **Left-click & hold** → open the **full mini toolbar**
+- **Drag it vertically**: scroll the document
+- **Single click**: go to the **previous page**
+- **Double click**: go to the **next page**
+- **Left click**: open the full mini toolbar which includes functionalities such as **dark mode**, **split window**, **fit-width**, **horizontal spread**, **zoom in/out**, and **Highlighter**.
 
-It sounds silly, but it really makes paper reading feel more direct and tactile.
+The functionalities are kept at their minimum, but your interaction with the document is more fluid than ever.
 
 ### Split window
 
@@ -59,14 +61,12 @@ This project will be released as a browser extension.
 
 ## 🚧 Roadmap (Short Term)
 
-- Improve robustness for complicated PDFs
-- Smarter citation detection + fallback behavior
+- Improve robustness for various academic papers.
 - Mobile version
 - Better zooming and smoother scroll handling
-- Optional dark/light theme
 - Configurable citation preview styling
+- Accommodation for Lefties
 - Theme configuration
-- Optimized rendering without glitching
 
 ---
 

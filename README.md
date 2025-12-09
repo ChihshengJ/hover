@@ -22,34 +22,38 @@ The project is based on PDF.js, which means that you can also directly access th
 
 ### Inline Citation Preview
 
-Hover's main objective is to solve the LaTeX citation link that jumps between the content and the reference in most scientific papers.
-This process is highly disruptive of the flow of reading, but hard to tackle with in practice since the hyperlink in LaTeX usually only contains the position information within the document.
-Hover solves this problem by heuristically parse the PDF annotation and finds the text content of the citation.
+Hover's main purpose is to solve the problem of LaTeX citation links that direct you straight to the references when reading most scientific papers.
+This process is highly disruptive to the flow of reading, but hard to tackle with in practice since the hyperlink in LaTeX usually only contains the positional information within the document.
+Hover solves this problem by heuristically parsing the PDF annotations and finding the text content of the citation.
 Just hover your mouse on the citation link, the content of the citation would appear right at the spot.
 You can even directly open up the URL in the citation or search the title of cited document in Google.
 
 ### Floating Ball Navigation
 
-PDF reader are boring as hell.
+PDF readers are boring as hell.
 Hover introduces a small but beautifully designed floating ball that acts as your navigation hub.
 
 - **Drag it vertically**: scroll the document
-- **Single click**: go to the **previous page**
-- **Double click**: go to the **next page**
+- **Single click**: go to the previous page
+- **Double click**: go to the next page
 - **Left click**: open the full mini toolbar which includes functionalities such as **dark mode**, **split window**, **fit-width**, **horizontal spread**, **zoom in/out**, and **Highlighter**.
 
 The functionalities are kept at their minimum, but your interaction with the document is more fluid than ever.
 
-### Split window
+### Split window mode
 
 Sometimes you gotta wonder, PDFs are longer than codes, so why isn't there a split window mode for most PDF readers?
-Hover's got you covered! You can enable split mode to view the two parts of the document at the same time.
+With Hover, you can enable split window mode to view the two parts of the document at the same time.
 No more jumping between experiment results and metrics or figures and methodologies, enjoy doubling your reading speed without wasting time on scrolling around.
 
 ### Full Dark mode
 
-Pulling an all-nighter reading papers? Sounds fun!
-With a click of the button, hover not only turns the background dark, it also renders the page in a soft black tone with white texts.
+Pulling an all-nighter reading papers sounds fun, especially when the white background lights up your entire bedroom.
+With a click of the button, Hover not only turns the background dark, it also renders the page in a soft black tone with white texts.
+
+### VIM motion
+
+Full vim motion support for reading, highlighting, and citation preview (currently under development).
 
 ---
 

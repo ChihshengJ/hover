@@ -9,8 +9,9 @@ export class SplitWindowManager {
     this.splitDirection = null; // 'horizontal' | 'vertical' | null
     this.splitRatio = 0.5;
     this.activePane = null;
+    this.isSplit = false;
 
-    this.toolbar = null; // Will hold the FloatingToolbar
+    this.toolbar = null;
   }
 
   async initialize() {
@@ -22,10 +23,9 @@ export class SplitWindowManager {
     this.panes.push(pane);
     this.activePane = pane;
 
-    this.toolbar = new FloatingToolbar(pane);
-    this.toolbar.updatePageNumber();
-
     this.#updateLayout();
+    this.toolbar = new FloatingToolbar(pane, this);
+    this.toolbar.updatePageNumber();
   }
 
   #createPaneContainer() {
@@ -49,7 +49,7 @@ export class SplitWindowManager {
   }
 
   async split(direction = "vertical") {
-    if (this.panes.length >= 2) return; // Max 2 panes for now
+    if (this.panes.length >= 2 || this.isSplit) return; // Max 2 panes for now
 
     this.splitDirection = direction;
 
@@ -66,15 +66,17 @@ export class SplitWindowManager {
 
     this.panes.push(newPane);
 
-    this.toolbar?.hide();
+    this.toolbar.enterSplitMode();
     this.#updateLayout();
     this.#createResizer();
+    
+    this.isSplit = true;
 
     return newPane;
   }
 
   unsplit() {
-    if (this.panes.length <= 1) return;
+    if (this.panes.length <= 1 || !this.isSplit) return;
 
     const paneToRemove = this.panes[1];
     paneToRemove.destroy();
@@ -84,9 +86,11 @@ export class SplitWindowManager {
     this.activePane = this.panes[0];
     this.splitDirection = null;
 
-    this.toolbar?.show();
+    this.toolbar.exitSplitMode();
+    this.toolbar.updateActivePane(this.panes[0]);
     this.#removeResizer();
     this.#updateLayout();
+    this.isSplit = false;
   }
 
   #updateLayout() {
@@ -174,7 +178,7 @@ export class SplitWindowManager {
     this.activePane = pane;
     this.activePane.viewerEl.classList.add("active");
 
-    this.toolbar?.updateActivePane();
+    this.toolbar.updateActivePane(pane);
   }
 
   get currentPage() {
@@ -192,5 +196,4 @@ export class SplitWindowManager {
   zoom(delta) {
     this.activePane?.zoom(delta);
   }
-
 }

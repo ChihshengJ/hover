@@ -1,7 +1,8 @@
 export class FloatingToolbar {
-  constructor(pane) {
+  constructor(pane, wm) {
     this.viewer = pane;
     this.viewerContainer = pane.viewerEl;
+    this.wm = wm;
     this.isExpanded = false;
     this.isDragging = false;
     this.wasDragged = false;
@@ -11,7 +12,14 @@ export class FloatingToolbar {
     this.clickTimeout = null;
     this.dragStartTime = 0;
     this.wrapper = null;
+
+    // Auto-hide state
     this.isHidden = false;
+    this.isSplitMode = false;
+    this.hideTimer = null;
+    this.expandTimer = null;
+    this.HIDE_DELAY = 3000;
+    this.COLLAPSE_DELAY = 7000;
 
     this.nightModeAnimating = false;
     this.nightModeClip = document.createElement("div");
@@ -19,6 +27,7 @@ export class FloatingToolbar {
     document.body.appendChild(this.nightModeClip);
 
     this.#createToolbar();
+    this.#createHitArea();
     this.#setupEventListeners();
     this.#updatePosition();
   }
@@ -40,7 +49,7 @@ export class FloatingToolbar {
     let effect = document.createElement("div");
     effect.className = "effect";
 
-    // Create toolbar buttons above
+    // top half of the tool bar
     this.toolbarTop = document.createElement("div");
     this.toolbarTop.className = "floating-toolbar floating-toolbar-top";
     this.toolbarTop.innerHTML = `
@@ -64,7 +73,7 @@ export class FloatingToolbar {
       </button>
     `;
 
-    // Create toolbar buttons below
+    // bottom half of the tool bar
     this.toolbarBottom = document.createElement("div");
     this.toolbarBottom.className = "floating-toolbar floating-toolbar-bottom";
     this.toolbarBottom.innerHTML = `
@@ -93,6 +102,20 @@ export class FloatingToolbar {
     this.wrapper.appendChild(this.toolbarBottom);
     this.ball.appendChild(effect);
     document.body.appendChild(this.wrapper);
+  }
+
+  #createHitArea() {
+    this.hitArea = document.createElement("div");
+    this.hitArea.className = "floating-toolbar-hit-area";
+    document.body.appendChild(this.hitArea);
+
+    this.hitArea.addEventListener("mouseenter", () => {
+      this.#slideIn();
+    });
+
+    this.hitArea.addEventListener("mouseleave", () => {
+      this.#startHideTimer();
+    });
   }
 
   #setupEventListeners() {
@@ -156,15 +179,71 @@ export class FloatingToolbar {
       this.#collapse();
     });
 
-    // Update page number on scroll
-    this.viewerContainer.addEventListener("scroll", () => {
-      this.updatePageNumber();
-    });
-
-    // Keep wrapper positioned on window resize
     window.addEventListener("resize", () => {
       this.#updatePosition();
     });
+
+    this.viewerContainer.addEventListener("scroll", () => {
+      this.updatePageNumber();
+    });
+  }
+
+  #startHideTimer() {
+    this.#cancelHideTimer();
+    this.hideTimer = setTimeout(() => {
+      this.#slideOut();
+    }, this.HIDE_DELAY);
+  }
+
+  #cancelHideTimer() {
+    if (this.hideTimer) {
+      clearTimeout(this.hideTimer);
+      this.hideTimer = null;
+    }
+  }
+
+  #startExpandTimer() {
+    this.#cancelExpandTimer();
+    this.expandTimer = setTimeout(() => {
+      this.#collapse();
+    }, this.COLLAPSE_DELAY);
+  }
+
+  #cancelExpandTimer() {
+    if (this.expandTimer) {
+      clearTimeout(this.expandTimer);
+      this.expandTimer = null;
+    }
+  }
+
+  #slideOut() {
+    if (this.isHidden) return;
+    this.isHidden = true;
+    this.#collapse();
+    this.wrapper.classList.add("hidden");
+    setTimeout(() => {
+      this.hitArea.classList.add("active");
+    }, 500);
+    this.#cancelHideTimer();
+  }
+
+  #slideIn() {
+    if (!this.isHidden) return;
+    this.isHidden = false;
+    this.wrapper.classList.remove("hidden");
+  }
+
+  enterSplitMode() {
+    this.isSplitMode = true;
+    this.#cancelHideTimer();
+    this.#slideOut();
+  }
+
+  exitSplitMode() {
+    this.isSplitMode = false;
+    this.hitArea.classList.remove("active");
+    this.#cancelHideTimer();
+    this.updatePageNumber();
   }
 
   #toggleExpand() {
@@ -176,6 +255,7 @@ export class FloatingToolbar {
   }
 
   #expand() {
+    if (this.isExpanded) return;
     this.isExpanded = true;
     this.wrapper.classList.remove("collapsing");
     this.wrapper.classList.add("expanding");
@@ -184,9 +264,12 @@ export class FloatingToolbar {
       this.wrapper.classList.remove("expanding");
       this.wrapper.classList.add("expanded");
     }, 500);
+    
+    this.#startExpandTimer();
   }
 
   #collapse() {
+    if (!this.isExpanded) return;
     this.isExpanded = false;
     this.wrapper.classList.remove("expanded", "expanding");
     this.wrapper.classList.add("collapsing");
@@ -220,6 +303,8 @@ export class FloatingToolbar {
   }
 
   #startDrag(e) {
+    this.#cancelHideTimer();
+    this.#cancelExpandTimer();
     this.isDragging = true;
     this.dragStartY = e.clientY;
     this.scrollStartTop = this.viewerContainer.scrollTop;
@@ -286,6 +371,8 @@ export class FloatingToolbar {
       this.ball.style.transition = "";
       this.ball.style.transform = "";
     }, 300);
+    this.#startExpandTimer();
+    this.#startHideTimer();
   }
 
   #updatePosition() {
@@ -293,7 +380,10 @@ export class FloatingToolbar {
     const centerY = containerRect.top + containerRect.height / 2;
 
     this.wrapper.style.top = `${centerY}px`;
-    this.wrapper.style.right = "50px";
+    this.wrapper.style.right = "35px";
+
+    this.hitArea.style.top = `${centerY - 150}px`; // Extend above
+    this.hitArea.style.right = "0";
   }
 
   #handleToolAction(action) {
@@ -308,6 +398,11 @@ export class FloatingToolbar {
         this.#nightmode();
         break;
       case "split-screen":
+        if (!this.wm.isSplit) {
+          this.wm.split();
+        }else {
+          this.wm.unsplit();
+        }
         break;
       case "horizontal-spread":
         break;
@@ -417,22 +512,18 @@ export class FloatingToolbar {
     this.ball.querySelector(".page-total").textContent = totalPages;
   }
 
-  hide() {
-    if (this.isHidden) return;
-    this.isHidden = true;
-    this.#collapse();
-    this.wrapper.classList.add("hidden");
-  }
-
-  show() {
-    if (!this.isHidden) return;
-    this.isHidden = false;
-    this.wrapper.classList.remove("hidden");
-    this.#updatePosition();
+  updateActivePane(pane) {
+    this.viewer = pane;
+    this.viewerContainer = pane.viewerEl;
     this.updatePageNumber();
+    this.viewerContainer.addEventListener("scroll", () => {
+      this.updatePageNumber();
+    })
   }
 
   destroy() {
+    this.#cancelHideTimer();
+    this.hitArea.remove();
     this.wrapper.remove();
   }
 }

@@ -180,6 +180,12 @@ export class ViewerPane {
       target.wrapper.scrollIntoView({ behavior: "smooth", block: "center" });
   }
 
+  goToPage(n) {
+    const target = this.pages.find((p) => p.pageNumber === n);
+    if (target)
+      target.wrapper.scrollIntoView({ behavior: "instant", block: "center" });
+  }
+
   scrollToTop() {
     const target = this.pages.find((p) => p.pageNumber === 1);
     if (target)
@@ -250,12 +256,12 @@ export class ViewerPane {
   }
 
   destroy() {
-    this.document.unsubsribe(this);
+    this.document.unsubscribe(this);
     this.observer?.disconnect();
-    this.controls.destory();
+    this.controls.destroy();
     for (const page of this.pages) {
       page.release();
     }
-    this.containerEl.innerHTML = "";
+    // this.containerEl.innerHTML = "";
   }
 }

@@ -26,6 +26,7 @@ body {
   width: 100%;
   height: 100%;
   overflow: hidden;
+  z-index: 0;
 }
 
 .window-container.split-vertical {
@@ -53,6 +54,7 @@ body {
   justify-items: center;
   overscroll-behavior: contain;
   -webkit-overflow-scrolling: touch;
+  z-index: 1;
 }
 
 .viewer-pane.active {
@@ -224,7 +226,6 @@ body {
 /* ********************** */
 /* floating tool bar */
 /* ********************** */
-
 .floating-toolbar-wrapper {
   position: fixed;
   z-index: 1000;
@@ -233,7 +234,48 @@ body {
   flex-direction: column;
   align-items: center;
   gap: 10px;
+  transition:
+    transform 0.4s cubic-bezier(0.4, 0, 0.2, 1),
+    opacity 0.4s ease;
 }
+
+/* Hidden state - slide out to right, but peek slightly */
+.floating-toolbar-wrapper.hidden {
+  transform: translateX(calc(100% + 50px)); /* Slide out, leave ~10px peek */
+  opacity: 0.6;
+}
+
+/* Ball peek effect when hidden */
+.floating-toolbar-wrapper.hidden .floating-ball {
+  box-shadow:
+    inset 2px 2px 1px 0 #ffffff80,
+    inset -1px -1px 1px 1px #ffffff80,
+    -4px 4px 12px #00000030; /* Shadow on left side when peeking */
+}
+
+/* ─────────────────────────────────────────────────────────────
+   Hit area for hover-to-reveal
+   ───────────────────────────────────────────────────────────── */
+
+.floating-toolbar-hit-area {
+  position: fixed;
+  width: 130px;
+  height: 400px;
+  right: 0;
+  pointer-events: none;
+  z-index: 0;
+  /* background: rgba(255, 0, 0, 0.1); */
+}
+
+/* Active when toolbar is hidden */
+.floating-toolbar-hit-area.active {
+  pointer-events: auto;
+  /* background: rgba(0, 255, 0, 0.1); */
+}
+
+/* ─────────────────────────────────────────────────────────────
+   Smooth transitions for ball
+   ───────────────────────────────────────────────────────────── */
 
 .floating-ball {
   position: relative;
@@ -257,8 +299,11 @@ body {
   pointer-events: auto;
   cursor: grab;
   user-select: none;
-  transition: all 0.2s ease-out;
   z-index: 999;
+  transition:
+    transform 0.3s cubic-bezier(0.4, 0, 0.2, 1),
+    box-shadow 0.3s ease,
+    opacity 0.3s ease;
 }
 
 .effect {
@@ -525,14 +570,6 @@ body {
   transform: scale(0.95);
 }
 
-.floating-toolbar-wrapper.hidden {
-  opacity: 0;
-  pointer-events: none;
-  transform: translateY(-50%) scale(0.8);
-  transition:
-    opacity 0.3s,
-    transform 0.3s;
-}
 
 /* ******************* */
 /* popup window */
@@ -681,7 +718,7 @@ body.night-mode {
   background-color: black;
 }
 
-body.night-mode #viewer-container {
+body.night-mode .viewer-pane {
   background: black;
 }
 

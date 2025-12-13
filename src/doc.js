@@ -40,6 +40,10 @@ export class PDFDocumentModel {
     this.subscribers.add(pane);
   }
 
+  unsubscribe(pane) {
+    this.subscribers.delete(pane);
+  }
+
   addHighlight(pageNum, highlight) {
     if (!this.highlights.has(pageNum)) {
       this.highlights.set(pageNum, []);

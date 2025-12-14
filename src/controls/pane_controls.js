@@ -2,6 +2,7 @@ export class PaneControls {
   constructor(pane) {
     this.pane = pane;
     this.element = null;
+    this.isHidden = false;
   }
 
   attach() {
@@ -9,7 +10,6 @@ export class PaneControls {
     this.element.className = "pane-controls";
     this.element.innerHTML = `
       <div class="pane-controls-inner">
-        <button class="pane-btn" data-action="pin" title="Pin this view">📌</button>
         <span class="pane-page-info">
           <button class="pane-btn small" data-action="prev">‹</button>
           <span class="pane-current-page">1</span>
@@ -24,28 +24,25 @@ export class PaneControls {
         </span>
         <button class="pane-btn" data-action="fit-width" title="Fit to width">↔</button>
       </div>
-  `;
+    `;
 
     this.element.addEventListener("click", (e) => {
       const btn = e.target.closest("[data-action]");
       if (btn) this.#handleAction(btn.dataset.action);
     });
 
-    this.pane.viewerEl.addEventListener("scroll", () => {
+    this.pane.scroller.addEventListener("scroll", () => {
       this.#updatePageDisplay();
     });
 
-    this.pane.viewerEl.insertBefore(
-      this.element,
-      this.pane.viewerEl.firstChild,
-    );
+    // Append to viewerEl (the pane container), not scroller
+    // This keeps it outside the scroll area
+    this.pane.viewerEl.appendChild(this.element);
+    this.hide();
   }
 
   #handleAction(action) {
     switch (action) {
-      case "pin":
-        this.pane.setPinned(!this.pane.isPinned);
-        break;
       case "prev":
         this.pane.scrollToRelative(-1);
         break;
@@ -61,7 +58,7 @@ export class PaneControls {
         this.#updateZoomDisplay();
         break;
       case "fit-width":
-        this.pane.fitToWidth();
+        this.pane.fitToWidth?.();
         this.#updateZoomDisplay();
         break;
     }
@@ -69,17 +66,27 @@ export class PaneControls {
 
   #updatePageDisplay() {
     const current = this.pane.getCurrentPage();
-    this.element.querySelector(".pane-current-page").textContent = current;
+    const el = this.element.querySelector(".pane-current-page");
+    if (el) el.textContent = current;
   }
 
   #updateZoomDisplay() {
     const pct = Math.round(this.pane.scale * 100);
-    this.element.querySelector(".pane-zoom-level").textContent = `${pct}%`;
+    const el = this.element.querySelector(".pane-zoom-level");
+    if (el) el.textContent = `${pct}%`;
   }
 
-  updatePinState(pinned) {
-    const btn = this.element.querySelector('[data-action="pin"]');
-    btn.classList.toggle("active", pinned);
+  hide() {
+    if (this.isHidden) return;
+    console.log("hide pane controls");
+    this.element.classList.add("hidden");
+    this.isHidden = true;
+  }
+
+  show() {
+    if (!this.isHidden) return;
+    this.element.classList.remove("hidden");
+    this.isHidden = false;
   }
 
   destroy() {

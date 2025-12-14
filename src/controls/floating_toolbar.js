@@ -1,7 +1,14 @@
+/**
+ * @typedef {import('../window_manager.js').SplitWindowManager} SplitWindowManager;
+ * @typedef {import('../viewpane.js').ViewerPane} ViewerPane;
+*/
+
 export class FloatingToolbar {
-  constructor(pane, wm) {
-    this.viewer = pane;
-    this.viewerContainer = pane.viewerEl;
+  /**
+  * @param {SplitWindowManager} wm;
+  */
+
+  constructor(wm) {
     this.wm = wm;
     this.isExpanded = false;
     this.isDragging = false;
@@ -32,6 +39,12 @@ export class FloatingToolbar {
     this.#updatePosition();
   }
 
+  /**
+  * @returns {ViewerPane} */
+  get pane() {
+    return this.wm.activePane;
+  }
+
   #createToolbar() {
     this.wrapper = document.createElement("div");
     this.wrapper.className = "floating-toolbar-wrapper";
@@ -49,7 +62,7 @@ export class FloatingToolbar {
     let effect = document.createElement("div");
     effect.className = "effect";
 
-    // top half of the tool bar
+    // Top half of the toolbar
     this.toolbarTop = document.createElement("div");
     this.toolbarTop.className = "floating-toolbar floating-toolbar-top";
     this.toolbarTop.innerHTML = `
@@ -73,7 +86,7 @@ export class FloatingToolbar {
       </button>
     `;
 
-    // bottom half of the tool bar
+    // Bottom half of the toolbar
     this.toolbarBottom = document.createElement("div");
     this.toolbarBottom.className = "floating-toolbar floating-toolbar-bottom";
     this.toolbarBottom.innerHTML = `
@@ -183,7 +196,7 @@ export class FloatingToolbar {
       this.#updatePosition();
     });
 
-    this.viewerContainer.addEventListener("scroll", () => {
+    this.pane.scroller.addEventListener("scroll", () => {
       this.updatePageNumber();
     });
   }
@@ -290,11 +303,11 @@ export class FloatingToolbar {
 
     if (timeSinceLastClick < 220) {
       // the number here is for double-click interval
-      this.viewer.scrollToTop();
+      this.pane.scrollToTop();
       this.lastClickTime = 0;
     } else {
       this.clickTimeout = setTimeout(() => {
-        this.viewer.scrollToRelative(1);
+        this.pane.scrollToRelative(1);
         this.clickTimeout = null;
       }, 100); // the number here is for single click timeout
 
@@ -307,7 +320,7 @@ export class FloatingToolbar {
     this.#cancelExpandTimer();
     this.isDragging = true;
     this.dragStartY = e.clientY;
-    this.scrollStartTop = this.viewerContainer.scrollTop;
+    this.scrollStartTop = this.pane.scroller.scrollTop;
     this.initialBallY = parseInt(this.ball.style.top) || 0;
     this.ball.classList.add("dragging");
     document.body.style.cursor = "grabbing";
@@ -355,7 +368,7 @@ export class FloatingToolbar {
     this.ball.style.transition = "none";
 
     // apply non-linear scroll
-    this.viewerContainer.scrollTop += scrollDelta;
+    this.pane.scroller.scrollTop += scrollDelta;
   }
 
   #endDrag() {
@@ -378,7 +391,7 @@ export class FloatingToolbar {
   }
 
   #updatePosition() {
-    const containerRect = this.viewerContainer.getBoundingClientRect();
+    const containerRect = this.pane.scroller.getBoundingClientRect();
     const centerY = containerRect.top + containerRect.height / 2;
 
     this.wrapper.style.top = `${centerY}px`;
@@ -391,10 +404,10 @@ export class FloatingToolbar {
   #handleToolAction(action) {
     switch (action) {
       case "zoom-in":
-        this.viewer.zoom(0.25);
+        this.pane.zoom(0.25);
         break;
       case "zoom-out":
-        this.viewer.zoom(-0.25);
+        this.pane.zoom(-0.25);
         break;
       case "night-mode":
         this.#nightmode();
@@ -421,7 +434,7 @@ export class FloatingToolbar {
     const btns = this.wrapper.querySelectorAll(".tool-btn");
     const pageInfo = this.ball.querySelector(".page-display");
     const isCurrentlyNight = document.body.classList.contains("night-mode");
-    const scrollPos = this.viewerContainer.scrollTop;
+    const scrollPos = this.pane.scroller.scrollTop;
 
     const rect = btn.getBoundingClientRect();
     const clipX = rect.left + rect.width / 2;
@@ -430,12 +443,12 @@ export class FloatingToolbar {
     this.nightModeClip.style.setProperty("--clip-x", `${clipX}px`);
     this.nightModeClip.style.setProperty("--clip-y", `${clipY}px`);
 
-    const clone = this.viewerContainer.cloneNode(true);
+    const clone = this.pane.scroller.cloneNode(true);
     clone.style.position = "fixed";
     clone.style.inset = "0";
 
     // Right now it's cloning every canvas, needs to come up with a way to only clone visible canvases
-    const originalCanvases = this.viewerContainer.querySelectorAll("canvas");
+    const originalCanvases = this.pane.scroller.querySelectorAll("canvas");
     const clonedCanvases = clone.querySelectorAll("canvas");
     originalCanvases.forEach((original, i) => {
       const cloned = clonedCanvases[i];
@@ -463,9 +476,9 @@ export class FloatingToolbar {
     clone.scrollTop = scrollPos;
 
     const syncScroll = () => {
-      clone.scrollTop = this.viewerContainer.scrollTop;
+      clone.scrollTop = this.pane.scroller.scrollTop;
     };
-    this.viewerContainer.addEventListener("scroll", syncScroll);
+    this.pane.scroller.addEventListener("scroll", syncScroll);
 
     this.nightModeClip.classList.remove("anim");
     void this.nightModeClip.offsetWidth;
@@ -498,27 +511,24 @@ export class FloatingToolbar {
         document.body.classList.add("night-mode");
       }
 
-      this.viewerContainer.scrollTop = scrollPos;
+      this.pane.scroller.scrollTop = scrollPos;
       this.nightModeClip.classList.remove("anim", "to-light", "to-dark");
       this.nightModeClip.innerHTML = "";
-      this.viewerContainer.removeEventListener("scroll", syncScroll);
+      this.pane.scroller.removeEventListener("scroll", syncScroll);
       this.nightModeAnimating = false;
     }, 800);
   }
 
   updatePageNumber() {
-    const currentPage = this.viewer.getCurrentPage();
-    const totalPages = this.viewer.document.pdfDoc?.numPages || "?";
+    const currentPage = this.pane.getCurrentPage();
+    const totalPages = this.pane.document.pdfDoc?.numPages || "?";
 
     this.ball.querySelector(".page-current").textContent = currentPage;
     this.ball.querySelector(".page-total").textContent = totalPages;
   }
 
-  updateActivePane(pane) {
-    this.viewer = pane;
-    this.viewerContainer = pane.viewerEl;
-    this.updatePageNumber();
-    this.viewerContainer.addEventListener("scroll", () => {
+  updateActivePane() {
+    this.pane.scroller.addEventListener("scroll", () => {
       this.updatePageNumber();
     });
   }

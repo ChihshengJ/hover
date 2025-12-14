@@ -1,6 +1,6 @@
 /**
  * @typedef {import('../window_manager.js').SplitWindowManager} SplitWindowManager;
- * @typedef {import('../viewpane.js').ViewerPane} ViewerPane
+ * @typedef {import('../viewpane.js').ViewerPane} ViewerPane;
  * @typedef {import('../touch_controls.js').GestureDetector} GestureDetector;
  */
 
@@ -24,7 +24,7 @@ export class WindowControls {
   #setupKeyboardShortcuts() {
     document.addEventListener("keydown", (e) => {
       const pane = this.activePane;
-      const scroller = this.activePane.viewerEl;
+      const scroller = this.activePane.scroller;
       if (!pane) return;
       const isZoomKey =
         (e.metaKey || e.ctrlKey) &&
@@ -77,7 +77,6 @@ export class WindowControls {
         e.preventDefault();
         pane.scrollToRelative(-1);
       }
-
 
       if (e.key === "Tab" && this.wm.isSplit) {
         e.preventDefault();

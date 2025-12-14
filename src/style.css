@@ -2,7 +2,12 @@ html,
 body {
   margin: 0;
   padding: 0;
-  background-color: white;
+  background: linear-gradient(
+    210deg,
+    rgba(210, 210, 210, 1) 13%,
+    rgba(179, 179, 179, 1) 48%,
+    rgba(150, 150, 150, 1) 90%
+  );
   color: #d0d0fd;
   font-family: "Elms Sans", monospace;
   display: flex;
@@ -42,33 +47,23 @@ body {
   flex: 1;
   min-height: 0;
   position: relative;
-  background: linear-gradient(
-    210deg,
-    rgba(210, 210, 210, 1) 13%,
-    rgba(179, 179, 179, 1) 48%,
-    rgba(150, 150, 150, 1) 90%
-  );
-  overflow: auto;
-  display: block;
-  /* align-items: center; */
-  justify-items: center;
-  overscroll-behavior: contain;
-  -webkit-overflow-scrolling: touch;
+  display: flex;
+  flex-direction: column;
+  background: transparent;
   z-index: 1;
+}
+
+.pane-scroll-area {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+  
+  display: block;
 }
 
 .viewer-pane.active {
   box-shadow: inset 0 0 0 2px rgba(59, 130, 246, 0.5);
-}
-
-.viewer-pane.pinned::before {
-  content: "📌";
-  position: absolute;
-  top: 8px;
-  left: 8px;
-  z-index: 100;
-  font-size: 16px;
-  opacity: 0.7;
 }
 
 /* Resizer */
@@ -93,15 +88,40 @@ body {
   background: var(--accent-color, #3b82f6);
 }
 
+.night-mode .split-resizer {
+  background: #404040;
+}
+
 /* Pane controls */
 .pane-controls {
-  position: sticky;
-  top: 0;
-  z-index: 50;
+  position: absolute;
+  top: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 100;
+  
+  background: rgba(255, 255, 255, 0.85);
+  backdrop-filter: blur(12px);
+  border-radius: 20px;
+  box-shadow: 
+    0 2px 12px rgba(0, 0, 0, 0.1),
+    0 0 0 1px rgba(0, 0, 0, 0.05);
+  padding: 6px 16px;
+  
+  pointer-events: auto;
+  user-select: none;
+  transition: opacity 0.2s, transform 0.2s;
+}
+
+.pane-controls.hidden {
+  opacity: 0;
+}
+
+.pane-controls:hover {
   background: rgba(255, 255, 255, 0.95);
-  backdrop-filter: blur(8px);
-  border-bottom: 1px solid var(--border-color, #e0e0e0);
-  padding: 6px 12px;
+  box-shadow: 
+    0 4px 16px rgba(0, 0, 0, 0.12),
+    0 0 0 1px rgba(0, 0, 0, 0.08);
 }
 
 .pane-controls-inner {
@@ -109,53 +129,94 @@ body {
   align-items: center;
   gap: 12px;
   font-size: 13px;
+  color: #333;
 }
 
 .pane-btn {
   background: none;
   border: 1px solid transparent;
-  border-radius: 4px;
+  border-radius: 6px;
   padding: 4px 8px;
   cursor: pointer;
   transition: all 0.15s;
+  font-size: 14px;
+  color: #555;
 }
 
 .pane-btn:hover {
-  background: rgba(0, 0, 0, 0.05);
+  background: rgba(0, 0, 0, 0.08);
+  color: #000;
 }
 
 .pane-btn.active {
-  background: rgba(59, 130, 246, 0.1);
+  background: rgba(59, 130, 246, 0.15);
   border-color: rgba(59, 130, 246, 0.3);
+  color: #2563eb;
 }
 
 .pane-btn.small {
-  padding: 2px 6px;
-  font-size: 14px;
+  padding: 2px 8px;
+  font-size: 16px;
   font-weight: 600;
 }
 
-/* Night mode adaptations */
+.pane-page-info,
+.pane-zoom-controls {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.pane-page-sep {
+  opacity: 0.4;
+  margin: 0 2px;
+}
+
+.pane-zoom-level,
+.pane-current-page,
+.pane-total-pages {
+  min-width: 28px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Night mode */
 .night-mode .pane-controls {
-  background: rgba(30, 30, 30, 0.95);
-  border-bottom-color: #404040;
+  background: rgba(40, 40, 40, 0.85);
+  box-shadow: 
+    0 2px 12px rgba(0, 0, 0, 0.3),
+    0 0 0 1px rgba(255, 255, 255, 0.1);
 }
 
-.night-mode .split-resizer {
-  background: #404040;
+.night-mode .pane-controls:hover {
+  background: rgba(50, 50, 50, 0.95);
 }
 
-#viewer-stage {
+.night-mode .pane-controls-inner {
+  color: #e0e0e0;
+}
+
+.night-mode .pane-btn {
+  color: #aaa;
+}
+
+.night-mode .pane-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
+}
+
+
+/* Viewer stage and document layers */
+.viewer-stage {
   position: relative;
   display: flex;
   background: transparent;
   flex-direction: column;
   align-items: center;
   width: fit-content;
+  min-width: 100%;
   min-height: min-content;
-  margin: 0 auto;
-  transformorigin: 0 0;
-  /* will-change: transform; */
+  transform-origin: 0 0;
 }
 
 .page-wrapper {
@@ -715,10 +776,6 @@ body {
 /* ################### */
 
 body.night-mode {
-  background-color: black;
-}
-
-body.night-mode .viewer-pane {
   background: black;
 }
 

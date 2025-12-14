@@ -35,7 +35,7 @@ export class SplitWindowManager {
     this.activePane = pane;
 
     this.#updateLayout();
-    this.toolbar = new FloatingToolbar(pane, this);
+    this.toolbar = new FloatingToolbar(this);
     this.toolbar.updatePageNumber();
 
     this.controls = new WindowControls(this);
@@ -67,8 +67,8 @@ export class SplitWindowManager {
     // capture viewport before split
     const primaryPane = this.activePane;
     const currentScale = primaryPane.scale;
-    const currentScrollTop = primaryPane.viewerEl.scrollTop;
-    const currentScrollLeft = primaryPane.viewerEl.scrollLeft;
+    const currentScrollTop = primaryPane.scroller.scrollTop;
+    const currentScrollLeft = primaryPane.scroller.scrollLeft;
 
     this.splitDirection = direction;
     const container = this.#createPaneContainer();
@@ -81,13 +81,16 @@ export class SplitWindowManager {
 
     this.panes.push(newPane);
     this.toolbar.enterSplitMode();
+    for (const p of this.panes) {
+      p.controls.show();
+    }
     this.#updateLayout();
     this.#createResizer();
 
     requestAnimationFrame(() => {
       requestAnimationFrame(() => {
-        newPane.viewerEl.scrollTop = currentScrollTop;
-        newPane.viewerEl.scrollLeft = currentScrollLeft;
+        newPane.scroller.scrollTop = currentScrollTop;
+        newPane.scroller.scrollLeft = currentScrollLeft;
       });
     });
 
@@ -109,6 +112,9 @@ export class SplitWindowManager {
     this.toolbar.exitSplitMode();
     this.toolbar.updateActivePane(this.panes[0]);
     this.controls.updateActivePane(this.panes[0]);
+    for (const p of this.panes) {
+      p.controls.hide();
+    }
     this.#removeResizer();
     this.#updateLayout();
     this.isSplit = false;
@@ -199,7 +205,7 @@ export class SplitWindowManager {
     this.activePane = pane;
     this.activePane.viewerEl.classList.add("active");
 
-    this.toolbar.updateActivePane(pane);
+    this.toolbar.updateActivePane();
     this.controls.updateActivePane();
   }
 

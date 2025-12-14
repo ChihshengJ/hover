@@ -9,8 +9,9 @@ export class ViewerPane {
   constructor(documentModel, containerEl, options = {}) {
     this.document = documentModel;
     this.viewerEl = containerEl;
+    this.scroller = null;
+    this.stage = null;
     this.id = options.id || crypto.randomUUID();
-    this.isPinned = options.pinned || false;
 
     this.scale = 1;
     this.fitMode = "width";
@@ -25,6 +26,7 @@ export class ViewerPane {
 
   async initialize(scale = 1) {
     this.scale = scale;
+    this.#createScroller();
     this.#createStage();
     this.canvases = await this.#createCanvasPlaceholders();
     this.pages = this.canvases.map((canvas, idx) => {
@@ -44,11 +46,17 @@ export class ViewerPane {
     this.controls.attach();
   }
 
+  #createScroller() {
+    this.scroller = document.createElement("div");
+    this.scroller.className = "pane-scroll-area";
+    this.viewerEl.appendChild(this.scroller);
+  }
+
   #createStage() {
     this.stage = document.createElement("div");
     this.stage.className = "viewer-stage";
     this.stage.id = `stage-${this.id}`;
-    this.viewerEl.appendChild(this.stage);
+    this.scroller.appendChild(this.stage);
   }
 
   async #createCanvasPlaceholders() {
@@ -101,7 +109,7 @@ export class ViewerPane {
         }
       },
       {
-        root: this.viewerEl,
+        root: this.scroller,
         rootMargin: "300px 0px",
         threshold: 0.1,
       },
@@ -120,28 +128,28 @@ export class ViewerPane {
   }
 
   zoomAt(scale, focusX, focusY) {
-    const viewer = this.viewerEl;
+    const scroller = this.scroller;
     const prevScale = this.scale;
 
-    const docX = (viewer.scrollLeft + focusX) / prevScale;
-    const docY = (viewer.scrollTop + focusY) / prevScale;
+    const docX = (scroller.scrollLeft + focusX) / prevScale;
+    const docY = (scroller.scrollTop + focusY) / prevScale;
     this.scale = scale;
     this.#resizeAllCanvases(scale);
 
     // restore scroll position after resizing
     const targetLeft = docX * scale - focusX;
     const targetTop = docY * scale - focusY;
-    const maxLeft = Math.max(0, viewer.scrollWidth - viewer.clientWidth);
-    const maxTop = Math.max(0, viewer.scrollHeight - viewer.clientHeight);
-    viewer.scrollLeft = Math.min(Math.max(0, targetLeft), maxLeft);
-    viewer.scrollTop = Math.min(Math.max(0, targetTop), maxTop);
+    const maxLeft = Math.max(0, scroller.scrollWidth - scroller.clientWidth);
+    const maxTop = Math.max(0, scroller.scrollHeight - scroller.clientHeight);
+    scroller.scrollLeft = Math.min(Math.max(0, targetLeft), maxLeft);
+    scroller.scrollTop = Math.min(Math.max(0, targetTop), maxTop);
 
     this.#renderVisiblePages();
   }
 
   zoom(delta) {
-    const viewer = this.viewerEl;
-    const rect = viewer.getBoundingClientRect();
+    const scroller = this.scroller;
+    const rect = scroller.getBoundingClientRect();
     const focusX = rect.width / 2;
     const focusY = rect.height / 2;
 
@@ -150,7 +158,7 @@ export class ViewerPane {
   }
 
   getCurrentPage() {
-    const viewRect = this.viewerEl.getBoundingClientRect();
+    const viewRect = this.scroller.getBoundingClientRect();
     const viewportMidY = viewRect.top + viewRect.height / 2;
     for (const canvas of this.canvases) {
       const rect = canvas.getBoundingClientRect();
@@ -195,35 +203,52 @@ export class ViewerPane {
 
   async #resizeAllCanvases(scale) {
     const outputScale = window.devicePixelRatio || 1;
-    const MAX_RENDER_SCALE = 4.0;
+    const MAX_RENDER_SCALE = 3.0; // Cap render scale for performance
     const renderScale = Math.min(scale, MAX_RENDER_SCALE);
+    const visualScale = scale / renderScale; // The CSS transform scale
+    console.log(scale, renderScale, visualScale, outputScale);
+
     for (let i = 0; i < this.pages.length; i++) {
       const page = this.pages[i];
       const dims = this.document.pageDimensions[i];
 
       page.canvas.dataset.rendered = "false";
 
-      const width = dims.width * renderScale;
-      const height = dims.height * renderScale;
+      // Canvas render dimensions (at renderScale)
+      const canvasWidth = dims.width * renderScale;
+      const canvasHeight = dims.height * renderScale;
 
-      page.canvas.width = width * outputScale;
-      page.canvas.height = height * outputScale;
+      // Visual dimensions after transform (what user sees)
+      const visualWidth = canvasWidth * visualScale;
+      const visualHeight = canvasHeight * visualScale;
+
+      page.canvas.width = canvasWidth * outputScale;
+      page.canvas.height = canvasHeight * outputScale;
+
+      Object.assign(page.canvas.style, {
+        width: `${canvasWidth}px`,
+        height: `${canvasHeight}px`,
+      });
 
       Object.assign(page.wrapper.style, {
-        width: `${width}px`,
-        height: `${height}px`,
-        transformOrigin: "top left",
-        transform: `scale(${scale / renderScale})`,
+        // Set wrapper to VISUAL size so scroll container sees correct dimensions
+        width: `${visualWidth}px`,
+        height: `${visualHeight}px`,
       });
+
+      // Apply transform to canvas instead, positioned within the wrapper
       Object.assign(page.canvas.style, {
-        width: `${width}px`,
-        height: `${height}px`,
+        transformOrigin: "top left",
+        transform: visualScale !== 1 ? `scale(${visualScale})` : "",
       });
+
       const layerStyles = {
         left: "0px",
         top: "0px",
-        width: `${width}px`,
-        height: `${height}px`,
+        width: `${canvasWidth}px`,
+        height: `${canvasHeight}px`,
+        transformOrigin: "top left",
+        transform: visualScale !== 1 ? `scale(${visualScale})` : "",
       };
       Object.assign(page.annotationLayer.style, layerStyles);
       Object.assign(page.textLayer.style, layerStyles);
@@ -248,12 +273,6 @@ export class ViewerPane {
         pageView.renderHightlights(this.document.highlights.get(pageNum));
       }
     }
-  }
-
-  setPinned(pinned) {
-    this.isPinned = pinned;
-    this.viewerEl.classList.toggel("pinned", pinned);
-    this.controls.updatePinState(pinned);
   }
 
   destroy() {

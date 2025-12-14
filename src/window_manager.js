@@ -1,7 +1,18 @@
+/**
+ * @typedef {import('./viewpane.js').ViewerPane} ViewerPane;
+ * @typedef {import('./doc.js').PDFDocumentModel} PDFDocumentModel;
+ * @typedef {import('./controls/floating_toolbar.js') FloatingToolbar};
+ */
+
 import { ViewerPane } from "./viewpane.js";
 import { FloatingToolbar } from "./controls/floating_toolbar.js";
+import { WindowControls } from "./controls/window_controls.js";
 
 export class SplitWindowManager {
+  /**
+   * @param {HTMLElement} rootEl;
+   * @param {PDFDocumentModel} DocumentModel;
+   */
   constructor(rootEl, documentModel) {
     this.rootEl = rootEl;
     this.document = documentModel;
@@ -12,10 +23,10 @@ export class SplitWindowManager {
     this.isSplit = false;
 
     this.toolbar = null;
+    this.controls = null;
   }
 
   async initialize() {
-    // Create the first pane
     const container = this.#createPaneContainer();
     const pane = new ViewerPane(this.document, container, { id: "main" });
     await pane.initialize();
@@ -26,6 +37,8 @@ export class SplitWindowManager {
     this.#updateLayout();
     this.toolbar = new FloatingToolbar(pane, this);
     this.toolbar.updatePageNumber();
+
+    this.controls = new WindowControls(this);
   }
 
   #createPaneContainer() {
@@ -49,29 +62,36 @@ export class SplitWindowManager {
   }
 
   async split(direction = "vertical") {
-    if (this.panes.length >= 2 || this.isSplit) return; // Max 2 panes for now
+    if (this.panes.length >= 2 || this.isSplit) return;
+
+    // capture viewport before split
+    const primaryPane = this.activePane;
+    const currentScale = primaryPane.scale;
+    const currentScrollTop = primaryPane.viewerEl.scrollTop;
+    const currentScrollLeft = primaryPane.viewerEl.scrollLeft;
 
     this.splitDirection = direction;
-
     const container = this.#createPaneContainer();
     const newPane = new ViewerPane(this.document, container, {
       id: "secondary",
       pinned: false,
     });
-    await newPane.initialize();
 
-    // Start the new pane at the same page as the current
-    const currentPage = this.activePane.getCurrentPage();
-    newPane.goToPage(currentPage);
+    await newPane.initialize(currentScale);
 
     this.panes.push(newPane);
-
     this.toolbar.enterSplitMode();
     this.#updateLayout();
     this.#createResizer();
-    
-    this.isSplit = true;
 
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        newPane.viewerEl.scrollTop = currentScrollTop;
+        newPane.viewerEl.scrollLeft = currentScrollLeft;
+      });
+    });
+
+    this.isSplit = true;
     return newPane;
   }
 
@@ -88,6 +108,7 @@ export class SplitWindowManager {
 
     this.toolbar.exitSplitMode();
     this.toolbar.updateActivePane(this.panes[0]);
+    this.controls.updateActivePane(this.panes[0]);
     this.#removeResizer();
     this.#updateLayout();
     this.isSplit = false;
@@ -179,6 +200,7 @@ export class SplitWindowManager {
     this.activePane.viewerEl.classList.add("active");
 
     this.toolbar.updateActivePane(pane);
+    this.controls.updateActivePane();
   }
 
   get currentPage() {

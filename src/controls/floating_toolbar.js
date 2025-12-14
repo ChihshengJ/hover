@@ -264,7 +264,7 @@ export class FloatingToolbar {
       this.wrapper.classList.remove("expanding");
       this.wrapper.classList.add("expanded");
     }, 500);
-    
+
     this.#startExpandTimer();
   }
 
@@ -372,7 +372,9 @@ export class FloatingToolbar {
       this.ball.style.transform = "";
     }, 300);
     this.#startExpandTimer();
-    this.#startHideTimer();
+    if (this.isSplitMode) {
+      this.#startHideTimer();
+    }
   }
 
   #updatePosition() {
@@ -400,7 +402,7 @@ export class FloatingToolbar {
       case "split-screen":
         if (!this.wm.isSplit) {
           this.wm.split();
-        }else {
+        } else {
           this.wm.unsplit();
         }
         break;
@@ -518,7 +520,7 @@ export class FloatingToolbar {
     this.updatePageNumber();
     this.viewerContainer.addEventListener("scroll", () => {
       this.updatePageNumber();
-    })
+    });
   }
 
   destroy() {

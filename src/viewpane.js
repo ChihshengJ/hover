@@ -23,7 +23,8 @@ export class ViewerPane {
     this.document.subscribe(this);
   }
 
-  async initialize() {
+  async initialize(scale = 1) {
+    this.scale = scale;
     this.#createStage();
     this.canvases = await this.#createCanvasPlaceholders();
     this.pages = this.canvases.map((canvas, idx) => {

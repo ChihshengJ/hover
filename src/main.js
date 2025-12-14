@@ -3,9 +3,6 @@ import pdfjsWorker from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 import "./style.css";
 import { PDFDocumentModel } from "./doc.js";
 import { SplitWindowManager } from "./window_manager.js";
-import { PDFViewer } from "./viewer.js";
-import { ViewerControls } from "./controls/viewer_controls.js";
-import { FloatingToolbar } from "./controls/floating_toolbar.js";
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfjsWorker;
 
@@ -33,13 +30,6 @@ function getPdfUrl() {
 
 async function loadPdf(url) {
   try {
-    // const pdfDoc = await pdfjsLib.getDocument(url).promise;
-    // const allNamedDests = await pdfDoc.getDestinations();
-    // const viewer = new PDFViewer(el.viewer);
-    // await viewer.loadDocument(pdfDoc, allNamedDests);
-    // const controls = new ViewerControls(viewer, el);
-    // const floatingToolbar = new FloatingToolbar(viewer, el.viewer);
-    // floatingToolbar.updatePageNumber();
     const pdfmodel = new PDFDocumentModel();
     const wm = new SplitWindowManager(el.wd, pdfmodel);
     const pdfDoc = await pdfmodel.load(url);

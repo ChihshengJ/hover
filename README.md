@@ -12,7 +12,7 @@ Hover is a minimalist PDF reader extension designed for people who spend way too
 It intentionally keeps only the most essential features, but aims to make the actual _experience_ of reading papers smoother, faster, and immersive by ---
 
 You've guessed it: **Hopping between the content and the references**  
-Hover solves that with inline citation preview popups that appear exactly where your cursor hovers, and lets you jump directly to the referenced paper in a new tab with one click.
+Hover solves this problem by providing a pop-up window that gives you the access to the text of the references directly, allowing you to jump directly to an ArXiv paper, or search the title with Google.
 
 The project is based on PDF.js, which means that you can also directly access the texts as html elements, if you're interested in taking advantage of this feature, feel free to fork it!
 
@@ -79,7 +79,7 @@ Open <http://localhost:5173/?file={append the URL to the file here}> in Chrome a
 
 ---
 
-## 🚧 Roadmap (Short Term)
+## Road map (Short Term)
 
 - Improve robustness for various academic papers.
 - Mobile version
@@ -90,7 +90,7 @@ Open <http://localhost:5173/?file={append the URL to the file here}> in Chrome a
 
 ---
 
-## 📝 License
+## License
 
 MIT
 

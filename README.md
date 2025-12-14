@@ -61,6 +61,22 @@ Full vim motion support for reading, highlighting, and citation preview (current
 
 This project will be released as a browser extension.
 
+Latest commit is always runnable so you can clone the repo and use npm to run it as a demo locally.
+Make sure you install the dependencies using
+
+```bash
+npm install
+```
+
+And then use
+
+```bash
+npm run dev
+```
+
+To start the service.
+Open <http://localhost:5173/?file={append the URL to the file here}> in Chrome and it should be running.
+
 ---
 
 ## 🚧 Roadmap (Short Term)

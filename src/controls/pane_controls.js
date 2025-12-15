@@ -78,7 +78,6 @@ export class PaneControls {
 
   hide() {
     if (this.isHidden) return;
-    console.log("hide pane controls");
     this.element.classList.add("hidden");
     this.isHidden = true;
   }

@@ -1,12 +1,12 @@
 /**
  * @typedef {import('../window_manager.js').SplitWindowManager} SplitWindowManager;
  * @typedef {import('../viewpane.js').ViewerPane} ViewerPane;
-*/
+ */
 
 export class FloatingToolbar {
   /**
-  * @param {SplitWindowManager} wm;
-  */
+   * @param {SplitWindowManager} wm;
+   */
 
   constructor(wm) {
     this.wm = wm;
@@ -40,7 +40,7 @@ export class FloatingToolbar {
   }
 
   /**
-  * @returns {ViewerPane} */
+   * @returns {ViewerPane} */
   get pane() {
     return this.wm.activePane;
   }
@@ -90,7 +90,7 @@ export class FloatingToolbar {
     this.toolbarBottom = document.createElement("div");
     this.toolbarBottom.className = "floating-toolbar floating-toolbar-bottom";
     this.toolbarBottom.innerHTML = `
-      <button class="tool-btn" data-action="fit-screen">
+      <button class="tool-btn" data-action="fit-width">
         <div class="inner">
           <img src="public/fit.svg" width="23" />
         </div>
@@ -421,8 +421,8 @@ export class FloatingToolbar {
         break;
       case "horizontal-spread":
         break;
-      case "split-screen":
-        break;
+      case "fit-width":
+        this.pane.fitWidth();
     }
   }
 

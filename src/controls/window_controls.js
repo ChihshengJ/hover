@@ -8,13 +8,14 @@ import { GestureDetector } from "./touch_controls.js";
 
 export class WindowControls {
   /**
-  * @param {SplitWindowManager} wm;
-  */
+   * @param {SplitWindowManager} wm;
+   */
   constructor(wm) {
     this.wm = wm;
     this.gesture = null;
     this.#setupKeyboardShortcuts();
     this.#setupGestures();
+    this.MAX_RENDER_SCALE = 7;
   }
 
   get activePane() {
@@ -40,11 +41,7 @@ export class WindowControls {
         if (e.key === "=" || e.key === "+") pane.zoom(0.25);
         else if (e.key === "-" || e.key === "_") pane.zoom(-0.25);
         else if (e.key === "0")
-          pane.zoomAt(
-            1,
-            scroller.clientWidth / 2,
-            scroller.clientHeight / 2,
-          );
+          pane.zoomAt(1, scroller.clientWidth / 2, scroller.clientHeight / 2);
         return;
       }
 
@@ -105,7 +102,7 @@ export class WindowControls {
 
     this.gesture.getEventTarget().addEventListener("pinchstart", (e) => {
       const currentPane = this.activePane;
-      startScale = currentPane.getScale();
+      startScale = currentPane.scale;
       isTransforming = true;
       pageStates.clear();
 
@@ -140,7 +137,10 @@ export class WindowControls {
       const currentPane = this.activePane;
 
       const ratio = e.detail.startScaleRatio;
-      const newScale = Math.max(0.5, Math.min(4, startScale * ratio));
+      const newScale = Math.max(
+        0.5,
+        Math.min(this.MAX_RENDER_SCALE, startScale * ratio),
+      );
       const visualScaleDelta = newScale / startScale;
 
       // Apply scale with fixed transform-origin for each wrapper
@@ -176,7 +176,10 @@ export class WindowControls {
       });
 
       const ratio = e.detail.startScaleRatio;
-      const finalScale = Math.max(0.5, Math.min(4, startScale * ratio));
+      const finalScale = Math.max(
+        0.5,
+        Math.min(this.MAX_RENDER_SCALE, startScale * ratio),
+      );
 
       // Apply actual zoom (re-renders canvases)
       const containerRect = currentPane.viewerEl.getBoundingClientRect();

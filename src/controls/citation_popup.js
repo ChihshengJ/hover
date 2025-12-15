@@ -226,7 +226,6 @@ export class CitationPopup {
       `(${urlRegex.source}|${arxivRegex.source})`,
     );
     const parts = text.split(combinedRegex);
-    console.log(parts);
     const processedArxivIds = new Set();
 
     element.innerHTML = "";

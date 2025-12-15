@@ -121,12 +121,6 @@ export class ViewerPane {
     }
   }
 
-  renderAtScale(scale) {
-    this.scale = scale;
-    this.#resizeAllCanvases(scale);
-    this.#renderVisiblePages();
-  }
-
   zoomAt(scale, focusX, focusY) {
     const scroller = this.scroller;
     const prevScale = this.scale;
@@ -153,7 +147,7 @@ export class ViewerPane {
     const focusX = rect.width / 2;
     const focusY = rect.height / 2;
 
-    const newScale = Math.min(Math.max(this.scale + delta, 0.5), 4);
+    const newScale = Math.min(Math.max(this.scale + delta, 0.5), 7);
     this.zoomAt(newScale, focusX, focusY);
   }
 
@@ -167,10 +161,6 @@ export class ViewerPane {
       }
     }
     return 1;
-  }
-
-  getScale() {
-    return this.scale;
   }
 
   #maybeRelease(page) {
@@ -203,57 +193,55 @@ export class ViewerPane {
 
   async #resizeAllCanvases(scale) {
     const outputScale = window.devicePixelRatio || 1;
-    const MAX_RENDER_SCALE = 3.0; // Cap render scale for performance
-    const renderScale = Math.min(scale, MAX_RENDER_SCALE);
-    const visualScale = scale / renderScale; // The CSS transform scale
-    console.log(scale, renderScale, visualScale, outputScale);
-
+    const MAX_RENDER_SCALE = 7.0; // Cap render scale for performance
+    
+    const effectiveScale = Math.min(scale, MAX_RENDER_SCALE);
+    
     for (let i = 0; i < this.pages.length; i++) {
       const page = this.pages[i];
       const dims = this.document.pageDimensions[i];
-
       page.canvas.dataset.rendered = "false";
-
-      // Canvas render dimensions (at renderScale)
-      const canvasWidth = dims.width * renderScale;
-      const canvasHeight = dims.height * renderScale;
-
-      // Visual dimensions after transform (what user sees)
-      const visualWidth = canvasWidth * visualScale;
-      const visualHeight = canvasHeight * visualScale;
-
-      page.canvas.width = canvasWidth * outputScale;
-      page.canvas.height = canvasHeight * outputScale;
-
+      
+      // Visual dimensions (what the user sees in CSS pixels)
+      const visualWidth = dims.width * effectiveScale;
+      const visualHeight = dims.height * effectiveScale;
+      
+      // Canvas backing store dimensions (accounting for device pixel ratio)
+      const canvasWidth = Math.round(visualWidth * outputScale);
+      const canvasHeight = Math.round(visualHeight * outputScale);
+      
+      // Set the actual canvas buffer size
+      page.canvas.width = canvasWidth;
+      page.canvas.height = canvasHeight;
+      
+      // Set CSS dimensions to match visual size (no transform needed)
       Object.assign(page.canvas.style, {
-        width: `${canvasWidth}px`,
-        height: `${canvasHeight}px`,
+        width: `${visualWidth}px`,
+        height: `${visualHeight}px`,
+        transform: "",  // Clear any existing transform
+        transformOrigin: "",
       });
-
+      
+      // Wrapper matches visual size exactly
       Object.assign(page.wrapper.style, {
-        // Set wrapper to VISUAL size so scroll container sees correct dimensions
         width: `${visualWidth}px`,
         height: `${visualHeight}px`,
       });
-
-      // Apply transform to canvas instead, positioned within the wrapper
-      Object.assign(page.canvas.style, {
-        transformOrigin: "top left",
-        transform: visualScale !== 1 ? `scale(${visualScale})` : "",
-      });
-
+      
+      // Overlay layers match visual dimensions, no transform
       const layerStyles = {
         left: "0px",
         top: "0px",
-        width: `${canvasWidth}px`,
-        height: `${canvasHeight}px`,
-        transformOrigin: "top left",
-        transform: visualScale !== 1 ? `scale(${visualScale})` : "",
+        width: `${visualWidth}px`,
+        height: `${visualHeight}px`,
+        transform: "",
+        transformOrigin: "",
       };
       Object.assign(page.annotationLayer.style, layerStyles);
       Object.assign(page.textLayer.style, layerStyles);
-
-      page.pendingRenderScale = renderScale;
+      
+      // Store the effective scale for the actual PDF rendering pass
+      page.pendingRenderScale = effectiveScale * outputScale;
     }
   }
 
@@ -263,6 +251,10 @@ export class ViewerPane {
         pageView.render(this.scale);
       }
     }
+  }
+
+  fitWidth() {
+
   }
 
   onDocumentChange(event, data) {
@@ -282,6 +274,5 @@ export class ViewerPane {
     for (const page of this.pages) {
       page.release();
     }
-    // this.containerEl.innerHTML = "";
   }
 }

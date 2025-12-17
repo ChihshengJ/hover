@@ -109,6 +109,7 @@ export class SplitWindowManager {
 
     this.panes = [this.panes[0]];
     this.activePane = this.panes[0];
+    this.activePane?.paneEl.classList.remove("active");
     this.splitDirection = null;
 
     this.toolbar.exitSplitMode();

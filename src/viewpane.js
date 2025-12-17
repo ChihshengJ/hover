@@ -229,10 +229,9 @@ export class ViewerPane {
     if (target)
       target.wrapper.scrollIntoView({ behavior: "instant", block: "center" });
   }
-
   async resizeAllCanvases(scale) {
     const outputScale = window.devicePixelRatio || 1;
-    const MAX_RENDER_SCALE = 7.0; // Cap render scale for performance
+    const MAX_RENDER_SCALE = 7.0;
     
     const effectiveScale = Math.min(scale, MAX_RENDER_SCALE);
     
@@ -241,33 +240,30 @@ export class ViewerPane {
       const dims = this.document.pageDimensions[i];
       page.canvas.dataset.rendered = "false";
       
-      // Visual dimensions (what the user sees in CSS pixels)
-      const visualWidth = dims.width * effectiveScale;
-      const visualHeight = dims.height * effectiveScale;
+      // Round WIDTH only, then derive height to maintain aspect ratio
+      const visualWidth = Math.round(dims.width * effectiveScale);
+      const aspectRatio = dims.height / dims.width;
+      const visualHeight = Math.round(visualWidth * aspectRatio);
       
-      // Canvas backing store dimensions (accounting for device pixel ratio)
-      const canvasWidth = Math.round(visualWidth * outputScale);
-      const canvasHeight = Math.round(visualHeight * outputScale);
+      // Canvas buffer dimensions
+      const canvasWidth = visualWidth * outputScale;
+      const canvasHeight = visualHeight * outputScale;
       
-      // Set the actual canvas buffer size
       page.canvas.width = canvasWidth;
       page.canvas.height = canvasHeight;
       
-      // Set CSS dimensions to match visual size (no transform needed)
       Object.assign(page.canvas.style, {
         width: `${visualWidth}px`,
         height: `${visualHeight}px`,
-        transform: "",  // Clear any existing transform
+        transform: "",
         transformOrigin: "",
       });
       
-      // Wrapper matches visual size exactly
       Object.assign(page.wrapper.style, {
         width: `${visualWidth}px`,
         height: `${visualHeight}px`,
       });
       
-      // Overlay layers match visual dimensions, no transform
       const layerStyles = {
         left: "0px",
         top: "0px",
@@ -278,10 +274,6 @@ export class ViewerPane {
       };
       Object.assign(page.annotationLayer.style, layerStyles);
       Object.assign(page.textLayer.style, layerStyles);
-      
-      // Store the effective scale for the actual PDF rendering pass
-      // page.pendingRenderScale = effectiveScale * outputScale;
-      // console.log(page.pendingRenderScale);
     }
   }
 
@@ -317,12 +309,10 @@ export class ViewerPane {
       this.#layoutSpread(mode);
     }
     
-    // Restore scroll position
     if (currentPage > 0) {
       this.goToPage(currentPage);
     }
     
-    // Re-render visible pages after layout change
     requestAnimationFrame(() => {
       this.#renderVisiblePages();
     });
@@ -338,7 +328,6 @@ export class ViewerPane {
     this.spreadRows = [];
     
     if (this.spreadContainer) {
-      // Move any remaining children back to stage
       while (this.spreadContainer.firstChild) {
         this.stage.appendChild(this.spreadContainer.firstChild);
       }
@@ -348,8 +337,6 @@ export class ViewerPane {
   }
 
   #layoutSinglePage() {
-  // Pages are already direct children of stage after #clearSpreadLayout
-  // Just ensure they're in the correct order
     for (const pageView of this.pages) {
       pageView.wrapper.classList.remove('spread-page', 'spread-page-left', 'spread-page-right', 'spread-page-single');
       this.stage.appendChild(pageView.wrapper);

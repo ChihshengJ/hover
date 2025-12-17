@@ -42,7 +42,6 @@ export class PageView {
     this.annotations = null;
     this.renderTask = null;
     this.scale = 1;
-    this.pendingRenderScale = 1;
   }
 
   async #ensurePageLoaded() {
@@ -52,15 +51,20 @@ export class PageView {
 
   async render(requestedScale) {
     this.cancel();
-
     this.scale = requestedScale || this.pendingRenderScale;
-
     const page = await this.#ensurePageLoaded();
-    const outputScale = window.devicePixelRatio || 1;
-    const viewport = page.getViewport({ scale: this.scale });
 
-    const transform =
-      outputScale !== 1 ? [outputScale, 0, 0, outputScale, 0, 0] : null;
+    const canvasWidth = this.canvas.width;
+    const canvasHeight = this.canvas.height;
+
+    // Create a viewport that EXACTLY matches our canvas dimensions
+    const baseViewport = page.getViewport({ scale: 1 });
+    const scaleX = canvasWidth / baseViewport.width;
+    const scaleY = canvasHeight / baseViewport.height;
+
+    // Use the smaller scale to ensure content fits, or use scaleX if they're very close
+    const renderScale = Math.min(scaleX, scaleY);
+    const viewport = page.getViewport({ scale: renderScale });
 
     if (!this.textContent) {
       [this.textContent, this.annotations] = await Promise.all([
@@ -70,32 +74,37 @@ export class PageView {
     }
 
     const ctx = this.canvas.getContext("2d", { alpha: false });
+    ctx.clearRect(0, 0, canvasWidth, canvasHeight);
+
     const renderContext = {
       canvasContext: ctx,
-      transform: transform,
       viewport: viewport,
     };
-
-    ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
 
     this.renderTask = page.render(renderContext);
 
     try {
       await this.renderTask.promise;
 
-      this.textLayer.innerHTML = "";
-      this.#renderAnnotations(page, viewport);
+      const cssWidth = parseFloat(this.canvas.style.width);
+      const cssHeight = parseFloat(this.canvas.style.height);
+      const textViewport = page.getViewport({
+        scale: cssWidth / baseViewport.width,
+      });
 
+      this.textLayer.innerHTML = "";
+      this.#renderAnnotations(page, textViewport);
       this.textLayer.style.setProperty("--total-scale-factor", `${this.scale}`);
+
       const textLayerInstance = new pdfjsLib.TextLayer({
         textContentSource: this.textContent,
         container: this.textLayer,
-        viewport: viewport,
+        viewport: textViewport,
       });
       await textLayerInstance.render();
-      this.textLayer.style.width = `${viewport.width}px`;
-      this.textLayer.style.height = `${viewport.height}px`;
 
+      this.textLayer.style.width = `${cssWidth}px`;
+      this.textLayer.style.height = `${cssHeight}px`;
       this.canvas.dataset.rendered = "true";
     } catch (err) {
       if (err?.name !== "RenderingCancelledException") {

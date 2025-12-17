@@ -80,7 +80,6 @@ export class FloatingToolbar {
         <div class="inner">
           <div>☽</div>
         </div>
-        <div class="effect"></div>
       </button>
     `;
 
@@ -104,7 +103,6 @@ export class FloatingToolbar {
         <div class="inner">
           <div>-</div>
         </div>
-        <div class="effect"></div>
       </button>
     `;
 
@@ -431,13 +429,15 @@ export class FloatingToolbar {
   }
 
   #updateSpreadIcon(mode) {
-    const btn = this.toolbarTop.querySelector('[data-action="horizontal-spread"]');
-    const img = btn.querySelector('img');
+    const btn = this.toolbarTop.querySelector(
+      '[data-action="horizontal-spread"]',
+    );
+    const img = btn.querySelector("img");
 
     const config = {
-      0: { src: 'public/book.svg', title: 'Single page view' },
-      1: { src: 'public/even.png', title: 'Even spread (1-2, 3-4...)' },
-      2: { src: 'public/odd.png', title: 'Odd spread (1, 2-3, 4-5...)' },
+      0: { src: "public/book.svg", title: "Single page view" },
+      1: { src: "public/even.png", title: "Even spread (1-2, 3-4...)" },
+      2: { src: "public/odd.png", title: "Odd spread (1, 2-3, 4-5...)" },
     };
 
     const { src, title } = config[mode];

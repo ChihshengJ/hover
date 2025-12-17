@@ -22,7 +22,6 @@ export class FloatingToolbar {
 
     // Auto-hide state
     this.isHidden = false;
-    this.isSplitMode = false;
     this.hideTimer = null;
     this.expandTimer = null;
     this.HIDE_DELAY = 3000;
@@ -246,13 +245,11 @@ export class FloatingToolbar {
   }
 
   enterSplitMode() {
-    this.isSplitMode = true;
     this.#cancelHideTimer();
     this.#slideOut();
   }
 
   exitSplitMode() {
-    this.isSplitMode = false;
     this.hitArea.classList.remove("active");
     this.#cancelHideTimer();
     this.updatePageNumber();
@@ -384,7 +381,7 @@ export class FloatingToolbar {
       this.ball.style.transform = "";
     }, 300);
     this.#startExpandTimer();
-    if (this.isSplitMode) {
+    if (this.wm.isSplit) {
       this.#startHideTimer();
     }
   }
@@ -419,10 +416,33 @@ export class FloatingToolbar {
         }
         break;
       case "horizontal-spread":
+        this.#spread();
         break;
       case "fit-width":
         this.pane.fitWidth();
     }
+  }
+
+  #spread() {
+    if (!this.wm.isSplit) {
+      const newMode = this.pane.spread();
+      this.#updateSpreadIcon(newMode);
+    }
+  }
+
+  #updateSpreadIcon(mode) {
+    const btn = this.toolbarTop.querySelector('[data-action="horizontal-spread"]');
+    const img = btn.querySelector('img');
+
+    const config = {
+      0: { src: 'public/book.svg', title: 'Single page view' },
+      1: { src: 'public/even.png', title: 'Even spread (1-2, 3-4...)' },
+      2: { src: 'public/odd.png', title: 'Odd spread (1, 2-3, 4-5...)' },
+    };
+
+    const { src, title } = config[mode];
+    img.src = src;
+    btn.title = title;
   }
 
   #nightmode() {

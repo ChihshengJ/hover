@@ -58,7 +58,7 @@ body {
   min-height: 0;
   overflow: auto;
   overscroll-behavior: contain;
-  
+
   display: block;
 }
 
@@ -99,18 +99,20 @@ body {
   left: 50%;
   transform: translateX(-50%);
   z-index: 100;
-  
+
   background: rgba(255, 255, 255, 0.85);
   backdrop-filter: blur(12px);
   border-radius: 20px;
-  box-shadow: 
+  box-shadow:
     0 2px 12px rgba(0, 0, 0, 0.1),
     0 0 0 1px rgba(0, 0, 0, 0.05);
   padding: 6px 16px;
-  
+
   pointer-events: auto;
   user-select: none;
-  transition: opacity 0.2s, transform 0.2s;
+  transition:
+    opacity 0.2s,
+    transform 0.2s;
 }
 
 .pane-controls.hidden {
@@ -119,7 +121,7 @@ body {
 
 .pane-controls:hover {
   background: rgba(255, 255, 255, 0.95);
-  box-shadow: 
+  box-shadow:
     0 4px 16px rgba(0, 0, 0, 0.12),
     0 0 0 1px rgba(0, 0, 0, 0.08);
 }
@@ -183,7 +185,7 @@ body {
 /* Night mode */
 .night-mode .pane-controls {
   background: rgba(40, 40, 40, 0.85);
-  box-shadow: 
+  box-shadow:
     0 2px 12px rgba(0, 0, 0, 0.3),
     0 0 0 1px rgba(255, 255, 255, 0.1);
 }
@@ -204,7 +206,6 @@ body {
   background: rgba(255, 255, 255, 0.1);
   color: #fff;
 }
-
 
 /* Viewer stage and document layers */
 .viewer-stage {
@@ -281,6 +282,50 @@ body {
   color: transparent;
   background: none;
   padding: 0;
+  margin: 0;
+}
+
+/* ********************** */
+/* horizontal spread */
+/* ********************** */
+.spread-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 100%;
+}
+
+.spread-row {
+  display: flex;
+  flex-direction: row;
+  justify-content: center;
+  align-items: flex-start;
+  gap: 4px;
+  margin: 14px 0;
+}
+
+.spread-row-single {
+  justify-content: center;
+}
+
+.spread-page {
+  margin: 0 !important; /* Override individual page margins */
+}
+
+.spread-page-single {
+  /* Single page in spread mode - centered */
+}
+
+.spread-page-left {
+  /* Left page styling if needed */
+}
+
+.spread-page-right {
+  /* Right page styling if needed */
+}
+
+/* Ensure page wrappers don't have conflicting margins in spread mode */
+.spread-row .page-wrapper {
   margin: 0;
 }
 
@@ -630,7 +675,6 @@ body {
 .floating-toolbar-wrapper.expanded .tool-btn:active {
   transform: scale(0.95);
 }
-
 
 /* ******************* */
 /* popup window */

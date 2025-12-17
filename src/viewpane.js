@@ -30,6 +30,9 @@ export class ViewerPane {
     this.observer = null;
     this.controls = new PaneControls(this);
 
+    this.spreadMode = 0;
+    this.spreadRows = [];
+
     this.document.subscribe(this);
   }
 
@@ -54,7 +57,10 @@ export class ViewerPane {
     this.setupLazyRender();
     this.controls.attach();
   }
-
+ 
+  //*******************
+  // Creating elements
+  // ******************
   #createScroller() {
     this.scroller = document.createElement("div");
     this.scroller.className = "pane-scroll-area";
@@ -95,6 +101,9 @@ export class ViewerPane {
     return canvases;
   }
 
+  //*******************
+  // Render management
+  // ******************
   setupLazyRender() {
     if (this.observer) {
       this.observer.disconnect();
@@ -130,6 +139,38 @@ export class ViewerPane {
     }
   }
 
+  #maybeRelease(page) {
+    const rect = page.wrapper.getBoundingClientRect();
+    const threshold = window.innerHeight * 2;
+
+    if (rect.bottom < -threshold || rect.top > window.innerHeight + threshold) {
+      page.release();
+    }
+  }
+
+  #renderVisiblePages() {
+    for (const pageView of this.visiblePages) {
+      if (pageView.canvas.dataset.rendered === "false") {
+        pageView.render(this.scale);
+      }
+    }
+  }
+
+  //*******************
+  // Viewer controls
+  // ******************
+  getCurrentPage() {
+    const viewRect = this.scroller.getBoundingClientRect();
+    const viewportMidY = viewRect.top + viewRect.height / 2;
+    for (const canvas of this.canvases) {
+      const rect = canvas.getBoundingClientRect();
+      if (rect.top <= viewportMidY && rect.bottom > viewportMidY) {
+        return parseInt(canvas.dataset.pageNumber);
+      }
+    }
+    return 0;
+  }
+
   zoomAt(scale, focusX, focusY) {
     const scroller = this.scroller;
     const prevScale = this.scale;
@@ -158,27 +199,6 @@ export class ViewerPane {
 
     const newScale = Math.min(Math.max(this.scale + delta, 0.5), 7);
     this.zoomAt(newScale, focusX, focusY);
-  }
-
-  getCurrentPage() {
-    const viewRect = this.scroller.getBoundingClientRect();
-    const viewportMidY = viewRect.top + viewRect.height / 2;
-    for (const canvas of this.canvases) {
-      const rect = canvas.getBoundingClientRect();
-      if (rect.top <= viewportMidY && rect.bottom > viewportMidY) {
-        return parseInt(canvas.dataset.pageNumber);
-      }
-    }
-    return 1;
-  }
-
-  #maybeRelease(page) {
-    const rect = page.wrapper.getBoundingClientRect();
-    const threshold = window.innerHeight * 2;
-
-    if (rect.bottom < -threshold || rect.top > window.innerHeight + threshold) {
-      page.release();
-    }
   }
 
   scrollToRelative(delta) {
@@ -265,14 +285,6 @@ export class ViewerPane {
     }
   }
 
-  #renderVisiblePages() {
-    for (const pageView of this.visiblePages) {
-      if (pageView.canvas.dataset.rendered === "false") {
-        pageView.render(this.scale);
-      }
-    }
-  }
-
   async refreshAllPages() {
     await this.resizeAllCanvases(this.scale);
     this.#renderVisiblePages();
@@ -280,6 +292,133 @@ export class ViewerPane {
 
   fitWidth() {
 
+  }
+
+  spread() {
+    const modes = [0, 1, 2];
+    const nextMode = (this.spreadMode + 1) % modes.length;
+    
+    this.setSpreadMode(nextMode);
+    return this.spreadMode;
+  }
+
+  setSpreadMode(mode) {
+    if (this.spreadMode === mode) return;
+    
+    const currentPage = this.getCurrentPage();
+    
+    this.#clearSpreadLayout();
+    
+    this.spreadMode = mode;
+    
+    if (mode === 0) {
+      this.#layoutSinglePage();
+    } else {
+      this.#layoutSpread(mode);
+    }
+    
+    // Restore scroll position
+    if (currentPage > 0) {
+      this.goToPage(currentPage);
+    }
+    
+    // Re-render visible pages after layout change
+    requestAnimationFrame(() => {
+      this.#renderVisiblePages();
+    });
+  }
+
+  #clearSpreadLayout() {
+    for (const row of this.spreadRows) {
+      while (row.firstChild) {
+        this.stage.appendChild(row.firstChild);
+      }
+      row.remove();
+    }
+    this.spreadRows = [];
+    
+    if (this.spreadContainer) {
+      // Move any remaining children back to stage
+      while (this.spreadContainer.firstChild) {
+        this.stage.appendChild(this.spreadContainer.firstChild);
+      }
+      this.spreadContainer.remove();
+      this.spreadContainer = null;
+    }
+  }
+
+  #layoutSinglePage() {
+  // Pages are already direct children of stage after #clearSpreadLayout
+  // Just ensure they're in the correct order
+    for (const pageView of this.pages) {
+      pageView.wrapper.classList.remove('spread-page', 'spread-page-left', 'spread-page-right', 'spread-page-single');
+      this.stage.appendChild(pageView.wrapper);
+    }
+  }
+
+  #layoutSpread(mode) {
+    this.spreadContainer = document.createElement('div');
+    this.spreadContainer.className = 'spread-container';
+    this.stage.appendChild(this.spreadContainer);
+    
+    // Group pages into pairs based on mode
+    const pairs = this.#createPagePairs(mode);
+    
+    for (const pair of pairs) {
+      const row = document.createElement('div');
+      row.className = 'spread-row';
+      
+      if (pair.length === 1) {
+        // Single page (first page in odd mode, or last page if odd total)
+        const pageView = pair[0];
+        pageView.wrapper.classList.add('spread-page', 'spread-page-single');
+        pageView.wrapper.classList.remove('spread-page-left', 'spread-page-right');
+        row.appendChild(pageView.wrapper);
+        row.classList.add('spread-row-single');
+      } else {
+        // Page pair
+        const [left, right] = pair;
+        
+        left.wrapper.classList.add('spread-page', 'spread-page-left');
+        left.wrapper.classList.remove('spread-page-single', 'spread-page-right');
+        row.appendChild(left.wrapper);
+        
+        right.wrapper.classList.add('spread-page', 'spread-page-right');
+        right.wrapper.classList.remove('spread-page-single', 'spread-page-left');
+        row.appendChild(right.wrapper);
+      }
+      
+      this.spreadContainer.appendChild(row);
+      this.spreadRows.push(row);
+    }
+  }
+
+  #createPagePairs(mode) {
+    const pairs = [];
+    if (mode === 1) {
+      for (let i = 0; i < this.pages.length; i += 2) {
+        if (i + 1 < this.pages.length) {
+          pairs.push([this.pages[i], this.pages[i + 1]]);
+        } else {
+          pairs.push([this.pages[i]]);
+        }
+      }
+    } else if (mode === 2) {
+      pairs.push([this.pages[0]]);
+      for (let i = 1; i < this.pages.length; i += 2) {
+        if (i + 1 < this.pages.length) {
+          pairs.push([this.pages[i], this.pages[i + 1]]);
+        } else {
+          pairs.push([this.pages[i]]);
+        }
+      }
+    }
+    
+    return pairs;
+  }
+
+  getSpreadMode() {
+    return this.spreadMode;
   }
 
   onDocumentChange(event, data) {
@@ -296,6 +435,10 @@ export class ViewerPane {
     this.document.unsubscribe(this);
     this.observer?.disconnect();
     this.controls.destroy();
+    
+    // Clean up spread layout
+    this.#clearSpreadLayout();
+    
     for (const page of this.pages) {
       page.release();
     }

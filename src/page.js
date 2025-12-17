@@ -4,10 +4,10 @@ import { PDFDocumentModel } from "./doc.js";
 import { CitationPopup } from "./controls/citation_popup.js";
 
 /**
-* @typedef {import('./controls/citation_popup.js').CitationPopup} CitationPopup;
-* @typedef {import('./doc.js').PDFDocumentModel} PDFDocumentModel;
-* @typedef {import('./viewpane.js').ViewerPane} ViewerPane;
-*/
+ * @typedef {import('./controls/citation_popup.js').CitationPopup} CitationPopup;
+ * @typedef {import('./doc.js').PDFDocumentModel} PDFDocumentModel;
+ * @typedef {import('./viewpane.js').ViewerPane} ViewerPane;
+ */
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfjsWorker;
 
@@ -21,10 +21,10 @@ function getSharedPopup() {
 
 export class PageView {
   /**
-  * @param {ViewerPane} pane;
-  * @param {number} pageNumber;
-  * @param {HTMLElement} wrapper;
-  */
+   * @param {ViewerPane} pane;
+   * @param {number} pageNumber;
+   * @param {HTMLElement} wrapper;
+   */
   constructor(pane, pageNumber, canvas) {
     this.pane = pane;
     this.doc = this.pane.document;
@@ -343,4 +343,3 @@ export class PageView {
     return null;
   }
 }
-

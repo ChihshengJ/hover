@@ -20,6 +20,7 @@ export class SplitWindowManager {
     this.panes = [];
     this.splitDirection = null; // 'horizontal' | 'vertical' | null
     this.splitRatio = 0.5;
+    /** @type {ViewerPane} */
     this.activePane = null;
     this.isSplit = false;
 

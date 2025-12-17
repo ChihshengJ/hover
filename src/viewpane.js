@@ -5,10 +5,19 @@ pdfjsLib.GlobalWorkerOptions.workerSrc = pdfjsWorker;
 import { PageView } from "./page.js";
 import { PaneControls } from "./controls/pane_controls.js";
 
+/**
+* @typedef {import('./page.js').PageView} PageView;
+* @typedef {import('./doc.js').PDFDocumentModel} PDFDocumentModel;
+*/
+
 export class ViewerPane {
-  constructor(documentModel, containerEl, options = {}) {
+  /**
+  * @param {PDFDocumentModel} documentModel;
+  * @param {HTMLElement} paneEl;
+  */
+  constructor(documentModel, paneEl, options = {}) {
     this.document = documentModel;
-    this.viewerEl = containerEl;
+    this.paneEl = paneEl;
     this.scroller = null;
     this.stage = null;
     this.id = options.id || crypto.randomUUID();
@@ -30,17 +39,17 @@ export class ViewerPane {
     this.#createStage();
     this.canvases = await this.#createCanvasPlaceholders();
     this.pages = this.canvases.map((canvas, idx) => {
-      const wrapper = canvas.parentElement;
+      // Wrapper is a page-wrapper containing a canvas, a page number, and everything in a page
       const pageView = new PageView(
-        this.document.pdfDoc,
+        this,
         idx + 1,
-        wrapper,
-        this.document.allNamedDests,
+        canvas,
       );
+      const wrapper = canvas.parentElement;
       this.pageMap.set(wrapper, pageView);
       return pageView;
     });
-    this.#resizeAllCanvases(this.scale);
+    this.resizeAllCanvases(this.scale);
     await new Promise((resolve) => setTimeout(resolve, 50));
     this.setupLazyRender();
     this.controls.attach();
@@ -49,7 +58,7 @@ export class ViewerPane {
   #createScroller() {
     this.scroller = document.createElement("div");
     this.scroller.className = "pane-scroll-area";
-    this.viewerEl.appendChild(this.scroller);
+    this.paneEl.appendChild(this.scroller);
   }
 
   #createStage() {
@@ -128,7 +137,7 @@ export class ViewerPane {
     const docX = (scroller.scrollLeft + focusX) / prevScale;
     const docY = (scroller.scrollTop + focusY) / prevScale;
     this.scale = scale;
-    this.#resizeAllCanvases(scale);
+    this.resizeAllCanvases(scale);
 
     // restore scroll position after resizing
     const targetLeft = docX * scale - focusX;
@@ -178,11 +187,15 @@ export class ViewerPane {
     if (target)
       target.wrapper.scrollIntoView({ behavior: "smooth", block: "center" });
   }
+  
+  async scrollToPoint(pageIndex, left, top) {
+    const page = await this.document.pdfDoc.getPage(pageIndex + 1);
+    const viewport = page.getViewport({ scale: this.scale });
+    const [, y] = viewport.convertToViewportPoint(left, top);
 
-  goToPage(n) {
-    const target = this.pages.find((p) => p.pageNumber === n);
-    if (target)
-      target.wrapper.scrollIntoView({ behavior: "instant", block: "center" });
+    //Have to manually set the offset to 35 somehow otherwise there's a scaled offset
+    const targetTop = this.stage.offsetTop + Math.max(0, y - 35);
+    this.scroller.scrollTo({ top: targetTop, behavior: "instant" });
   }
 
   scrollToTop() {
@@ -191,7 +204,13 @@ export class ViewerPane {
       target.wrapper.scrollIntoView({ behavior: "smooth", block: "center" });
   }
 
-  async #resizeAllCanvases(scale) {
+  goToPage(n) {
+    const target = this.pages.find((p) => p.pageNumber === n);
+    if (target)
+      target.wrapper.scrollIntoView({ behavior: "instant", block: "center" });
+  }
+
+  async resizeAllCanvases(scale) {
     const outputScale = window.devicePixelRatio || 1;
     const MAX_RENDER_SCALE = 7.0; // Cap render scale for performance
     
@@ -241,7 +260,8 @@ export class ViewerPane {
       Object.assign(page.textLayer.style, layerStyles);
       
       // Store the effective scale for the actual PDF rendering pass
-      page.pendingRenderScale = effectiveScale * outputScale;
+      // page.pendingRenderScale = effectiveScale * outputScale;
+      // console.log(page.pendingRenderScale);
     }
   }
 
@@ -251,6 +271,11 @@ export class ViewerPane {
         pageView.render(this.scale);
       }
     }
+  }
+
+  async refreshAllPages() {
+    await this.resizeAllCanvases(this.scale);
+    this.#renderVisiblePages();
   }
 
   fitWidth() {

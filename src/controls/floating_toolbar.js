@@ -39,8 +39,7 @@ export class FloatingToolbar {
     this.#updatePosition();
   }
 
-  /**
-   * @returns {ViewerPane} */
+  /** @returns {ViewerPane} */
   get pane() {
     return this.wm.activePane;
   }
@@ -302,14 +301,14 @@ export class FloatingToolbar {
     }
 
     if (timeSinceLastClick < 220) {
-      // the number here is for double-click interval
+      // The number here is for double-click interval
       this.pane.scrollToTop();
       this.lastClickTime = 0;
     } else {
       this.clickTimeout = setTimeout(() => {
         this.pane.scrollToRelative(1);
         this.clickTimeout = null;
-      }, 100); // the number here is for single click timeout
+      }, 100); // The number here is for single click timeout
 
       this.lastClickTime = now;
     }

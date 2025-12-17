@@ -23,6 +23,11 @@ export class WindowControls {
   }
 
   #setupKeyboardShortcuts() {
+    window.addEventListener("resize", async () => {
+      for (const p of this.wm.panes) {
+        await p.refreshAllPages();
+      }
+    })
     document.addEventListener("keydown", (e) => {
       const pane = this.activePane;
       const scroller = this.activePane.scroller;
@@ -94,7 +99,7 @@ export class WindowControls {
     const pane = this.activePane;
     if (!pane) return;
 
-    this.gesture = new GestureDetector(pane.viewerEl);
+    this.gesture = new GestureDetector(pane.paneEl);
 
     let startScale = 1;
     let isTransforming = false;
@@ -107,12 +112,12 @@ export class WindowControls {
       pageStates.clear();
 
       // Get pinch center in viewport coordinates
-      const containerRect = currentPane.viewerEl.getBoundingClientRect();
+      const containerRect = currentPane.paneEl.getBoundingClientRect();
       const pinchX = e.detail.center.x;
       const pinchY = e.detail.center.y;
 
       // Store original state for each page wrapper
-      const wrappers = currentPane.viewerEl.querySelectorAll(".page-wrapper");
+      const wrappers = currentPane.paneEl.querySelectorAll(".page-wrapper");
       wrappers.forEach((wrapper) => {
         const wrapperRect = wrapper.getBoundingClientRect();
 
@@ -144,7 +149,7 @@ export class WindowControls {
       const visualScaleDelta = newScale / startScale;
 
       // Apply scale with fixed transform-origin for each wrapper
-      const wrappers = currentPane.viewerEl.querySelectorAll(".page-wrapper");
+      const wrappers = currentPane.paneEl.querySelectorAll(".page-wrapper");
       wrappers.forEach((wrapper) => {
         const state = pageStates.get(wrapper);
         if (!state) return;
@@ -166,7 +171,7 @@ export class WindowControls {
 
       const currentPane = this.activePane;
       // Restore original state for all wrappers
-      const wrappers = currentPane.viewerEl.querySelectorAll(".page-wrapper");
+      const wrappers = currentPane.paneEl.querySelectorAll(".page-wrapper");
       wrappers.forEach((wrapper) => {
         const state = pageStates.get(wrapper);
         if (!state) return;
@@ -182,7 +187,7 @@ export class WindowControls {
       );
 
       // Apply actual zoom (re-renders canvases)
-      const containerRect = currentPane.viewerEl.getBoundingClientRect();
+      const containerRect = currentPane.paneEl.getBoundingClientRect();
       const focusX = e.detail.center.x - containerRect.left;
       const focusY = e.detail.center.y - containerRect.top;
       currentPane.zoomAt(finalScale, focusX, focusY);

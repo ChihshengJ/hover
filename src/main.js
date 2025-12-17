@@ -8,7 +8,6 @@ pdfjsLib.GlobalWorkerOptions.workerSrc = pdfjsWorker;
 
 const el = {
   wd: document.getElementById("window-container"),
-  viewer: document.getElementById("viewer-container"),
   pageNum: document.getElementById("current-page"),
 };
 
@@ -33,6 +32,7 @@ async function loadPdf(url) {
     const pdfmodel = new PDFDocumentModel();
     const wm = new SplitWindowManager(el.wd, pdfmodel);
     const pdfDoc = await pdfmodel.load(url);
+
     wm.initialize();
 
     const metadata = await pdfDoc.getMetadata();
@@ -41,7 +41,7 @@ async function loadPdf(url) {
     }
   } catch (error) {
     console.error("Error loading PDF:", error);
-    el.viewer.innerHTML = `
+    el.wd.innerHTML = `
       <div style="color: red; text-align: center; padding: 50px;">
         <h2>Failed to load PDF</h2>
         <p>${error.message}</p>

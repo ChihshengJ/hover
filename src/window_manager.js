@@ -16,6 +16,7 @@ export class SplitWindowManager {
   constructor(rootEl, documentModel) {
     this.rootEl = rootEl;
     this.document = documentModel;
+    /** @type {ViewerPane[]} */
     this.panes = [];
     this.splitDirection = null; // 'horizontal' | 'vertical' | null
     this.splitRatio = 0.5;
@@ -46,13 +47,13 @@ export class SplitWindowManager {
     container.className = "viewer-pane";
 
     container.addEventListener("click", () => {
-      this.setActivePane(this.panes.find((p) => p.viewerEl === container));
+      this.setActivePane(this.panes.find((p) => p.paneEl === container));
     });
 
     container.addEventListener(
       "focus",
       () => {
-        this.setActivePane(this.panes.find((p) => p.viewerEl === container));
+        this.setActivePane(this.panes.find((p) => p.paneEl === container));
       },
       true,
     );
@@ -103,7 +104,7 @@ export class SplitWindowManager {
 
     const paneToRemove = this.panes[1];
     paneToRemove.destroy();
-    paneToRemove.viewerEl.remove();
+    paneToRemove.paneEl.remove();
 
     this.panes = [this.panes[0]];
     this.activePane = this.panes[0];
@@ -138,19 +139,19 @@ export class SplitWindowManager {
       const ratioB = `${(1 - this.splitRatio) * 100}%`;
 
       if (this.splitDirection === "vertical") {
-        paneA.viewerEl.style.width = ratioA;
-        paneB.viewerEl.style.width = ratioB;
-        paneA.viewerEl.style.height = "100%";
-        paneB.viewerEl.style.height = "100%";
+        paneA.paneEl.style.width = ratioA;
+        paneB.paneEl.style.width = ratioB;
+        paneA.paneEl.style.height = "100%";
+        paneB.paneEl.style.height = "100%";
       } else {
-        paneA.viewerEl.style.height = ratioA;
-        paneB.viewerEl.style.height = ratioB;
-        paneA.viewerEl.style.width = "100%";
-        paneB.viewerEl.style.width = "100%";
+        paneA.paneEl.style.height = ratioA;
+        paneB.paneEl.style.height = ratioB;
+        paneA.paneEl.style.width = "100%";
+        paneB.paneEl.style.width = "100%";
       }
     } else if (this.panes[0]) {
-      this.panes[0].viewerEl.style.width = "100%";
-      this.panes[0].viewerEl.style.height = "100%";
+      this.panes[0].paneEl.style.width = "100%";
+      this.panes[0].paneEl.style.height = "100%";
     }
   }
 
@@ -190,7 +191,7 @@ export class SplitWindowManager {
     this.resizer.addEventListener("mousedown", onMouseDown);
 
     // Insert resizer between panes
-    this.rootEl.insertBefore(this.resizer, this.panes[1].viewerEl);
+    this.rootEl.insertBefore(this.resizer, this.panes[1].paneEl);
   }
 
   #removeResizer() {
@@ -201,9 +202,9 @@ export class SplitWindowManager {
   setActivePane(pane) {
     if (!pane || pane === this.activePane) return;
 
-    this.activePane?.viewerEl.classList.remove("active");
+    this.activePane?.paneEl.classList.remove("active");
     this.activePane = pane;
-    this.activePane.viewerEl.classList.add("active");
+    this.activePane.paneEl.classList.add("active");
 
     this.toolbar.updateActivePane();
     this.controls.updateActivePane();

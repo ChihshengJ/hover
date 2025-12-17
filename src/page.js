@@ -1,6 +1,13 @@
 import * as pdfjsLib from "pdfjs-dist";
 import pdfjsWorker from "pdfjs-dist/build/pdf.worker.min.mjs?url";
+import { PDFDocumentModel } from "./doc.js";
 import { CitationPopup } from "./controls/citation_popup.js";
+
+/**
+* @typedef {import('./controls/citation_popup.js').CitationPopup} CitationPopup;
+* @typedef {import('./doc.js').PDFDocumentModel} PDFDocumentModel;
+* @typedef {import('./viewpane.js').ViewerPane} ViewerPane;
+*/
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfjsWorker;
 
@@ -13,13 +20,20 @@ function getSharedPopup() {
 }
 
 export class PageView {
-  constructor(pdfDoc, pageNumber, wrapper, allNamedDests) {
-    this.pdfDoc = pdfDoc;
+  /**
+  * @param {ViewerPane} pane;
+  * @param {number} pageNumber;
+  * @param {HTMLElement} wrapper;
+  */
+  constructor(pane, pageNumber, canvas) {
+    this.pane = pane;
+    this.doc = this.pane.document;
+    this.pdfDoc = this.doc.pdfDoc;
+    this.allNamedDests = this.doc.allNamedDests;
     this.pageNumber = pageNumber;
-    this.allNamedDests = allNamedDests;
-    this.wrapper = wrapper;
 
-    this.canvas = wrapper.querySelector("canvas");
+    this.canvas = canvas;
+    this.wrapper = canvas.parentElement;
     this.annotationLayer = this.#initLayer("annotation");
     this.textLayer = this.#initLayer("text");
 
@@ -39,7 +53,7 @@ export class PageView {
   async render(requestedScale) {
     this.cancel();
 
-    this.scale = this.pendingRenderScale || requestedScale;
+    this.scale = requestedScale || this.pendingRenderScale;
 
     const page = await this.#ensurePageLoaded();
     const outputScale = window.devicePixelRatio || 1;
@@ -308,15 +322,7 @@ export class PageView {
           const targetCanvas = document.querySelector(
             `[data-page-number="${pageIndex + 1}"]`,
           );
-          await scrollToPoint(
-            this.wrapper.parentElement.parentElement,
-            targetCanvas,
-            this.pdfDoc,
-            this.scale,
-            pageIndex,
-            left,
-            top,
-          );
+          await this.pane.scrollToPoint(pageIndex, left, top);
         });
       } else {
         continue;
@@ -338,23 +344,3 @@ export class PageView {
   }
 }
 
-async function scrollToPoint(
-  viewerEl,
-  canvas,
-  pdfDoc,
-  scale,
-  pageIndex,
-  left,
-  top,
-) {
-  if (!canvas) return;
-
-  const page = await pdfDoc.getPage(pageIndex + 1);
-  const viewport = page.getViewport({ scale });
-  const [, y] = viewport.convertToViewportPoint(left, top);
-  const wrapper = canvas.parentElement;
-
-  //Have to manually set the offset to 35 somehow otherwise there's a scaled offset
-  const targetTop = wrapper.offsetTop + Math.max(0, y - 35);
-  viewerEl.scrollTo({ top: targetTop, behavior: "instant" });
-}

@@ -35,9 +35,9 @@ export class PaneControls {
       this.#updatePageDisplay();
     });
 
-    // Append to viewerEl (the pane container), not scroller
+    // Append to paneEl (the pane container), not scroller
     // This keeps it outside the scroll area
-    this.pane.viewerEl.appendChild(this.element);
+    this.pane.paneEl.appendChild(this.element);
     this.hide();
   }
 

@@ -268,10 +268,9 @@ body {
   left: 0;
   width: 100%;
   height: 100%;
-  pointer-events: auto;
+  cursor: text;
   z-index: 9;
-  user-select: text;
-  -webkit-user-select: text;
+  pointer-events: auto;
 }
 
 .textLayer span {
@@ -280,7 +279,17 @@ body {
   transform-origin: 0 0;
   line-height: 1;
   color: transparent;
-  background: none;
+  text-align: start;
+  padding: 0;
+  margin: 0;
+}
+
+.textLayer br {
+  position: absolute;
+  transform-origin: 0 0;
+  line-height: 0;
+  white-space-collapse: preserve;
+  user-select: none;
   padding: 0;
   margin: 0;
 }

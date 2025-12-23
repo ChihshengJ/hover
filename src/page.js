@@ -34,8 +34,8 @@ export class PageView {
 
     this.canvas = canvas;
     this.wrapper = canvas.parentElement;
-    this.annotationLayer = this.#initLayer("annotation");
     this.textLayer = this.#initLayer("text");
+    this.annotationLayer = this.#initLayer("annotation");
 
     this.page = null;
     this.textContent = null;
@@ -102,10 +102,14 @@ export class PageView {
         viewport: textViewport,
       });
       await textLayerInstance.render();
+      if (this.#isSafari()) {
+        this.#fixSafariTextLayer(textViewport);
+      }
 
       this.textLayer.style.width = `${cssWidth}px`;
       this.textLayer.style.height = `${cssHeight}px`;
       this.canvas.dataset.rendered = "true";
+
     } catch (err) {
       if (err?.name !== "RenderingCancelledException") {
         console.error("Render error:", err);
@@ -114,6 +118,68 @@ export class PageView {
       this.renderTask = null;
     }
   }
+
+  #isSafari() {
+    return /^((?!chrome|android).)*safari/i.test(navigator.userAgent);
+  }
+
+  #fixSafariTextLayer(viewport) {
+    const spans = this.textLayer.querySelectorAll("span");
+    const items = this.textContent.items;
+    console.log('=== VIEWPORT DEBUG ===');
+    console.log('viewport passed to fixSafari:', viewport);
+    console.log('viewport.scale:', viewport.scale);
+    console.log('this.scale (PageView):', this.scale);
+    
+    // What was actually passed to TextLayer?
+    const cssWidth = parseFloat(this.canvas.style.width);
+    const cssHeight = parseFloat(this.canvas.style.height);
+    console.log('canvas cssWidth:', cssWidth);
+    console.log('canvas cssHeight:', cssHeight);
+    
+    // Get the base viewport to understand the ratio
+    const baseViewport = this.page.getViewport({ scale: 1 });
+    console.log('baseViewport.width:', baseViewport.width);
+    console.log('baseViewport.height:', baseViewport.height);
+    
+    const textLayerScale = cssWidth / baseViewport.width;
+    console.log('textLayerScale (cssWidth / baseViewport.width):', textLayerScale);
+    console.log('textLayerScale * devicePixelRatio:', textLayerScale * (window.devicePixelRatio || 1));
+    
+    // Check a span's actual style after TextLayer render
+    if (spans.length > 0) {
+      const firstSpan = spans[0];
+      console.log('=== FIRST SPAN STYLES ===');
+      console.log('--scale-x:', firstSpan.style.getPropertyValue('--scale-x'));
+      console.log('--font-height:', firstSpan.style.getPropertyValue('--font-height'));
+      console.log('--rotate:', firstSpan.style.getPropertyValue('--rotate'));
+      console.log('transform:', getComputedStyle(firstSpan).transform);
+      console.log('left:', firstSpan.style.left);
+      console.log('top:', firstSpan.style.top);
+    }
+
+    const { pageWidth, pageHeight, pageX, pageY } = viewport.rawDims;
+    const transform = [1, 0, 0, -1, -pageX, pageY + pageHeight];
+
+    let itemIndex = 0;
+    for (const span of spans) {
+      if (!span.textContent) continue;
+      while (itemIndex < items.length && items[itemIndex].str === "") {
+        itemIndex++;
+      }
+      if (itemIndex < items.length) {
+        const item = items[itemIndex];
+        const tx = pdfjsLib.Util.transform(transform, item.transform);
+        const calculatedHeight = Math.hypot(tx[2], tx[3]);
+
+        span.style.setProperty("--font-height", `${calculatedHeight.toFixed(2)}px`);
+        span.style.setProperty("font-size", `calc(var(--total-scale-factor) * var(--font-height))`);
+      }
+      itemIndex++;
+    }
+  }
+
+  
 
   cancel() {
     if (this.renderTask) {

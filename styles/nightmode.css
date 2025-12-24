@@ -175,8 +175,8 @@ body.night-mode .citation-popup-toggle:hover {
 /******************/
 /* navigation tree */
 body.night-mode .nav-tree {
-  background: rgba(15, 15, 18, 0.9);
-  border-color: rgba(255, 200, 150, 0.1);
+  background: rgba(15, 15, 18, 0.8);
+  border-color: rgba(255, 240, 150, 0.1);
 }
 
 body.night-mode .nav-branch {
@@ -191,12 +191,26 @@ body.night-mode .nav-item-row:hover {
   background: rgba(255, 200, 150, 0.1);
 }
 
+body.night-mode .nav-toggle {
+  color: rgba(255, 255, 255, 0.5);
+}
+
+body.night-mode .nav-item--section .nav-icon {
+  color: rgba(255, 255, 255, 0.8);
+}
+
+body.night-mode .nav-item--figure .nav-icon {
+  color: rgba(251, 159, 16, 0.8);
+}
+
+body.night-mode .nav-item--table .nav-icon {
+  color: rgba(64, 185, 59, 0.8);
+}
+
 body.night-mode .nav-title {
   color: rgba(255, 240, 220, 0.9);
 }
 
 body.night-mode .nav-page {
-  color: rgba(255, 220, 180, 0.4);
+  color: rgba(255, 220, 180, 0.5);
 }
-
-

@@ -97,7 +97,6 @@ export class WindowControls {
     if (!pane) return;
 
     this.gesture = new GestureDetector(pane.paneEl);
-    console.log(`bind gestures to ${pane}`);
 
     let startScale = 1;
     let isTransforming = false;

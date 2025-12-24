@@ -4,7 +4,7 @@
  * @typedef {import('../controls/navigate_toc.js') NavigationPopup};
  */
 
-import { NavigationPopup } from '../controls/navigate_toc.js';
+import { NavigationPopup } from "../controls/navigate_tree.js";
 
 export class FloatingToolbar {
   /**

@@ -58,7 +58,7 @@ export class PaneControls {
         this.#updateZoomDisplay();
         break;
       case "fit-width":
-        this.pane.fitToWidth?.();
+        this.pane.fitWidth?.();
         this.#updateZoomDisplay();
         break;
     }

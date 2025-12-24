@@ -5,7 +5,7 @@
  * 
  * @typedef {Object} NavItem
  * @property {string} title
- * @property {string} type - 'section' | 'figure' | 'table'
+ * @property {'section'|'figure'|'table'} type
  * @property {number} pageIndex
  * @property {number} left
  * @property {number} top
@@ -23,8 +23,13 @@ export class NavigationPopup {
     
     /** @type {NavItem[]} */
     this.tree = [];
+    
+    /** @type {NavItem[]} Flattened sections for binary search */
+    this.flatSections = [];
+    
     this.isVisible = false;
-    this.isBuilt = false;
+    this.treeBuilt = false;
+    this.domBuilt = false;
     
     this.popup = null;
     this.branch = null;
@@ -43,6 +48,35 @@ export class NavigationPopup {
     return this.wm.document;
   }
 
+  /**
+   * Build the navigation tree. Call this once when document loads.
+   * @returns {Promise<void>}
+   */
+  async initialize() {
+    if (this.treeBuilt) return;
+    
+    const pdfDoc = this.doc.pdfDoc;
+    const outline = await pdfDoc.getOutline();
+    
+    if (!outline || outline.length === 0) {
+      this.tree = [];
+      this.flatSections = [];
+      this.treeBuilt = true;
+      return;
+    }
+
+    const destCache = new Map();
+    
+    this.tree = await this.#buildOutlineTree(outline, destCache);
+    
+    this.flatSections = this.#flattenSections(this.tree);
+    
+    const figureTableItems = await this.#extractFigureTableAnnotations(destCache);
+    this.#insertFiguresIntoTree(figureTableItems);
+    
+    this.treeBuilt = true;
+  }
+
   #createPopup() {
     this.popup = document.createElement("div");
     this.popup.className = "nav-popup";
@@ -59,53 +93,33 @@ export class NavigationPopup {
   }
 
   #setupDismissListeners() {
-    const onScroll = () => {
+    const dismiss = () => {
       if (this.isVisible) this.hide();
     };
     
-    const onClick = (e) => {
+    document.addEventListener("click", (e) => {
       if (!this.isVisible) return;
       if (!this.popup.contains(e.target) && !this.toolbar.ball.contains(e.target)) {
         this.hide();
       }
-    };
+    });
     
-    const onKeydown = (e) => {
-      if (this.isVisible && e.key === "Escape") {
-        this.hide();
-      }
-    };
-
-    // Use capture phase for scroll to catch it before it bubbles
-    document.addEventListener("scroll", onScroll, true);
-    document.addEventListener("click", onClick);
-    document.addEventListener("keydown", onKeydown);
-  }
-
-  async #parseTree() {
-    const pdfDoc = this.doc.pdfDoc;
-    const outline = await pdfDoc.getOutline();
-    
-    if (!outline || outline.length === 0) {
-      this.tree = [];
-      return;
-    }
-
-    this.tree = await this.#buildOutlineTree(outline);
-    const figureTableItems = await this.#extractFigureTableAnnotations();
-    this.#insertFiguresIntoTree(figureTableItems);
+    document.addEventListener("keydown", (e) => {
+      if (this.isVisible && e.key === "Escape") this.hide();
+    });
   }
 
   /**
    * Recursively build navigation tree from PDF outline
    * @param {Object[]} outline
+   * @param {Map} destCache
    * @returns {Promise<NavItem[]>}
    */
-  async #buildOutlineTree(outline) {
+  async #buildOutlineTree(outline, destCache) {
     const items = [];
     
     for (const entry of outline) {
-      const position = await this.#resolveDestination(entry.dest);
+      const position = await this.#resolveDestination(entry.dest, destCache);
       
       /** @type {NavItem} */
       const item = {
@@ -118,8 +132,8 @@ export class NavigationPopup {
         expanded: false
       };
       
-      if (entry.items && entry.items.length > 0) {
-        item.children = await this.#buildOutlineTree(entry.items);
+      if (entry.items?.length > 0) {
+        item.children = await this.#buildOutlineTree(entry.items, destCache);
       }
       
       items.push(item);
@@ -129,12 +143,18 @@ export class NavigationPopup {
   }
 
   /**
-   * Resolve a PDF destination to page coordinates
+   * Resolve a PDF destination to page coordinates (cached)
    * @param {string|Array} dest
+   * @param {Map} cache
    * @returns {Promise<{pageIndex: number, left: number, top: number}|null>}
    */
-  async #resolveDestination(dest) {
+  async #resolveDestination(dest, cache) {
     if (!dest) return null;
+    
+    const cacheKey = typeof dest === "string" ? dest : JSON.stringify(dest);
+    if (cache.has(cacheKey)) {
+      return cache.get(cacheKey);
+    }
     
     const pdfDoc = this.doc.pdfDoc;
     const namedDests = this.doc.allNamedDests;
@@ -147,193 +167,221 @@ export class NavigationPopup {
         try {
           explicitDest = await pdfDoc.getDestination(dest);
         } catch {
+          cache.set(cacheKey, null);
           return null;
         }
       }
     }
     
-    if (!Array.isArray(explicitDest)) return null;
+    if (!Array.isArray(explicitDest)) {
+      cache.set(cacheKey, null);
+      return null;
+    }
     
     const [ref, , left, top] = explicitDest;
     
     try {
       const pageIndex = await pdfDoc.getPageIndex(ref);
-      return { pageIndex, left: left ?? 0, top: top ?? 0 };
+      const result = { pageIndex, left: left ?? 0, top: top ?? 0 };
+      cache.set(cacheKey, result);
+      return result;
     } catch {
+      cache.set(cacheKey, null);
       return null;
     }
   }
 
   /**
+   * Flatten sections into sorted array for binary search
+   * @param {NavItem[]} items
+   * @param {NavItem[]} result
+   * @returns {NavItem[]}
+   */
+  #flattenSections(items, result = []) {
+    for (const item of items) {
+      if (item.type === "section") {
+        result.push(item);
+        if (item.children.length > 0) {
+          this.#flattenSections(item.children, result);
+        }
+      }
+    }
+    return result;
+  }
+
+  /**
    * Extract figure and table links from annotations
+   * @param {Map} destCache
    * @returns {Promise<NavItem[]>}
    */
-  async #extractFigureTableAnnotations() {
+  async #extractFigureTableAnnotations(destCache) {
     const items = [];
     const pdfDoc = this.doc.pdfDoc;
-    const namedDests = this.doc.allNamedDests;
     const numPages = pdfDoc.numPages;
+    const figurePattern = /^(fig(ure)?|table|tab)\.?\s*(\d+)/i;
     
-    const figurePattern = /^(fig(ure)?|table|tab)\s*\.?\s*(\d+)/i;
+    const seen = new Set();
     
     for (let pageNum = 1; pageNum <= numPages; pageNum++) {
       const page = await pdfDoc.getPage(pageNum);
-      const annotations = await page.getAnnotations({ intent: "display" });
-      const textContent = await page.getTextContent();
+      const [annotations, textContent] = await Promise.all([
+        page.getAnnotations({ intent: "display" }),
+        page.getTextContent()
+      ]);
       
-      for (const a of annotations) {
-        if (a.subtype !== "Link") continue;
-        if (!a.dest) continue;
+      const textIndex = this.#buildTextSpatialIndex(textContent);
+      
+      for (const annot of annotations) {
+        if (annot.subtype !== "Link" || !annot.dest) continue;
         
-        const linkText = this.#findAnnotationText(a, textContent, page);
+        const linkText = this.#findAnnotationText(annot, textIndex);
         if (!linkText) continue;
         
         const match = linkText.match(figurePattern);
         if (!match) continue;
         
-        const type = match[1].toLowerCase().startsWith("tab") ? "table" : "figure";
-        const position = await this.#resolveDestination(a.dest);
+        const position = await this.#resolveDestination(annot.dest, destCache);
+        if (!position) continue;
         
-        if (position) {
-          items.push({
-            title: linkText.trim(),
-            type,
-            pageIndex: position.pageIndex,
-            left: position.left,
-            top: position.top,
-            children: [],
-            expanded: false,
-            sourcePageIndex: pageNum - 1
-          });
-        }
+        const key = `${position.pageIndex}:${Math.round(position.top)}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        
+        const type = match[1].toLowerCase().startsWith("tab") ? "table" : "figure";
+        
+        items.push({
+          title: linkText.trim(),
+          type,
+          pageIndex: position.pageIndex,
+          left: position.left,
+          top: position.top,
+          children: [],
+          expanded: false
+        });
       }
+      
+      page.cleanup();
     }
     
-    return this.#deduplicateItems(items);
+    items.sort((a, b) => {
+      if (a.pageIndex !== b.pageIndex) return a.pageIndex - b.pageIndex;
+      return b.top - a.top;
+    });
+    
+    return items;
   }
 
   /**
-   * Find text content near an annotation rectangle
-   * @param {Object} annot
+   * Build spatial index for text items
    * @param {Object} textContent
-   * @param {Object} page
+   * @returns {Object[]}
+   */
+  #buildTextSpatialIndex(textContent) {
+    if (!textContent?.items) return [];
+    
+    return textContent.items
+      .filter(item => item.str && item.transform)
+      .map(item => ({
+        str: item.str,
+        x: item.transform[4],
+        y: item.transform[5],
+        width: item.width || 0,
+        height: item.height || 10
+      }));
+  }
+
+  /**
+   * Find text content overlapping an annotation
+   * @param {Object} annot
+   * @param {Object[]} textIndex
    * @returns {string|null}
    */
-  #findAnnotationText(annot, textContent, page) {
-    if (!annot.rect || !textContent?.items) return null;
+  #findAnnotationText(annot, textIndex) {
+    if (!annot.rect || textIndex.length === 0) return null;
     
     const [x1, y1, x2, y2] = annot.rect;
-    const annotLeft = Math.min(x1, x2);
-    const annotRight = Math.max(x1, x2);
-    const annotBottom = Math.min(y1, y2);
-    const annotTop = Math.max(y1, y2);
+    const left = Math.min(x1, x2);
+    const right = Math.max(x1, x2);
+    const bottom = Math.min(y1, y2);
+    const top = Math.max(y1, y2);
     
-    const matchingText = [];
+    const matches = [];
     
-    for (const item of textContent.items) {
-      if (!item.transform || !item.str) continue;
+    for (const item of textIndex) {
+      const itemRight = item.x + item.width;
+      const itemTop = item.y + item.height;
       
-      const itemX = item.transform[4];
-      const itemY = item.transform[5];
-      const itemWidth = item.width || 0;
-      const itemHeight = item.height || 10;
-      
-      const overlapsX = itemX < annotRight && (itemX + itemWidth) > annotLeft;
-      const overlapsY = itemY < annotTop && (itemY + itemHeight) > annotBottom;
-      
-      if (overlapsX && overlapsY) {
-        matchingText.push(item.str);
+      if (item.x < right && itemRight > left && 
+          item.y < top && itemTop > bottom) {
+        matches.push(item.str);
       }
     }
     
-    return matchingText.join(" ") || null;
+    return matches.length > 0 ? matches.join(" ") : null;
   }
 
   /**
-   * Remove duplicate figure/table references
-   * @param {NavItem[]} items
-   * @returns {NavItem[]}
-   */
-  #deduplicateItems(items) {
-    const seen = new Map();
-    
-    for (const item of items) {
-      const key = `${item.type}-${item.pageIndex}-${Math.round(item.top)}`;
-      if (!seen.has(key)) {
-        seen.set(key, item);
-      }
-    }
-    
-    return Array.from(seen.values());
-  }
-
-  /**
-   * Insert figure/table items into the tree under appropriate sections
+   * Insert figure/table items into appropriate sections
    * @param {NavItem[]} figureItems
    */
   #insertFiguresIntoTree(figureItems) {
-    if (figureItems.length === 0) return;
+    if (figureItems.length === 0 || this.flatSections.length === 0) {
+      // No sections, add figures to root
+      this.tree.push(...figureItems);
+      return;
+    }
     
-    // Sort by page index and top position
-    figureItems.sort((a, b) => {
-      if (a.pageIndex !== b.pageIndex) return a.pageIndex - b.pageIndex;
-      return b.top - a.top; // Higher top = earlier in page (PDF coordinates)
-    });
-    
-    // For each figure, find the section it belongs to
     for (const fig of figureItems) {
       const section = this.#findContainingSection(fig.pageIndex, fig.top);
       if (section) {
         section.children.push(fig);
       } else {
-        // No containing section found, add to root level
         this.tree.push(fig);
       }
     }
   }
 
   /**
-   * Find the section that contains a given page position
+   * Binary search to find containing section
    * @param {number} pageIndex
    * @param {number} top
    * @returns {NavItem|null}
    */
   #findContainingSection(pageIndex, top) {
-    let bestMatch = null;
+    const sections = this.flatSections;
+    if (sections.length === 0) return null;
     
-    const search = (items, parent = null) => {
-      for (let i = 0; i < items.length; i++) {
-        const item = items[i];
-        if (item.type !== "section") continue;
-        
-        const nextSection = items[i + 1];
-        const isAfterCurrent = 
-          pageIndex > item.pageIndex || 
-          (pageIndex === item.pageIndex && top <= item.top);
-        
-        const isBeforeNext = !nextSection || 
-          nextSection.type !== "section" ||
-          pageIndex < nextSection.pageIndex ||
-          (pageIndex === nextSection.pageIndex && top > nextSection.top);
-        
-        if (isAfterCurrent && isBeforeNext) {
-          bestMatch = item;
-          if (item.children.length > 0) {
-            search(item.children, item);
-          }
-        }
+    // Binary search for the last section that starts before this position
+    let lo = 0;
+    let hi = sections.length - 1;
+    let result = -1;
+    
+    while (lo <= hi) {
+      const mid = (lo + hi) >>> 1;
+      const section = sections[mid];
+      
+      const sectionBefore = 
+        section.pageIndex < pageIndex ||
+        (section.pageIndex === pageIndex && section.top >= top);
+      
+      if (sectionBefore) {
+        result = mid;
+        lo = mid + 1;
+      } else {
+        hi = mid - 1;
       }
-    };
+    }
     
-    search(this.tree);
-    return bestMatch;
+    return result >= 0 ? sections[result] : null;
   }
 
   // ─────────────────────────────────────────────────────────────
-  // Rendering
+  // DOM Rendering (cached)
   // ─────────────────────────────────────────────────────────────
 
-  #renderTree() {
+  #buildDOM() {
+    if (this.domBuilt) return;
+    
     this.treeContainer.innerHTML = "";
     
     if (this.tree.length === 0) {
@@ -341,15 +389,16 @@ export class NavigationPopup {
       empty.className = "nav-empty";
       empty.textContent = "No outline available";
       this.treeContainer.appendChild(empty);
-      return;
+    } else {
+      const ul = this.#createTreeList(this.tree, 0);
+      this.treeContainer.appendChild(ul);
     }
     
-    const ul = this.#createTreeList(this.tree, 0);
-    this.treeContainer.appendChild(ul);
+    this.domBuilt = true;
   }
 
   /**
-   * Create a nested list for tree items
+   * Create nested list for tree items
    * @param {NavItem[]} items
    * @param {number} depth
    * @returns {HTMLUListElement}
@@ -357,18 +406,17 @@ export class NavigationPopup {
   #createTreeList(items, depth) {
     const ul = document.createElement("ul");
     ul.className = "nav-list";
-    ul.dataset.depth = depth.toString();
+    ul.dataset.depth = String(depth);
     
     for (const item of items) {
-      const li = this.#createTreeItem(item, depth);
-      ul.appendChild(li);
+      ul.appendChild(this.#createTreeItem(item, depth));
     }
     
     return ul;
   }
 
   /**
-   * Create a single tree item element
+   * Create single tree item element
    * @param {NavItem} item
    * @param {number} depth
    * @returns {HTMLLIElement}
@@ -379,30 +427,27 @@ export class NavigationPopup {
     
     const hasChildren = item.children.length > 0;
     
-    // Item row
     const row = document.createElement("div");
     row.className = "nav-item-row";
     
-    // Expand/collapse toggle
+    // Toggle
+    const toggle = document.createElement("span");
+    toggle.className = hasChildren ? "nav-toggle" : "nav-toggle nav-toggle--spacer";
     if (hasChildren) {
-      const toggle = document.createElement("span");
-      toggle.className = "nav-toggle";
-      toggle.innerHTML = item.expanded ? "▼" : "▶";
+      toggle.textContent = item.expanded ? "-" : "+";
       toggle.addEventListener("click", (e) => {
         e.stopPropagation();
-        this.#toggleItem(item, li);
+        item.expanded = !item.expanded;
+        toggle.textContent = item.expanded ? "-" : "+";
+        childList.style.display = item.expanded ? "block" : "none";
       });
-      row.appendChild(toggle);
-    } else {
-      const spacer = document.createElement("span");
-      spacer.className = "nav-toggle nav-toggle--spacer";
-      row.appendChild(spacer);
     }
+    row.appendChild(toggle);
     
     // Icon
     const icon = document.createElement("span");
     icon.className = "nav-icon";
-    icon.textContent = this.#getIcon(item.type);
+    icon.textContent = item.type === "figure" ? "F" : item.type === "table" ? "T" : "§";
     row.appendChild(icon);
     
     // Title
@@ -412,22 +457,21 @@ export class NavigationPopup {
     title.title = item.title;
     row.appendChild(title);
     
-    // Page number indicator
+    // Page number
     const pageNum = document.createElement("span");
     pageNum.className = "nav-page";
-    pageNum.textContent = (item.pageIndex + 1).toString();
+    pageNum.textContent = String(item.pageIndex + 1);
     row.appendChild(pageNum);
     
-    // Click to navigate
-    row.addEventListener("click", () => {
-      this.#navigateTo(item);
-    });
+    // Navigation click
+    row.addEventListener("click", () => this.#navigateTo(item));
     
     li.appendChild(row);
     
-    // Children container
+    // Children
+    let childList = null;
     if (hasChildren) {
-      const childList = this.#createTreeList(item.children, depth + 1);
+      childList = this.#createTreeList(item.children, depth + 1);
       childList.style.display = item.expanded ? "block" : "none";
       li.appendChild(childList);
     }
@@ -436,45 +480,12 @@ export class NavigationPopup {
   }
 
   /**
-   * Get icon for item type
-   * @param {string} type
-   * @returns {string}
-   */
-  #getIcon(type) {
-    switch (type) {
-      case "figure": return "🖼";
-      case "table": return "📊";
-      default: return "§";
-    }
-  }
-
-  /**
-   * Toggle expand/collapse of a tree item
-   * @param {NavItem} item
-   * @param {HTMLLIElement} li
-   */
-  #toggleItem(item, li) {
-    item.expanded = !item.expanded;
-    
-    const toggle = li.querySelector(".nav-toggle");
-    const childList = li.querySelector(":scope > .nav-list");
-    
-    if (toggle) {
-      toggle.innerHTML = item.expanded ? "▼" : "▶";
-    }
-    
-    if (childList) {
-      childList.style.display = item.expanded ? "block" : "none";
-    }
-  }
-
-  /**
-   * Navigate to an item's position
+   * Navigate to item position
    * @param {NavItem} item
    */
   async #navigateTo(item) {
-    await this.pane.scrollToPoint(item.pageIndex, item.left, item.top);
     this.hide();
+    await this.pane.scrollToPoint(item.pageIndex, item.left, item.top);
   }
 
   // ─────────────────────────────────────────────────────────────
@@ -487,22 +498,21 @@ export class NavigationPopup {
       return;
     }
     
-    // Build tree on first show
-    if (!this.isBuilt) {
-      await this.#parseTree();
-      this.isBuilt = true;
+    // Ensure tree is built (should already be from document load)
+    if (!this.treeBuilt) {
+      await this.initialize();
     }
     
-    this.#renderTree();
-    this.#positionPopup();
+    // Build DOM once
+    this.#buildDOM();
     
+    this.#positionPopup();
     this.popup.classList.add("nav-popup--visible");
     this.isVisible = true;
   }
 
   hide() {
     if (!this.isVisible) return;
-    
     this.popup.classList.remove("nav-popup--visible");
     this.isVisible = false;
   }
@@ -518,25 +528,22 @@ export class NavigationPopup {
   #positionPopup() {
     const ballRect = this.toolbar.ball.getBoundingClientRect();
     
-    // Position branch to connect from ball
     this.branch.style.left = `${ballRect.left}px`;
     this.branch.style.top = `${ballRect.top + ballRect.height / 2}px`;
     
-    // Position tree container
     const branchWidth = 40;
     this.treeContainer.style.left = `${ballRect.left - branchWidth - 280}px`;
     this.treeContainer.style.top = `${ballRect.top - 100}px`;
   }
 
   /**
-   * Refresh the tree (call after document changes)
+   * Clean up resources
    */
-  async refresh() {
-    this.isBuilt = false;
-    if (this.isVisible) {
-      await this.#parseTree();
-      this.isBuilt = true;
-      this.#renderTree();
-    }
+  destroy() {
+    this.popup.remove();
+    this.tree = [];
+    this.flatSections = [];
+    this.treeBuilt = false;
+    this.domBuilt = false;
   }
 }

@@ -30,6 +30,7 @@ export class ViewerPane {
     this.observer = null;
     this.controls = new PaneControls(this);
 
+    // 0: no spread; 1: even spread; 2: odd spread
     this.spreadMode = 0;
     this.spreadRows = [];
 
@@ -211,10 +212,10 @@ export class ViewerPane {
 
     const wrapper = this.pages[pageIndex]?.wrapper;
     if (!wrapper) return;
-    
+
     const targetTop = wrapper.offsetTop + Math.max(0, y);
 
-    this.scroller.scrollTo({top: targetTop, behavior: "instant" });
+    this.scroller.scrollTo({ top: targetTop, behavior: "instant" });
   }
 
   scrollToTop() {
@@ -282,16 +283,26 @@ export class ViewerPane {
     this.#renderVisiblePages();
   }
 
-  fitWidth() { 
-    if (this.spreadMode !== 0) {
-
-    }
+  fitWidth() {
     const viewRect = this.scroller.getBoundingClientRect();
-    const canvasRect = this.canvases[0].getBoundingClientRect();
-    const targetScale = viewRect.width / canvasRect.width;
-    console.log(targetScale);
-    this.zoomAt(targetScale, viewRect.height / 2, viewRect.width / 2);
 
+    if (this.spreadMode === 0) {
+      const canvasRect = this.canvases[0]?.getBoundingClientRect();
+      if (!canvasRect) return;
+
+      const intrinsicWidth = canvasRect.width / this.scale;
+      const targetScale = viewRect.width / intrinsicWidth;
+      this.zoomAt(targetScale, viewRect.height / 2, viewRect.width / 2);
+    } else {
+      const spreadRect = this.spreadContainer
+        .querySelector(".spread-row:not(.spread-row-single)")
+        ?.getBoundingClientRect();
+      if (!spreadRect) return;
+
+      const intrinsicWidth = spreadRect.width / this.scale;
+      const targetScale = viewRect.width / intrinsicWidth;
+      this.zoomAt(targetScale, viewRect.height / 2, viewRect.width / 2);
+    }
   }
 
   spread() {
@@ -306,9 +317,7 @@ export class ViewerPane {
     if (this.spreadMode === mode) return;
 
     const currentPage = this.getCurrentPage();
-
     this.#clearSpreadLayout();
-
     this.spreadMode = mode;
 
     if (mode === 0) {

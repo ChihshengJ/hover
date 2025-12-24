@@ -1,0 +1,318 @@
+html,
+body {
+  margin: 0;
+  padding: 0;
+  background: linear-gradient(
+    210deg,
+    rgba(210, 210, 210, 1) 13%,
+    rgba(179, 179, 179, 1) 48%,
+    rgba(150, 150, 150, 1) 90%
+  );
+  color: #d0d0fd;
+  font-family: "Elms Sans", monospace;
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+  height: 100%;
+  width: 100%;
+  overflow: hidden;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: inherit;
+}
+
+/*******************/
+/* Split container */
+.window-container {
+  display: flex;
+  flex: 1;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  z-index: 0;
+}
+
+.window-container.split-vertical {
+  flex-direction: row;
+}
+
+.window-container.split-horizontal {
+  flex-direction: column;
+}
+
+/***************/
+/* Viewer pane */
+.viewer-pane {
+  flex: 1;
+  min-height: 0;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  background: transparent;
+  z-index: 1;
+}
+
+.pane-scroll-area {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+
+  display: block;
+}
+
+.viewer-pane.active {
+  box-shadow: inset 0 0 0 2px rgba(59, 130, 246, 0.5);
+}
+
+/***************/
+/* Resizer */
+.split-resizer {
+  flex-shrink: 0;
+  background: var(--border-color, #e0e0e0);
+  transition: background 0.2s;
+}
+
+.split-resizer.vertical {
+  width: 4px;
+  cursor: col-resize;
+}
+
+.split-resizer.horizontal {
+  height: 4px;
+  cursor: row-resize;
+}
+
+.split-resizer:hover,
+.split-resizer.dragging {
+  background: var(--accent-color, #3b82f6);
+}
+
+.night-mode .split-resizer {
+  background: #404040;
+}
+
+/***************/
+/* Pane controls */
+.pane-controls {
+  position: absolute;
+  top: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 100;
+
+  background: rgba(255, 255, 255, 0.85);
+  backdrop-filter: blur(12px);
+  border-radius: 20px;
+  box-shadow:
+    0 2px 12px rgba(0, 0, 0, 0.1),
+    0 0 0 1px rgba(0, 0, 0, 0.05);
+  padding: 6px 16px;
+
+  pointer-events: auto;
+  user-select: none;
+  transition:
+    opacity 0.2s,
+    transform 0.2s;
+}
+
+.pane-controls.hidden {
+  opacity: 0;
+}
+
+.pane-controls:hover {
+  background: rgba(255, 255, 255, 0.95);
+  box-shadow:
+    0 4px 16px rgba(0, 0, 0, 0.12),
+    0 0 0 1px rgba(0, 0, 0, 0.08);
+}
+
+.pane-controls-inner {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 13px;
+  color: #333;
+}
+
+.pane-btn {
+  background: none;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  padding: 4px 8px;
+  cursor: pointer;
+  transition: all 0.15s;
+  font-size: 14px;
+  color: #555;
+}
+
+.pane-btn:hover {
+  background: rgba(0, 0, 0, 0.08);
+  color: #000;
+}
+
+.pane-btn.active {
+  background: rgba(59, 130, 246, 0.15);
+  border-color: rgba(59, 130, 246, 0.3);
+  color: #2563eb;
+}
+
+.pane-btn.small {
+  padding: 2px 8px;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.pane-page-info,
+.pane-zoom-controls {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.pane-page-sep {
+  opacity: 0.4;
+  margin: 0 2px;
+}
+
+.pane-zoom-level,
+.pane-current-page,
+.pane-total-pages {
+  min-width: 28px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+/***************/
+/* Viewer stage and document layers */
+.viewer-stage {
+  position: relative;
+  display: flex;
+  background: transparent;
+  flex-direction: column;
+  align-items: center;
+  width: fit-content;
+  min-width: 100%;
+  min-height: min-content;
+  transform-origin: 0 0;
+}
+
+.page-wrapper {
+  display: block;
+  position: relative;
+  background: transparent;
+  box-shadow: 0px 4px 10px 5px rgba(0, 0, 0, 0.25);
+}
+
+.page-wrapper canvas {
+  position: relative;
+  z-index: 0;
+}
+
+.page-num {
+  position: relative;
+  color: white;
+  font-weight: 100;
+  font-size: 12px;
+}
+
+.annotationLayer {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 10;
+  user-select: none;
+}
+
+.annotationLayer a {
+  pointer-events: auto;
+  position: absolute;
+  background-color: transparent;
+  text-decoration: none;
+}
+
+.annotationLayer a:hover {
+  outline: 1px dashed rgba(0, 0, 255, 0.3);
+}
+
+.textLayer {
+  color: transparent;
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  cursor: text;
+  z-index: 9;
+  pointer-events: auto;
+}
+
+.textLayer span {
+  position: absolute;
+  white-space: pre;
+  transform-origin: 0 0;
+  line-height: 1;
+  color: transparent;
+  text-align: start;
+  padding: 0;
+  margin: 0;
+}
+
+.textLayer br {
+  position: absolute;
+  transform-origin: 0 0;
+  line-height: 0;
+  white-space-collapse: preserve;
+  user-select: none;
+  padding: 0;
+  margin: 0;
+}
+
+/* ********************** */
+/* horizontal spread */
+.spread-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 100%;
+}
+
+.spread-row {
+  display: flex;
+  flex-direction: row;
+  justify-content: center;
+  align-items: flex-start;
+  gap: 4px;
+  margin: 14px 0;
+}
+
+.spread-row-single {
+  justify-content: center;
+}
+
+.spread-page {
+  margin: 0 !important; /* Override individual page margins */
+}
+
+.spread-page-single {
+  /* Single page in spread mode - centered */
+}
+
+.spread-page-left {
+  /* Left page styling if needed */
+}
+
+.spread-page-right {
+  /* Right page styling if needed */
+}
+
+/* Ensure page wrappers don't have conflicting margins in spread mode */
+.spread-row .page-wrapper {
+  margin: 0;
+}

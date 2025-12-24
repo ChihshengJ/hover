@@ -1,7 +1,10 @@
 /**
  * @typedef {import('../window_manager.js').SplitWindowManager} SplitWindowManager;
  * @typedef {import('../viewpane.js').ViewerPane} ViewerPane;
+ * @typedef {import('../controls/navigate_toc.js') NavigationPopup};
  */
+
+import { NavigationPopup } from '../controls/navigate_toc.js';
 
 export class FloatingToolbar {
   /**
@@ -33,6 +36,8 @@ export class FloatingToolbar {
     document.body.appendChild(this.nightModeClip);
 
     this.#createToolbar();
+    /** @type {NavigationPopup} */
+    this.navigationPopup = new NavigationPopup(this);
     this.#createHitArea();
     this.#setupEventListeners();
     this.#updatePosition();
@@ -297,11 +302,12 @@ export class FloatingToolbar {
 
     if (timeSinceLastClick < 220) {
       // The number here is for double-click interval
+      this.navigationPopup.hide();
       this.pane.scrollToTop();
       this.lastClickTime = 0;
     } else {
       this.clickTimeout = setTimeout(() => {
-        this.pane.scrollToRelative(1);
+        this.navigationPopup.toggle();
         this.clickTimeout = null;
       }, 100); // The number here is for single click timeout
 

@@ -1,0 +1,312 @@
+.floating-toolbar-wrapper {
+  position: fixed;
+  z-index: 1000;
+  pointer-events: none;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  transition:
+    transform 0.4s cubic-bezier(0.4, 0, 0.2, 1),
+    opacity 0.4s ease;
+}
+
+.floating-toolbar-wrapper.hidden {
+  transform: translateX(calc(100% + 50px)); /* Slide out, leave ~10px peek */
+  opacity: 0.6;
+}
+
+.floating-toolbar-hit-area {
+  position: fixed;
+  width: 130px;
+  height: 400px;
+  right: 0;
+  pointer-events: none;
+  z-index: 0;
+  /* background: rgba(255, 0, 0, 0.1); */
+}
+
+/* Active when toolbar is hidden */
+.floating-toolbar-hit-area.active {
+  pointer-events: auto;
+  /* background: rgba(0, 255, 0, 0.1); */
+}
+
+.floating-ball {
+  position: relative;
+  background: linear-gradient(
+    143.5deg,
+    rgba(255, 255, 255, 0.2) 17.38%,
+    rgba(190, 190, 190, 0.2) 62.76%,
+    rgba(150, 150, 150, 0.2) 91.49%
+  );
+  box-shadow:
+    inset 2px 2px 1px 0 #ffffff80,
+    inset -1px -1px 1px 1px #ffffff80,
+    0 6px 6px #00000045,
+    0 0 20px #0000001a;
+  width: 75px;
+  height: 75px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: auto;
+  cursor: grab;
+  user-select: none;
+  z-index: 999;
+  transition:
+    transform 0.3s cubic-bezier(0.4, 0, 0.2, 1),
+    box-shadow 0.3s ease,
+    opacity 0.3s ease;
+}
+
+.effect {
+  position: absolute;
+  border-radius: 50%;
+  z-index: 0;
+  inset: 0;
+  overflow: hidden;
+  backdrop-filter: blur(3px);
+  filter: url("glass-distortion");
+  -webkit-filter: url("glass-distortion");
+}
+
+.inner {
+  position: absolute;
+  z-index: 997;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.floating-ball:hover {
+  filter: brightness(1.1);
+  transform: scale(1.1);
+  box-shadow:
+    inset 5px 2px 2px 0 #ffffff80,
+    inset -1px -1px 1px 1px #ffffff80,
+    0 10px 10px #00000045,
+    0 0 20px #0000001a;
+}
+
+.floating-ball:active {
+  filter: brightness(1.1);
+}
+
+.floating-ball.dragging {
+  cursor: grabbing;
+  box-shadow: 0 6px 15px rgba(0, 0, 0, 0.3);
+  transition: all 0.2s ease-out;
+}
+
+.page-display {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  font-family: "Elms Sans", monospace;
+  color: black;
+  font-size: 20px;
+  font-weight: 300;
+  line-height: 1;
+  z-index: 998;
+}
+
+.page-divider {
+  font-size: 15px;
+  opacity: 0.8;
+  transform: scaleX(4);
+}
+
+.floating-toolbar {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  pointer-events: none;
+  z-index: 990;
+}
+
+.floating-toolbar-top {
+  bottom: calc(100% + 10px);
+  flex-direction: column-reverse;
+}
+
+.floating-toolbar-bottom {
+  top: calc(100% + 10px);
+}
+
+.tool-btn {
+  width: 45px;
+  height: 45px;
+  border-radius: 50%;
+  border: none;
+  background: rgba(255, 255, 255, 0.6);
+  color: #333;
+  font-size: 20px;
+  font-weight: 300;
+  cursor: pointer;
+  box-shadow:
+    inset 5px 3px 1px 0 #ffffff70,
+    inset -1px -1px 1px 1px #ffffff80,
+    inset -2px -1px 1px 0px rgba(0, 0, 0, 0.05),
+    0 4px 20px rgba(0, 0, 0, 0.4);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: auto;
+  opacity: 0;
+  transform: scale(0);
+}
+
+/***********************/
+/* Expanding animation */
+.floating-toolbar-wrapper.expanding .tool-btn {
+  opacity: 1;
+  transform: scale(1);
+  transition:
+    opacity 0.5s ease-out,
+    transform 0.3s cubic-bezier(0.68, -0.55, 0.265, 1.55);
+}
+
+.floating-toolbar-wrapper.expanding .tool-btn:nth-child(1) {
+  transition-delay: 0.1s;
+}
+
+.floating-toolbar-wrapper.expanding .tool-btn:nth-child(2) {
+  transform: scale(0.77);
+  transition-delay: 0.15s;
+}
+
+.floating-toolbar-wrapper.expanding .tool-btn:nth-child(3) {
+  transform: scale(0.68);
+  transition-delay: 0.2s;
+}
+
+/* Expanded state - enable hover transitions only */
+.floating-toolbar-wrapper.expanded .tool-btn {
+  opacity: 1;
+  transition:
+    transform 0.2s cubic-bezier(0.2, -0.4, 0.2, 1.55),
+    brightness 0.2s ease-in-out;
+}
+
+.floating-toolbar-wrapper.expanding .tool-btn {
+  opacity: 1;
+  transform: scale(1);
+  transition:
+    opacity 0.5s ease-out,
+    transform 0.3s cubic-bezier(0.68, -0.55, 0.265, 1.55);
+}
+
+.floating-toolbar-wrapper.expanding .tool-btn:nth-child(1) {
+  transition-delay: 0.1s;
+}
+
+.floating-toolbar-wrapper.expanding .tool-btn:nth-child(2) {
+  transform: scale(0.77);
+  transition-delay: 0.15s;
+}
+
+.floating-toolbar-wrapper.expanding .tool-btn:nth-child(3) {
+  transform: scale(0.68);
+  transition-delay: 0.2s;
+}
+
+/* Expanded state - enable hover transitions only */
+.floating-toolbar-wrapper.expanded .tool-btn {
+  opacity: 1;
+  transition:
+    transform 0.2s cubic-bezier(0.2, -0.4, 0.2, 1.55),
+    brightness 0.2s ease-in-out;;
+}
+
+.floating-toolbar-wrapper.expanded .tool-btn:nth-child(1) {
+  transform: scale(1);
+}
+
+.floating-toolbar-wrapper.expanded .tool-btn:nth-child(2) {
+  transform: scale(0.77);
+}
+
+.floating-toolbar-wrapper.expanded .tool-btn:nth-child(3) {
+  transform: scale(0.68);
+}
+
+.floating-toolbar-wrapper.expanded .tool-btn:nth-child(1):hover {
+  transform: scale(1.1);
+}
+
+.floating-toolbar-wrapper.expanded .tool-btn:nth-child(2):hover {
+  transform: scale(0.85);
+}
+
+.floating-toolbar-wrapper.expanded .tool-btn:nth-child(3):hover {
+  transform: scale(0.79);
+}
+
+.floating-toolbar-wrapper.expanded .tool-btn:active {
+  filter: brightness(1.1);
+  transform: scale(0.95);
+}
+
+/* Collapsing animation */
+.floating-toolbar-wrapper.collapsing .tool-btn {
+  opacity: 0;
+  transition:
+    opacity 0.3s ease-out,
+    transform 0.2s cubic-bezier(0.6, 0.04, 0.98, 0.335);
+}
+
+.floating-toolbar-wrapper.collapsing
+  .floating-toolbar-top
+  .tool-btn:nth-child(1) {
+  transform: translateY(25px);
+  transition-delay: 0.15s;
+}
+
+.floating-toolbar-wrapper.collapsing
+  .floating-toolbar-top
+  .tool-btn:nth-child(2) {
+  transform: translateY(50px);
+  transition-delay: 0.1s;
+}
+
+.floating-toolbar-wrapper.collapsing
+  .floating-toolbar-top
+  .tool-btn:nth-child(3) {
+  transform: translateY(70px);
+  transition-delay: 0s;
+}
+
+.floating-toolbar-wrapper.collapsing
+  .floating-toolbar-bottom
+  .tool-btn:nth-child(1) {
+  transform: translateY(-25px);
+  transition-delay: 0.15s;
+}
+
+.floating-toolbar-wrapper.collapsing
+  .floating-toolbar-bottom
+  .tool-btn:nth-child(2) {
+  transform: translateY(-50px);
+  transition-delay: 0.1s;
+}
+
+.floating-toolbar-wrapper.collapsing
+  .floating-toolbar-bottom
+  .tool-btn:nth-child(3) {
+  transform: translateY(-70px);
+  transition-delay: 0s;
+}
+
+.floating-toolbar-wrapper.expanded .tool-btn:hover {
+  transform: scale(1.05);
+}
+
+.floating-toolbar-wrapper.expanded .tool-btn:active {
+  transform: scale(0.95);
+}
+

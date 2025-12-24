@@ -14,7 +14,7 @@ export class WindowControls {
     this.wm = wm;
     this.gesture = null;
     this.#setupKeyboardShortcuts();
-    this.#setupGestures();
+    this.#bindGestures();
     this.MAX_RENDER_SCALE = 7;
   }
 
@@ -27,7 +27,7 @@ export class WindowControls {
       for (const p of this.wm.panes) {
         await p.refreshAllPages();
       }
-    })
+    });
     document.addEventListener("keydown", (e) => {
       const pane = this.activePane;
       const scroller = this.activePane.scroller;
@@ -87,11 +87,8 @@ export class WindowControls {
     });
   }
 
-  #setupGestures() {
-    this.#rebindGestures();
-  }
-
-  #rebindGestures() {
+  /* TODO: bug in split mode right window zooming behavior */
+  #bindGestures() {
     if (this.gesture) {
       this.gesture.destory?.();
     }
@@ -100,43 +97,46 @@ export class WindowControls {
     if (!pane) return;
 
     this.gesture = new GestureDetector(pane.paneEl);
+    console.log(`bind gestures to ${pane}`);
 
     let startScale = 1;
     let isTransforming = false;
     let pageStates = new Map();
 
     this.gesture.getEventTarget().addEventListener("pinchstart", (e) => {
-      const currentPane = this.activePane;
-      startScale = currentPane.scale;
+      startScale = pane.scale;
       isTransforming = true;
       pageStates.clear();
-      
+
       const pinchX = e.detail.center.x;
       const pinchY = e.detail.center.y;
-      
-      const wrappers = currentPane.paneEl.querySelectorAll(".page-wrapper");
+
+      const wrappers = pane.paneEl.querySelectorAll(".page-wrapper");
       wrappers.forEach((wrapper) => {
         const wrapperRect = wrapper.getBoundingClientRect();
-        const percentX = ((pinchX - wrapperRect.left) / wrapperRect.width) * 100;
-        const percentY = ((pinchY - wrapperRect.top) / wrapperRect.height) * 100;
-        
-        // Just store the pinch origin - no need to track "original transform"
+        const percentX =
+          ((pinchX - wrapperRect.left) / wrapperRect.width) * 100;
+        const percentY =
+          ((pinchY - wrapperRect.top) / wrapperRect.height) * 100;
+
         pageStates.set(wrapper, { percentX, percentY });
       });
     });
 
     this.gesture.getEventTarget().addEventListener("pinchupdate", (e) => {
       if (!isTransforming) return;
-      const currentPane = this.activePane;
       const ratio = e.detail.startScaleRatio;
-      const newScale = Math.max(0.5, Math.min(this.MAX_RENDER_SCALE, startScale * ratio));
+      const newScale = Math.max(
+        0.5,
+        Math.min(this.MAX_RENDER_SCALE, startScale * ratio),
+      );
       const visualScaleDelta = newScale / startScale;
-      
-      const wrappers = currentPane.paneEl.querySelectorAll(".page-wrapper");
+
+      const wrappers = pane.paneEl.querySelectorAll(".page-wrapper");
       wrappers.forEach((wrapper) => {
         const state = pageStates.get(wrapper);
         if (!state) return;
-        
+
         wrapper.style.transformOrigin = `${state.percentX}% ${state.percentY}%`;
         wrapper.style.transform = `scale(${visualScaleDelta})`;
       });
@@ -144,14 +144,13 @@ export class WindowControls {
 
     this.gesture.getEventTarget().addEventListener("pinchend", (e) => {
       if (!isTransforming) return;
-      const currentPane = this.activePane;
-      
-      const wrappers = currentPane.paneEl.querySelectorAll(".page-wrapper");
+
+      const wrappers = pane.paneEl.querySelectorAll(".page-wrapper");
       wrappers.forEach((wrapper) => {
         wrapper.style.transform = "";
         wrapper.style.transformOrigin = "";
       });
-      
+
       const ratio = e.detail.startScaleRatio;
       const finalScale = Math.max(
         0.5,
@@ -159,16 +158,15 @@ export class WindowControls {
       );
 
       console.log(finalScale);
-      
-      const containerRect = currentPane.paneEl.getBoundingClientRect();
+
+      const containerRect = pane.paneEl.getBoundingClientRect();
       const focusX = e.detail.center.x - containerRect.left;
       const focusY = e.detail.center.y - containerRect.top;
-      currentPane.zoomAt(finalScale, focusX, focusY);
-      
+      pane.zoomAt(finalScale, focusX, focusY);
+
       isTransforming = false;
       pageStates.clear();
     });
-
   }
 
   #switchActivePane() {
@@ -179,11 +177,11 @@ export class WindowControls {
     const nextIndex = (currentIndex + 1) % panes.length;
     this.wm.setActivePane(panes[nextIndex]);
 
-    this.#rebindGestures();
+    this.#bindGestures();
   }
 
   updateActivePane() {
-    this.#rebindGestures();
+    this.#bindGestures();
   }
 
   destroy() {

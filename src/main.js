@@ -1,8 +1,14 @@
 import * as pdfjsLib from "pdfjs-dist";
 import pdfjsWorker from "pdfjs-dist/build/pdf.worker.min.mjs?url";
-import "./style.css";
 import { PDFDocumentModel } from "./doc.js";
 import { SplitWindowManager } from "./window_manager.js";
+
+import "../styles/viewer.css";
+import "../styles/floating_toolbar.css";
+import "../styles/citation_popup.css";
+import "../styles/navigation-tree.css";
+import "../styles/nightmode.css";
+import "../styles/outline_popup.css";
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfjsWorker;
 

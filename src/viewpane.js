@@ -228,6 +228,7 @@ export class ViewerPane {
     if (target)
       target.wrapper.scrollIntoView({ behavior: "instant", block: "center" });
   }
+
   async resizeAllCanvases(scale) {
     const outputScale = window.devicePixelRatio || 1;
     const MAX_RENDER_SCALE = 7.0;
@@ -281,7 +282,17 @@ export class ViewerPane {
     this.#renderVisiblePages();
   }
 
-  fitWidth() { }
+  fitWidth() { 
+    if (this.spreadMode !== 0) {
+
+    }
+    const viewRect = this.scroller.getBoundingClientRect();
+    const canvasRect = this.canvases[0].getBoundingClientRect();
+    const targetScale = viewRect.width / canvasRect.width;
+    console.log(targetScale);
+    this.zoomAt(targetScale, viewRect.height / 2, viewRect.width / 2);
+
+  }
 
   spread() {
     const modes = [0, 1, 2];
@@ -413,10 +424,6 @@ export class ViewerPane {
     }
 
     return pairs;
-  }
-
-  getSpreadMode() {
-    return this.spreadMode;
   }
 
   onDocumentChange(event, data) {

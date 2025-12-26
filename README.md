@@ -4,9 +4,9 @@
 
 <h1 align="center">Hover — A Super Lightweight PDF Viewer Extension</h1>
 
-<p align="center">
-  <img src="assets/H.png" width="120" alt="Hover Icon"/>
-</p>
+<!-- <p align="center"> -->
+<!--   <img src="assets/H.png" width="120" alt="Hover Icon"/> -->
+<!-- </p> -->
 
 Hover is a minimalist PDF reader extension designed for people who spend way too much time reading academic papers in the browser.
 It intentionally keeps only the most essential features, but aims to make the actual _experience_ of reading papers smoother, faster, and immersive by ---
@@ -34,9 +34,9 @@ PDF readers are boring as hell.
 Hover introduces a small but beautifully designed floating ball that acts as your navigation hub.
 
 - **Drag it vertically**: scroll the document
-- **Single click**: go to the previous page
-- **Double click**: go to the next page
-- **Left click**: open the full mini toolbar which includes functionalities such as **dark mode**, **split window**, **fit-width**, **horizontal spread**, **zoom in/out**, and **Highlighter**.
+- **Single click**: open the table of contents
+- **Double click**: go to the first page
+- **Left click**: open the full mini toolbar which includes **dark mode**, **split window**, **fit-width**, **horizontal spread**, and **zoom in/out**.
 
 The functionalities are kept at their minimum, but your interaction with the document is more fluid than ever.
 

@@ -1,7 +1,7 @@
 /**
  * @typedef {import('../window_manager.js').SplitWindowManager} SplitWindowManager;
  * @typedef {import('../viewpane.js').ViewerPane} ViewerPane;
- * @typedef {import('../touch_controls.js').GestureDetector} GestureDetector;
+ * @typedef {import('./touch_controls.js').GestureDetector} GestureDetector;
  */
 
 import { GestureDetector } from "./touch_controls.js";
@@ -12,7 +12,8 @@ export class WindowControls {
    */
   constructor(wm) {
     this.wm = wm;
-    this.gesture = null;
+    /** @type {Map<ViewerPane, GestureDetector>} */
+    this.gestureDetectors = new Map();
     this.#setupKeyboardShortcuts();
     this.#bindGestures();
     this.MAX_RENDER_SCALE = 7;
@@ -28,10 +29,12 @@ export class WindowControls {
         await p.refreshAllPages();
       }
     });
+
     document.addEventListener("keydown", (e) => {
       const pane = this.activePane;
-      const scroller = this.activePane.scroller;
-      if (!pane) return;
+      const scroller = this.activePane?.scroller;
+      if (!pane || !scroller) return;
+
       const isZoomKey =
         (e.metaKey || e.ctrlKey) &&
         (e.key === "+" || e.key === "-" || e.key === "=" || e.key === "0");
@@ -41,8 +44,6 @@ export class WindowControls {
 
       if (isZoomKey) {
         e.preventDefault();
-
-        // Zoom in/out
         if (e.key === "=" || e.key === "+") pane.zoom(0.25);
         else if (e.key === "-" || e.key === "_") pane.zoom(-0.25);
         else if (e.key === "0")
@@ -50,7 +51,6 @@ export class WindowControls {
         return;
       }
 
-      // Normal scrolling
       if (["ArrowDown", "j"].includes(e.key)) {
         e.preventDefault();
         scroller.scrollBy({ top: stepY, behavior: "smooth" });
@@ -65,7 +65,6 @@ export class WindowControls {
         scroller.scrollBy({ left: -stepX, behavior: "smooth" });
       }
 
-      // Page jump (Shift + j/k or Page Up/Down)
       if (e.shiftKey && e.key === "J") {
         e.preventDefault();
         pane.scrollToRelative(1);
@@ -87,22 +86,25 @@ export class WindowControls {
     });
   }
 
-  /* TODO: bug in split mode right window zooming behavior */
   #bindGestures() {
-    if (this.gesture) {
-      this.gesture.destory?.();
+    for (const pane of this.wm.panes) {
+      this.#bindGestureToPane(pane);
     }
+  }
 
-    const pane = this.activePane;
-    if (!pane) return;
+  #bindGestureToPane(pane) {
+    if (this.gestureDetectors.has(pane)) return;
 
-    this.gesture = new GestureDetector(pane.paneEl);
+    const gesture = new GestureDetector(pane.paneEl);
+    this.gestureDetectors.set(pane, gesture);
 
     let startScale = 1;
     let isTransforming = false;
     let pageStates = new Map();
 
-    this.gesture.getEventTarget().addEventListener("pinchstart", (e) => {
+    gesture.getEventTarget().addEventListener("pinchstart", (e) => {
+      this.wm.setActivePane(pane);
+
       startScale = pane.scale;
       isTransforming = true;
       pageStates.clear();
@@ -110,20 +112,31 @@ export class WindowControls {
       const pinchX = e.detail.center.x;
       const pinchY = e.detail.center.y;
 
-      const wrappers = pane.paneEl.querySelectorAll(".page-wrapper");
+      const paneRect = pane.paneEl.getBoundingClientRect();
+      const scrollerRect = pane.scroller.getBoundingClientRect();
+      const scrollerOffsetX = scrollerRect.left - paneRect.left;
+      const scrollerOffsetY = scrollerRect.top - paneRect.top;
+      
+      const docPinchX = pane.scroller.scrollLeft + (pinchX - scrollerOffsetX);
+      const docPinchY = pane.scroller.scrollTop + (pinchY - scrollerOffsetY);
+
+      const wrappers = pane.stage.querySelectorAll(".page-wrapper");
       wrappers.forEach((wrapper) => {
-        const wrapperRect = wrapper.getBoundingClientRect();
-        const percentX =
-          ((pinchX - wrapperRect.left) / wrapperRect.width) * 100;
-        const percentY =
-          ((pinchY - wrapperRect.top) / wrapperRect.height) * 100;
+        const wrapperLeft = wrapper.offsetLeft;
+        const wrapperTop = wrapper.offsetTop;
+        const wrapperWidth = wrapper.offsetWidth;
+        const wrapperHeight = wrapper.offsetHeight;
+
+        const percentX = ((docPinchX - wrapperLeft) / wrapperWidth) * 100;
+        const percentY = ((docPinchY - wrapperTop) / wrapperHeight) * 100;
 
         pageStates.set(wrapper, { percentX, percentY });
       });
     });
 
-    this.gesture.getEventTarget().addEventListener("pinchupdate", (e) => {
+    gesture.getEventTarget().addEventListener("pinchupdate", (e) => {
       if (!isTransforming) return;
+
       const ratio = e.detail.startScaleRatio;
       const newScale = Math.max(
         0.5,
@@ -131,7 +144,7 @@ export class WindowControls {
       );
       const visualScaleDelta = newScale / startScale;
 
-      const wrappers = pane.paneEl.querySelectorAll(".page-wrapper");
+      const wrappers = pane.stage.querySelectorAll(".page-wrapper");
       wrappers.forEach((wrapper) => {
         const state = pageStates.get(wrapper);
         if (!state) return;
@@ -141,10 +154,11 @@ export class WindowControls {
       });
     });
 
-    this.gesture.getEventTarget().addEventListener("pinchend", (e) => {
+    gesture.getEventTarget().addEventListener("pinchend", (e) => {
       if (!isTransforming) return;
 
-      const wrappers = pane.paneEl.querySelectorAll(".page-wrapper");
+      // Clear transforms first
+      const wrappers = pane.stage.querySelectorAll(".page-wrapper");
       wrappers.forEach((wrapper) => {
         wrapper.style.transform = "";
         wrapper.style.transformOrigin = "";
@@ -156,16 +170,27 @@ export class WindowControls {
         Math.min(this.MAX_RENDER_SCALE, startScale * ratio),
       );
 
-      console.log(finalScale);
+      const paneRect = pane.paneEl.getBoundingClientRect();
+      const scrollerRect = pane.scroller.getBoundingClientRect();
+      const scrollerOffsetX = scrollerRect.left - paneRect.left;
+      const scrollerOffsetY = scrollerRect.top - paneRect.top;
 
-      const containerRect = pane.paneEl.getBoundingClientRect();
-      const focusX = e.detail.center.x - containerRect.left;
-      const focusY = e.detail.center.y - containerRect.top;
+      const focusX = e.detail.center.x - scrollerOffsetX;
+      const focusY = e.detail.center.y - scrollerOffsetY;
+
       pane.zoomAt(finalScale, focusX, focusY);
 
       isTransforming = false;
       pageStates.clear();
     });
+  }
+
+  #unbindGestureFromPane(pane) {
+    const gesture = this.gestureDetectors.get(pane);
+    if (gesture) {
+      gesture.destroy?.();
+      this.gestureDetectors.delete(pane);
+    }
   }
 
   #switchActivePane() {
@@ -175,15 +200,24 @@ export class WindowControls {
     const currentIndex = panes.indexOf(this.activePane);
     const nextIndex = (currentIndex + 1) % panes.length;
     this.wm.setActivePane(panes[nextIndex]);
-
-    this.#bindGestures();
   }
 
   updateActivePane() {
     this.#bindGestures();
   }
 
+  onPaneAdded(pane) {
+    this.#bindGestureToPane(pane);
+  }
+
+  onPaneRemoved(pane) {
+    this.#unbindGestureFromPane(pane);
+  }
+
   destroy() {
-    this.gesture?.destroy?.();
+    for (const [pane, gesture] of this.gestureDetectors) {
+      gesture.destroy?.();
+    }
+    this.gestureDetectors.clear();
   }
 }

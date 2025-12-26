@@ -7,7 +7,7 @@ export class PaneControls {
 
   attach() {
     this.element = document.createElement("div");
-    this.element.className = "pane-controls";
+    this.element.className = "pane-controls hidden";
     this.element.innerHTML = `
       <div class="pane-controls-inner">
         <span class="pane-page-info">
@@ -35,10 +35,8 @@ export class PaneControls {
       this.#updatePageDisplay();
     });
 
-    // Append to paneEl (the pane container), not scroller
-    // This keeps it outside the scroll area
     this.pane.paneEl.appendChild(this.element);
-    this.hide();
+    this.isHidden = true;
   }
 
   #handleAction(action) {

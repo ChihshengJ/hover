@@ -287,21 +287,19 @@ export class ViewerPane {
     const viewRect = this.scroller.getBoundingClientRect();
 
     if (this.spreadMode === 0) {
-      const canvasRect = this.canvases[0]?.getBoundingClientRect();
-      if (!canvasRect) return;
+      // Use intrinsic dimensions from document, not rendered dimensions
+      const intrinsicWidth = this.document.pageDimensions[0]?.width;
+      if (!intrinsicWidth) return;
 
-      const intrinsicWidth = canvasRect.width / this.scale;
       const targetScale = viewRect.width / intrinsicWidth;
-      this.zoomAt(targetScale, viewRect.height / 2, viewRect.width / 2);
+      // FIX: Arguments were swapped! Should be (scale, focusX, focusY)
+      this.zoomAt(targetScale, viewRect.width / 2, viewRect.height / 2);
     } else {
-      const spreadRect = this.spreadContainer
-        .querySelector(".spread-row:not(.spread-row-single)")
-        ?.getBoundingClientRect();
-      if (!spreadRect) return;
-
-      const intrinsicWidth = spreadRect.width / this.scale;
-      const targetScale = viewRect.width / intrinsicWidth;
-      this.zoomAt(targetScale, viewRect.height / 2, viewRect.width / 2);
+      // For spread mode, use intrinsic width of two pages + gap
+      const pageWidth = this.document.pageDimensions[0]?.width || 0;
+      const spreadWidth = pageWidth * 2 + 4; // 4px gap from CSS
+      const targetScale = viewRect.width / spreadWidth;
+      this.zoomAt(targetScale, viewRect.width / 2, viewRect.height / 2);
     }
   }
 

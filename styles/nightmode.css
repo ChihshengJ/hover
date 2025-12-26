@@ -1,68 +1,5 @@
-#night-mode-clip {
-  z-index: 9;
-  position: fixed;
-  top: 0;
-  left: 0;
-  width: 100vw;
-  height: 100vh;
-  pointer-events: none;
-  clip-path: circle(0% at var(--clip-x) var(--clip-y));
-}
-
-#night-mode-clip.anim {
-  animation: circle-reveal 0.8s ease-out forwards;
-}
-
-@keyframes circle-reveal {
-  0% {
-    clip-path: circle(0% at var(--clip-x) var(--clip-y));
-  }
-  100% {
-    clip-path: circle(150vmax at var(--clip-x) var(--clip-y));
-  }
-}
-
-#night-mode-clip.to-dark .night-mode-content {
-  background: black !important;
-}
-
-#night-mode-clip.to-dark .night-mode-content .page-wrapper canvas {
-  filter: invert(1) hue-rotate(75deg) brightness(1.2) contrast(0.9);
-}
-
-#night-mode-clip.to-dark .night-mode-content .page-wrapper {
-  box-shadow: 0px 0px 15px 4px rgba(255, 255, 255, 0.15);
-}
-
-#night-mode-clip.to-dark .night-mode-content .page-num {
-  color: #888;
-}
-
-#night-mode-clip.to-light > * {
-  background: linear-gradient(
-    210deg,
-    rgba(210, 210, 210, 1) 13%,
-    rgba(179, 179, 179, 1) 48%,
-    rgba(150, 150, 150, 1) 90%
-  ) !important;
-}
-
-#night-mode-clip.to-light .page-wrapper canvas {
-  filter: none;
-}
-
-#night-mode-clip.to-light .page-wrapper {
-  box-shadow: 0px 4px 20px 5px rgba(0, 0, 0, 0.25);
-}
-
-#night-mode-clip.to-light .page-num {
-  color: white;
-}
-
-/******************/
-/* viewer styles */
 body.night-mode {
-  background: black;
+  background: rgba(46, 48, 53, 1);
 }
 
 /* invert color */
@@ -71,7 +8,7 @@ body.night-mode .page-wrapper canvas {
 }
 
 body.night-mode .page-wrapper {
-  box-shadow: 0px 0px 20px 4px rgba(255, 255, 255, 0.1);
+  box-shadow: 0px 0px 10px 2px rgba(0, 0, 0, 0.5);
 }
 
 body.night-mode .page-num {
@@ -109,10 +46,6 @@ body.night-mode .citation-popup-toggle:hover {
     0 0 0 1px rgba(255, 255, 255, 0.1);
 }
 
-.night-mode .pane-controls:hover {
-  background: rgba(50, 50, 50, 0.95);
-}
-
 .night-mode .pane-controls-inner {
   color: #e0e0e0;
 }
@@ -124,6 +57,13 @@ body.night-mode .citation-popup-toggle:hover {
 .night-mode .pane-btn:hover {
   background: rgba(255, 255, 255, 0.1);
   color: #fff;
+}
+
+.night-mode .viewer-pane.active .pane-controls {
+  box-shadow:
+    0 2px 12px rgba(0, 0, 0, 0.2),
+    0 0 0 1px rgba(0, 0, 0, 0.05),
+    inset 0 0 4px 2px rgba(219, 147, 52, 0.8);
 }
 
 /******************/
@@ -189,9 +129,14 @@ body.night-mode .nav-branch {
 
 body.night-mode .nav-item-row:hover {
   background: rgba(255, 200, 150, 0.1);
+  box-shadow: inset 0 1px 6px 2px rgba(255, 235, 160, 0.2);
 }
 
 body.night-mode .nav-toggle {
+  color: rgba(255, 255, 255, 0.5);
+}
+
+body.night-mode .nav-toggle:hover {
   color: rgba(255, 255, 255, 0.5);
 }
 

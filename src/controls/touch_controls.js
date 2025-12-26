@@ -157,6 +157,19 @@ export class GestureDetector {
       e.preventDefault();
     }
   }
+  destroy() {
+    this.element_.removeEventListener(
+      "touchstart",
+      this.onTouchStart_.bind(this),
+    );
+    this.element_.removeEventListener("touchmove", this.onTouch_.bind(this));
+    this.element_.removeEventListener("touchend", this.onTouch_.bind(this));
+    this.element_.removeEventListener("touchcancel", this.onTouch_.bind(this));
+    this.element_.removeEventListener("wheel", this.onWheel_.bind(this));
+    if (this.wheelEndTimeout_) {
+      clearTimeout(this.wheelEndTimeout_);
+    }
+  }
 }
 
 function pinchScaleRatio(event, prevEvent) {

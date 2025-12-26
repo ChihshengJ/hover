@@ -68,6 +68,7 @@ export class SplitWindowManager {
 
     // capture viewport before split
     const primaryPane = this.activePane;
+    this.setActivePane(primaryPane);
     const currentScale = primaryPane.scale;
     const currentScrollTop = primaryPane.scroller.scrollTop;
     const currentScrollLeft = primaryPane.scroller.scrollLeft;
@@ -83,11 +84,17 @@ export class SplitWindowManager {
 
     this.panes.push(newPane);
     this.toolbar.enterSplitMode();
-    for (const p of this.panes) {
-      p.controls.show();
-    }
     this.#updateLayout();
     this.#createResizer();
+
+    // Ensuring controls are rendered before being shown
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        for (const p of this.panes) {
+          p.controls.show();
+        }
+      });
+    });
 
     requestAnimationFrame(() => {
       requestAnimationFrame(() => {
@@ -119,7 +126,7 @@ export class SplitWindowManager {
       p.controls.hide();
     }
     this.#removeResizer();
-    this.#updateLayout();
+    this.#updateLayout()
     this.isSplit = false;
   }
 
@@ -137,21 +144,26 @@ export class SplitWindowManager {
 
     if (this.splitDirection) {
       const [paneA, paneB] = this.panes;
-      const ratioA = `${this.splitRatio * 100}%`;
-      const ratioB = `${(1 - this.splitRatio) * 100}%`;
+      // This must match the CSS!!!
+      const resizerSize = 4;
 
       if (this.splitDirection === "vertical") {
-        paneA.paneEl.style.width = ratioA;
-        paneB.paneEl.style.width = ratioB;
+        paneA.paneEl.style.flex = "none";
+        paneB.paneEl.style.flex = "none";
+        paneA.paneEl.style.width = `calc(${this.splitRatio * 100}% - ${resizerSize / 2}px)`;
+        paneB.paneEl.style.width = `calc(${(1 - this.splitRatio) * 100}% - ${resizerSize / 2}px)`;
         paneA.paneEl.style.height = "100%";
         paneB.paneEl.style.height = "100%";
       } else {
-        paneA.paneEl.style.height = ratioA;
-        paneB.paneEl.style.height = ratioB;
+        paneA.paneEl.style.flex = "none";
+        paneB.paneEl.style.flex = "none";
+        paneA.paneEl.style.height = `calc(${this.splitRatio * 100}% - ${resizerSize / 2}px)`;
+        paneB.paneEl.style.height = `calc(${(1 - this.splitRatio) * 100}% - ${resizerSize / 2}px)`;
         paneA.paneEl.style.width = "100%";
         paneB.paneEl.style.width = "100%";
       }
     } else if (this.panes[0]) {
+      this.panes[0].paneEl.style.flex = "1";
       this.panes[0].paneEl.style.width = "100%";
       this.panes[0].paneEl.style.height = "100%";
     }
@@ -162,15 +174,6 @@ export class SplitWindowManager {
     this.resizer.className = `split-resizer ${this.splitDirection}`;
 
     let startPos, startRatio;
-
-    const onMouseDown = (e) => {
-      e.preventDefault();
-      startPos = this.splitDirection === "vertical" ? e.clientX : e.clientY;
-      startRatio = this.splitRatio;
-      document.addEventListener("mousemove", onMouseMove);
-      document.addEventListener("mouseup", onMouseUp);
-      this.resizer.classList.add("dragging");
-    };
 
     const onMouseMove = (e) => {
       const rect = this.rootEl.getBoundingClientRect();
@@ -184,15 +187,30 @@ export class SplitWindowManager {
       this.#updateLayout();
     };
 
+    const onMouseDown = (e) => {
+      e.preventDefault();
+      startPos = this.splitDirection === "vertical" ? e.clientX : e.clientY;
+      startRatio = this.splitRatio;
+      document.addEventListener("mousemove", onMouseMove);
+      document.addEventListener("mouseup", onMouseUp);
+      this.resizer.classList.add("dragging");
+    };
+
     const onMouseUp = () => {
       document.removeEventListener("mousemove", onMouseMove);
       document.removeEventListener("mouseup", onMouseUp);
       this.resizer.classList.remove("dragging");
     };
 
-    this.resizer.addEventListener("mousedown", onMouseDown);
+    const onDoubleClick = (e) => {
+      e.preventDefault();
+      this.splitRatio = 0.5;
+      this.#updateLayout();
+    };
 
-    // Insert resizer between panes
+    this.resizer.addEventListener("mousedown", onMouseDown);
+    this.resizer.addEventListener("dblclick", onDoubleClick);
+
     this.rootEl.insertBefore(this.resizer, this.panes[1].paneEl);
   }
 
@@ -202,7 +220,7 @@ export class SplitWindowManager {
   }
 
   setActivePane(pane) {
-    if (!pane || pane === this.activePane) return;
+    if (!pane) return;
 
     this.activePane?.paneEl.classList.remove("active");
     this.activePane = pane;

@@ -391,8 +391,8 @@ export class FloatingToolbar {
   }
 
   #updatePosition() {
-    const containerRect = this.pane.scroller.getBoundingClientRect();
-    const centerY = containerRect.top + containerRect.height / 2;
+    const containerRect = this.pane.paneEl.getBoundingClientRect();
+    const centerY = containerRect.top + containerRect.height / 2 - 35;
 
     this.wrapper.style.top = `${centerY}px`;
     this.wrapper.style.right = "35px";
@@ -461,54 +461,6 @@ export class FloatingToolbar {
     const isCurrentlyNight = document.body.classList.contains("night-mode");
     const scrollPos = this.pane.scroller.scrollTop;
 
-    const rect = btn.getBoundingClientRect();
-    const clipX = rect.left + rect.width / 2;
-    const clipY = rect.top + rect.height / 2;
-
-    this.nightModeClip.style.setProperty("--clip-x", `${clipX}px`);
-    this.nightModeClip.style.setProperty("--clip-y", `${clipY}px`);
-
-    const clone = this.pane.scroller.cloneNode(true);
-    clone.style.position = "fixed";
-    clone.style.inset = "0";
-
-    // Right now it's cloning every canvas, needs to come up with a way to only clone visible canvases
-    const originalCanvases = this.pane.scroller.querySelectorAll("canvas");
-    const clonedCanvases = clone.querySelectorAll("canvas");
-    originalCanvases.forEach((original, i) => {
-      const cloned = clonedCanvases[i];
-      if (cloned && original.width > 0 && original.height > 0) {
-        cloned.width = original.width;
-        cloned.height = original.height;
-        const ctx = cloned.getContext("2d");
-        ctx.drawImage(original, 0, 0);
-      }
-    });
-
-    // set cloned canvases to night mode
-    if (isCurrentlyNight) {
-      clone.classList.remove("night-mode-content");
-      this.nightModeClip.classList.add("to-light");
-      this.nightModeClip.classList.remove("to-dark");
-    } else {
-      clone.classList.add("night-mode-content");
-      this.nightModeClip.classList.add("to-dark");
-      this.nightModeClip.classList.remove("to-light");
-    }
-
-    this.nightModeClip.innerHTML = "";
-    this.nightModeClip.appendChild(clone);
-    clone.scrollTop = scrollPos;
-
-    const syncScroll = () => {
-      clone.scrollTop = this.pane.scroller.scrollTop;
-    };
-    this.pane.scroller.addEventListener("scroll", syncScroll);
-
-    this.nightModeClip.classList.remove("anim");
-    void this.nightModeClip.offsetWidth;
-    this.nightModeClip.classList.add("anim");
-
     // floating toolbar animation
     if (isCurrentlyNight) {
       this.ball.classList.remove("night-mode");
@@ -537,11 +489,8 @@ export class FloatingToolbar {
       }
 
       this.pane.scroller.scrollTop = scrollPos;
-      this.nightModeClip.classList.remove("anim", "to-light", "to-dark");
-      this.nightModeClip.innerHTML = "";
-      this.pane.scroller.removeEventListener("scroll", syncScroll);
       this.nightModeAnimating = false;
-    }, 800);
+    }, 50);
   }
 
   updatePageNumber() {

@@ -31,9 +31,7 @@ export class FloatingToolbar {
     this.COLLAPSE_DELAY = 7000;
 
     this.nightModeAnimating = false;
-    this.nightModeClip = document.createElement("div");
-    this.nightModeClip.id = "night-mode-clip";
-    document.body.appendChild(this.nightModeClip);
+    this.isJumping = false;
 
     this.#createToolbar();
     /** @type {NavigationPopup} */
@@ -319,21 +317,42 @@ export class FloatingToolbar {
     this.#cancelHideTimer();
     this.#cancelExpandTimer();
     this.isDragging = true;
+    this.isJumping = false;
     this.dragStartY = e.clientY;
     this.scrollStartTop = this.pane.scroller.scrollTop;
     this.initialBallY = parseInt(this.ball.style.top) || 0;
     this.ball.classList.add("dragging");
     document.body.style.cursor = "grabbing";
+    
+    this.currentScrollVelocity = 0;
+    this.currentDeltaY = 0;
+    
+    this.#showJumpIndicators();
+    this.#startScrollLoop();
+    
     e.preventDefault();
+  }
+
+  #startScrollLoop() {
+    const scrollLoop = () => {
+      if (!this.isDragging || this.isJumping) return;
+      if (this.currentScrollVelocity !== 0) {
+        this.pane.scroller.scrollTop += this.currentScrollVelocity;
+      }
+      this.scrollAnimationFrame = requestAnimationFrame(scrollLoop);
+    };
+    this.scrollAnimationFrame = requestAnimationFrame(scrollLoop);
   }
 
   #handleDrag(e) {
     const deltaY = e.clientY - this.dragStartY;
+    this.currentDeltaY = deltaY;
 
-    //mark as dragged if moved more than 5px
+    // Mark as dragged if moved more than 5px
     if (Math.abs(deltaY) > 5) {
       this.wasDragged = true;
     }
+    
     const deadZone = 10;
     const maxDragDistance = 100;
 
@@ -343,18 +362,18 @@ export class FloatingToolbar {
     } else {
       effectiveDelta = deltaY - Math.sign(deltaY) * deadZone;
     }
+    
     const clampedDelta = Math.max(
       -maxDragDistance,
-      Math.min(maxDragDistance, effectiveDelta),
+      Math.min(maxDragDistance, effectiveDelta)
     );
     const normalizedDistance = clampedDelta / maxDragDistance; // -1 to 1
+    
     let scrollMultiplier;
     const mvRange = Math.abs(normalizedDistance);
     if (mvRange < 0.5) {
-      //small move
       scrollMultiplier = mvRange * 2;
     } else if (mvRange < 0.8) {
-      //medium move
       scrollMultiplier = 0.6 + Math.pow((mvRange - 0.3) / 0.4, 1.5) * 2;
     } else {
       scrollMultiplier = 2.6 + Math.pow((mvRange - 0.7) / 0.3, 2) * 10;
@@ -362,17 +381,40 @@ export class FloatingToolbar {
 
     scrollMultiplier *= Math.sign(normalizedDistance);
     const maxScrollSpeed = 20;
-    const scrollDelta = scrollMultiplier * maxScrollSpeed;
+    
+    // Store velocity for continuous scrolling (TrackPoint style)
+    this.currentScrollVelocity = scrollMultiplier * maxScrollSpeed;
+
+    // Visual feedback - ball follows mouse
     const visualDelta = deltaY * 0.7;
     this.ball.style.transform = `translateY(${visualDelta}px)`;
     this.ball.style.transition = "none";
-
-    // apply non-linear scroll
-    this.pane.scroller.scrollTop += scrollDelta;
+    
+    // Check for jump zone hover
+    this.#checkJumpZones(e.clientY);
   }
 
   #endDrag() {
+    if (this.isJumping) return;
+
     this.isDragging = false;
+    this.currentScrollVelocity = 0;
+    
+    // Cancel the scroll loop
+    if (this.scrollAnimationFrame) {
+      cancelAnimationFrame(this.scrollAnimationFrame);
+      this.scrollAnimationFrame = null;
+    }
+    
+    // Hide jump indicators
+    this.#hideJumpIndicators();
+    
+    // Cancel any pending jump
+    if (this.jumpTimeout) {
+      clearTimeout(this.jumpTimeout);
+      this.jumpTimeout = null;
+    }
+    
     this.ball.classList.remove("dragging");
     document.body.style.cursor = "";
 
@@ -384,11 +426,114 @@ export class FloatingToolbar {
       this.ball.style.transition = "";
       this.ball.style.transform = "";
     }, 300);
+    
     this.#startExpandTimer();
     if (this.wm.isSplit) {
       this.#startHideTimer();
     }
   }
+
+  #createJumpIndicators() {
+    // Create container for jump indicators
+    this.jumpIndicators = document.createElement("div");
+    this.jumpIndicators.className = "jump-indicators";
+    this.jumpIndicators.innerHTML = `
+      <div class="jump-indicator jump-top" data-direction="top">
+         <div>⇈</div>
+      </div>
+      <div class="jump-indicator jump-bottom" data-direction="bottom">
+         <div>⇊</div>
+      </div>
+    `;
+    document.body.appendChild(this.jumpIndicators);
+    
+    this.jumpTopIndicator = this.jumpIndicators.querySelector(".jump-top");
+    this.jumpBottomIndicator = this.jumpIndicators.querySelector(".jump-bottom");
+  }
+
+  #showJumpIndicators() {
+    if (!this.jumpIndicators) {
+      this.#createJumpIndicators();
+    }
+    
+    // Position indicators relative to the ball
+    const wrapperRect = this.wrapper.getBoundingClientRect();
+    const rightOffset = parseInt(this.wrapper.style.right) || 35;
+    
+    this.jumpIndicators.style.right = `${rightOffset + 38}px`;
+    this.jumpIndicators.style.top = `${wrapperRect.top}px`; // Center on ball
+    
+    // Show with animation
+    requestAnimationFrame(() => {
+      this.jumpIndicators.classList.add("visible");
+    });
+    
+    this.activeJumpZone = null;
+    this.jumpTimeout = null;
+  }
+
+  #hideJumpIndicators() {
+    if (this.jumpIndicators) {
+      this.jumpIndicators.classList.remove("visible");
+      this.jumpTopIndicator.classList.remove("active", "triggered");
+      this.jumpBottomIndicator.classList.remove("active", "triggered");
+    }
+  }
+
+  #checkJumpZones(mouseY) {
+    if (!this.jumpIndicators) return;
+    
+    const topRect = this.jumpTopIndicator.getBoundingClientRect();
+    const bottomRect = this.jumpBottomIndicator.getBoundingClientRect();
+    
+    const inTopZone = mouseY >= topRect.top && mouseY <= topRect.bottom;
+    const inBottomZone = mouseY >= bottomRect.top && mouseY <= bottomRect.bottom;
+    
+    const newZone = inTopZone ? "top" : inBottomZone ? "bottom" : null;
+    
+    if (newZone !== this.activeJumpZone) {
+      if (this.jumpTimeout) {
+        clearTimeout(this.jumpTimeout);
+        this.jumpTimeout = null;
+      }
+      
+      // Reset visual states
+      this.jumpTopIndicator.classList.remove("active", "triggered");
+      this.jumpBottomIndicator.classList.remove("active", "triggered");
+      
+      this.activeJumpZone = newZone;
+      
+      if (newZone) {
+        const indicator = newZone === "top" ? this.jumpTopIndicator : this.jumpBottomIndicator;
+        indicator.classList.add("active");
+        
+        this.jumpTimeout = setTimeout(() => {
+          if (this.isDragging && this.activeJumpZone === newZone) {
+            indicator.classList.add("triggered");
+            this.#executeJump(newZone);
+          }
+        }, 200);
+      }
+    }
+  }
+
+  #executeJump(direction) {
+    this.isJumping = true;
+    this.ball.classList.add("jumping");
+    
+    if (direction === "top") {
+      this.pane.scrollToTop();
+    } else {
+      this.pane.scrollToBottom();
+    }
+    
+    setTimeout(() => {
+      this.ball.classList.remove("jumping");
+      this.isJumping = false;
+      this.#endDrag();
+    }, 150);
+  }
+
 
   #updatePosition() {
     const containerRect = this.pane.paneEl.getBoundingClientRect();
@@ -400,6 +545,8 @@ export class FloatingToolbar {
     this.hitArea.style.top = `${centerY - 150}px`; // Extend above
     this.hitArea.style.right = "0";
   }
+
+
 
   #handleToolAction(action) {
     switch (action) {

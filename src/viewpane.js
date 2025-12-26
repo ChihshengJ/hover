@@ -221,7 +221,14 @@ export class ViewerPane {
   scrollToTop() {
     const target = this.pages.find((p) => p.pageNumber === 1);
     if (target)
-      target.wrapper.scrollIntoView({ behavior: "smooth", block: "center" });
+      target.wrapper.scrollIntoView({ behavior: "instant", block: "center" });
+  }
+
+  scrollToBottom() {
+    this.scroller.scrollTo({
+      top: this.scroller.scrollHeight,
+      behavior: "instant"
+    });
   }
 
   goToPage(n) {

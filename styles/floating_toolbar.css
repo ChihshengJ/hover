@@ -220,7 +220,7 @@
   opacity: 1;
   transition:
     transform 0.2s cubic-bezier(0.2, -0.4, 0.2, 1.55),
-    brightness 0.2s ease-in-out;;
+    brightness 0.2s ease-in-out;
 }
 
 .floating-toolbar-wrapper.expanded .tool-btn:nth-child(1) {
@@ -310,3 +310,83 @@
   transform: scale(0.95);
 }
 
+.jump-indicators {
+  position: fixed;
+  pointer-events: none;
+  z-index: 10000;
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+
+.jump-indicators.visible {
+  opacity: 1;
+}
+
+.jump-indicator {
+  position: absolute;
+  width: 45px;
+  height: 45px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.4);
+  border: 2px solid rgba(50, 50, 50, 0.8);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: rgba(50, 50, 50, 0.8);
+  transition: all 0.15s ease;
+  transform: translateX(-50%);
+  left: 50%;
+  font-size: 30px;
+}
+
+.jump-indicator.jump-top {
+  bottom: 100%;
+  margin-bottom: 230px;
+}
+
+.jump-indicator.jump-bottom {
+  top: 100%;
+  margin-top: 280px;
+}
+
+.jump-indicator.active {
+  background: rgba(100, 200, 255, 0.3);
+  border-color: rgba(100, 200, 255, 0.6);
+  color: rgba(100, 200, 255, 1);
+  transform: translateX(-50%) scale(1.1);
+}
+
+.jump-indicator.triggered {
+  background: rgba(100, 255, 150, 0.4);
+  border-color: rgba(100, 255, 150, 0.8);
+  color: white;
+  transform: translateX(-50%) scale(1.2);
+}
+
+/* Night mode variants */
+.night-mode .jump-indicator {
+  background: rgba(0, 0, 0, 0.3);
+  border-color: rgba(255, 255, 255, 0.2);
+}
+
+.night-mode .jump-indicator.active {
+  background: rgba(100, 150, 255, 0.3);
+  border-color: rgba(100, 150, 255, 0.5);
+}
+
+/* Ball jumping animation */
+.floating-ball.jumping {
+  animation: jump-pulse 0.15s ease-out;
+}
+
+@keyframes jump-pulse {
+  0% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.15);
+  }
+  100% {
+    transform: scale(1);
+  }
+}

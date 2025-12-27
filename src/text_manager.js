@@ -29,7 +29,6 @@ export class TextSelectionManager {
   register(pageView, textLayerDiv, endOfContent) {
     this.#textLayers.set(textLayerDiv, { endOfContent, pageView });
 
-    // Add mousedown handler for this text layer
     textLayerDiv.addEventListener("mousedown", (e) => {
       if (
         e.target.matches(".textLayer span") ||
@@ -41,7 +40,7 @@ export class TextSelectionManager {
       textLayerDiv.classList.add("selecting");
     });
 
-    // Add copy handler to normalize unicode and remove null characters
+    // Normalize unicode and remove null characters
     textLayerDiv.addEventListener("copy", (event) => {
       const selection = document.getSelection();
       const text = this.#normalizeText(selection.toString());
@@ -56,9 +55,6 @@ export class TextSelectionManager {
   }
 
   /**
-   * Unregister a page's text layer.
-   * Called by PageView when releasing/destroying.
-   *
    * @param {HTMLElement} textLayerDiv - The text layer element to unregister
    */
   unregister(textLayerDiv) {
@@ -71,22 +67,14 @@ export class TextSelectionManager {
   }
 
   /**
-   * Normalize text by removing null characters and normalizing unicode.
    * @param {string} text
    * @returns {string}
    */
   #normalizeText(text) {
-    // Remove null characters
-    return (
-      text
-        .replace(/\x00/g, "")
-        // Normalize unicode (NFC form)
-        .normalize("NFC")
-    );
+    return text.replace(/\x00/g, "").normalize("NFC");
   }
 
   /**
-   * Reset a text layer's selection state.
    * @param {{endOfContent: HTMLElement}} entry
    * @param {HTMLElement} textLayerDiv
    */
@@ -100,16 +88,12 @@ export class TextSelectionManager {
     pageView.wrapper.classList.remove("text-selecting");
   }
 
-  /**
-   * Set up document-level event listeners for selection handling.
-   */
   #enableGlobalSelectionListener() {
     if (this.#abortController) return;
 
     this.#abortController = new AbortController();
     const { signal } = this.#abortController;
 
-    // Track pointer state
     document.addEventListener(
       "pointerdown",
       () => {
@@ -155,9 +139,6 @@ export class TextSelectionManager {
     );
   }
 
-  /**
-   * Handle selection changes - the core of the stable selection logic.
-   */
   #handleSelectionChange() {
     const selection = document.getSelection();
 
@@ -221,7 +202,6 @@ export class TextSelectionManager {
 
     const parentTextLayer = anchor.closest?.(".textLayer");
     if (!parentTextLayer) {
-      console.log("Selection anchor outside textLayer, skipping");
       this.#prevRange = range.cloneRange();
       return;
     }
@@ -261,9 +241,6 @@ export class TextSelectionManager {
   }
 
   /**
-   * Get the current text selection with page information.
-   * Useful for creating highlights from the current selection.
-   *
    * @returns {Array<{pageNumber: number, text: string, rects: Array<{left: number, top: number, width: number, height: number}>}>}
    */
   getSelection() {
@@ -283,11 +260,10 @@ export class TextSelectionManager {
         const { pageView } = entry;
         const layerRect = textLayerDiv.getBoundingClientRect();
 
-        // Get all client rects for the range
         const clientRects = Array.from(range.getClientRects());
 
         // Filter and transform rects to be relative to the text layer
-        const rects = clientRects
+        let rects = clientRects
           .filter((rect) => {
             // Only include rects that overlap with this text layer
             return (
@@ -304,13 +280,13 @@ export class TextSelectionManager {
             width: rect.width,
             height: rect.height,
           }));
+        rects = this.#mergeRects(rects);
 
         if (rects.length > 0) {
           results.push({
             pageNumber: pageView.pageNumber,
             text: selection.toString(),
             rects,
-            // Store scale for later coordinate conversion
             scale: pageView.scale,
           });
         }
@@ -318,6 +294,49 @@ export class TextSelectionManager {
     }
 
     return results;
+  }
+
+  #mergeRects(rects) {
+    if (rects.length === 0) return [];
+
+    rects.sort((a, b) => {
+      const topDiff = a.top - b.top;
+      if (Math.abs(topDiff) > 2) return topDiff;
+      return a.left - b.left;
+    });
+
+    const merged = [];
+    let current = { ...rects[0] };
+
+    for (let i = 1; i < rects.length; i++) {
+      const rect = rects[i];
+
+      const sameLine =
+        Math.abs(rect.top - current.top) < 3 &&
+        Math.abs(rect.height - current.height) < 3;
+
+      const overlapsOrAdjacent = rect.left <= current.left + current.width + 2;
+
+      if (sameLine && overlapsOrAdjacent) {
+        const newRight = Math.max(
+          current.left + current.width,
+          rect.left + rect.width,
+        );
+        current.width = newRight - current.left;
+        const newBottom = Math.max(
+          current.top + current.height,
+          rect.top + rect.height,
+        );
+        const newTop = Math.min(current.top, rect.top);
+        current.top = newTop;
+        current.height = newBottom - newTop;
+      } else {
+        merged.push(current);
+        current = { ...rect };
+      }
+    }
+    merged.push(current);
+    return merged;
   }
 
   /**

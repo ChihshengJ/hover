@@ -5,11 +5,13 @@ pdfjsLib.GlobalWorkerOptions.workerSrc = pdfjsWorker;
 import { PageView } from "./page.js";
 import { PaneControls } from "./controls/pane_controls.js";
 import { TextSelectionManager } from "./text_manager.js";
+import { AnnotationManager } from './annotation/annotation_manager.js';
 
 /**
  * @typedef {import('./page.js').PageView} PageView;
  * @typedef {import('./doc.js').PDFDocumentModel} PDFDocumentModel;
  * @typedef {import('./text_manager.js').TextSelectionManager} TextSelectionManager;
+ * @typedef {import('./annotation/annotation_manager.js').AnnotationManager} AnnotationManager;
  */
 
 export class ViewerPane {
@@ -37,6 +39,13 @@ export class ViewerPane {
     this.spreadRows = [];
 
     this.textSelectionManager = new TextSelectionManager(this);
+    this.annotationManager = null;
+
+    this.onAnnotationHover = null;
+    this.onAnnotationClick = null;
+    this.editAnnotationComment = null;
+    this.deleteAnnotationComment = null;
+    this.selectAnnotation = null;
 
     this.document.subscribe(this);
   }
@@ -58,6 +67,7 @@ export class ViewerPane {
     this.setupLazyRender();
     this.controls.attach();
     this.#setupGlobalClickToSelect();
+    this.annotationManager = new AnnotationManager(this);
   }
 
   //*******************
@@ -457,6 +467,9 @@ export class ViewerPane {
       };
       Object.assign(page.annotationLayer.style, layerStyles);
       Object.assign(page.textLayer.style, layerStyles);
+      if (page.annotationRenderer.highlightLayer) {
+        Object.assign(page.annotationRenderer.highlightLayer.style, layerStyles);
+      }
     }
   }
 
@@ -621,6 +634,9 @@ export class ViewerPane {
         pageView.renderHightlights(this.document.highlights.get(pageNum));
       }
     }
+    if (event.startsWith('annotation-')) {
+      this.annotationManager?.onDocumentChange(event, data);
+    }
   }
 
   getSelection() {
@@ -640,6 +656,7 @@ export class ViewerPane {
     this.observer?.disconnect();
     this.controls.destroy();
     this.textSelectionManager.destroy();
+    this.annotationManager?.destroy();
 
     // Clean up spread layout
     this.#clearSpreadLayout();

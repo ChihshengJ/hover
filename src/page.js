@@ -3,11 +3,13 @@ import pdfjsWorker from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 
 import { PDFDocumentModel } from "./doc.js";
 import { CitationPopup } from "./controls/citation_popup.js";
+import { AnnotationRenderer } from './annotation/annotation_renderer.js';
 
 /**
  * @typedef {import('./controls/citation_popup.js').CitationPopup} CitationPopup;
  * @typedef {import('./doc.js').PDFDocumentModel} PDFDocumentModel;
  * @typedef {import('./viewpane.js').ViewerPane} ViewerPane;
+ * @typedef {import('./annotation/annotation_renderer.js') AnnotationRenderer};
  */
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfjsWorker;
@@ -37,6 +39,7 @@ export class PageView {
     this.wrapper = canvas.parentElement;
     this.textLayer = this.#initLayer("text");
     this.annotationLayer = this.#initLayer("annotation");
+    this.annotationRenderer = new AnnotationRenderer(this);
 
     this.endOfContent = this.#createEndOfContent();
 
@@ -135,6 +138,8 @@ export class PageView {
     } finally {
       this.renderTask = null;
     }
+    this.canvas.dataset.rendered = "true";
+    this.pane.annotationManager?.renderPageAnnotations(this.pageNumber);
   }
 
   #isSafari() {
@@ -144,36 +149,19 @@ export class PageView {
   #fixSafariTextLayer(viewport) {
     const spans = this.textLayer.querySelectorAll("span");
     const items = this.textContent.items;
-    console.log('=== VIEWPORT DEBUG ===');
-    console.log('viewport passed to fixSafari:', viewport);
-    console.log('viewport.scale:', viewport.scale);
-    console.log('this.scale (PageView):', this.scale);
     
     // What was actually passed to TextLayer?
     const cssWidth = parseFloat(this.canvas.style.width);
     const cssHeight = parseFloat(this.canvas.style.height);
-    console.log('canvas cssWidth:', cssWidth);
-    console.log('canvas cssHeight:', cssHeight);
     
     // Get the base viewport to understand the ratio
     const baseViewport = this.page.getViewport({ scale: 1 });
-    console.log('baseViewport.width:', baseViewport.width);
-    console.log('baseViewport.height:', baseViewport.height);
     
     const textLayerScale = cssWidth / baseViewport.width;
-    console.log('textLayerScale (cssWidth / baseViewport.width):', textLayerScale);
-    console.log('textLayerScale * devicePixelRatio:', textLayerScale * (window.devicePixelRatio || 1));
     
     // Check a span's actual style after TextLayer render
     if (spans.length > 0) {
       const firstSpan = spans[0];
-      console.log('=== FIRST SPAN STYLES ===');
-      console.log('--scale-x:', firstSpan.style.getPropertyValue('--scale-x'));
-      console.log('--font-height:', firstSpan.style.getPropertyValue('--font-height'));
-      console.log('--rotate:', firstSpan.style.getPropertyValue('--rotate'));
-      console.log('transform:', getComputedStyle(firstSpan).transform);
-      console.log('left:', firstSpan.style.left);
-      console.log('top:', firstSpan.style.top);
     }
 
     const { pageWidth, pageHeight, pageX, pageY } = viewport.rawDims;
@@ -208,6 +196,8 @@ export class PageView {
     this.cancel();
     this.textLayer.innerHTML = "";
     this.annotationLayer.innerHTML = "";
+
+    this.annotationRenderer?.clear();
 
     if (this.pane.textSelectionManager) {
       this.pane.textSelectionManager.unregister(this.textLayer);

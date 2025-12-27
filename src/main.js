@@ -10,6 +10,7 @@ import "../styles/citation_popup.css";
 import "../styles/navigation-tree.css";
 import "../styles/nightmode.css";
 import "../styles/outline_popup.css";
+import "../styles/annotations.css";
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfjsWorker;
 

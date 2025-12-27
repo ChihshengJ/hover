@@ -1,0 +1,717 @@
+/* ===========================================
+   Annotation Toolbar
+   =========================================== */
+
+.annotation-toolbar-container {
+  position: fixed;
+  z-index: 10000;
+  pointer-events: none;
+  opacity: 0;
+  transform: scale(0.8);
+  transition:
+    opacity 0.15s ease,
+    transform 0.15s ease;
+}
+
+.annotation-toolbar-container.visible {
+  pointer-events: auto;
+  opacity: 1;
+  transform: scale(1);
+}
+
+.annotation-toolbar {
+  display: flex;
+  align-items: center;
+  background: rgba(255, 255, 255, 0.95);
+  backdrop-filter: blur(12px);
+  border-radius: 22px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+  padding: 0;
+  overflow: hidden;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Collapsed state - just a ball */
+.annotation-toolbar.collapsed {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  cursor: pointer;
+}
+
+.annotation-toolbar.collapsed .toolbar-content {
+  opacity: 0;
+  pointer-events: none;
+  width: 0;
+}
+
+.annotation-toolbar.collapsed .toolbar-ball {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+}
+
+.annotation-toolbar.collapsed .toolbar-ball::after {
+  content: "";
+  width: 24px;
+  height: 24px;
+  background: linear-gradient(135deg, #ffd54f 0%, #ffb300 100%);
+  border-radius: 50%;
+  box-shadow: 0 2px 8px rgba(255, 179, 0, 0.4);
+}
+
+/* Expanded state */
+.annotation-toolbar.expanded {
+  width: auto;
+  height: 44px;
+  padding: 0 8px;
+}
+
+.annotation-toolbar.expanded .toolbar-ball {
+  display: none;
+}
+
+.annotation-toolbar.expanded .toolbar-content {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.toolbar-content {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  transition: opacity 0.15s ease;
+}
+
+.toolbar-colors {
+  display: flex;
+  gap: 4px;
+  padding: 4px;
+}
+
+.color-btn {
+  width: 32px;
+  height: 32px;
+  border: none;
+  background: transparent;
+  border-radius: 50%;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition:
+    transform 0.15s ease,
+    background-color 0.15s ease;
+}
+
+.color-btn:hover {
+  transform: scale(1.15);
+}
+
+.color-btn.active {
+  background: rgba(255, 255, 255, 0.15);
+}
+
+.color-circle {
+  width: 32px;
+  height: 20px;
+  border-radius: 50%;
+  box-shadow: 1px 2px 3px 1px rgba(0, 0, 0, 0.2);
+}
+
+.color-circle.yellow {
+  background: linear-gradient(135deg, #fff176 0%, #ffd54f 100%);
+}
+.color-circle.red {
+  background: linear-gradient(135deg, #ef5350 0%, #e53935 100%);
+}
+.color-circle.blue {
+  background: linear-gradient(135deg, #42a5f5 0%, #1e88e5 100%);
+}
+.color-circle.green {
+  background: linear-gradient(135deg, #66bb6a 0%, #43a047 100%);
+}
+
+.toolbar-divider {
+  width: 2px;
+  height: 24px;
+  border-radius: 3px;
+  background: rgba(50, 50, 50, 0.2);
+  margin: 0 4px;
+}
+
+.toolbar-actions {
+  display: flex;
+  gap: 2px;
+  padding: 4px;
+}
+
+.action-btn {
+  width: 32px;
+  height: 32px;
+  border: none;
+  background: transparent;
+  border-radius: 8px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: rgba(50, 50, 50, 0.7);
+  transition: all 0.15s ease;
+}
+
+.action-btn:hover {
+  background: rgba(50, 50, 50, 0.1);
+  box-shadow: inset 0 0 2px 1px rgba(255, 255, 255, 0.2);
+}
+
+.action-btn.active {
+  background: rgba(50, 50, 50, 0.15);
+  box-shadow: inset 0 0 5px 2px rgba(0, 0, 0, 0.1);
+  color: white;
+}
+
+.action-btn.delete-btn:hover {
+  background: rgba(239, 83, 80, 0.3);
+  color: #222222;
+}
+
+.action-btn.hidden {
+  display: none;
+}
+
+.action-btn .icon {
+  width: 18px;
+  height: 18px;
+}
+
+/* ===========================================
+   Comment Input Popup
+   =========================================== */
+
+.comment-input-container {
+  position: fixed;
+  z-index: 10001;
+  pointer-events: none;
+  opacity: 0;
+  transform: scale(0.9) translateY(-10px);
+  transition:
+    opacity 0.2s ease,
+    transform 0.2s ease;
+}
+
+.comment-input-container.visible {
+  pointer-events: auto;
+  opacity: 1;
+  transform: scale(1) translateY(0);
+}
+
+.comment-input-popup {
+  width: 280px;
+  background: rgba(40, 40, 40, 0.98);
+  backdrop-filter: blur(12px);
+  border-radius: 12px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+  overflow: hidden;
+}
+
+/* Color theming */
+.comment-input-container[data-color="yellow"] .comment-input-header {
+  background: linear-gradient(
+    135deg,
+    rgba(255, 213, 79, 0.3) 0%,
+    rgba(255, 179, 0, 0.2) 100%
+  );
+}
+.comment-input-container[data-color="red"] .comment-input-header {
+  background: linear-gradient(
+    135deg,
+    rgba(239, 83, 80, 0.3) 0%,
+    rgba(229, 57, 53, 0.2) 100%
+  );
+}
+.comment-input-container[data-color="blue"] .comment-input-header {
+  background: linear-gradient(
+    135deg,
+    rgba(66, 165, 245, 0.3) 0%,
+    rgba(30, 136, 229, 0.2) 100%
+  );
+}
+.comment-input-container[data-color="green"] .comment-input-header {
+  background: linear-gradient(
+    135deg,
+    rgba(102, 187, 106, 0.3) 0%,
+    rgba(67, 160, 71, 0.2) 100%
+  );
+}
+
+.comment-input-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 12px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.comment-input-title {
+  font-size: 13px;
+  font-weight: 500;
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.comment-close-btn {
+  width: 24px;
+  height: 24px;
+  border: none;
+  background: transparent;
+  border-radius: 6px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: rgba(255, 255, 255, 0.5);
+  transition: all 0.15s ease;
+}
+
+.comment-close-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: white;
+}
+
+.comment-close-btn svg {
+  width: 14px;
+  height: 14px;
+}
+
+.comment-textarea {
+  width: 100%;
+  padding: 12px;
+  border: none;
+  background: transparent;
+  color: white;
+  font-size: 14px;
+  line-height: 1.5;
+  resize: none;
+  outline: none;
+  font-family: inherit;
+}
+
+.comment-textarea::placeholder {
+  color: rgba(255, 255, 255, 0.4);
+}
+
+.comment-input-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 8px 12px 12px;
+}
+
+.comment-cancel-btn,
+.comment-save-btn {
+  padding: 6px 14px;
+  border: none;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.comment-cancel-btn {
+  background: transparent;
+  color: rgba(255, 255, 255, 0.6);
+}
+
+.comment-cancel-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: white;
+}
+
+.comment-save-btn {
+  background: rgba(66, 165, 245, 0.8);
+  color: white;
+}
+
+.comment-save-btn:hover {
+  background: rgba(66, 165, 245, 1);
+}
+
+/* ===========================================
+   Comment Display (Right Side)
+   =========================================== */
+
+.comments-container {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 260px;
+  height: 100%;
+  pointer-events: none;
+  z-index: 100;
+}
+
+.comments-container.collapsed-mode {
+  width: 40px;
+}
+
+.comment-card {
+  position: absolute;
+  right: 16px;
+  pointer-events: auto;
+  transition: all 0.2s ease;
+}
+
+.comments-container.collapsed-mode .comment-card {
+  right: 0;
+}
+
+/* Collapsed indicator (small strip) */
+.comment-collapsed-indicator {
+  display: none;
+  width: 32px;
+  height: 32px;
+  border-radius: 4px 0 0 4px;
+  cursor: pointer;
+  align-items: center;
+  justify-content: center;
+  box-shadow: -2px 0 8px rgba(0, 0, 0, 0.2);
+  transition: all 0.15s ease;
+}
+
+.comment-collapsed-indicator svg {
+  width: 16px;
+  height: 16px;
+  opacity: 0.8;
+}
+
+.comment-collapsed-indicator:hover {
+  width: 36px;
+}
+
+.comments-container.collapsed-mode .comment-collapsed-indicator {
+  display: flex;
+}
+
+.comments-container.collapsed-mode .comment-expanded-content {
+  display: none;
+}
+
+.comments-container.collapsed-mode
+  .comment-card.force-expanded
+  .comment-expanded-content {
+  display: block;
+  position: absolute;
+  right: 40px;
+  top: 0;
+  width: 220px;
+}
+
+.comments-container.collapsed-mode
+  .comment-card.force-expanded
+  .comment-collapsed-indicator {
+  background: rgba(60, 60, 60, 1) !important;
+}
+
+/* Expanded content */
+.comment-expanded-content {
+  width: 220px;
+  background: rgba(45, 45, 45, 0.98);
+  backdrop-filter: blur(8px);
+  border-radius: 8px;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.3);
+  overflow: hidden;
+}
+
+.comment-text {
+  padding: 10px 12px;
+  font-size: 13px;
+  line-height: 1.5;
+  color: rgba(255, 255, 255, 0.9);
+  max-height: 120px;
+  overflow-y: auto;
+}
+
+.comment-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 4px;
+  padding: 6px 8px;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+
+.comment-card:hover .comment-actions {
+  opacity: 1;
+}
+
+.comment-edit-btn,
+.comment-delete-btn {
+  width: 28px;
+  height: 28px;
+  border: none;
+  background: transparent;
+  border-radius: 6px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: rgba(255, 255, 255, 0.5);
+  transition: all 0.15s ease;
+}
+
+.comment-edit-btn:hover,
+.comment-delete-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: white;
+}
+
+.comment-delete-btn:hover {
+  background: rgba(239, 83, 80, 0.2);
+  color: #ef5350;
+}
+
+.comment-edit-btn svg,
+.comment-delete-btn svg {
+  width: 14px;
+  height: 14px;
+}
+
+/* Color theming for comment cards */
+.comment-card[data-color="yellow"] .comment-collapsed-indicator {
+  background: rgba(255, 213, 79, 0.9);
+  color: #5d4037;
+}
+.comment-card[data-color="red"] .comment-collapsed-indicator {
+  background: rgba(239, 83, 80, 0.9);
+  color: white;
+}
+.comment-card[data-color="blue"] .comment-collapsed-indicator {
+  background: rgba(66, 165, 245, 0.9);
+  color: white;
+}
+.comment-card[data-color="green"] .comment-collapsed-indicator {
+  background: rgba(102, 187, 106, 0.9);
+  color: white;
+}
+
+.comment-card[data-color="yellow"] .comment-expanded-content {
+  border-left: 3px solid #ffd54f;
+}
+.comment-card[data-color="red"] .comment-expanded-content {
+  border-left: 3px solid #ef5350;
+}
+.comment-card[data-color="blue"] .comment-expanded-content {
+  border-left: 3px solid #42a5f5;
+}
+.comment-card[data-color="green"] .comment-expanded-content {
+  border-left: 3px solid #66bb6a;
+}
+
+.comment-card.highlighted .comment-expanded-content {
+  box-shadow:
+    0 0 0 2px rgba(66, 165, 245, 0.5),
+    0 2px 12px rgba(0, 0, 0, 0.3);
+}
+
+/* ===========================================
+   Highlight Layer
+   =========================================== */
+
+.highlight-layer {
+  position: absolute;
+  top: 0;
+  left: 0;
+  pointer-events: none;
+  z-index: 3;
+}
+
+/* ===========================================
+   Annotation Wrappers
+   =========================================== */
+
+.annotation-wrapper {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+/* Outline element - positioned dynamically to bound all marks */
+.annotation-wrapper .annotation-outline {
+  position: absolute;
+  pointer-events: none;
+  border: 2px dashed transparent;
+  border-radius: 4px;
+  transition: border-color 0.15s ease;
+}
+
+.annotation-wrapper.hovered .annotation-outline,
+.annotation-wrapper.selected .annotation-outline {
+  border-style: dashed;
+}
+
+.annotation-wrapper.hovered .annotation-outline[data-color="yellow"],
+.annotation-wrapper.selected .annotation-outline[data-color="yellow"] {
+  border-color: #f9a825;
+}
+
+.annotation-wrapper.hovered .annotation-outline[data-color="red"],
+.annotation-wrapper.selected .annotation-outline[data-color="red"] {
+  border-color: #c62828;
+}
+
+.annotation-wrapper.hovered .annotation-outline[data-color="blue"],
+.annotation-wrapper.selected .annotation-outline[data-color="blue"] {
+  border-color: #1565c0;
+}
+
+.annotation-wrapper.hovered .annotation-outline[data-color="green"],
+.annotation-wrapper.selected .annotation-outline[data-color="green"] {
+  border-color: #2e7d32;
+}
+
+/* ===========================================
+   Annotation Marks - Highlights
+   =========================================== */
+
+.annotation-mark {
+  pointer-events: auto;
+  cursor: pointer;
+  transition: background-color 0.15s ease;
+}
+
+.annotation-mark.highlight {
+  border-radius: 2px;
+}
+
+/* Highlight colors - default state */
+.annotation-mark.highlight[data-color="yellow"] {
+  background: rgba(255, 235, 59, 0.35);
+}
+
+.annotation-mark.highlight[data-color="red"] {
+  background: rgba(244, 67, 54, 0.30);
+}
+
+.annotation-mark.highlight[data-color="blue"] {
+  background: rgba(33, 150, 243, 0.30);
+}
+
+.annotation-mark.highlight[data-color="green"] {
+  background: rgba(76, 175, 80, 0.30);
+}
+
+/* Highlight colors - hover state (via wrapper) */
+.annotation-wrapper.hovered .annotation-mark.highlight[data-color="yellow"] {
+  background: rgba(255, 235, 59, 0.55);
+}
+
+.annotation-wrapper.hovered .annotation-mark.highlight[data-color="red"] {
+  background: rgba(244, 67, 54, 0.50);
+}
+
+.annotation-wrapper.hovered .annotation-mark.highlight[data-color="blue"] {
+  background: rgba(33, 150, 243, 0.50);
+}
+
+.annotation-wrapper.hovered .annotation-mark.highlight[data-color="green"] {
+  background: rgba(76, 175, 80, 0.50);
+}
+
+/* Highlight colors - selected state */
+.annotation-wrapper.selected .annotation-mark.highlight[data-color="yellow"] {
+  background: rgba(255, 235, 59, 0.60);
+}
+
+.annotation-wrapper.selected .annotation-mark.highlight[data-color="red"] {
+  background: rgba(244, 67, 54, 0.55);
+}
+
+.annotation-wrapper.selected .annotation-mark.highlight[data-color="blue"] {
+  background: rgba(33, 150, 243, 0.55);
+}
+
+.annotation-wrapper.selected .annotation-mark.highlight[data-color="green"] {
+  background: rgba(76, 175, 80, 0.55);
+}
+
+/* Border radius for multi-line highlights */
+.annotation-mark.highlight.single {
+  border-radius: 3px;
+}
+
+.annotation-mark.highlight.begin {
+  border-radius: 3px 0 0 3px;
+}
+
+.annotation-mark.highlight.end {
+  border-radius: 0 3px 3px 0;
+}
+
+.annotation-mark.highlight.middle {
+  border-radius: 0;
+}
+
+/* ===========================================
+   Annotation Marks - Underscores
+   =========================================== */
+
+.annotation-mark.underscore {
+  border-radius: 1px;
+  transition: height 0.1s ease, margin-top 0.1s ease;
+}
+
+/* Underscore colors - default state (more prominent than highlights) */
+.annotation-mark.underscore[data-color="yellow"] {
+  background: rgba(255, 193, 7, 0.85);
+}
+
+.annotation-mark.underscore[data-color="red"] {
+  background: rgba(229, 57, 53, 0.85);
+}
+
+.annotation-mark.underscore[data-color="blue"] {
+  background: rgba(30, 136, 229, 0.85);
+}
+
+.annotation-mark.underscore[data-color="green"] {
+  background: rgba(56, 142, 60, 0.85);
+}
+
+/* Underscore - hover state (thicker) */
+.annotation-wrapper.hovered .annotation-mark.underscore {
+  height: 4px !important;
+  margin-top: -1px;
+}
+
+.annotation-wrapper.hovered .annotation-mark.underscore[data-color="yellow"] {
+  background: rgba(255, 193, 7, 1);
+}
+
+.annotation-wrapper.hovered .annotation-mark.underscore[data-color="red"] {
+  background: rgba(229, 57, 53, 1);
+}
+
+.annotation-wrapper.hovered .annotation-mark.underscore[data-color="blue"] {
+  background: rgba(30, 136, 229, 1);
+}
+
+.annotation-wrapper.hovered .annotation-mark.underscore[data-color="green"] {
+  background: rgba(56, 142, 60, 1);
+}
+
+/* Underscore - selected state */
+.annotation-wrapper.selected .annotation-mark.underscore {
+  height: 4px !important;
+  margin-top: -1px;
+}
+

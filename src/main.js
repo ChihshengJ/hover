@@ -4,6 +4,7 @@ import { PDFDocumentModel } from "./doc.js";
 import { SplitWindowManager } from "./window_manager.js";
 
 import "../styles/viewer.css";
+import "../styles/text_layer.css";
 import "../styles/floating_toolbar.css";
 import "../styles/citation_popup.css";
 import "../styles/navigation-tree.css";

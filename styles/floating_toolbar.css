@@ -363,17 +363,6 @@
   transform: translateX(-50%) scale(1.2);
 }
 
-/* Night mode variants */
-.night-mode .jump-indicator {
-  background: rgba(0, 0, 0, 0.3);
-  border-color: rgba(255, 255, 255, 0.2);
-}
-
-.night-mode .jump-indicator.active {
-  background: rgba(100, 150, 255, 0.3);
-  border-color: rgba(100, 150, 255, 0.5);
-}
-
 /* Ball jumping animation */
 .floating-ball.jumping {
   animation: jump-pulse 0.15s ease-out;

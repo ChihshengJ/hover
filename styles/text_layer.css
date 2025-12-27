@@ -1,0 +1,163 @@
+.textLayer {
+  position: absolute;
+  text-align: initial;
+  inset: 0;
+  overflow: clip;
+  opacity: 1;
+  line-height: 1;
+  text-size-adjust: none;
+  forced-color-adjust: none;
+  transform-origin: 0 0;
+  caret-color: CanvasText;
+  z-index: 2;
+}
+
+.textLayer.highlighting {
+  touch-action: none;
+}
+
+.textLayer :is(span, br) {
+  color: transparent;
+  position: absolute;
+  white-space: pre;
+  cursor: text;
+  transform-origin: 0% 0%;
+}
+
+/* Font scaling system to bypass browser minimum font size */
+.textLayer {
+  --min-font-size: 1;
+  --text-scale-factor: calc(var(--total-scale-factor) * var(--min-font-size));
+  --min-font-size-inv: calc(1 / var(--min-font-size));
+}
+
+.textLayer > :not(.markedContent),
+.textLayer .markedContent span:not(.markedContent) {
+  z-index: 1;
+  --font-height: 0; /* set dynamically by PageView */
+  font-size: calc(var(--text-scale-factor) * var(--font-height));
+  --scale-x: 1;
+  --rotate: 0deg;
+  transform: rotate(var(--rotate)) scaleX(var(--scale-x))
+    scale(var(--min-font-size-inv));
+}
+
+.textLayer .markedContent {
+  display: contents;
+}
+
+.textLayer span {
+  padding: 0.1em 0;
+  margin: -0.1em 0;
+}
+
+.textLayer span[role="img"] {
+  user-select: none;
+  cursor: default;
+}
+
+/* Selection highlighting */
+.textLayer ::selection {
+  background: color-mix(in srgb, AccentColor, transparent 75%);
+}
+
+/* Fallback for browsers without color-mix */
+@supports not (background: color-mix(in srgb, AccentColor, transparent 75%)) {
+  .textLayer ::selection {
+    background: rgba(0, 0, 255, 0.25);
+  }
+}
+
+/* Prevent br elements from showing selection background */
+.textLayer br::selection {
+  background: transparent;
+}
+
+.textLayer .endOfContent {
+  display: block;
+  position: absolute;
+  inset: 100% 0 0;
+  z-index: 0;
+  cursor: default;
+  user-select: none;
+}
+
+.textLayer.selecting .endOfContent {
+  top: 0;
+}
+
+/* ===========================================
+   Highlight Styles (for future annotations)
+   =========================================== */
+
+.textLayer .highlight {
+  --highlight-bg-color: rgb(255, 235, 59, 0.4);
+  --highlight-selected-bg-color: rgb(255, 193, 7, 0.6);
+
+  margin: -1px;
+  padding: 1px;
+  background-color: var(--highlight-bg-color);
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background-color 0.15s ease;
+}
+
+.textLayer .highlight:hover {
+  background-color: var(--highlight-selected-bg-color);
+}
+
+.textLayer .highlight.appended {
+  position: initial;
+}
+
+/* Multi-span highlight styling */
+.textLayer .highlight.begin {
+  border-radius: 4px 0 0 4px;
+}
+
+.textLayer .highlight.end {
+  border-radius: 0 4px 4px 0;
+}
+
+.textLayer .highlight.middle {
+  border-radius: 0;
+}
+
+.textLayer .highlight.selected {
+  background-color: var(--highlight-selected-bg-color);
+}
+
+/* Different highlight colors */
+.textLayer .highlight.yellow {
+  --highlight-bg-color: rgb(255, 235, 59, 0.4);
+  --highlight-selected-bg-color: rgb(255, 193, 7, 0.6);
+}
+
+.textLayer .highlight.green {
+  --highlight-bg-color: rgb(76, 175, 80, 0.4);
+  --highlight-selected-bg-color: rgb(56, 142, 60, 0.6);
+}
+
+.textLayer .highlight.blue {
+  --highlight-bg-color: rgb(33, 150, 243, 0.4);
+  --highlight-selected-bg-color: rgb(25, 118, 210, 0.6);
+}
+
+.textLayer .highlight.pink {
+  --highlight-bg-color: rgb(233, 30, 99, 0.3);
+  --highlight-selected-bg-color: rgb(194, 24, 91, 0.5);
+}
+
+.textLayer .highlight.purple {
+  --highlight-bg-color: rgb(156, 39, 176, 0.3);
+  --highlight-selected-bg-color: rgb(123, 31, 162, 0.5);
+}
+
+/* High contrast mode support */
+@media screen and (forced-colors: active) {
+  .textLayer .highlight {
+    --highlight-bg-color: transparent;
+    --highlight-selected-bg-color: transparent;
+    outline: 2px solid currentColor;
+  }
+}

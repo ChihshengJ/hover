@@ -4,10 +4,12 @@ pdfjsLib.GlobalWorkerOptions.workerSrc = pdfjsWorker;
 
 import { PageView } from "./page.js";
 import { PaneControls } from "./controls/pane_controls.js";
+import { TextSelectionManager } from "./text_manager.js";
 
 /**
  * @typedef {import('./page.js').PageView} PageView;
  * @typedef {import('./doc.js').PDFDocumentModel} PDFDocumentModel;
+ * @typedef {import('./text_manager.js').TextSelectionManager} TextSelectionManager;
  */
 
 export class ViewerPane {
@@ -34,6 +36,8 @@ export class ViewerPane {
     this.spreadMode = 0;
     this.spreadRows = [];
 
+    this.textSelectionManager = new TextSelectionManager(this);
+
     this.document.subscribe(this);
   }
 
@@ -53,6 +57,7 @@ export class ViewerPane {
     await new Promise((resolve) => setTimeout(resolve, 50));
     this.setupLazyRender();
     this.controls.attach();
+    this.#setupGlobalClickToSelect();
   }
 
   //*******************
@@ -153,6 +158,176 @@ export class ViewerPane {
     }
   }
 
+  #setupGlobalClickToSelect() {
+    let isSelecting = false;
+    let anchorNode = null;
+    let anchorOffset = 0;
+
+    const findNearestSpanAndOffset = (clientX, clientY) => {
+      let nearestSpan = null;
+      let nearestDistance = Infinity;
+
+      for (const pageView of this.visiblePages) {
+        const textLayer = pageView.textLayer;
+        const spans = textLayer.querySelectorAll("span");
+
+        for (const span of spans) {
+          if (!span.textContent || !span.firstChild) continue;
+
+          const rect = span.getBoundingClientRect();
+
+          let dx;
+          if (clientX < rect.left) {
+            dx = rect.left - clientX;
+          } else if (clientX > rect.right) {
+            dx = clientX - rect.right;
+          } else {
+            dx = 0;
+          }
+
+          let dy;
+          if (clientY < rect.top) {
+            dy = rect.top - clientY;
+          } else if (clientY > rect.bottom) {
+            dy = clientY - rect.bottom;
+          } else {
+            dy = 0;
+          }
+
+          const distSq = dx * dx + dy * dy * 4;
+
+          if (distSq < nearestDistance) {
+            nearestDistance = distSq;
+            nearestSpan = span;
+          }
+        }
+      }
+
+      if (!nearestSpan || !nearestSpan.firstChild) return null;
+
+      // Calculate offset within text
+      const rect = nearestSpan.getBoundingClientRect();
+      const textNode = nearestSpan.firstChild;
+      const text = textNode.textContent;
+
+      let offset;
+      if (clientX <= rect.left) {
+        offset = 0;
+      } else if (clientX >= rect.right) {
+        offset = text.length;
+      } else {
+        const proportion = (clientX - rect.left) / rect.width;
+        offset = Math.round(proportion * text.length);
+      }
+
+      return { node: textNode, offset, span: nearestSpan };
+    };
+
+    const updateSelection = (clientX, clientY) => {
+      const focus = findNearestSpanAndOffset(clientX, clientY);
+      if (!focus || !anchorNode) return;
+
+      const selection = document.getSelection();
+      const range = document.createRange();
+
+      // Determine order: is anchor before or after focus in DOM?
+      const position = anchorNode.compareDocumentPosition(focus.node);
+
+      let startNode, startOffset, endNode, endOffset;
+
+      if (position & Node.DOCUMENT_POSITION_FOLLOWING) {
+        // Anchor comes before focus
+        startNode = anchorNode;
+        startOffset = anchorOffset;
+        endNode = focus.node;
+        endOffset = focus.offset;
+      } else if (position & Node.DOCUMENT_POSITION_PRECEDING) {
+        // Focus comes before anchor
+        startNode = focus.node;
+        startOffset = focus.offset;
+        endNode = anchorNode;
+        endOffset = anchorOffset;
+      } else {
+        // Same node
+        startNode = anchorNode;
+        endNode = anchorNode;
+        if (anchorOffset < focus.offset) {
+          startOffset = anchorOffset;
+          endOffset = focus.offset;
+        } else {
+          startOffset = focus.offset;
+          endOffset = anchorOffset;
+        }
+      }
+
+      try {
+        range.setStart(startNode, startOffset);
+        range.setEnd(endNode, endOffset);
+        selection.removeAllRanges();
+        selection.addRange(range);
+      } catch (e) {
+        console.warn("Selection range error:", e);
+      }
+    };
+
+    this.scroller.addEventListener("mousedown", (e) => {
+      // If clicked on a text span already, let native behavior work
+      if (e.target.closest(".textLayer span")) return;
+
+      // If clicked on interactive elements, ignore
+      if (e.target.closest("a, button, .pane-controls, .annotationLayer a"))
+        return;
+
+      if (e.button !== 0) return;
+
+      const anchor = findNearestSpanAndOffset(e.clientX, e.clientY);
+      if (!anchor) return;
+
+      const maxDistance = 500;
+      const rect = anchor.span.getBoundingClientRect();
+      const dx = Math.max(
+        0,
+        Math.max(rect.left - e.clientX, e.clientX - rect.right),
+      );
+      const dy = Math.max(
+        0,
+        Math.max(rect.top - e.clientY, e.clientY - rect.bottom),
+      );
+      if (dx * dx + dy * dy > maxDistance * maxDistance) return;
+
+      e.preventDefault();
+
+      isSelecting = true;
+      anchorNode = anchor.node;
+      anchorOffset = anchor.offset;
+
+      // Set initial collapsed selection
+      const selection = document.getSelection();
+      const range = document.createRange();
+      range.setStart(anchorNode, anchorOffset);
+      range.collapse(true);
+      selection.removeAllRanges();
+      selection.addRange(range);
+
+      // Add selecting classes
+      anchor.span.closest(".textLayer")?.classList.add("selecting");
+      anchor.span.closest(".page-wrapper")?.classList.add("text-selecting");
+    });
+
+    document.addEventListener("mousemove", (e) => {
+      if (!isSelecting) return;
+      e.preventDefault();
+      updateSelection(e.clientX, e.clientY);
+    });
+
+    document.addEventListener("mouseup", (e) => {
+      if (!isSelecting) return;
+      isSelecting = false;
+      anchorNode = null;
+      anchorOffset = 0;
+    });
+  }
+
   //*******************
   // Viewer controls
   // ******************
@@ -227,7 +402,7 @@ export class ViewerPane {
   scrollToBottom() {
     this.scroller.scrollTo({
       top: this.scroller.scrollHeight,
-      behavior: "instant"
+      behavior: "instant",
     });
   }
 
@@ -294,12 +469,10 @@ export class ViewerPane {
     const viewRect = this.scroller.getBoundingClientRect();
 
     if (this.spreadMode === 0) {
-      // Use intrinsic dimensions from document, not rendered dimensions
       const intrinsicWidth = this.document.pageDimensions[0]?.width;
       if (!intrinsicWidth) return;
 
       const targetScale = viewRect.width / intrinsicWidth;
-      // FIX: Arguments were swapped! Should be (scale, focusX, focusY)
       this.zoomAt(targetScale, viewRect.width / 2, viewRect.height / 2);
     } else {
       // For spread mode, use intrinsic width of two pages + gap
@@ -450,10 +623,23 @@ export class ViewerPane {
     }
   }
 
+  getSelection() {
+    return this.textSelectionManager.getSelection();
+  }
+
+  hasSelection() {
+    return this.textSelectionManager.hasSelection();
+  }
+
+  clearSelection() {
+    this.textSelectionManager.clearSelection();
+  }
+
   destroy() {
     this.document.unsubscribe(this);
     this.observer?.disconnect();
     this.controls.destroy();
+    this.textSelectionManager.destroy();
 
     // Clean up spread layout
     this.#clearSpreadLayout();

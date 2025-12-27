@@ -1,5 +1,6 @@
 import * as pdfjsLib from "pdfjs-dist";
 import pdfjsWorker from "pdfjs-dist/build/pdf.worker.min.mjs?url";
+
 import { PDFDocumentModel } from "./doc.js";
 import { CitationPopup } from "./controls/citation_popup.js";
 
@@ -37,6 +38,8 @@ export class PageView {
     this.textLayer = this.#initLayer("text");
     this.annotationLayer = this.#initLayer("annotation");
 
+    this.endOfContent = this.#createEndOfContent();
+
     this.page = null;
     this.textContent = null;
     this.annotations = null;
@@ -47,6 +50,17 @@ export class PageView {
   async #ensurePageLoaded() {
     if (!this.page) this.page = await this.pdfDoc.getPage(this.pageNumber);
     return this.page;
+  }
+
+  #createEndOfContent() {
+    const endOfContent = document.createElement("div");
+    endOfContent.className = "endOfContent";
+    this.textLayer.appendChild(endOfContent);
+    if (this.pane.textSelectionManager) {
+      this.pane.textSelectionManager.register(this, this.textLayer, endOfContent);
+    }
+
+    return endOfContent;
   }
 
   async render(requestedScale) {
@@ -104,6 +118,10 @@ export class PageView {
       await textLayerInstance.render();
       if (this.#isSafari()) {
         this.#fixSafariTextLayer(textViewport);
+      }
+
+      if (!this.textLayer.contains(this.endOfContent)) {
+        this.textLayer.appendChild(this.endOfContent);
       }
 
       this.textLayer.style.width = `${cssWidth}px`;
@@ -179,8 +197,6 @@ export class PageView {
     }
   }
 
-  
-
   cancel() {
     if (this.renderTask) {
       this.renderTask.cancel();
@@ -193,6 +209,10 @@ export class PageView {
     this.textLayer.innerHTML = "";
     this.annotationLayer.innerHTML = "";
 
+    if (this.pane.textSelectionManager) {
+      this.pane.textSelectionManager.unregister(this.textLayer);
+    }
+
     const ctx = this.canvas.getContext("2d");
     ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
     if (this.page) {
@@ -202,6 +222,7 @@ export class PageView {
     this.textContent = null;
     this.annotations = null;
     this.canvas.dataset.rendered = "false";
+    this.endOfContent = this.#createEndOfContent();
   }
 
   async resize(scale) {
@@ -358,6 +379,9 @@ export class PageView {
         let showTimer = null;
 
         anchor.addEventListener("mouseenter", async (e) => {
+          if (this.wrapper.classList.contains("text-selecting")) {
+            return;
+          }
           if (showTimer) clearTimeout(showTimer);
 
           citationPopup.onAnchorEnter();
@@ -378,6 +402,9 @@ export class PageView {
         });
 
         anchor.addEventListener("mouseleave", (e) => {
+          if (this.wrapper.classList.contains("text-selecting")) {
+            return;
+          }
           if (showTimer) {
             clearTimeout(showTimer);
             showTimer = null;

@@ -244,6 +244,8 @@ body {
   color: white;
   font-weight: 100;
   font-size: 12px;
+  user-select: none;
+  pointer-events: none;
 }
 
 .annotationLayer {
@@ -262,44 +264,18 @@ body {
   position: absolute;
   background-color: transparent;
   text-decoration: none;
+  user-select: none;
 }
 
 .annotationLayer a:hover {
   outline: 1px dashed rgba(0, 0, 255, 0.3);
 }
 
-.textLayer {
-  color: transparent;
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  cursor: text;
-  z-index: 9;
-  pointer-events: auto;
+.page-wrapper.text-selecting .annotationLayer {
+  pointer-events: none !important;
+  z-index: -1;
 }
 
-.textLayer span {
-  position: absolute;
-  white-space: pre;
-  transform-origin: 0 0;
-  line-height: 1;
-  color: transparent;
-  text-align: start;
-  padding: 0;
-  margin: 0;
-}
-
-.textLayer br {
-  position: absolute;
-  transform-origin: 0 0;
-  line-height: 0;
-  white-space-collapse: preserve;
-  user-select: none;
-  padding: 0;
-  margin: 0;
-}
 
 /* ********************** */
 /* horizontal spread */

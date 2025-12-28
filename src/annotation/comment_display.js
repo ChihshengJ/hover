@@ -36,7 +36,8 @@ export class CommentDisplay {
   #createContainer() {
     this.#container = document.createElement("div");
     this.#container.className = "comments-container";
-    this.#pane.scroller.appendChild(this.#container);
+    // Append to stage so comments scroll with document content
+    this.#pane.stage.appendChild(this.#container);
   }
 
   #setupResizeObserver() {
@@ -200,17 +201,20 @@ export class CommentDisplay {
     const pageView = this.#pane.pages[firstPageRange.pageNumber - 1];
     if (!pageView) return;
 
-    // Get the top rect of the annotation
+    const layerHeight =
+      parseFloat(pageView.textLayer.style.height) ||
+      pageView.wrapper.clientHeight;
+
+    // Get the top rect of the annotation (using topRatio now)
     const topRect = firstPageRange.rects.reduce(
-      (min, rect) => (rect.top < min.top ? rect : min),
+      (min, rect) => (rect.topRatio < min.topRatio ? rect : min),
       firstPageRange.rects[0],
     );
 
-    // Calculate position relative to scroller
-    const wrapperRect = pageView.wrapper.getBoundingClientRect();
-    const scrollerRect = this.#pane.scroller.getBoundingClientRect();
-
-    const topOffset = pageView.wrapper.offsetTop + topRect.top;
+    // Calculate position relative to stage:
+    // - pageView.wrapper.offsetTop is the page's top position within the stage
+    // - topRect.topRatio * layerHeight converts the ratio to pixels within the page
+    const topOffset = pageView.wrapper.offsetTop + topRect.topRatio * layerHeight;
 
     element.style.top = `${topOffset}px`;
   }

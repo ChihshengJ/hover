@@ -31,6 +31,17 @@ export class WindowControls {
     });
 
     document.addEventListener("keydown", (e) => {
+      const activeEl = document.activeElement;
+      const isInputActive =
+        activeEl &&
+        (activeEl.tagName === "INPUT" ||
+          activeEl.tagName === "TEXTAREA" ||
+          activeEl.isContentEditable);
+
+      if (isInputActive) {
+        return;
+      }
+
       const pane = this.activePane;
       const scroller = this.activePane?.scroller;
       if (!pane || !scroller) return;
@@ -116,7 +127,7 @@ export class WindowControls {
       const scrollerRect = pane.scroller.getBoundingClientRect();
       const scrollerOffsetX = scrollerRect.left - paneRect.left;
       const scrollerOffsetY = scrollerRect.top - paneRect.top;
-      
+
       const docPinchX = pane.scroller.scrollLeft + (pinchX - scrollerOffsetX);
       const docPinchY = pane.scroller.scrollTop + (pinchY - scrollerOffsetY);
 

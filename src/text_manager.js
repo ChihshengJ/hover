@@ -262,24 +262,44 @@ export class TextSelectionManager {
 
         const clientRects = Array.from(range.getClientRects());
 
-        // Filter and transform rects to be relative to the text layer
+        // Filter rects that overlap with this text layer, then clip to layer bounds
         let rects = clientRects
           .filter((rect) => {
             // Only include rects that overlap with this text layer
-            return (
+            const overlaps = (
               rect.bottom > layerRect.top &&
               rect.top < layerRect.bottom &&
+              rect.right > layerRect.left &&
+              rect.left < layerRect.right &&
               rect.width > 0 &&
               rect.height > 0
             );
+            if (!overlaps) return false;
+            return true;
           })
-          .map((rect) => ({
-            // Convert to coordinates relative to the text layer
-            left: rect.left - layerRect.left,
-            top: rect.top - layerRect.top,
-            width: rect.width,
-            height: rect.height,
-          }));
+          .map((rect) => {
+            // Clip rect to text layer bounds before converting to relative coordinates
+            const clippedLeft = Math.max(rect.left, layerRect.left);
+            const clippedTop = Math.max(rect.top, layerRect.top);
+            const clippedRight = Math.min(rect.right, layerRect.right);
+            const clippedBottom = Math.min(rect.bottom, layerRect.bottom);
+
+            return {
+              left: clippedLeft - layerRect.left,
+              top: clippedTop - layerRect.top,
+              width: clippedRight - clippedLeft,
+              height: clippedBottom - clippedTop,
+            };
+          })
+          .filter((rect) => {
+          const isExist = rect.width > 0 && rect.height > 0;
+          // Get rid of the selection on the entire page
+          const isWholePage = rect.left * rect.top === 0;
+          // Get rid of the Arxiv banner and page numbers (numbers are heuristically selected)
+          const isNearEdge = rect.top > layerRect.height * 0.92 || rect.left < layerRect.width * 0.1;
+          if (isExist && !isWholePage && !isNearEdge) return true;
+          return false;
+          })
         rects = this.#mergeRects(rects);
 
         if (rects.length > 0) {

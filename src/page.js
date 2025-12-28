@@ -3,13 +3,11 @@ import pdfjsWorker from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 
 import { PDFDocumentModel } from "./doc.js";
 import { CitationPopup } from "./controls/citation_popup.js";
-import { AnnotationRenderer } from './annotation/annotation_renderer.js';
 
 /**
  * @typedef {import('./controls/citation_popup.js').CitationPopup} CitationPopup;
  * @typedef {import('./doc.js').PDFDocumentModel} PDFDocumentModel;
  * @typedef {import('./viewpane.js').ViewerPane} ViewerPane;
- * @typedef {import('./annotation/annotation_renderer.js') AnnotationRenderer};
  */
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfjsWorker;
@@ -39,7 +37,6 @@ export class PageView {
     this.wrapper = canvas.parentElement;
     this.textLayer = this.#initLayer("text");
     this.annotationLayer = this.#initLayer("annotation");
-    this.annotationRenderer = new AnnotationRenderer(this);
 
     this.endOfContent = this.#createEndOfContent();
 
@@ -139,7 +136,6 @@ export class PageView {
       this.renderTask = null;
     }
     this.canvas.dataset.rendered = "true";
-    this.pane.annotationManager?.renderPageAnnotations(this.pageNumber);
   }
 
   #isSafari() {
@@ -196,8 +192,6 @@ export class PageView {
     this.cancel();
     this.textLayer.innerHTML = "";
     this.annotationLayer.innerHTML = "";
-
-    this.annotationRenderer?.clear();
 
     if (this.pane.textSelectionManager) {
       this.pane.textSelectionManager.unregister(this.textLayer);

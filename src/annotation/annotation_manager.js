@@ -1,6 +1,7 @@
 import { AnnotationToolbar } from "./annotation_toolbar.js";
 import { CommentInput } from "./comment_input.js";
 import { CommentDisplay } from "./comment_display.js";
+import { AnnotationSVGLayer } from "./annotation_svg_layer.js";
 
 /**
  * AnnotationManager - Coordinates annotation UI for a ViewerPane
@@ -10,6 +11,7 @@ import { CommentDisplay } from "./comment_display.js";
  * - Creating/updating/deleting annotations
  * - Managing comment input
  * - Coordinating with CommentDisplay
+ * - SVG-based annotation rendering
  */
 export class AnnotationManager {
   /** @type {ViewerPane} */
@@ -23,6 +25,9 @@ export class AnnotationManager {
 
   /** @type {CommentDisplay} */
   #commentDisplay = null;
+
+  /** @type {AnnotationSVGLayer} */
+  #svgLayer = null;
 
   /** @type {string|null} */
   #selectedAnnotationId = null;
@@ -41,6 +46,7 @@ export class AnnotationManager {
     this.#toolbar = AnnotationToolbar.getInstance();
     this.#commentInput = CommentInput.getInstance();
     this.#commentDisplay = new CommentDisplay(pane);
+    this.#svgLayer = new AnnotationSVGLayer(pane);
 
     this.#setupEventListeners();
     this.#setupPaneCallbacks();
@@ -71,17 +77,18 @@ export class AnnotationManager {
           return;
         }
 
-        // Don't hide if clicking on an annotation mark
+        // Don't hide if clicking on an annotation mark (will be handled by onAnnotationClick)
         if (e.target.closest(".annotation-mark")) {
           return;
         }
 
-        // Hide toolbar if visible and not editing an annotation
-        if (this.#toolbar.isVisible && !this.#toolbar.currentAnnotation) {
+        // Hide toolbar if visible
+        if (this.#toolbar.isVisible) {
           // Small delay to allow selection to complete
           setTimeout(() => {
             if (!this.#hasActiveSelection()) {
               this.#toolbar.hide();
+              this.#selectAnnotation(null);
             }
           }, 100);
         }
@@ -145,16 +152,61 @@ export class AnnotationManager {
     // Store the selection data
     this.#pendingSelection = selectionData;
 
-    // Get selection bounding rect
+    // Get selection bounding rect - use a visible rect for cross-page selections
     const selection = document.getSelection();
     const range = selection.getRangeAt(0);
-    const rect = range.getBoundingClientRect();
+    const rect = this.#getVisibleSelectionRect(range);
+
+    if (!rect) return;
 
     // Show toolbar
     this.#toolbar.showForSelection(rect, {
       onAnnotate: (options) => this.#createAnnotation(options),
       onComment: () => this.#showCommentInputForNewAnnotation(rect),
     });
+  }
+
+  /**
+   * Get a selection rect that's visible in the viewport.
+   * For cross-page selections, getBoundingClientRect() returns a huge rect
+   * spanning all pages, which positions the toolbar off-screen.
+   * Instead, find the last client rect that's visible in the viewport.
+   */
+  #getVisibleSelectionRect(range) {
+    const clientRects = Array.from(range.getClientRects());
+    if (clientRects.length === 0) {
+      return range.getBoundingClientRect();
+    }
+
+    const viewportHeight = window.innerHeight;
+    const viewportWidth = window.innerWidth;
+
+    // Filter to rects that are at least partially visible in the viewport
+    const visibleRects = clientRects.filter((rect) => {
+      // Skip suspiciously large rects (likely container elements)
+      if (rect.width > viewportWidth * 0.9 && rect.height > viewportHeight * 0.3) {
+        return false;
+      }
+      // Check if rect is in viewport
+      return (
+        rect.bottom > 0 &&
+        rect.top < viewportHeight &&
+        rect.right > 0 &&
+        rect.left < viewportWidth &&
+        rect.width > 0 &&
+        rect.height > 0
+      );
+    });
+
+    if (visibleRects.length === 0) {
+      // No visible rects, fall back to bounding rect
+      return range.getBoundingClientRect();
+    }
+
+    // Use the last visible rect (where the user likely ended their selection)
+    // This provides better UX as the toolbar appears near the cursor
+    const lastRect = visibleRects[visibleRects.length - 1];
+    return lastRect;
   }
 
   #createAnnotation(options) {
@@ -249,6 +301,8 @@ export class AnnotationManager {
     this.#toolbar.showForAnnotation(rect, annotation, {
       onAnnotate: (options) => {
         this.#pane.document.updateAnnotation(annotationId, options);
+        this.#toolbar.hide();
+        this.#selectAnnotation(null);
       },
       onComment: () => {
         this.#commentInput.show(
@@ -268,7 +322,7 @@ export class AnnotationManager {
       },
       onDelete: () => {
         this.#pane.document.deleteAnnotation(annotationId);
-        this.#selectedAnnotationId = null;
+        this.#selectAnnotation(null);
       },
     });
   }
@@ -284,39 +338,18 @@ export class AnnotationManager {
     if (annotationId) {
       this.#setAnnotationSelected(annotationId, true);
       this.#commentDisplay.highlightComment(annotationId);
+    } else {
+      // Clear comment highlight when deselecting
+      this.#commentDisplay.highlightComment(null);
     }
   }
 
   #setAnnotationSelected(annotationId, selected) {
-    const annotation = this.#pane.document.getAnnotation(annotationId);
-    if (!annotation) return;
-
-    // Update selection state in all relevant page renderers
-    for (const pageRange of annotation.pageRanges) {
-      const pageView = this.#pane.pages[pageRange.pageNumber - 1];
-      if (pageView?.annotationRenderer) {
-        pageView.annotationRenderer.selectAnnotation(
-          selected ? annotationId : null,
-        );
-      }
-    }
+    this.#svgLayer.selectAnnotation(selected ? annotationId : null);
   }
 
   #getAnnotationRect(annotationId) {
-    const annotation = this.#pane.document.getAnnotation(annotationId);
-    if (!annotation) return null;
-
-    // Get rect from first page that has this annotation rendered
-    for (const pageRange of annotation.pageRanges) {
-      const pageView = this.#pane.pages[pageRange.pageNumber - 1];
-      if (pageView?.annotationRenderer) {
-        const rect =
-          pageView.annotationRenderer.getAnnotationRect(annotationId);
-        if (rect) return rect;
-      }
-    }
-
-    return null;
+    return this.#svgLayer.getAnnotationRect(annotationId);
   }
 
   #editAnnotationComment(annotationId) {
@@ -341,14 +374,14 @@ export class AnnotationManager {
   onDocumentChange(event, data) {
     switch (event) {
       case "annotation-added":
-        this.#renderAnnotationOnPages(data.annotation);
+        this.#svgLayer.addAnnotation(data.annotation);
         if (data.annotation.comment) {
           this.#commentDisplay.addComment(data.annotation);
         }
         break;
 
       case "annotation-updated":
-        this.#updateAnnotationOnPages(data.annotation);
+        this.#svgLayer.updateAnnotation(data.annotation);
         if (data.annotation.comment) {
           this.#commentDisplay.addComment(data.annotation);
         } else {
@@ -357,7 +390,7 @@ export class AnnotationManager {
         break;
 
       case "annotation-deleted":
-        this.#removeAnnotationFromPages(data.annotationId);
+        this.#svgLayer.removeAnnotation(data.annotationId);
         this.#commentDisplay.removeComment(data.annotationId);
         break;
 
@@ -367,60 +400,31 @@ export class AnnotationManager {
     }
   }
 
-  #renderAnnotationOnPages(annotation) {
-    for (const pageRange of annotation.pageRanges) {
-      const pageView = this.#pane.pages[pageRange.pageNumber - 1];
-      if (pageView?.annotationRenderer) {
-        const annotations = this.#pane.document.getAnnotationsForPage(
-          pageRange.pageNumber,
-        );
-        pageView.annotationRenderer.render(annotations);
-      }
-    }
-  }
-
-  #updateAnnotationOnPages(annotation) {
-    for (const pageRange of annotation.pageRanges) {
-      const pageView = this.#pane.pages[pageRange.pageNumber - 1];
-      if (pageView?.annotationRenderer) {
-        pageView.annotationRenderer.updateAnnotation(annotation);
-      }
-    }
-  }
-
-  #removeAnnotationFromPages(annotationId) {
-    for (const pageView of this.#pane.pages) {
-      if (pageView?.annotationRenderer) {
-        pageView.annotationRenderer.removeAnnotation(annotationId);
-      }
-    }
-  }
-
   #refreshAllAnnotations() {
-    for (const pageView of this.#pane.pages) {
-      if (pageView?.annotationRenderer) {
-        const annotations = this.#pane.document.getAnnotationsForPage(
-          pageView.pageNumber,
-        );
-        pageView.annotationRenderer.render(annotations);
-      }
-    }
+    this.#svgLayer.refresh();
+    this.#commentDisplay.refresh();
+  }
+
+  /**
+   * Public refresh method for external calls (e.g., after zoom/resize)
+   */
+  refresh() {
+    this.#svgLayer.refresh();
     this.#commentDisplay.refresh();
   }
 
   /**
    * Render annotations for a specific page (called when page becomes visible)
+   * With SVG layer, we just ensure the layer is up to date
    */
   renderPageAnnotations(pageNumber) {
-    const pageView = this.#pane.pages[pageNumber - 1];
-    if (!pageView?.annotationRenderer) return;
-
-    const annotations = this.#pane.document.getAnnotationsForPage(pageNumber);
-    pageView.annotationRenderer.render(annotations);
+    // SVG layer handles all pages, just refresh if needed
+    // This is called after page render, so positions should be stable
   }
 
   destroy() {
     this.#abortController?.abort();
+    this.#svgLayer?.destroy();
     this.#commentDisplay?.destroy();
     this.#toolbar?.hide();
     this.#commentInput?.hide();

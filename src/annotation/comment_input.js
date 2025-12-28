@@ -49,15 +49,11 @@ export class CommentInput {
         <div class="comment-input-header">
           <span class="comment-input-title">Add Comment</span>
           <button class="comment-close-btn" title="Cancel">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <line x1="18" y1="6" x2="6" y2="18"/>
-              <line x1="6" y1="6" x2="18" y2="18"/>
-            </svg>
+            <div>x</div>
           </button>
         </div>
         <textarea class="comment-textarea" placeholder="Enter your comment..." rows="3"></textarea>
         <div class="comment-input-actions">
-          <button class="comment-cancel-btn">Cancel</button>
           <button class="comment-save-btn">Save</button>
         </div>
       </div>
@@ -73,13 +69,6 @@ export class CommentInput {
       .querySelector(".comment-save-btn")
       .addEventListener("click", () => {
         this.#save();
-      });
-
-    // Cancel buttons
-    this.#container
-      .querySelector(".comment-cancel-btn")
-      .addEventListener("click", () => {
-        this.#cancel();
       });
 
     this.#container

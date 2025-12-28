@@ -2,7 +2,7 @@
  * AnnotationToolbar - Floating toolbar for creating annotations
  *
  * Appears when text is selected, allows user to:
- * - Choose highlight or underscore
+ * - Choose highlight or underline
  * - Pick a color (yellow, red, blue, green)
  * - Add a comment
  * - Delete annotation (when editing existing)
@@ -93,22 +93,13 @@ export class AnnotationToolbar {
         <div class="toolbar-divider"></div>
         <div class="toolbar-actions">
           <button class="action-btn" data-action="highlight" title="Highlight">
-            <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <!-- Placeholder: highlight icon -->
-              <rect x="3" y="14" width="18" height="4" rx="1"/>
-            </svg>
+            <img src='public/highlight.png' width='25'></img>
           </button>
-          <button class="action-btn" data-action="underscore" title="Underscore">
-            <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <!-- Placeholder: underscore icon -->
-              <line x1="3" y1="20" x2="21" y2="20" stroke-width="3"/>
-            </svg>
+          <button class="action-btn" data-action="underline" title="Underline">
+            <img src='public/underline.png' width='25'></img>
           </button>
           <button class="action-btn" data-action="comment" title="Add Comment">
-            <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <!-- Placeholder: comment icon -->
-              <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
-            </svg>
+            <img src='public/comment.png' width='25'></img>
           </button>
           <button class="action-btn delete-btn hidden" data-action="delete" title="Delete">
             <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -123,6 +114,9 @@ export class AnnotationToolbar {
 
     this.#container.appendChild(this.#toolbar);
     document.body.appendChild(this.#container);
+
+    // Set initial color on toolbar
+    this.#toolbar.dataset.color = AnnotationToolbar.#lastColor;
 
     // Update active states based on remembered preferences
     this.#updateActiveStates();
@@ -146,7 +140,7 @@ export class AnnotationToolbar {
         e.stopPropagation();
         const action = btn.dataset.action;
 
-        if (action === "highlight" || action === "underscore") {
+        if (action === "highlight" || action === "underline") {
           AnnotationToolbar.#lastType = action;
           this.#updateActiveStates();
           this.#triggerAnnotation();
@@ -173,6 +167,9 @@ export class AnnotationToolbar {
   }
 
   #updateActiveStates() {
+    // Update toolbar data-color for collapsed ball
+    this.#toolbar.dataset.color = AnnotationToolbar.#lastColor;
+
     // Update color buttons
     this.#toolbar.querySelectorAll(".color-btn").forEach((btn) => {
       btn.classList.toggle(
@@ -184,7 +181,7 @@ export class AnnotationToolbar {
     // Update action buttons
     this.#toolbar
       .querySelectorAll(
-        '.action-btn[data-action="highlight"], .action-btn[data-action="underscore"]',
+        '.action-btn[data-action="highlight"], .action-btn[data-action="underline"]',
       )
       .forEach((btn) => {
         btn.classList.toggle(
@@ -275,28 +272,23 @@ export class AnnotationToolbar {
     let x, y;
     let position = "bottom"; // 'bottom', 'right', 'left', 'top'
 
-    // Try bottom-center first
     x = rect.left + rect.width / 2 - toolbarWidth / 2;
     y = rect.bottom + margin;
 
     if (y + toolbarHeight > viewportHeight - margin) {
-      // No space at bottom, try top
       y = rect.top - toolbarHeight - margin;
       position = "top";
 
       if (y < margin) {
-        // No space at top either, try right
         x = rect.right + margin;
         y = rect.top + rect.height / 2 - toolbarHeight / 2;
         position = "right";
 
         if (x + toolbarWidth > viewportWidth - margin) {
-          // No space on right, try left
           x = rect.left - toolbarWidth - margin;
           position = "left";
 
           if (x < margin) {
-            // Fallback: just put it at bottom and let it overflow
             x = rect.left + rect.width / 2 - toolbarWidth / 2;
             y = rect.bottom + margin;
             position = "bottom";
@@ -305,7 +297,6 @@ export class AnnotationToolbar {
       }
     }
 
-    // Clamp X to viewport
     x = Math.max(margin, Math.min(x, viewportWidth - toolbarWidth - margin));
 
     this.#container.style.left = `${x}px`;

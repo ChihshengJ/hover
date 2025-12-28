@@ -371,6 +371,9 @@ export class ViewerPane {
     scroller.scrollTop = Math.min(Math.max(0, targetTop), maxTop);
 
     this.#renderVisiblePages();
+    
+    // Refresh annotations after layout changes
+    this.annotationManager?.refresh();
   }
 
   zoom(delta) {
@@ -467,15 +470,14 @@ export class ViewerPane {
       };
       Object.assign(page.annotationLayer.style, layerStyles);
       Object.assign(page.textLayer.style, layerStyles);
-      if (page.annotationRenderer.highlightLayer) {
-        Object.assign(page.annotationRenderer.highlightLayer.style, layerStyles);
-      }
     }
   }
 
   async refreshAllPages() {
     await this.resizeAllCanvases(this.scale);
     this.#renderVisiblePages();
+    // Refresh annotations after layout changes
+    this.annotationManager?.refresh();
   }
 
   fitWidth() {
@@ -523,6 +525,8 @@ export class ViewerPane {
 
     requestAnimationFrame(() => {
       this.#renderVisiblePages();
+      // Refresh annotations after layout changes
+      this.annotationManager?.refresh();
     });
   }
 

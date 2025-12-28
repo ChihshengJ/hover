@@ -22,10 +22,14 @@
 .annotation-toolbar {
   display: flex;
   align-items: center;
-  background: rgba(255, 255, 255, 0.95);
-  backdrop-filter: blur(12px);
+  background: rgba(255, 255, 255, 0.2);
+  backdrop-filter: blur(15px);
   border-radius: 22px;
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+  box-shadow: 
+    inset 1px 1px 5px 1px rgba(255, 255, 255, 0.8), 
+    inset -2px -2px 3px 2px rgba(255, 255, 255, 0.2), 
+    0 4px 20px rgba(0, 0, 0, 0.3),
+    0 2px 4px 5px rgba(0, 0, 0, 0.1);
   padding: 0;
   overflow: hidden;
   transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
@@ -55,11 +59,31 @@
 
 .annotation-toolbar.collapsed .toolbar-ball::after {
   content: "";
-  width: 24px;
-  height: 24px;
-  background: linear-gradient(135deg, #ffd54f 0%, #ffb300 100%);
+  width: 28px;
+  height: 28px;
   border-radius: 50%;
+  transition: background 0.2s ease, box-shadow 0.2s ease;
+}
+
+/* Dynamic collapsed ball colors */
+.annotation-toolbar[data-color="yellow"] .toolbar-ball::after {
+  background: linear-gradient(135deg, #ffd54f 0%, #ffb300 100%);
   box-shadow: 0 2px 8px rgba(255, 179, 0, 0.4);
+}
+
+.annotation-toolbar[data-color="red"] .toolbar-ball::after {
+  background: linear-gradient(135deg, #ef5350 0%, #e53935 100%);
+  box-shadow: 0 2px 8px rgba(229, 57, 53, 0.4);
+}
+
+.annotation-toolbar[data-color="blue"] .toolbar-ball::after {
+  background: linear-gradient(135deg, #42a5f5 0%, #1e88e5 100%);
+  box-shadow: 0 2px 8px rgba(30, 136, 229, 0.4);
+}
+
+.annotation-toolbar[data-color="green"] .toolbar-ball::after {
+  background: linear-gradient(135deg, #66bb6a 0%, #43a047 100%);
+  box-shadow: 0 2px 8px rgba(67, 160, 71, 0.4);
 }
 
 /* Expanded state */
@@ -95,8 +119,8 @@
 }
 
 .color-btn {
-  width: 32px;
-  height: 32px;
+  width: 38px;
+  height: 38px;
   border: none;
   background: transparent;
   border-radius: 50%;
@@ -113,19 +137,17 @@
   transform: scale(1.15);
 }
 
-.color-btn.active {
-  background: rgba(255, 255, 255, 0.15);
-}
-
 .color-circle {
-  width: 32px;
-  height: 20px;
+  width: 26px;
+  height: 26px;
   border-radius: 50%;
-  box-shadow: 1px 2px 3px 1px rgba(0, 0, 0, 0.2);
+  box-shadow: 
+    1px 2px 4px 1px rgba(0, 0, 0, 0.2);
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
 }
 
 .color-circle.yellow {
-  background: linear-gradient(135deg, #fff176 0%, #ffd54f 100%);
+  background: linear-gradient(135deg, #ffd54f 0%, #ffb300 100%);
 }
 .color-circle.red {
   background: linear-gradient(135deg, #ef5350 0%, #e53935 100%);
@@ -213,8 +235,8 @@
 
 .comment-input-popup {
   width: 280px;
-  background: rgba(40, 40, 40, 0.98);
-  backdrop-filter: blur(12px);
+  background: rgba(255, 255, 255, 0.6);
+  backdrop-filter: blur(10px);
   border-radius: 12px;
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
   overflow: hidden;
@@ -224,29 +246,29 @@
 .comment-input-container[data-color="yellow"] .comment-input-header {
   background: linear-gradient(
     135deg,
-    rgba(255, 213, 79, 0.3) 0%,
-    rgba(255, 179, 0, 0.2) 100%
+    rgba(255, 213, 79, 0.9) 0%,
+    rgba(255, 179, 0, 0.7) 100%
   );
 }
 .comment-input-container[data-color="red"] .comment-input-header {
   background: linear-gradient(
     135deg,
-    rgba(239, 83, 80, 0.3) 0%,
-    rgba(229, 57, 53, 0.2) 100%
+    rgba(239, 83, 80, 0.9) 0%,
+    rgba(229, 57, 53, 0.7) 100%
   );
 }
 .comment-input-container[data-color="blue"] .comment-input-header {
   background: linear-gradient(
     135deg,
-    rgba(66, 165, 245, 0.3) 0%,
-    rgba(30, 136, 229, 0.2) 100%
+    rgba(66, 165, 245, 0.9) 0%,
+    rgba(30, 136, 229, 0.7) 100%
   );
 }
 .comment-input-container[data-color="green"] .comment-input-header {
   background: linear-gradient(
     135deg,
-    rgba(102, 187, 106, 0.3) 0%,
-    rgba(67, 160, 71, 0.2) 100%
+    rgba(102, 187, 106, 0.9) 0%,
+    rgba(67, 160, 71, 0.7) 100%
   );
 }
 
@@ -256,11 +278,14 @@
   justify-content: space-between;
   padding: 10px 12px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow:
+    -1px -1px 2px 2px rgba(0, 0, 0, 0.2),
+    inset 0 2px 6px 1px rgba(255, 255, 255, 0.6);
 }
 
 .comment-input-title {
-  font-size: 13px;
-  font-weight: 500;
+  font-size: 14px;
+  font-weight: 400;
   color: rgba(255, 255, 255, 0.9);
 }
 
@@ -274,8 +299,9 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  color: rgba(255, 255, 255, 0.5);
+  color: rgba(255, 255, 255, 0.9);
   transition: all 0.15s ease;
+  font-size: 14px;
 }
 
 .comment-close-btn:hover {
@@ -283,22 +309,19 @@
   color: white;
 }
 
-.comment-close-btn svg {
-  width: 14px;
-  height: 14px;
-}
 
 .comment-textarea {
   width: 100%;
   padding: 12px;
   border: none;
   background: transparent;
-  color: white;
+  color: #5c5c5c;
   font-size: 14px;
   line-height: 1.5;
   resize: none;
   outline: none;
-  font-family: inherit;
+  font-family: georgia;
+  font-weight: 400;
 }
 
 .comment-textarea::placeholder {
@@ -312,34 +335,25 @@
   padding: 8px 12px 12px;
 }
 
-.comment-cancel-btn,
 .comment-save-btn {
   padding: 6px 14px;
   border: none;
   border-radius: 6px;
-  font-size: 13px;
-  font-weight: 500;
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 400;
   cursor: pointer;
   transition: all 0.15s ease;
 }
 
-.comment-cancel-btn {
-  background: transparent;
-  color: rgba(255, 255, 255, 0.6);
-}
-
-.comment-cancel-btn:hover {
-  background: rgba(255, 255, 255, 0.1);
-  color: white;
-}
-
 .comment-save-btn {
-  background: rgba(66, 165, 245, 0.8);
+  background: rgba(50, 50, 50, 0.3);
   color: white;
 }
 
 .comment-save-btn:hover {
-  background: rgba(66, 165, 245, 1);
+  background: rgba(50, 50, 50, 0.5);
+  box-shadow: inset 0 0 5px 2px rgba(50, 50, 50, 0.3);
 }
 
 /* ===========================================
@@ -349,9 +363,9 @@
 .comments-container {
   position: absolute;
   top: 0;
+  bottom: 0;
   right: 0;
   width: 260px;
-  height: 100%;
   pointer-events: none;
   z-index: 100;
 }
@@ -415,13 +429,19 @@
 .comments-container.collapsed-mode
   .comment-card.force-expanded
   .comment-collapsed-indicator {
-  background: rgba(60, 60, 60, 1) !important;
+  background: rgba(255, 255, 255, 1) !important;
+}
+
+.comments-container.collapsed-mode
+  .comment-card.force-expanded
+  .comment-collapsed-indicator svg {
+  color: #5c5c5c;
 }
 
 /* Expanded content */
 .comment-expanded-content {
   width: 220px;
-  background: rgba(45, 45, 45, 0.98);
+  background: rgba(255, 255, 255, 0.8);
   backdrop-filter: blur(8px);
   border-radius: 8px;
   box-shadow: 0 2px 12px rgba(0, 0, 0, 0.3);
@@ -430,9 +450,10 @@
 
 .comment-text {
   padding: 10px 12px;
+  font-family: georgia;
   font-size: 13px;
   line-height: 1.5;
-  color: rgba(255, 255, 255, 0.9);
+  color: #5c5c5c;
   max-height: 120px;
   overflow-y: auto;
 }
@@ -462,7 +483,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  color: rgba(255, 255, 255, 0.5);
+  color: #5c5c5c;
   transition: all 0.15s ease;
 }
 
@@ -521,197 +542,149 @@
 }
 
 /* ===========================================
-   Highlight Layer
+   SVG Annotation Layer
    =========================================== */
 
-.highlight-layer {
+.annotation-svg-layer {
   position: absolute;
   top: 0;
   left: 0;
   pointer-events: none;
-  z-index: 3;
+  z-index: 50;
+  overflow: visible;
 }
 
 /* ===========================================
-   Annotation Wrappers
+   Annotation Groups (SVG)
    =========================================== */
 
-.annotation-wrapper {
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
+.annotation-group {
   pointer-events: none;
 }
 
-/* Outline element - positioned dynamically to bound all marks */
-.annotation-wrapper .annotation-outline {
-  position: absolute;
-  pointer-events: none;
-  border: 2px dashed transparent;
-  border-radius: 4px;
-  transition: border-color 0.15s ease;
+/* Outline element - hidden by default */
+.annotation-group .annotation-outline {
+  opacity: 0;
+  transition: opacity 0.15s ease;
 }
 
-.annotation-wrapper.hovered .annotation-outline,
-.annotation-wrapper.selected .annotation-outline {
-  border-style: dashed;
+/* Show outline on hover */
+.annotation-group.hovered .annotation-outline,
+.annotation-group.selected .annotation-outline {
+  opacity: 1;
 }
 
-.annotation-wrapper.hovered .annotation-outline[data-color="yellow"],
-.annotation-wrapper.selected .annotation-outline[data-color="yellow"] {
-  border-color: #f9a825;
+/* Outline colors */
+.annotation-group .annotation-outline[data-color="yellow"] {
+  stroke: #f9a825;
 }
 
-.annotation-wrapper.hovered .annotation-outline[data-color="red"],
-.annotation-wrapper.selected .annotation-outline[data-color="red"] {
-  border-color: #c62828;
+.annotation-group .annotation-outline[data-color="red"] {
+  stroke: #c62828;
 }
 
-.annotation-wrapper.hovered .annotation-outline[data-color="blue"],
-.annotation-wrapper.selected .annotation-outline[data-color="blue"] {
-  border-color: #1565c0;
+.annotation-group .annotation-outline[data-color="blue"] {
+  stroke: #1565c0;
 }
 
-.annotation-wrapper.hovered .annotation-outline[data-color="green"],
-.annotation-wrapper.selected .annotation-outline[data-color="green"] {
-  border-color: #2e7d32;
+.annotation-group .annotation-outline[data-color="green"] {
+  stroke: #2e7d32;
 }
 
 /* ===========================================
-   Annotation Marks - Highlights
+   Annotation Marks - Highlights (SVG)
    =========================================== */
 
 .annotation-mark {
   pointer-events: auto;
   cursor: pointer;
-  transition: background-color 0.15s ease;
-}
-
-.annotation-mark.highlight {
-  border-radius: 2px;
+  transition: fill 0.15s ease, opacity 0.15s ease;
 }
 
 /* Highlight colors - default state */
 .annotation-mark.highlight[data-color="yellow"] {
-  background: rgba(255, 235, 59, 0.35);
+  fill: rgba(255, 235, 59, 0.35);
 }
 
 .annotation-mark.highlight[data-color="red"] {
-  background: rgba(244, 67, 54, 0.30);
+  fill: rgba(244, 67, 54, 0.3);
 }
 
 .annotation-mark.highlight[data-color="blue"] {
-  background: rgba(33, 150, 243, 0.30);
+  fill: rgba(33, 150, 243, 0.3);
 }
 
 .annotation-mark.highlight[data-color="green"] {
-  background: rgba(76, 175, 80, 0.30);
+  fill: rgba(76, 175, 80, 0.3);
 }
 
-/* Highlight colors - hover state (via wrapper) */
-.annotation-wrapper.hovered .annotation-mark.highlight[data-color="yellow"] {
-  background: rgba(255, 235, 59, 0.55);
+/* Highlight colors - hover state */
+.annotation-group.hovered .annotation-mark.highlight[data-color="yellow"] {
+  fill: rgba(255, 235, 59, 0.55);
 }
 
-.annotation-wrapper.hovered .annotation-mark.highlight[data-color="red"] {
-  background: rgba(244, 67, 54, 0.50);
+.annotation-group.hovered .annotation-mark.highlight[data-color="red"] {
+  fill: rgba(244, 67, 54, 0.5);
 }
 
-.annotation-wrapper.hovered .annotation-mark.highlight[data-color="blue"] {
-  background: rgba(33, 150, 243, 0.50);
+.annotation-group.hovered .annotation-mark.highlight[data-color="blue"] {
+  fill: rgba(33, 150, 243, 0.5);
 }
 
-.annotation-wrapper.hovered .annotation-mark.highlight[data-color="green"] {
-  background: rgba(76, 175, 80, 0.50);
+.annotation-group.hovered .annotation-mark.highlight[data-color="green"] {
+  fill: rgba(76, 175, 80, 0.5);
 }
 
 /* Highlight colors - selected state */
-.annotation-wrapper.selected .annotation-mark.highlight[data-color="yellow"] {
-  background: rgba(255, 235, 59, 0.60);
+.annotation-group.selected .annotation-mark.highlight[data-color="yellow"] {
+  fill: rgba(255, 235, 59, 0.6);
 }
 
-.annotation-wrapper.selected .annotation-mark.highlight[data-color="red"] {
-  background: rgba(244, 67, 54, 0.55);
+.annotation-group.selected .annotation-mark.highlight[data-color="red"] {
+  fill: rgba(244, 67, 54, 0.55);
 }
 
-.annotation-wrapper.selected .annotation-mark.highlight[data-color="blue"] {
-  background: rgba(33, 150, 243, 0.55);
+.annotation-group.selected .annotation-mark.highlight[data-color="blue"] {
+  fill: rgba(33, 150, 243, 0.55);
 }
 
-.annotation-wrapper.selected .annotation-mark.highlight[data-color="green"] {
-  background: rgba(76, 175, 80, 0.55);
-}
-
-/* Border radius for multi-line highlights */
-.annotation-mark.highlight.single {
-  border-radius: 3px;
-}
-
-.annotation-mark.highlight.begin {
-  border-radius: 3px 0 0 3px;
-}
-
-.annotation-mark.highlight.end {
-  border-radius: 0 3px 3px 0;
-}
-
-.annotation-mark.highlight.middle {
-  border-radius: 0;
+.annotation-group.selected .annotation-mark.highlight[data-color="green"] {
+  fill: rgba(76, 175, 80, 0.55);
 }
 
 /* ===========================================
-   Annotation Marks - Underscores
+   Annotation Marks - Underlines (SVG)
    =========================================== */
 
-.annotation-mark.underscore {
-  border-radius: 1px;
-  transition: height 0.1s ease, margin-top 0.1s ease;
+.annotation-mark.underline[data-color="yellow"] {
+  fill: rgba(255, 193, 7, 0.85);
 }
 
-/* Underscore colors - default state (more prominent than highlights) */
-.annotation-mark.underscore[data-color="yellow"] {
-  background: rgba(255, 193, 7, 0.85);
+.annotation-mark.underline[data-color="red"] {
+  fill: rgba(229, 57, 53, 0.85);
 }
 
-.annotation-mark.underscore[data-color="red"] {
-  background: rgba(229, 57, 53, 0.85);
+.annotation-mark.underline[data-color="blue"] {
+  fill: rgba(30, 136, 229, 0.85);
 }
 
-.annotation-mark.underscore[data-color="blue"] {
-  background: rgba(30, 136, 229, 0.85);
+.annotation-mark.underline[data-color="green"] {
+  fill: rgba(56, 142, 60, 0.85);
 }
 
-.annotation-mark.underscore[data-color="green"] {
-  background: rgba(56, 142, 60, 0.85);
+/* Underline - hover state */
+.annotation-group.hovered .annotation-mark.underline[data-color="yellow"] {
+  fill: rgba(255, 193, 7, 1);
 }
 
-/* Underscore - hover state (thicker) */
-.annotation-wrapper.hovered .annotation-mark.underscore {
-  height: 4px !important;
-  margin-top: -1px;
+.annotation-group.hovered .annotation-mark.underline[data-color="red"] {
+  fill: rgba(229, 57, 53, 1);
 }
 
-.annotation-wrapper.hovered .annotation-mark.underscore[data-color="yellow"] {
-  background: rgba(255, 193, 7, 1);
+.annotation-group.hovered .annotation-mark.underline[data-color="blue"] {
+  fill: rgba(30, 136, 229, 1);
 }
 
-.annotation-wrapper.hovered .annotation-mark.underscore[data-color="red"] {
-  background: rgba(229, 57, 53, 1);
+.annotation-group.hovered .annotation-mark.underline[data-color="green"] {
+  fill: rgba(56, 142, 60, 1);
 }
-
-.annotation-wrapper.hovered .annotation-mark.underscore[data-color="blue"] {
-  background: rgba(30, 136, 229, 1);
-}
-
-.annotation-wrapper.hovered .annotation-mark.underscore[data-color="green"] {
-  background: rgba(56, 142, 60, 1);
-}
-
-/* Underscore - selected state */
-.annotation-wrapper.selected .annotation-mark.underscore {
-  height: 4px !important;
-  margin-top: -1px;
-}
-

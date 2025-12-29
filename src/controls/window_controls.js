@@ -193,6 +193,7 @@ export class WindowControls {
 
       isTransforming = false;
       pageStates.clear();
+      pane.controls.updateZoomDisplay();
     });
   }
 

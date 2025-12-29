@@ -5,7 +5,7 @@ pdfjsLib.GlobalWorkerOptions.workerSrc = pdfjsWorker;
 import { PageView } from "./page.js";
 import { PaneControls } from "./controls/pane_controls.js";
 import { TextSelectionManager } from "./text_manager.js";
-import { AnnotationManager } from './annotation/annotation_manager.js';
+import { AnnotationManager } from "./annotation/annotation_manager.js";
 
 /**
  * @typedef {import('./page.js').PageView} PageView;
@@ -33,6 +33,7 @@ export class ViewerPane {
     this.visiblePages = new Set();
     this.observer = null;
     this.controls = new PaneControls(this);
+    this.currentPage = 0;
 
     // 0: no spread; 1: even spread; 2: odd spread
     this.spreadMode = 0;
@@ -346,11 +347,12 @@ export class ViewerPane {
     const viewportMidY = viewRect.top + viewRect.height / 2;
     for (const canvas of this.canvases) {
       const rect = canvas.getBoundingClientRect();
-      if (rect.top <= viewportMidY && rect.bottom > viewportMidY) {
-        return parseInt(canvas.dataset.pageNumber);
+      if (rect.top <= viewportMidY && rect.bottom >= viewportMidY) {
+        this.currentPage = parseInt(canvas.dataset.pageNumber);
+        return this.currentPage;
       }
     }
-    return 0;
+    return this.currentPage;
   }
 
   zoomAt(scale, focusX, focusY) {
@@ -371,7 +373,7 @@ export class ViewerPane {
     scroller.scrollTop = Math.min(Math.max(0, targetTop), maxTop);
 
     this.#renderVisiblePages();
-    
+
     // Refresh annotations after layout changes
     this.annotationManager?.refresh();
   }
@@ -409,7 +411,7 @@ export class ViewerPane {
   scrollToTop() {
     const target = this.pages.find((p) => p.pageNumber === 1);
     if (target)
-      target.wrapper.scrollIntoView({ behavior: "instant", block: "center" });
+      target.wrapper.scrollIntoView({ behavior: "instant", block: "start" });
   }
 
   scrollToBottom() {
@@ -422,7 +424,7 @@ export class ViewerPane {
   goToPage(n) {
     const target = this.pages.find((p) => p.pageNumber === n);
     if (target)
-      target.wrapper.scrollIntoView({ behavior: "instant", block: "center" });
+      target.wrapper.scrollIntoView({ behavior: "instant", block: "start" });
   }
 
   async resizeAllCanvases(scale) {
@@ -638,7 +640,7 @@ export class ViewerPane {
         pageView.renderHightlights(this.document.highlights.get(pageNum));
       }
     }
-    if (event.startsWith('annotation-')) {
+    if (event.startsWith("annotation-")) {
       this.annotationManager?.onDocumentChange(event, data);
     }
   }

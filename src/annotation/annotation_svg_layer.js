@@ -1,12 +1,3 @@
-/**
- * AnnotationSVGLayer - Renders annotations using SVG at the stage level
- *
- * Benefits:
- * - Cross-page annotations render seamlessly
- * - Single DOM element for all annotations (performance)
- * - Hardware-accelerated rendering
- * - Natural outline spanning across pages
- */
 export class AnnotationSVGLayer {
   /** @type {ViewerPane} */
   #pane = null;
@@ -57,7 +48,6 @@ export class AnnotationSVGLayer {
 
   #setupResizeObserver() {
     this.#resizeObserver = new ResizeObserver(() => {
-      this.#updateSVGSize();
       this.refresh();
     });
     this.#resizeObserver.observe(this.#pane.stage);
@@ -65,12 +55,12 @@ export class AnnotationSVGLayer {
 
   #updateSVGSize() {
     // Match SVG size to stage scroll dimensions
-    const stage = this.#pane.stage;
-    this.#svg.setAttribute("width", stage.scrollWidth);
-    this.#svg.setAttribute("height", stage.scrollHeight);
+    const stageRect = this.#pane.stage.getBoundingClientRect();
+    this.#svg.setAttribute("width", stageRect.width);
+    this.#svg.setAttribute("height", stageRect.height);
     this.#svg.setAttribute(
       "viewBox",
-      `0 0 ${stage.scrollWidth} ${stage.scrollHeight}`,
+      `0 0 ${stageRect.width} ${stageRect.height}`,
     );
   }
 
@@ -231,8 +221,8 @@ export class AnnotationSVGLayer {
     if (rects.length === 0) return [];
     if (rects.length === 1) return rects;
 
-    const lineThreshold = 0.015; // 1.5% of height - tolerance for same line
-    const gapThreshold = 0.03; // 3% of width - max gap to fill
+    const lineThreshold = 0.01; // 1% of height - tolerance for same line
+    const gapThreshold = 0.05; // 5% of width - max gap to fill
 
     // Sort by top, then left
     const sorted = [...rects].sort((a, b) => {
@@ -324,8 +314,8 @@ export class AnnotationSVGLayer {
     });
 
     group.addEventListener("click", (e) => {
-      e.stopPropagation();
       this.#onClick(annotationId);
+      e.stopPropagation();
     });
   }
 
@@ -445,6 +435,7 @@ export class AnnotationSVGLayer {
    * Refresh all annotations (e.g., after zoom)
    */
   refresh() {
+    this.#updateSVGSize();
     const annotations = this.#pane.document.getAllAnnotations();
     this.render(annotations);
 

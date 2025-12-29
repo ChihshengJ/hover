@@ -214,7 +214,8 @@ export class CommentDisplay {
     // Calculate position relative to stage:
     // - pageView.wrapper.offsetTop is the page's top position within the stage
     // - topRect.topRatio * layerHeight converts the ratio to pixels within the page
-    const topOffset = pageView.wrapper.offsetTop + topRect.topRatio * layerHeight;
+    const topOffset =
+      pageView.wrapper.offsetTop + topRect.topRatio * layerHeight;
 
     element.style.top = `${topOffset}px`;
   }

@@ -49,15 +49,15 @@ export class PaneControls {
         break;
       case "zoom-in":
         this.pane.zoom(0.25);
-        this.#updateZoomDisplay();
+        this.updateZoomDisplay();
         break;
       case "zoom-out":
         this.pane.zoom(-0.25);
-        this.#updateZoomDisplay();
+        this.updateZoomDisplay();
         break;
       case "fit-width":
         this.pane.fitWidth?.();
-        this.#updateZoomDisplay();
+        this.updateZoomDisplay();
         break;
     }
   }
@@ -68,7 +68,7 @@ export class PaneControls {
     if (el) el.textContent = current;
   }
 
-  #updateZoomDisplay() {
+  updateZoomDisplay() {
     const pct = Math.round(this.pane.scale * 100);
     const el = this.element.querySelector(".pane-zoom-level");
     if (el) el.textContent = `${pct}%`;

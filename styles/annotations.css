@@ -23,11 +23,11 @@
   display: flex;
   align-items: center;
   background: rgba(255, 255, 255, 0.2);
-  backdrop-filter: blur(15px);
+  backdrop-filter: blur(8px);
   border-radius: 22px;
-  box-shadow: 
-    inset 1px 1px 5px 1px rgba(255, 255, 255, 0.8), 
-    inset -2px -2px 3px 2px rgba(255, 255, 255, 0.2), 
+  box-shadow:
+    inset 1px 1px 5px 1px rgba(255, 255, 255, 0.8),
+    inset -2px -2px 3px 2px rgba(255, 255, 255, 0.2),
     0 4px 20px rgba(0, 0, 0, 0.3),
     0 2px 4px 5px rgba(0, 0, 0, 0.1);
   padding: 0;
@@ -62,7 +62,9 @@
   width: 28px;
   height: 28px;
   border-radius: 50%;
-  transition: background 0.2s ease, box-shadow 0.2s ease;
+  transition:
+    background 0.2s ease,
+    box-shadow 0.2s ease;
 }
 
 /* Dynamic collapsed ball colors */
@@ -141,9 +143,10 @@
   width: 26px;
   height: 26px;
   border-radius: 50%;
-  box-shadow: 
-    1px 2px 4px 1px rgba(0, 0, 0, 0.2);
-  transition: transform 0.15s ease, box-shadow 0.15s ease;
+  box-shadow: 1px 2px 4px 1px rgba(0, 0, 0, 0.2);
+  transition:
+    transform 0.15s ease,
+    box-shadow 0.15s ease;
 }
 
 .color-circle.yellow {
@@ -309,7 +312,6 @@
   color: white;
 }
 
-
 .comment-textarea {
   width: 100%;
   padding: 12px;
@@ -434,7 +436,8 @@
 
 .comments-container.collapsed-mode
   .comment-card.force-expanded
-  .comment-collapsed-indicator svg {
+  .comment-collapsed-indicator
+  svg {
   color: #5c5c5c;
 }
 
@@ -598,7 +601,9 @@
 .annotation-mark {
   pointer-events: auto;
   cursor: pointer;
-  transition: fill 0.15s ease, opacity 0.15s ease;
+  transition:
+    fill 0.15s ease,
+    opacity 0.15s ease;
 }
 
 /* Highlight colors - default state */

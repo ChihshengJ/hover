@@ -1,10 +1,10 @@
 /**
  * @typedef {import('../window_manager.js').SplitWindowManager} SplitWindowManager;
  * @typedef {import('../viewpane.js').ViewerPane} ViewerPane;
- * @typedef {import('../controls/navigate_toc.js') NavigationPopup};
+ * @typedef {import('./navigate_tree.js').NavigationTree} NavigationTree;
  */
 
-import { NavigationPopup } from "../controls/navigate_tree.js";
+import { NavigationTree } from "./navigation_tree.js";
 
 export class FloatingToolbar {
   /**
@@ -16,6 +16,7 @@ export class FloatingToolbar {
     this.isExpanded = false;
     this.isDragging = false;
     this.wasDragged = false;
+    this.dragStartX = 0;
     this.dragStartY = 0;
     this.scrollStartTop = 0;
     this.lastClickTime = 0;
@@ -33,9 +34,15 @@ export class FloatingToolbar {
     this.nightModeAnimating = false;
     this.isJumping = false;
 
+    // Navigation tree state
+    this.isTreeOpen = false;
+    this.treeOpenThreshold = 60; // Pixels to drag left before tree opens
+    this.ballOriginalRight = 35;
+    this.ballTreeOpenRight = null; // Calculated based on viewport
+
     this.#createToolbar();
-    /** @type {NavigationPopup} */
-    this.navigationPopup = new NavigationPopup(this);
+    /** @type {NavigationTree} */
+    this.navigationTree = new NavigationTree(this);
     this.#createHitArea();
     this.#setupEventListeners();
     this.#updatePosition();
@@ -131,9 +138,9 @@ export class FloatingToolbar {
   }
 
   #setupEventListeners() {
-    // left click for page options
+    // left click - only for double-click to scroll top now
     this.ball.addEventListener("click", (e) => {
-      if (!this.wasDragged) {
+      if (!this.wasDragged && !this.isTreeOpen) {
         e.preventDefault();
         this.#handleClick();
       }
@@ -143,10 +150,12 @@ export class FloatingToolbar {
     // right click for toolbar expansion
     this.ball.addEventListener("contextmenu", (e) => {
       e.preventDefault();
-      this.#toggleExpand();
+      if (!this.isTreeOpen) {
+        this.#toggleExpand();
+      }
     });
 
-    // drag to scroll
+    // drag to scroll (vertical) or open tree (horizontal)
     this.ball.addEventListener("mousedown", (e) => {
       if (e.button === 0) {
         this.dragStartTime = Date.now();
@@ -193,6 +202,9 @@ export class FloatingToolbar {
 
     window.addEventListener("resize", () => {
       this.#updatePosition();
+      if (this.isTreeOpen) {
+        this.#closeTree();
+      }
     });
 
     this.pane.scroller.addEventListener("scroll", () => {
@@ -229,7 +241,7 @@ export class FloatingToolbar {
   }
 
   #slideOut() {
-    if (this.isHidden) return;
+    if (this.isHidden || this.isTreeOpen) return;
     this.isHidden = true;
     this.#collapse();
     this.wrapper.classList.add("hidden");
@@ -299,16 +311,11 @@ export class FloatingToolbar {
     }
 
     if (timeSinceLastClick < 220) {
-      // The number here is for double-click interval
-      this.navigationPopup.hide();
+      // Double-click - scroll to top
       this.pane.scrollToTop();
       this.lastClickTime = 0;
     } else {
-      this.clickTimeout = setTimeout(() => {
-        this.navigationPopup.toggle();
-        this.clickTimeout = null;
-      }, 100); // The number here is for single click timeout
-
+      // Single click - do nothing now (tree is opened by drag)
       this.lastClickTime = now;
     }
   }
@@ -318,25 +325,32 @@ export class FloatingToolbar {
     this.#cancelExpandTimer();
     this.isDragging = true;
     this.isJumping = false;
+    this.dragStartX = e.clientX;
     this.dragStartY = e.clientY;
     this.scrollStartTop = this.pane.scroller.scrollTop;
     this.initialBallY = parseInt(this.ball.style.top) || 0;
     this.ball.classList.add("dragging");
     document.body.style.cursor = "grabbing";
-    
+
     this.currentScrollVelocity = 0;
     this.currentDeltaY = 0;
-    
-    this.#showJumpIndicators();
+    this.currentDeltaX = 0;
+
+    // Determine drag mode based on initial movement
+    this.dragMode = null; // 'vertical', 'horizontal', or null
+
+    if (!this.isTreeOpen) {
+      this.#showJumpIndicators();
+    }
     this.#startScrollLoop();
-    
+
     e.preventDefault();
   }
 
   #startScrollLoop() {
     const scrollLoop = () => {
       if (!this.isDragging || this.isJumping) return;
-      if (this.currentScrollVelocity !== 0) {
+      if (this.currentScrollVelocity !== 0 && this.dragMode === "vertical") {
         this.pane.scroller.scrollTop += this.currentScrollVelocity;
       }
       this.scrollAnimationFrame = requestAnimationFrame(scrollLoop);
@@ -345,14 +359,62 @@ export class FloatingToolbar {
   }
 
   #handleDrag(e) {
+    const deltaX = e.clientX - this.dragStartX;
     const deltaY = e.clientY - this.dragStartY;
+    this.currentDeltaX = deltaX;
     this.currentDeltaY = deltaY;
 
-    // Mark as dragged if moved more than 5px
-    if (Math.abs(deltaY) > 5) {
+    // Determine drag mode on first significant movement
+    if (!this.dragMode) {
+      if (Math.abs(deltaX) > 10 || Math.abs(deltaY) > 10) {
+        // Horizontal drag takes priority for tree opening
+        if (deltaX < -15 && Math.abs(deltaX) > Math.abs(deltaY) * 0.7) {
+          this.dragMode = "horizontal";
+          this.#hideJumpIndicators();
+        } else if (Math.abs(deltaY) > 10) {
+          this.dragMode = "vertical";
+        }
+      }
+    }
+
+    // Mark as dragged if moved significantly
+    if (Math.abs(deltaX) > 5 || Math.abs(deltaY) > 5) {
       this.wasDragged = true;
     }
-    
+
+    if (this.isTreeOpen) {
+      // When tree is open, only allow horizontal drag to close
+      this.#handleTreeDrag(deltaX);
+      return;
+    }
+
+    if (this.dragMode === "horizontal") {
+      this.#handleHorizontalDrag(deltaX);
+    } else if (this.dragMode === "vertical") {
+      this.#handleVerticalDrag(deltaY, e.clientY);
+    }
+  }
+
+  #handleHorizontalDrag(deltaX) {
+    // Visual feedback - ball follows mouse horizontally
+    const visualDelta = Math.max(-150, Math.min(0, deltaX * 0.8));
+    this.ball.style.transform = `translateX(${visualDelta}px)`;
+    this.ball.style.transition = "none";
+
+    // Check if past threshold to open tree
+    if (deltaX < -this.treeOpenThreshold && !this.isTreeOpen) {
+      this.#openTree();
+    }
+  }
+
+  #handleTreeDrag(deltaX) {
+    // When tree is open, dragging right closes it
+    if (deltaX > 30) {
+      this.#closeTree();
+    }
+  }
+
+  #handleVerticalDrag(deltaY, clientY) {
     const deadZone = 10;
     const maxDragDistance = 100;
 
@@ -362,13 +424,13 @@ export class FloatingToolbar {
     } else {
       effectiveDelta = deltaY - Math.sign(deltaY) * deadZone;
     }
-    
+
     const clampedDelta = Math.max(
       -maxDragDistance,
-      Math.min(maxDragDistance, effectiveDelta)
+      Math.min(maxDragDistance, effectiveDelta),
     );
     const normalizedDistance = clampedDelta / maxDragDistance; // -1 to 1
-    
+
     let scrollMultiplier;
     const mvRange = Math.abs(normalizedDistance);
     if (mvRange < 0.5) {
@@ -381,7 +443,7 @@ export class FloatingToolbar {
 
     scrollMultiplier *= Math.sign(normalizedDistance);
     const maxScrollSpeed = 20;
-    
+
     // Store velocity for continuous scrolling (TrackPoint style)
     this.currentScrollVelocity = scrollMultiplier * maxScrollSpeed;
 
@@ -389,9 +451,9 @@ export class FloatingToolbar {
     const visualDelta = deltaY * 0.7;
     this.ball.style.transform = `translateY(${visualDelta}px)`;
     this.ball.style.transition = "none";
-    
+
     // Check for jump zone hover
-    this.#checkJumpZones(e.clientY);
+    this.#checkJumpZones(clientY);
   }
 
   #endDrag() {
@@ -399,39 +461,125 @@ export class FloatingToolbar {
 
     this.isDragging = false;
     this.currentScrollVelocity = 0;
-    
+    this.dragMode = null;
+
     // Cancel the scroll loop
     if (this.scrollAnimationFrame) {
       cancelAnimationFrame(this.scrollAnimationFrame);
       this.scrollAnimationFrame = null;
     }
-    
+
     // Hide jump indicators
     this.#hideJumpIndicators();
-    
+
     // Cancel any pending jump
     if (this.jumpTimeout) {
       clearTimeout(this.jumpTimeout);
       this.jumpTimeout = null;
     }
-    
+
     this.ball.classList.remove("dragging");
     document.body.style.cursor = "";
 
-    this.ball.style.transition =
-      "transform 0.3s cubic-bezier(0.68, -0.55, 0.265, 1.55)";
-    this.ball.style.transform = "translateY(0)";
+    // If tree is not open, snap ball back
+    if (!this.isTreeOpen) {
+      this.ball.style.transition =
+        "transform 0.3s cubic-bezier(0.68, -0.55, 0.265, 1.55)";
+      this.ball.style.transform = "translateY(0) translateX(0)";
 
-    setTimeout(() => {
-      this.ball.style.transition = "";
-      this.ball.style.transform = "";
-    }, 300);
-    
-    this.#startExpandTimer();
-    if (this.wm.isSplit) {
-      this.#startHideTimer();
+      setTimeout(() => {
+        this.ball.style.transition = "";
+        this.ball.style.transform = "";
+      }, 300);
+    }
+
+    if (!this.isTreeOpen) {
+      this.#startExpandTimer();
+      if (this.wm.isSplit) {
+        this.#startHideTimer();
+      }
     }
   }
+
+  // ═══════════════════════════════════════════════════════════════
+  // Navigation Tree
+  // ═══════════════════════════════════════════════════════════════
+
+  #openTree() {
+    if (this.isTreeOpen) return;
+    this.isTreeOpen = true;
+
+    // Ball moves to center of window
+    const viewportWidth = window.innerWidth;
+    const ballWidth = 75;
+
+    // Position ball at center of window
+    this.ballTreeOpenRight = (viewportWidth - ballWidth) / 3;
+
+    // Calculate where the ball will be after animation
+    const ballFinalLeft = viewportWidth - this.ballTreeOpenRight - ballWidth;
+    const ballFinalRight = ballFinalLeft + ballWidth;
+
+    // Hide toolbar buttons first
+    this.wrapper.classList.add("tree-open");
+    this.#collapse();
+
+    // Reset ball transform
+    this.ball.style.transition = "transform 0.3s ease";
+    this.ball.style.transform = "";
+
+    // Animate ball to new position
+    this.wrapper.style.transition = "right 0.4s cubic-bezier(0.4, 0, 0.2, 1)";
+    this.wrapper.style.right = `${this.ballTreeOpenRight}px`;
+
+    // Show navigation tree after a brief delay to let ball start moving
+    // Pass the onClose callback to return ball when tree is closed externally
+    setTimeout(() => {
+      this.navigationTree.show(ballFinalRight, () => {
+        this.#returnBall();
+      });
+    }, 50);
+
+    // Cleanup transition after animation
+    setTimeout(() => {
+      this.wrapper.style.transition = "";
+      this.ball.style.transition = "";
+    }, 400);
+  }
+
+  #returnBall() {
+    // Only return ball if tree was open
+    if (!this.isTreeOpen) return;
+    this.isTreeOpen = false;
+
+    // Animate ball back to original position
+    this.wrapper.style.transition = "right 0.4s cubic-bezier(0.4, 0, 0.2, 1)";
+    this.wrapper.style.right = `${this.ballOriginalRight}px`;
+
+    // Show toolbar buttons
+    this.wrapper.classList.remove("tree-open");
+
+    // Reset ball transform
+    this.ball.style.transition = "transform 0.3s ease";
+    this.ball.style.transform = "";
+
+    // Cleanup transition after animation
+    setTimeout(() => {
+      this.wrapper.style.transition = "";
+      this.ball.style.transition = "";
+    }, 400);
+  }
+
+  #closeTree() {
+    if (!this.isTreeOpen) return;
+
+    // Hide navigation tree (this will trigger the onClose callback which calls #returnBall)
+    this.navigationTree.hide();
+  }
+
+  // ═══════════════════════════════════════════════════════════════
+  // Jump Indicators (existing functionality)
+  // ═══════════════════════════════════════════════════════════════
 
   #createJumpIndicators() {
     // Create container for jump indicators
@@ -446,28 +594,29 @@ export class FloatingToolbar {
       </div>
     `;
     document.body.appendChild(this.jumpIndicators);
-    
+
     this.jumpTopIndicator = this.jumpIndicators.querySelector(".jump-top");
-    this.jumpBottomIndicator = this.jumpIndicators.querySelector(".jump-bottom");
+    this.jumpBottomIndicator =
+      this.jumpIndicators.querySelector(".jump-bottom");
   }
 
   #showJumpIndicators() {
     if (!this.jumpIndicators) {
       this.#createJumpIndicators();
     }
-    
+
     // Position indicators relative to the ball
     const wrapperRect = this.wrapper.getBoundingClientRect();
     const rightOffset = parseInt(this.wrapper.style.right) || 35;
-    
+
     this.jumpIndicators.style.right = `${rightOffset + 38}px`;
     this.jumpIndicators.style.top = `${wrapperRect.top}px`; // Center on ball
-    
+
     // Show with animation
     requestAnimationFrame(() => {
       this.jumpIndicators.classList.add("visible");
     });
-    
+
     this.activeJumpZone = null;
     this.jumpTimeout = null;
   }
@@ -475,38 +624,40 @@ export class FloatingToolbar {
   #hideJumpIndicators() {
     if (this.jumpIndicators) {
       this.jumpIndicators.classList.remove("visible");
-      this.jumpTopIndicator.classList.remove("active", "triggered");
-      this.jumpBottomIndicator.classList.remove("active", "triggered");
+      this.jumpTopIndicator?.classList.remove("active", "triggered");
+      this.jumpBottomIndicator?.classList.remove("active", "triggered");
     }
   }
 
   #checkJumpZones(mouseY) {
     if (!this.jumpIndicators) return;
-    
+
     const topRect = this.jumpTopIndicator.getBoundingClientRect();
     const bottomRect = this.jumpBottomIndicator.getBoundingClientRect();
-    
+
     const inTopZone = mouseY >= topRect.top && mouseY <= topRect.bottom;
-    const inBottomZone = mouseY >= bottomRect.top && mouseY <= bottomRect.bottom;
-    
+    const inBottomZone =
+      mouseY >= bottomRect.top && mouseY <= bottomRect.bottom;
+
     const newZone = inTopZone ? "top" : inBottomZone ? "bottom" : null;
-    
+
     if (newZone !== this.activeJumpZone) {
       if (this.jumpTimeout) {
         clearTimeout(this.jumpTimeout);
         this.jumpTimeout = null;
       }
-      
+
       // Reset visual states
       this.jumpTopIndicator.classList.remove("active", "triggered");
       this.jumpBottomIndicator.classList.remove("active", "triggered");
-      
+
       this.activeJumpZone = newZone;
-      
+
       if (newZone) {
-        const indicator = newZone === "top" ? this.jumpTopIndicator : this.jumpBottomIndicator;
+        const indicator =
+          newZone === "top" ? this.jumpTopIndicator : this.jumpBottomIndicator;
         indicator.classList.add("active");
-        
+
         this.jumpTimeout = setTimeout(() => {
           if (this.isDragging && this.activeJumpZone === newZone) {
             indicator.classList.add("triggered");
@@ -520,13 +671,13 @@ export class FloatingToolbar {
   #executeJump(direction) {
     this.isJumping = true;
     this.ball.classList.add("jumping");
-    
+
     if (direction === "top") {
       this.pane.scrollToTop();
     } else {
       this.pane.scrollToBottom();
     }
-    
+
     setTimeout(() => {
       this.ball.classList.remove("jumping");
       this.isJumping = false;
@@ -534,19 +685,18 @@ export class FloatingToolbar {
     }, 150);
   }
 
-
   #updatePosition() {
     const containerRect = this.pane.paneEl.getBoundingClientRect();
     const centerY = containerRect.top + containerRect.height / 2 - 35;
 
     this.wrapper.style.top = `${centerY}px`;
-    this.wrapper.style.right = "35px";
+    if (!this.isTreeOpen) {
+      this.wrapper.style.right = `${this.ballOriginalRight}px`;
+    }
 
     this.hitArea.style.top = `${centerY - 150}px`; // Extend above
     this.hitArea.style.right = "0";
   }
-
-
 
   #handleToolAction(action) {
     switch (action) {
@@ -659,6 +809,7 @@ export class FloatingToolbar {
 
   destroy() {
     this.#cancelHideTimer();
+    this.navigationTree?.destroy();
     this.hitArea.remove();
     this.wrapper.remove();
   }

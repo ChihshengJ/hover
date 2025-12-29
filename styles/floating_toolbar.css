@@ -16,6 +16,17 @@
   opacity: 0.6;
 }
 
+/* Tree open state - hide toolbar buttons */
+.floating-toolbar-wrapper.tree-open .floating-toolbar {
+  opacity: 0;
+  pointer-events: none;
+  transform: scale(0.8);
+}
+
+.floating-toolbar-wrapper.tree-open .floating-ball {
+  cursor: grab;
+}
+
 .floating-toolbar-hit-area {
   position: fixed;
   width: 130px;
@@ -127,6 +138,9 @@
   gap: 8px;
   pointer-events: none;
   z-index: 990;
+  transition:
+    opacity 0.3s ease,
+    transform 0.3s ease;
 }
 
 .floating-toolbar-top {
@@ -163,36 +177,6 @@
 
 /***********************/
 /* Expanding animation */
-.floating-toolbar-wrapper.expanding .tool-btn {
-  opacity: 1;
-  transform: scale(1);
-  transition:
-    opacity 0.5s ease-out,
-    transform 0.3s cubic-bezier(0.68, -0.55, 0.265, 1.55);
-}
-
-.floating-toolbar-wrapper.expanding .tool-btn:nth-child(1) {
-  transition-delay: 0.1s;
-}
-
-.floating-toolbar-wrapper.expanding .tool-btn:nth-child(2) {
-  transform: scale(0.77);
-  transition-delay: 0.15s;
-}
-
-.floating-toolbar-wrapper.expanding .tool-btn:nth-child(3) {
-  transform: scale(0.68);
-  transition-delay: 0.2s;
-}
-
-/* Expanded state - enable hover transitions only */
-.floating-toolbar-wrapper.expanded .tool-btn {
-  opacity: 1;
-  transition:
-    transform 0.2s cubic-bezier(0.2, -0.4, 0.2, 1.55),
-    brightness 0.2s ease-in-out;
-}
-
 .floating-toolbar-wrapper.expanding .tool-btn {
   opacity: 1;
   transform: scale(1);

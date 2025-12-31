@@ -31,6 +31,8 @@ export class FloatingToolbar {
     this.HIDE_DELAY = 3000;
     this.COLLAPSE_DELAY = 7000;
 
+    this.#scrollCallback = () => this.updatePageNumber();
+
     this.nightModeAnimating = false;
     this.isJumping = false;
 
@@ -47,6 +49,9 @@ export class FloatingToolbar {
     this.#setupEventListeners();
     this.#updatePosition();
   }
+
+  /** @type {Function} */
+  #scrollCallback = null;
 
   /** @returns {ViewerPane} */
   get pane() {
@@ -207,9 +212,8 @@ export class FloatingToolbar {
       }
     });
 
-    this.pane.scroller.addEventListener("scroll", () => {
-      this.updatePageNumber();
-    });
+    this.pane.controls.onScroll(this.#scrollCallback);
+
   }
 
   #startHideTimer() {

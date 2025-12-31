@@ -1,0 +1,608 @@
+/* ===========================================
+   Left Side Progress Bar - Normal Mode
+   =========================================== */
+
+.progress-bar-container {
+  position: fixed;
+  left: 20px;
+  top: 50%;
+  transform: translateY(-50%);
+  height: 60vh;
+  width: 20px;
+  z-index: 500;
+  pointer-events: none;
+  opacity: 1;
+  transition:
+    opacity 0.4s ease,
+    transform 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Hide in split mode */
+.progress-bar-container.split-mode {
+  opacity: 0;
+  transform: translateY(-50%) translateX(-40px);
+  pointer-events: none;
+}
+
+/* ===========================================
+   The Track / Line
+   =========================================== */
+
+.progress-bar-track {
+  position: relative;
+  width: 2px;
+  height: 100%;
+  margin-left: 8px;
+  background: linear-gradient(
+    to bottom,
+    rgba(255, 255, 255, 0.08) 0%,
+    rgba(255, 255, 255, 0.15) 50%,
+    rgba(255, 255, 255, 0.08) 100%
+  );
+  border-radius: 2px;
+  box-shadow:
+    0 0 8px rgba(255, 255, 255, 0.1),
+    -2px -2px 6px 3px rgba(0, 0, 0, 0.1),
+    inset 0 0 2px rgba(255, 255, 255, 0.05);
+  transition: box-shadow 0.3s ease;
+}
+
+/* Glow line - the filled portion */
+.progress-bar-glow {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 0%;
+  background: linear-gradient(
+    to bottom,
+    rgba(255, 255, 255, 0.6) 0%,
+    rgba(255, 255, 255, 0.9) 100%
+  );
+  border-radius: 2px;
+  box-shadow:
+    0 0 6px rgba(255, 255, 255, 0.6),
+    0 0 12px rgba(255, 255, 255, 0.3),
+    0 0 20px rgba(255, 255, 255, 0.15);
+  transition: height 0.15s ease-out;
+}
+
+/* Completion pulse animation */
+.progress-bar-track.completion-pulse {
+  animation: track-pulse 0.6s ease-out;
+}
+
+@keyframes track-pulse {
+  0% {
+    box-shadow:
+      0 0 8px rgba(255, 255, 255, 0.1),
+      inset 0 0 2px rgba(255, 255, 255, 0.05);
+  }
+  50% {
+    box-shadow:
+      0 0 20px rgba(255, 255, 255, 0.5),
+      0 0 40px rgba(255, 255, 255, 0.3),
+      inset 0 0 4px rgba(255, 255, 255, 0.2);
+  }
+  100% {
+    box-shadow:
+      0 0 8px rgba(255, 255, 255, 0.1),
+      inset 0 0 2px rgba(255, 255, 255, 0.05);
+  }
+}
+
+/* ===========================================
+   Progress Indicator (Dot/Light Source)
+   =========================================== */
+
+.progress-indicator {
+  position: absolute;
+  left: 50%;
+  top: 0%;
+  transform: translate(-50%, -50%);
+  width: 12px;
+  height: 12px;
+  z-index: 10;
+  transition: top 0.1s ease-out;
+}
+
+.indicator-core {
+  position: absolute;
+  inset: 3px;
+  background: radial-gradient(
+    circle at 40% 40%,
+    rgba(255, 255, 255, 1) 0%,
+    rgba(255, 255, 255, 0.9) 40%,
+    rgba(220, 230, 255, 0.8) 100%
+  );
+  border-radius: 50%;
+  box-shadow:
+    0 0 4px rgba(255, 255, 255, 0.9),
+    0 0 8px rgba(255, 255, 255, 0.6);
+}
+
+.indicator-glow {
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(
+    circle,
+    rgba(255, 255, 255, 0.4) 0%,
+    rgba(255, 255, 255, 0.1) 50%,
+    transparent 70%
+  );
+  border-radius: 50%;
+  filter: blur(2px);
+}
+
+.indicator-pulse {
+  position: absolute;
+  inset: -4px;
+  background: radial-gradient(
+    circle,
+    rgba(255, 255, 255, 0.3) 0%,
+    transparent 70%
+  );
+  border-radius: 50%;
+  opacity: 0.5;
+  animation: indicator-breathe 2s ease-in-out infinite;
+}
+
+@keyframes indicator-breathe {
+  0%,
+  100% {
+    transform: scale(1);
+    opacity: 0.5;
+  }
+  50% {
+    transform: scale(1.3);
+    opacity: 0.3;
+  }
+}
+
+/* Section milestone pulse */
+.progress-indicator.section-pulse .indicator-core {
+  animation: section-hit 0.4s ease-out;
+}
+
+.progress-indicator.section-pulse .indicator-glow {
+  animation: glow-burst 0.5s ease-out;
+}
+
+@keyframes section-hit {
+  0% {
+    transform: scale(1);
+    box-shadow:
+      0 0 4px rgba(255, 255, 255, 0.9),
+      0 0 8px rgba(255, 255, 255, 0.6);
+  }
+  30% {
+    transform: scale(1.5);
+    box-shadow:
+      0 0 10px rgba(255, 255, 255, 1),
+      0 0 20px rgba(255, 255, 255, 0.8),
+      0 0 30px rgba(200, 220, 255, 0.5);
+  }
+  100% {
+    transform: scale(1);
+    box-shadow:
+      0 0 4px rgba(255, 255, 255, 0.9),
+      0 0 8px rgba(255, 255, 255, 0.6);
+  }
+}
+
+@keyframes glow-burst {
+  0% {
+    transform: scale(1);
+    opacity: 0.2;
+  }
+  50% {
+    transform: scale(2.5);
+    opacity: 0.6;
+  }
+  100% {
+    transform: scale(1);
+    opacity: 0.2;
+  }
+}
+
+/* ===========================================
+   Section Marks
+   =========================================== */
+
+.progress-sections {
+  position: absolute;
+  top: 0;
+  left: 100%;
+  width: 10px;
+  height: 100%;
+  margin-left: 3px;
+}
+
+.section-mark {
+  position: absolute;
+  right: 0;
+  transform: translateY(-50%);
+  width: 8px;
+  height: 8px;
+  cursor: default;
+  pointer-events: auto;
+}
+
+.section-tick {
+  position: absolute;
+  right: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 6px;
+  height: 2px;
+  background: rgba(50, 50, 50, 0.4);
+  box-shadow: 1px 1px 3px 1px rgba(0, 0, 0, 0.1);
+  border-radius: 1px;
+  transition:
+    background 0.3s ease,
+    width 0.3s ease,
+    box-shadow 0.3s ease;
+}
+
+/* Reached state */
+.section-mark.reached .section-tick {
+  background: rgba(255, 255, 255, 0.7);
+  width: 8px;
+  box-shadow:
+    0 0 4px rgba(255, 255, 255, 0.5),
+    0 0 8px rgba(255, 255, 255, 0.2);
+}
+
+/* Celebrating state */
+.section-mark.celebrating .section-tick {
+  animation: tick-celebrate 0.5s ease-out;
+}
+
+@keyframes tick-celebrate {
+  0% {
+    transform: translateY(-50%) scaleX(1);
+    background: rgba(255, 255, 255, 0.7);
+  }
+  40% {
+    transform: translateY(-50%) scaleX(2);
+    background: rgba(255, 255, 255, 1);
+    box-shadow:
+      0 0 8px rgba(255, 255, 255, 0.8),
+      0 0 16px rgba(255, 255, 255, 0.4);
+  }
+  100% {
+    transform: translateY(-50%) scaleX(1);
+    background: rgba(255, 255, 255, 0.7);
+  }
+}
+
+/* Section ripple effect */
+.section-ripple {
+  position: absolute;
+  inset: -6px;
+  border: 1px solid rgba(255, 255, 255, 0.6);
+  border-radius: 50%;
+  animation: ripple-expand 0.6s ease-out forwards;
+}
+
+@keyframes ripple-expand {
+  0% {
+    transform: scale(0.5);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(3);
+    opacity: 0;
+  }
+}
+
+/* ===========================================
+   End Marker
+   =========================================== */
+
+.progress-end-marker {
+  position: absolute;
+  bottom: -8px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 6px;
+  height: 6px;
+  background: rgba(150, 150, 150, 0.3);
+  border-radius: 50%;
+  transition:
+    background 0.3s ease,
+    box-shadow 0.3s ease,
+    transform 0.3s ease;
+}
+
+.progress-end-marker.reached {
+  background: rgba(255, 255, 255, 0.9);
+  box-shadow:
+    0 0 6px rgba(255, 255, 255, 0.7),
+    0 0 12px rgba(255, 255, 255, 0.4);
+}
+
+.progress-end-marker.celebrating {
+  animation: end-celebrate 0.8s ease-out;
+}
+
+@keyframes end-celebrate {
+  0% {
+    transform: translateX(-50%) scale(1);
+  }
+  30% {
+    transform: translateX(-50%) scale(2);
+    box-shadow:
+      0 0 15px rgba(255, 255, 255, 1),
+      0 0 30px rgba(200, 220, 255, 0.7),
+      0 0 50px rgba(150, 180, 255, 0.4);
+  }
+  60% {
+    transform: translateX(-50%) scale(1.5);
+  }
+  100% {
+    transform: translateX(-50%) scale(1);
+  }
+}
+
+/* Completion celebration - container-wide effect */
+.progress-bar-container.completion-celebration::after {
+  content: "";
+  position: absolute;
+  inset: -20px;
+  background: radial-gradient(
+    ellipse at center,
+    rgba(255, 255, 255, 0.2) 0%,
+    transparent 70%
+  );
+  animation: completion-flash 1s ease-out forwards;
+  pointer-events: none;
+}
+
+@keyframes completion-flash {
+  0% {
+    opacity: 0;
+    transform: scale(0.8);
+  }
+  30% {
+    opacity: 1;
+    transform: scale(1.2);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1.5);
+  }
+}
+
+/* ===========================================
+   Pane Control Progress Ring (Split Mode)
+   =========================================== */
+
+.pane-progress-ring {
+  position: absolute;
+  top: -3px;
+  left: -3px;
+  pointer-events: none;
+  z-index: -1;
+  overflow: visible;
+}
+
+.pane-progress-ring .progress-ring-bg {
+  fill: none;
+  stroke: rgba(100, 100, 100, 0.15);
+  stroke-width: 2;
+}
+
+.pane-progress-ring .progress-ring-fill {
+  fill: none;
+  stroke: rgba(59, 130, 246, 0.4);
+  stroke-width: 2.5;
+  stroke-linecap: round;
+  transition: stroke-dasharray 0.15s ease-out;
+}
+
+.pane-progress-ring .progress-ring-glow {
+  fill: none;
+  stroke: rgba(59, 130, 246, 0.2);
+  stroke-width: 5;
+  stroke-linecap: round;
+  filter: blur(3px);
+  transition: stroke-dasharray 0.15s ease-out;
+}
+
+/* Gradient stops */
+.pane-progress-ring .progress-grad-start {
+  stop-color: rgba(59, 130, 246, 0.6);
+}
+
+.pane-progress-ring .progress-grad-end {
+  stop-color: rgba(99, 170, 255, 0.8);
+}
+
+/* Active pane - brighter colors */
+.viewer-pane.active .pane-progress-ring .progress-ring-fill {
+  stroke: rgba(59, 130, 246, 0.8);
+}
+
+.viewer-pane.active .pane-progress-ring .progress-ring-glow {
+  stroke: rgba(59, 130, 246, 0.4);
+}
+
+/* Completed state */
+.pane-progress-ring.completed .progress-ring-fill {
+  stroke: rgba(34, 197, 94, 0.8);
+  animation: progress-ring-complete-pulse 1s ease-out;
+}
+
+.pane-progress-ring.completed .progress-ring-glow {
+  stroke: rgba(34, 197, 94, 0.4);
+  animation: progress-ring-glow-pulse 1s ease-out;
+}
+
+@keyframes progress-ring-complete-pulse {
+  0% {
+    stroke-width: 2.5;
+  }
+  40% {
+    stroke-width: 4;
+  }
+  100% {
+    stroke-width: 2.5;
+  }
+}
+
+@keyframes progress-ring-glow-pulse {
+  0% {
+    stroke-width: 5;
+    filter: blur(3px);
+  }
+  40% {
+    stroke-width: 10;
+    filter: blur(6px);
+  }
+  100% {
+    stroke-width: 5;
+    filter: blur(3px);
+  }
+}
+
+/* Override existing active pane border styling when progress bar is present */
+.viewer-pane.active .pane-controls:has(.pane-progress-ring) {
+  box-shadow:
+    0 2px 12px rgba(0, 0, 0, 0.2),
+    0 0 0 1px rgba(0, 0, 0, 0.05);
+}
+
+/* Inactive pane styling */
+.viewer-pane:not(.active) .pane-progress-ring .progress-ring-fill {
+  stroke: rgba(150, 150, 150, 0.3);
+}
+
+.viewer-pane:not(.active) .pane-progress-ring .progress-ring-glow {
+  stroke: rgba(150, 150, 150, 0.15);
+}
+
+/* ===========================================
+   Night Mode Adjustments
+   =========================================== */
+
+body.night-mode .progress-bar-track {
+  background: linear-gradient(
+    to bottom,
+    rgba(255, 255, 255, 0.05) 0%,
+    rgba(255, 255, 255, 0.1) 50%,
+    rgba(255, 255, 255, 0.05) 100%
+  );
+}
+
+body.night-mode .progress-bar-glow {
+  background: linear-gradient(
+    to bottom,
+    rgba(200, 220, 255, 0.5) 0%,
+    rgba(180, 200, 255, 0.8) 100%
+  );
+  box-shadow:
+    0 0 8px rgba(180, 200, 255, 0.6),
+    0 0 16px rgba(150, 180, 255, 0.3),
+    0 0 24px rgba(120, 160, 255, 0.15);
+}
+
+body.night-mode .indicator-core {
+  background: radial-gradient(
+    circle at 40% 40%,
+    rgba(200, 220, 255, 1) 0%,
+    rgba(180, 200, 255, 0.9) 40%,
+    rgba(150, 180, 255, 0.8) 100%
+  );
+}
+
+body.night-mode .section-tick {
+  background: rgba(100, 100, 100, 0.5);
+}
+
+body.night-mode .section-mark.reached .section-tick {
+  background: rgba(180, 200, 255, 0.8);
+  box-shadow:
+    0 0 4px rgba(180, 200, 255, 0.5),
+    0 0 8px rgba(150, 180, 255, 0.3);
+}
+
+body.night-mode .progress-end-marker {
+  background: rgba(100, 100, 100, 0.4);
+}
+
+body.night-mode .progress-end-marker.reached {
+  background: rgba(180, 200, 255, 0.9);
+  box-shadow:
+    0 0 6px rgba(180, 200, 255, 0.7),
+    0 0 12px rgba(150, 180, 255, 0.4);
+}
+
+/* Night mode pane progress */
+body.night-mode .pane-progress-ring .progress-ring-bg {
+  stroke: rgba(100, 100, 100, 0.2);
+}
+
+body.night-mode .pane-progress-ring .progress-ring-fill {
+  stroke: rgba(219, 147, 52, 0.4);
+}
+
+body.night-mode .pane-progress-ring .progress-ring-glow {
+  stroke: rgba(219, 147, 52, 0.2);
+}
+
+body.night-mode .viewer-pane.active .pane-progress-ring .progress-ring-fill {
+  stroke: rgba(219, 147, 52, 0.8);
+}
+
+body.night-mode .viewer-pane.active .pane-progress-ring .progress-ring-glow {
+  stroke: rgba(219, 147, 52, 0.4);
+}
+
+body.night-mode .pane-progress-ring.completed .progress-ring-fill {
+  stroke: rgba(180, 200, 255, 0.8);
+}
+
+body.night-mode .pane-progress-ring.completed .progress-ring-glow {
+  stroke: rgba(180, 200, 255, 0.4);
+}
+
+body.night-mode
+  .viewer-pane:not(.active)
+  .pane-progress-ring
+  .progress-ring-fill {
+  stroke: rgba(100, 100, 100, 0.3);
+}
+
+body.night-mode
+  .viewer-pane:not(.active)
+  .pane-progress-ring
+  .progress-ring-glow {
+  stroke: rgba(100, 100, 100, 0.15);
+}
+
+/* ===========================================
+   Responsive Adjustments
+   =========================================== */
+
+@media (max-height: 600px) {
+  .progress-bar-container {
+    height: 50vh;
+  }
+}
+
+@media (max-width: 768px) {
+  .progress-bar-container {
+    left: 12px;
+    height: 50vh;
+  }
+
+  .progress-indicator {
+    width: 10px;
+    height: 10px;
+  }
+
+  .indicator-core {
+    inset: 2px;
+  }
+}

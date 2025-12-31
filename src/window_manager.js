@@ -2,11 +2,13 @@
  * @typedef {import('./viewpane.js').ViewerPane} ViewerPane;
  * @typedef {import('./doc.js').PDFDocumentModel} PDFDocumentModel;
  * @typedef {import('./controls/floating_toolbar.js') FloatingToolbar};
+ * @typedef {import('./controls/progress_bar.js') ProgressBar};
  */
 
 import { ViewerPane } from "./viewpane.js";
 import { FloatingToolbar } from "./controls/floating_toolbar.js";
 import { WindowControls } from "./controls/window_controls.js";
+import { ProgressBar } from "./controls/progress_bar.js";
 
 export class SplitWindowManager {
   /**
@@ -26,6 +28,8 @@ export class SplitWindowManager {
 
     this.toolbar = null;
     this.controls = null;
+    /** @type {ProgressBar} */
+    this.progressBar = null;
   }
 
   async initialize() {
@@ -41,6 +45,10 @@ export class SplitWindowManager {
     this.toolbar.updatePageNumber();
 
     this.controls = new WindowControls(this);
+
+    // Initialize progress bar after toolbar (needs navigation popup)
+    this.progressBar = new ProgressBar(this);
+    await this.progressBar.initialize();
   }
 
   #createPaneContainer() {
@@ -87,6 +95,9 @@ export class SplitWindowManager {
     this.#updateLayout();
     this.#createResizer();
 
+    // Enter split mode for progress bar
+    this.progressBar?.enterSplitMode();
+
     // Ensuring controls are rendered before being shown
     requestAnimationFrame(() => {
       requestAnimationFrame(() => {
@@ -122,11 +133,15 @@ export class SplitWindowManager {
     this.toolbar.exitSplitMode();
     this.toolbar.updateActivePane(this.panes[0]);
     this.controls.updateActivePane(this.panes[0]);
+
+    // Exit split mode for progress bar
+    this.progressBar?.exitSplitMode();
+
     for (const p of this.panes) {
       p.controls.hide();
     }
     this.#removeResizer();
-    this.#updateLayout()
+    this.#updateLayout();
     this.isSplit = false;
   }
 
@@ -228,6 +243,9 @@ export class SplitWindowManager {
 
     this.toolbar.updateActivePane();
     this.controls.updateActivePane();
+
+    // Update progress bar active pane
+    this.progressBar?.updateActivePane();
   }
 
   get currentPage() {
@@ -244,5 +262,7 @@ export class SplitWindowManager {
 
   zoom(delta) {
     this.activePane?.zoom(delta);
+    // Refresh progress bar after zoom
+    this.progressBar?.refresh();
   }
 }

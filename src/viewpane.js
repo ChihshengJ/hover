@@ -51,7 +51,7 @@ export class ViewerPane {
     this.document.subscribe(this);
   }
 
-  async initialize(scale = 1) {
+  async initialize(scale = 1.5) {
     this.scale = scale;
     this.#createScroller();
     this.#createStage();
@@ -482,20 +482,20 @@ export class ViewerPane {
     this.annotationManager?.refresh();
   }
 
-  fitWidth() {
+  fitWidth(percentage = 1) {
     const viewRect = this.scroller.getBoundingClientRect();
 
     if (this.spreadMode === 0) {
       const intrinsicWidth = this.document.pageDimensions[0]?.width;
       if (!intrinsicWidth) return;
 
-      const targetScale = viewRect.width / intrinsicWidth;
+      const targetScale = (viewRect.width / intrinsicWidth) * percentage;
       this.zoomAt(targetScale, viewRect.width / 2, viewRect.height / 2);
     } else {
       // For spread mode, use intrinsic width of two pages + gap
       const pageWidth = this.document.pageDimensions[0]?.width || 0;
       const spreadWidth = pageWidth * 2 + 4; // 4px gap from CSS
-      const targetScale = viewRect.width / spreadWidth;
+      const targetScale = (viewRect.width / spreadWidth) * percentage;
       this.zoomAt(targetScale, viewRect.width / 2, viewRect.height / 2);
     }
   }
@@ -526,8 +526,8 @@ export class ViewerPane {
     }
 
     requestAnimationFrame(() => {
+      this.fitWidth();
       this.#renderVisiblePages();
-      // Refresh annotations after layout changes
       this.annotationManager?.refresh();
     });
   }

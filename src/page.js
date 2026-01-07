@@ -57,7 +57,11 @@ export class PageView {
     endOfContent.className = "endOfContent";
     this.textLayer.appendChild(endOfContent);
     if (this.pane.textSelectionManager) {
-      this.pane.textSelectionManager.register(this, this.textLayer, endOfContent);
+      this.pane.textSelectionManager.register(
+        this,
+        this.textLayer,
+        endOfContent,
+      );
     }
 
     return endOfContent;
@@ -127,7 +131,6 @@ export class PageView {
       this.textLayer.style.width = `${cssWidth}px`;
       this.textLayer.style.height = `${cssHeight}px`;
       this.canvas.dataset.rendered = "true";
-
     } catch (err) {
       if (err?.name !== "RenderingCancelledException") {
         console.error("Render error:", err);
@@ -145,16 +148,16 @@ export class PageView {
   #fixSafariTextLayer(viewport) {
     const spans = this.textLayer.querySelectorAll("span");
     const items = this.textContent.items;
-    
+
     // What was actually passed to TextLayer?
     const cssWidth = parseFloat(this.canvas.style.width);
     const cssHeight = parseFloat(this.canvas.style.height);
-    
+
     // Get the base viewport to understand the ratio
     const baseViewport = this.page.getViewport({ scale: 1 });
-    
+
     const textLayerScale = cssWidth / baseViewport.width;
-    
+
     // Check a span's actual style after TextLayer render
     if (spans.length > 0) {
       const firstSpan = spans[0];
@@ -174,8 +177,14 @@ export class PageView {
         const tx = pdfjsLib.Util.transform(transform, item.transform);
         const calculatedHeight = Math.hypot(tx[2], tx[3]);
 
-        span.style.setProperty("--font-height", `${calculatedHeight.toFixed(2)}px`);
-        span.style.setProperty("font-size", `calc(var(--total-scale-factor) * var(--font-height))`);
+        span.style.setProperty(
+          "--font-height",
+          `${calculatedHeight.toFixed(2)}px`,
+        );
+        span.style.setProperty(
+          "font-size",
+          `calc(var(--total-scale-factor) * var(--font-height))`,
+        );
       }
       itemIndex++;
     }
@@ -230,25 +239,22 @@ export class PageView {
     const transform = [1, 0, 0, -1, -pageX, pageY + pageHeight];
 
     // Convert target PDF coordinates to viewport coordinates at current scale
-    // 20 and 2 are heuristically determined...
-    const [targetX, targetY] = viewport.convertToViewportPoint(
-      left + 20,
-      top + 2,
-    );
+    const [targetX, targetY] = viewport.convertToViewportPoint(left, top);
     const targetLeft = targetX;
     const targetTop = canvas.offsetTop + Math.max(0, viewport.height - targetY);
 
-    let closestSpan = null;
+    let startIndex = -1;
     let minDistance = 50;
-    let startIndex = 0;
 
     try {
+      // Find the closest span to the target position
       for (let i = 0; i < texts.items.length; i++) {
         const geom = texts.items[i];
         const tx = pdfjsLib.Util.transform(transform, geom.transform);
-        let angle = Math.atan2(tx[1], tx[0]);
+        const angle = Math.atan2(tx[1], tx[0]);
         const fontHeight = Math.hypot(tx[2], tx[3]);
         const fontAscent = fontHeight * 0.8;
+
         let l, t;
         if (angle === 0) {
           l = tx[4];
@@ -258,50 +264,107 @@ export class PageView {
           t = tx[5] - fontAscent * Math.cos(angle);
         }
 
-        // Converting text span PDF coordinates to viewport coordinates
         const [x, y] = viewport.convertToViewportPoint(l, t);
         const spanLeft = x;
         const spanTop = canvas.offsetTop + Math.max(0, y);
 
-        const isClose =
-          Math.abs(spanLeft - targetLeft) <= minDistance &&
-          Math.abs(spanTop - targetTop) <= minDistance;
+        const dist = Math.max(
+          Math.abs(spanLeft - targetLeft),
+          Math.abs(spanTop - targetTop),
+        );
 
-        if (isClose) {
-          closestSpan = {
-            text: geom.str,
-            left: spanLeft,
-            top: spanTop,
-            width: geom.width,
-            height: geom.height,
-            hasEOL: geom.hasEOL,
-          };
+        if (dist <= minDistance) {
           startIndex = i;
-          minDistance = Math.max(
-            Math.abs(spanLeft - targetLeft),
-            Math.abs(spanTop - targetTop),
-          );
+          minDistance = dist;
         }
       }
 
-      if (closestSpan) {
-        let reference = [];
-        for (let i = startIndex; i < texts.items.length; i++) {
-          const span = texts.items[i];
-          reference.push(span.str);
-          if (
-            span.str.match(/\d{4}\.$/) &&
-            !texts.items[i + 1].str.match(/\s+$/)
-          ) {
+      if (startIndex === -1) return null;
+
+      // Collect reference text with smart boundary detection
+      const items = texts.items;
+      const reference = [];
+
+      const getPosition = (span) => {
+        const pos = pdfjsLib.Util.transform(viewport.transform, span.transform);
+        return { left: pos[4], top: pos[5] };
+      };
+
+      // Reference number patterns: [1], (1), 1., 1), [12], etc.
+      // at start of text, with leading whitespace
+      const refNumberPattern = /^\s*[\[\(]?\d{1,3}[\]\)\.\,]?\s+\S/;
+
+      // Track line structure for boundary detection
+      const firstPos = getPosition(items[startIndex]);
+      let currentLineTop = firstPos.top;
+      let firstLineLeft = firstPos.left;
+      let baselineLineHeight = null;
+      let continuationLineLeft = null;
+      let lineCount = 0;
+
+      for (let i = startIndex; i < items.length; i++) {
+        const span = items[i];
+        const pos = getPosition(span);
+        const text = span.str;
+
+        // Detect line break via vertical movement
+        const verticalGap = Math.abs(pos.top - currentLineTop);
+        const isNewLine = verticalGap > 3;
+
+        if (isNewLine) {
+          lineCount++;
+          if (baselineLineHeight === null) {
+            baselineLineHeight = verticalGap;
+          }
+          // Check large vertical gap indicates new block/paragraph
+          if (baselineLineHeight && verticalGap > baselineLineHeight * 1.8) {
             break;
           }
-          if (span.str === ".") {
+          // Check reference number at start of new line
+          let lineStartText = text;
+          if (i + 1 < items.length) {
+            const nextPos = getPosition(items[i + 1]);
+            // If next span is on same line, include it for pattern matching
+            if (Math.abs(nextPos.top - pos.top) < 3) {
+              lineStartText = text + items[i + 1].str;
+            }
+          }
+          if (refNumberPattern.test(lineStartText)) {
+            break;
+          }
+          // Check indentation
+          if (lineCount === 1) {
+            continuationLineLeft = pos.left;
+          } else if (continuationLineLeft !== null) {
+            const hasHangingIndent = continuationLineLeft > firstLineLeft + 8;
+            if (hasHangingIndent) {
+              if (pos.left < continuationLineLeft - 15) {
+                break;
+              }
+            } else {
+              const minLeft = Math.min(firstLineLeft, continuationLineLeft);
+              if (pos.left < minLeft - 15) {
+                break;
+              }
+            }
+          }
+          currentLineTop = pos.top;
+        }
+        reference.push(text);
+        // Check year pattern at end
+        if (text.match(/\d{4}\.$/)) {
+          // Only break if next span exists and isn't just whitespace
+          if (i + 1 < items.length && !items[i + 1].str.match(/^\s*$/)) {
             break;
           }
         }
-        return reference.join("");
+        // Check standalone period often ends a reference
+        if (text.trim() === ".") {
+          break;
+        }
       }
-      return null;
+
+      return reference.join("");
     } catch (err) {
       console.error("Failed to find closest span", err);
       return null;

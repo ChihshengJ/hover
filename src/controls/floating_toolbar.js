@@ -213,7 +213,6 @@ export class FloatingToolbar {
     });
 
     this.pane.controls.onScroll(this.#scrollCallback);
-
   }
 
   #startHideTimer() {

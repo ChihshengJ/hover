@@ -32,7 +32,6 @@ export class PaneControls {
       </div>
     `;
 
-    // Create progress ring SVG
     this.#createProgressRing();
 
     this.element.addEventListener("click", (e) => {
@@ -40,7 +39,6 @@ export class PaneControls {
       if (btn) this.#handleAction(btn.dataset.action);
     });
 
-    // Single scroll listener for this pane - notifies all subscribers
     this.pane.scroller.addEventListener("scroll", () => {
       this.#onScroll();
     });
@@ -80,8 +78,8 @@ export class PaneControls {
   }
 
   #createProgressRing() {
-    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-    svg.classList.add('pane-progress-ring');
+    const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    svg.classList.add("pane-progress-ring");
 
     // We'll use a path for the rounded rectangle to get proper stroke animation
     svg.innerHTML = `
@@ -114,25 +112,26 @@ export class PaneControls {
       const width = rect.width + 6;
       const height = rect.height + 6;
 
-      this.progressRing.setAttribute('viewBox', `0 0 ${width} ${height}`);
+      this.progressRing.setAttribute("viewBox", `0 0 ${width} ${height}`);
       this.progressRing.style.width = `${width}px`;
       this.progressRing.style.height = `${height}px`;
 
-      const rects = this.progressRing.querySelectorAll('rect');
-      rects.forEach(r => {
-        r.setAttribute('width', width - 2);
-        r.setAttribute('height', height - 2);
+      const rects = this.progressRing.querySelectorAll("rect");
+      rects.forEach((r) => {
+        r.setAttribute("width", width - 2);
+        r.setAttribute("height", height - 2);
       });
 
       // Calculate perimeter for stroke-dasharray
       // Approximate perimeter of rounded rect: 2*(w-2r) + 2*(h-2r) + 2*pi*r
       const r = 19;
-      const perimeter = 2 * (width - 2 - 2 * r) + 2 * (height - 2 - 2 * r) + 2 * Math.PI * r;
+      const perimeter =
+        2 * (width - 2 - 2 * r) + 2 * (height - 2 - 2 * r) + 2 * Math.PI * r;
       this.ringPerimeter = perimeter;
 
       // Set initial dash array
-      const fill = this.progressRing.querySelector('.progress-ring-fill');
-      const glow = this.progressRing.querySelector('.progress-ring-glow');
+      const fill = this.progressRing.querySelector(".progress-ring-fill");
+      const glow = this.progressRing.querySelector(".progress-ring-glow");
       if (fill) {
         fill.style.strokeDasharray = `0 ${perimeter}`;
         fill.style.strokeDashoffset = perimeter / 4; // Start from top
@@ -150,13 +149,14 @@ export class PaneControls {
     const scroller = this.pane.scroller;
     const scrollTop = scroller.scrollTop;
     const scrollHeight = scroller.scrollHeight - scroller.clientHeight;
-    const progress = scrollHeight > 0 ? Math.min(1, scrollTop / scrollHeight) : 0;
+    const progress =
+      scrollHeight > 0 ? Math.min(1, scrollTop / scrollHeight) : 0;
 
     this.currentProgress = progress;
 
     const dashLength = progress * this.ringPerimeter;
-    const fill = this.progressRing.querySelector('.progress-ring-fill');
-    const glow = this.progressRing.querySelector('.progress-ring-glow');
+    const fill = this.progressRing.querySelector(".progress-ring-fill");
+    const glow = this.progressRing.querySelector(".progress-ring-glow");
 
     if (fill) {
       fill.style.strokeDasharray = `${dashLength} ${this.ringPerimeter}`;
@@ -167,7 +167,7 @@ export class PaneControls {
 
     // Check for completion
     const isComplete = progress >= 0.98;
-    this.progressRing.classList.toggle('completed', isComplete);
+    this.progressRing.classList.toggle("completed", isComplete);
   }
 
   #handleAction(action) {

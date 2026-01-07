@@ -346,9 +346,6 @@
   font-weight: 400;
   cursor: pointer;
   transition: all 0.15s ease;
-}
-
-.comment-save-btn {
   background: rgba(50, 50, 50, 0.3);
   color: white;
 }

@@ -58,9 +58,5 @@ async function loadPdf(url) {
   }
 }
 
-const overlay = document.createElement("div");
-overlay.id = "night-mode-overlay";
-document.body.appendChild(overlay);
-
 const pdfUrl = getPdfUrl();
 loadPdf(pdfUrl);

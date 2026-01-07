@@ -81,13 +81,13 @@ export class FloatingToolbar {
     this.toolbarTop.innerHTML = `
       <button class="tool-btn" data-action="horizontal-spread">
         <div class="inner">
-          <img src="public/book.svg" width="25" />
+          <img src="/assets/book.svg" width="25" />
         </div>
         <div class="effect"></div>
       </button>
       <button class="tool-btn" data-action="split-screen">
         <div class="inner">
-          <img src="public/split.svg" width="25" />
+          <img src="/assets/split.svg" width="25" />
         </div>
         <div class="effect"></div>
       </button>
@@ -104,7 +104,7 @@ export class FloatingToolbar {
     this.toolbarBottom.innerHTML = `
       <button class="tool-btn" data-action="fit-width">
         <div class="inner">
-          <img src="public/fit.svg" width="23" />
+          <img src="/assets/fit.svg" width="23" />
         </div>
         <div class="effect"></div>
       </button>

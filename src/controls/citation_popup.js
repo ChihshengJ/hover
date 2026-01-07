@@ -6,6 +6,15 @@ export class CitationPopup {
     this.closeTimer = null;
     this.isMouseOverPopup = false;
     this.isMouseOverAnchor = false;
+    this.fullText = "";
+    this.truncatedLength = 200;
+
+    // Tab state
+    this.activeTab = "reference"; // "reference" or "abstract"
+    this.scholarData = null;
+    this.scholarError = null;
+    this.isLoadingScholar = false;
+
     this.init();
   }
 
@@ -43,29 +52,24 @@ export class CitationPopup {
       return;
     }
 
-    // If showing a different anchor while one is open, close immediately and show new one
     if (this.currentAnchor && this.currentAnchor !== anchor) {
-      this.hide(true); // immediate hide
+      this.hide(true);
     }
 
     this.currentAnchor = anchor;
     this.isExpanded = false;
     this.isMouseOverAnchor = true;
+    this.activeTab = "reference";
+    this.scholarData = null;
+    this.scholarError = null;
+    this.isLoadingScholar = false;
 
-    // Cancel any pending close operations
     this.cancelClose();
 
-    // Initial positioning - will be adjusted after content loads
     this.popup.style.display = "block";
     this.popup.style.transform = "translateY(-10px) scale(0.95)";
-
-    // Position popup initially (will be refined after content loads)
     this.positionPopup();
-
-    // Trigger reflow
     this.popup.offsetHeight;
-
-    // Animate in
     this.popup.style.opacity = "1";
     this.popup.style.transform = "translateY(0) scale(1)";
 
@@ -77,7 +81,6 @@ export class CitationPopup {
         return;
       }
       this.renderContent(result);
-      // Adjust position after content is loaded
       this.positionPopup();
     } catch (error) {
       console.error("Error loading citation:", error);
@@ -187,36 +190,250 @@ export class CitationPopup {
 
   renderContent(text) {
     this.popup.className = "citation-popup";
-    const needsCollapse = text.length > 250;
-
-    const textElement = document.createElement("p");
-    textElement.className = "citation-popup-text";
-    if (needsCollapse) {
-      textElement.classList.add("collapsed");
-    }
-    this.renderTextWithLinks(textElement, text);
+    this.fullText = text;
 
     this.popup.innerHTML = "";
-    this.popup.appendChild(textElement);
+
+    // Create tab header
+    const header = this.#createTabHeader();
+    this.popup.appendChild(header);
+
+    // Create content container
+    const content = document.createElement("div");
+    content.className = "citation-popup-content";
+    this.popup.appendChild(content);
+
+    // Render reference tab content
+    this.#renderReferenceContent(content, text);
+  }
+
+  #createTabHeader() {
+    const header = document.createElement("div");
+    header.className = "citation-popup-header";
+
+    const tabs = document.createElement("div");
+    tabs.className = "citation-popup-tabs";
+
+    // Reference tab
+    const refTab = document.createElement("button");
+    refTab.className = "citation-tab active";
+    refTab.dataset.tab = "reference";
+    refTab.textContent = "Reference";
+    refTab.addEventListener("click", () => this.#switchTab("reference"));
+
+    // Abstract tab
+    const absTab = document.createElement("button");
+    absTab.className = "citation-tab";
+    absTab.dataset.tab = "abstract";
+    absTab.textContent = "Abstract";
+    absTab.addEventListener("click", () => this.#switchTab("abstract"));
+
+    tabs.appendChild(refTab);
+    tabs.appendChild(absTab);
+    header.appendChild(tabs);
+
+    return header;
+  }
+
+  #switchTab(tabName) {
+    if (this.activeTab === tabName) return;
+
+    this.activeTab = tabName;
+
+    // Update tab button states
+    const tabs = this.popup.querySelectorAll(".citation-tab");
+    tabs.forEach((tab) => {
+      tab.classList.toggle("active", tab.dataset.tab === tabName);
+    });
+
+    const content = this.popup.querySelector(".citation-popup-content");
+
+    if (tabName === "reference") {
+      this.#renderReferenceContent(content, this.fullText);
+    } else if (tabName === "abstract") {
+      this.#renderAbstractContent(content);
+    }
+
+    this.positionPopup();
+  }
+
+  #renderReferenceContent(container, text) {
+    container.innerHTML = "";
+    container.className = "citation-popup-content";
+
+    const needsCollapse = text.length > 250;
+
+    const textElement = document.createElement("span");
+    textElement.className = "citation-popup-text";
 
     if (needsCollapse) {
+      // Start collapsed - show truncated text with inline "..." button
+      const truncatedText = text.substring(0, this.truncatedLength);
+      this.renderTextWithLinks(textElement, truncatedText);
+
       const toggleBtn = document.createElement("button");
       toggleBtn.className = "citation-popup-toggle";
-      toggleBtn.textContent = "Show more";
+      toggleBtn.textContent = "...";
+      toggleBtn.title = "Show more";
       toggleBtn.addEventListener("click", (e) => {
         e.stopPropagation();
         this.isExpanded = !this.isExpanded;
-        if (this.isExpanded) {
-          textElement.classList.remove("collapsed");
-          toggleBtn.textContent = "Show less";
-        } else {
-          textElement.classList.add("collapsed");
-          toggleBtn.textContent = "Show more";
-        }
+        this.#updateTextDisplay(textElement, toggleBtn);
         this.positionPopup();
       });
-      this.popup.appendChild(toggleBtn);
+
+      container.appendChild(textElement);
+      container.appendChild(toggleBtn);
+    } else {
+      this.renderTextWithLinks(textElement, text);
+      container.appendChild(textElement);
     }
+  }
+
+  #updateTextDisplay(textElement, toggleBtn) {
+    if (this.isExpanded) {
+      this.renderTextWithLinks(textElement, this.fullText);
+      toggleBtn.textContent = "−";
+      toggleBtn.title = "Show less";
+      toggleBtn.classList.add("expanded");
+    } else {
+      const truncatedText = this.fullText.substring(0, this.truncatedLength);
+      this.renderTextWithLinks(textElement, truncatedText);
+      toggleBtn.textContent = "...";
+      toggleBtn.title = "Show more";
+      toggleBtn.classList.remove("expanded");
+    }
+  }
+
+  async #renderAbstractContent(container) {
+    container.innerHTML = "";
+    container.className = "citation-popup-content citation-popup-abstract";
+
+    // If we already have data, render it
+    if (this.scholarData) {
+      this.#renderScholarData(container, this.scholarData);
+      return;
+    }
+
+    // If we had an error, show error with retry button
+    if (this.scholarError) {
+      this.#renderScholarError(container, this.scholarError);
+      return;
+    }
+
+    // If not loading yet, start loading
+    if (!this.isLoadingScholar) {
+      this.isLoadingScholar = true;
+      this.#renderLoadingSkeleton(container);
+
+      try {
+        // Check if we're in extension context
+        if (typeof chrome !== "undefined" && chrome.runtime?.sendMessage) {
+          const response = await chrome.runtime.sendMessage({
+            type: "FETCH_SCHOLAR",
+            query: this.fullText,
+          });
+
+          if (response.success && response.data) {
+            const parsed = this.#parseScholarResult(
+              response.data.html,
+              response.data.query,
+            );
+            this.scholarData = parsed;
+            this.#renderScholarData(container, parsed);
+          } else {
+            this.scholarError = response.error || "No results found";
+            this.#renderScholarError(container, this.scholarError);
+          }
+        } else {
+          // Not in extension context
+          this.scholarError = "Extension context required";
+          this.#renderScholarError(
+            container,
+            "Scholar search requires the browser extension",
+          );
+        }
+      } catch (error) {
+        console.error("Scholar fetch error:", error);
+        this.scholarError = error.message;
+        this.#renderScholarError(container, error.message);
+      } finally {
+        this.isLoadingScholar = false;
+        this.positionPopup();
+      }
+    } else {
+      // Already loading, show skeleton
+      this.#renderLoadingSkeleton(container);
+    }
+  }
+
+  #renderLoadingSkeleton(container) {
+    container.innerHTML = `
+      <div class="citation-skeleton">
+        <div class="skeleton-bar skeleton-title"></div>
+        <div class="skeleton-bar skeleton-authors"></div>
+        <div class="skeleton-bar skeleton-abstract"></div>
+        <div class="skeleton-bar skeleton-abstract"></div>
+        <div class="skeleton-bar skeleton-abstract short"></div>
+      </div>
+    `;
+  }
+
+  #renderScholarData(container, data) {
+    container.innerHTML = "";
+
+    // Title (linked to paper)
+    const titleEl = document.createElement("a");
+    titleEl.className = "scholar-title";
+    titleEl.textContent = data.title || "Unknown Title";
+    titleEl.href = data.link || data.scholarUrl;
+    titleEl.target = "_blank";
+    titleEl.rel = "noopener noreferrer";
+    container.appendChild(titleEl);
+
+    // Authors
+    if (data.authors) {
+      const authorsEl = document.createElement("div");
+      authorsEl.className = "scholar-authors";
+      authorsEl.textContent = data.authors;
+      container.appendChild(authorsEl);
+    }
+
+    // Abstract
+    if (data.abstract) {
+      const abstractEl = document.createElement("div");
+      abstractEl.className = "scholar-abstract";
+      abstractEl.textContent = data.abstract;
+      container.appendChild(abstractEl);
+    } else {
+      const noAbstract = document.createElement("div");
+      noAbstract.className = "scholar-no-abstract";
+      noAbstract.textContent = "Abstract not available in search results";
+      container.appendChild(noAbstract);
+    }
+  }
+
+  #renderScholarError(container, errorMessage) {
+    container.innerHTML = "";
+
+    const errorWrapper = document.createElement("div");
+    errorWrapper.className = "scholar-error";
+
+    const errorText = document.createElement("div");
+    errorText.className = "scholar-error-text";
+    errorText.textContent = "Could not fetch abstract";
+    errorWrapper.appendChild(errorText);
+
+    // Search on Google Scholar button
+    const searchBtn = document.createElement("a");
+    searchBtn.className = "scholar-search-btn";
+    searchBtn.textContent = "Search on Google Scholar";
+    searchBtn.href = `https://scholar.google.com/scholar?q=${encodeURIComponent(this.fullText)}&hl=en`;
+    searchBtn.target = "_blank";
+    searchBtn.rel = "noopener noreferrer";
+    errorWrapper.appendChild(searchBtn);
+
+    container.appendChild(errorWrapper);
   }
 
   renderTextWithLinks(element, text) {
@@ -277,12 +494,45 @@ export class CitationPopup {
     });
   }
 
+  #parseScholarResult(html, query) {
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(html, "text/html");
+    console.log("start parsing");
+
+    // Find first result
+    const firstResult = doc.querySelector(".gs_ri");
+    if (!firstResult) {
+      return null;
+    }
+
+    // Extract title and link from gs_rt
+    const titleEl = firstResult.querySelector(".gs_rt a");
+    const title = titleEl?.textContent?.trim() || null;
+    const link = titleEl?.href || null;
+
+    // Extract authors from gs_a (contains authors, journal, year)
+    const authorsEl = firstResult.querySelector(".gs_a");
+    const authorsText = authorsEl?.textContent?.trim() || null;
+
+    // Extract abstract/snippet from gs_rs
+    const abstractEl = firstResult.querySelector(".gs_rs");
+    const abstract = abstractEl?.textContent?.trim() || null;
+
+    // Build scholar search URL
+    const scholarUrl = `https://scholar.google.com/scholar?q=${encodeURIComponent(query)}&hl=en`;
+
+    return {
+      title,
+      link,
+      authors: authorsText,
+      abstract,
+      scholarUrl,
+    };
+  }
+
   showError(message) {
     this.popup.className = "citation-popup error";
-    this.popup.innerHTML = `
-      <button class="citation-popup-close" onclick="this.closest('.citation-popup').style.display='none'">×</button>
-      ${message}
-    `;
+    this.popup.innerHTML = `${message}`;
   }
 
   scheduleClose() {
@@ -323,6 +573,11 @@ export class CitationPopup {
       this.isExpanded = false;
       this.isMouseOverAnchor = false;
       this.isMouseOverPopup = false;
+      this.fullText = "";
+      this.scholarData = null;
+      this.scholarError = null;
+      this.isLoadingScholar = false;
+      this.activeTab = "reference";
       return;
     }
 
@@ -334,6 +589,11 @@ export class CitationPopup {
       this.isExpanded = false;
       this.isMouseOverAnchor = false;
       this.isMouseOverPopup = false;
+      this.fullText = "";
+      this.scholarData = null;
+      this.scholarError = null;
+      this.isLoadingScholar = false;
+      this.activeTab = "reference";
     }, 300);
   }
 }

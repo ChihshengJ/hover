@@ -1,24 +1,40 @@
 {
   "manifest_version": 3,
-  "name": "HoverCite PDF Viewer",
+  "name": "Hover PDF Viewer",
   "version": "1.0.0",
-  "description": "Enhanced PDF viewer with citation hover support",
-  "permissions": ["webRequest", "webNavigation", "tabs"],
-  "host_permissions": ["<all_urls>"],
+  "description": "Enhanced PDF viewer with citation previews",
+  "permissions": [
+    "declarativeNetRequest",
+    "declarativeNetRequestFeedback",
+    "webNavigation",
+    "tabs"
+  ],
+  "host_permissions": [
+    "<all_urls>"
+  ],
   "background": {
     "service_worker": "background.js"
   },
   "content_scripts": [
     {
-      "matches": ["<all_urls>"],
-      "js": ["content.js"],
+      "matches": [
+        "<all_urls>"
+      ],
+      "js": [
+        "content.js"
+      ],
       "run_at": "document_start"
     }
   ],
   "web_accessible_resources": [
     {
-      "resources": ["index.html", "assets/*"],
-      "matches": ["<all_urls>"]
+      "resources": [
+        "index.html",
+        "assets/*"
+      ],
+      "matches": [
+        "<all_urls>"
+      ]
     }
   ],
   "icons": {

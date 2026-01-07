@@ -1,5 +1,5 @@
 // Content script for detecting PDF downloads
-console.log("HoverCite PDF Viewer content script loaded");
+console.log("Hover PDF Reader content script loaded");
 
 // Listen for PDF downloads
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {

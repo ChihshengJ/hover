@@ -18,23 +18,94 @@ body.night-mode .page-num {
 /*******************/
 /* citation popup */
 body.night-mode .citation-popup {
-  background: rgba(30, 30, 30, 0.9);
-  color: #ddd;
+  background: rgba(30, 30, 30, 0.95);
   box-shadow:
-    0 10px 45px 0px rgba(255, 255, 255, 0.15),
-    0 0 0 1px rgba(0, 0, 0, 0.5),
+    0 10px 45px 0px rgba(0, 0, 0, 0.8),
+    0 0 0 1px rgba(255, 255, 255, 0.1),
     inset 0 5px 20px rgba(0, 0, 0, 0.5);
 }
 
+body.night-mode .citation-popup-header {
+  background: rgba(0, 0, 0, 0.3);
+  border-bottom-color: rgba(255, 255, 255, 0.08);
+}
+
+body.night-mode .citation-popup-tabs {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+body.night-mode .citation-tab {
+  color: rgba(255, 255, 255, 0.5);
+}
+
+body.night-mode .citation-tab:hover {
+  color: rgba(255, 255, 255, 0.7);
+}
+
+body.night-mode .citation-tab.active {
+  background: rgba(255, 255, 255, 0.15);
+  color: rgba(255, 255, 255, 0.9);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+}
+
+body.night-mode .citation-popup-text {
+  color: #ddd;
+}
+
 body.night-mode .citation-popup-toggle {
-  background: #333;
-  border-color: #444;
-  color: #aaa;
+  color: #ccc;
 }
 
 body.night-mode .citation-popup-toggle:hover {
-  background: #444;
-  color: #ddd;
+  background: rgba(255, 255, 255, 0.15);
+  color: #fff;
+}
+
+/* Skeleton in night mode */
+body.night-mode .skeleton-bar {
+  background: linear-gradient(
+    90deg,
+    rgba(255, 255, 255, 0.08) 0%,
+    rgba(255, 255, 255, 0.15) 50%,
+    rgba(255, 255, 255, 0.08) 100%
+  );
+}
+
+/* Scholar data in night mode */
+body.night-mode .scholar-title {
+  color: #8ab4f8;
+}
+
+body.night-mode .scholar-title:hover {
+  color: #aecbfa;
+}
+
+body.night-mode .scholar-authors {
+  color: #aaa;
+  border-bottom-color: rgba(255, 255, 255, 0.1);
+}
+
+body.night-mode .scholar-abstract {
+  color: #ccc;
+}
+
+body.night-mode .scholar-no-abstract {
+  color: #777;
+}
+
+body.night-mode .scholar-error-text {
+  color: #999;
+}
+
+body.night-mode .scholar-search-btn {
+  background: rgba(138, 180, 248, 0.15);
+  color: #8ab4f8;
+  border-color: rgba(138, 180, 248, 0.3);
+}
+
+body.night-mode .scholar-search-btn:hover {
+  background: rgba(138, 180, 248, 0.25);
+  border-color: rgba(138, 180, 248, 0.5);
 }
 
 /*******************/
@@ -173,4 +244,3 @@ body.night-mode .nav-page {
   background: rgba(100, 150, 255, 0.3);
   border-color: rgba(100, 150, 255, 0.5);
 }
-

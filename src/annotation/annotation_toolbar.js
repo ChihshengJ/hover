@@ -93,13 +93,13 @@ export class AnnotationToolbar {
         <div class="toolbar-divider"></div>
         <div class="toolbar-actions">
           <button class="action-btn" data-action="highlight" title="Highlight">
-            <img src='public/highlight.png' width='25'></img>
+            <img src='/assets/highlight.png' width='25'></img>
           </button>
           <button class="action-btn" data-action="underline" title="Underline">
-            <img src='public/underline.png' width='25'></img>
+            <img src='/assets/underline.png' width='25'></img>
           </button>
           <button class="action-btn" data-action="comment" title="Add Comment">
-            <img src='public/comment.png' width='25'></img>
+            <img src='/assets/comment.png' width='25'></img>
           </button>
           <button class="action-btn delete-btn hidden" data-action="delete" title="Delete">
             <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">

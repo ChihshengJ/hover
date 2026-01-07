@@ -1,9 +1,19 @@
 {
+  "name": "hover-pdf-viewer",
+  "version": "1.0.0",
+  "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "build:extension": "vite build && npm run copy-manifest",
-    "copy-manifest": "cp manifest.json background.js content.js dist/ && cp -r icons dist/",
+    "build:ext": "vite build && npm run copy-ext-files",
+    "copy-ext-files": "cp manifest.json dist/ 2>/dev/null || echo 'manifest.json not in root (check public/ folder)'",
+    "watch:ext": "vite build --watch",
     "preview": "vite preview"
+  },
+  "devDependencies": {
+    "vite": "^7.3.1"
+  },
+  "dependencies": {
+    "pdfjs-dist": "^5.4.530"
   }
 }

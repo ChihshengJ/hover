@@ -6,8 +6,8 @@ export class CitationPopup {
     this.closeTimer = null;
     this.isMouseOverPopup = false;
     this.isMouseOverAnchor = false;
-    this.fullText = "";
-    this.truncatedLength = 200;
+    this.reference = "";
+    this.truncatedLength = 300;
 
     // Tab state
     this.activeTab = "reference"; // "reference" or "abstract"
@@ -190,7 +190,7 @@ export class CitationPopup {
 
   renderContent(text) {
     this.popup.className = "citation-popup";
-    this.fullText = text;
+    this.reference = text;
 
     this.popup.innerHTML = "";
 
@@ -221,6 +221,9 @@ export class CitationPopup {
     refTab.textContent = "Reference";
     refTab.addEventListener("click", () => this.#switchTab("reference"));
 
+    const sep = document.createElement("div");
+    sep.className = "sep-line";
+
     // Abstract tab
     const absTab = document.createElement("button");
     absTab.className = "citation-tab";
@@ -229,6 +232,7 @@ export class CitationPopup {
     absTab.addEventListener("click", () => this.#switchTab("abstract"));
 
     tabs.appendChild(refTab);
+    tabs.appendChild(sep);
     tabs.appendChild(absTab);
     header.appendChild(tabs);
 
@@ -249,7 +253,7 @@ export class CitationPopup {
     const content = this.popup.querySelector(".citation-popup-content");
 
     if (tabName === "reference") {
-      this.#renderReferenceContent(content, this.fullText);
+      this.#renderReferenceContent(content, this.reference);
     } else if (tabName === "abstract") {
       this.#renderAbstractContent(content);
     }
@@ -278,8 +282,8 @@ export class CitationPopup {
       toggleBtn.addEventListener("click", (e) => {
         e.stopPropagation();
         this.isExpanded = !this.isExpanded;
-        this.#updateTextDisplay(textElement, toggleBtn);
-        this.positionPopup();
+        this.#updateTextDisplay(text, textElement, toggleBtn, this.renderTextWithLinks);
+        // this.positionPopup();
       });
 
       container.appendChild(textElement);
@@ -290,15 +294,15 @@ export class CitationPopup {
     }
   }
 
-  #updateTextDisplay(textElement, toggleBtn) {
+  #updateTextDisplay(data, textElement, toggleBtn, callback) {
     if (this.isExpanded) {
-      this.renderTextWithLinks(textElement, this.fullText);
+      callback(textElement, data);
       toggleBtn.textContent = "−";
       toggleBtn.title = "Show less";
       toggleBtn.classList.add("expanded");
     } else {
-      const truncatedText = this.fullText.substring(0, this.truncatedLength);
-      this.renderTextWithLinks(textElement, truncatedText);
+      const truncatedText = data.substring(0, this.truncatedLength);
+      callback(textElement, truncatedText);
       toggleBtn.textContent = "...";
       toggleBtn.title = "Show more";
       toggleBtn.classList.remove("expanded");
@@ -331,7 +335,7 @@ export class CitationPopup {
         if (typeof chrome !== "undefined" && chrome.runtime?.sendMessage) {
           const response = await chrome.runtime.sendMessage({
             type: "FETCH_SCHOLAR",
-            query: this.fullText,
+            query: this.reference,
           });
 
           if (response.success && response.data) {
@@ -399,12 +403,37 @@ export class CitationPopup {
       container.appendChild(authorsEl);
     }
 
+    const needsCollapse = data.abstract.length > 300;
+    function renderAbstract(abstractEl, abstract) {
+      abstractEl.innerHTML = "";
+      abstractEl.textContent = abstract;
+    }
+
     // Abstract
     if (data.abstract) {
       const abstractEl = document.createElement("div");
       abstractEl.className = "scholar-abstract";
-      abstractEl.textContent = data.abstract;
-      container.appendChild(abstractEl);
+
+      if (needsCollapse) {
+        const truncatedText = data.abstract.substring(0, this.truncatedLength);
+        const toggleBtn = document.createElement("button");
+        toggleBtn.className = "citation-popup-toggle";
+        toggleBtn.textContent = "...";
+        toggleBtn.title = "Show more";
+        toggleBtn.addEventListener("click", (e) => {
+          e.stopPropagation();
+          this.isExpanded = !this.isExpanded;
+          this.#updateTextDisplay(data.abstract, abstractEl, toggleBtn, renderAbstract);
+          this.positionPopup();
+        });
+        abstractEl.textContent = truncatedText;
+        container.appendChild(abstractEl);
+        container.appendChild(toggleBtn);
+      }
+      else {
+        abstractEl.textContent = data.abstract;
+        container.appendChild(abstractEl);
+      }
     } else {
       const noAbstract = document.createElement("div");
       noAbstract.className = "scholar-no-abstract";
@@ -428,7 +457,7 @@ export class CitationPopup {
     const searchBtn = document.createElement("a");
     searchBtn.className = "scholar-search-btn";
     searchBtn.textContent = "Search on Google Scholar";
-    searchBtn.href = `https://scholar.google.com/scholar?q=${encodeURIComponent(this.fullText)}&hl=en`;
+    searchBtn.href = `https://scholar.google.com/scholar?q=${encodeURIComponent(this.reference)}&hl=en`;
     searchBtn.target = "_blank";
     searchBtn.rel = "noopener noreferrer";
     errorWrapper.appendChild(searchBtn);
@@ -511,12 +540,15 @@ export class CitationPopup {
     const link = titleEl?.href || null;
 
     // Extract authors from gs_a (contains authors, journal, year)
-    const authorsEl = firstResult.querySelector(".gs_a");
-    const authorsText = authorsEl?.textContent?.trim() || null;
+    const authorsText = [...firstResult.querySelectorAll(".gs_fmaa a")]
+    .map((a) => a.textContent?.trim())
+    .filter(Boolean)
+    .join(", ");
 
-    // Extract abstract/snippet from gs_rs
-    const abstractEl = firstResult.querySelector(".gs_rs");
-    const abstract = abstractEl?.textContent?.trim() || null;
+    // Extract abstract/snippet
+    const abstract1 = firstResult.querySelector(".gsh_csp")?.textContent || "";
+    const abstract2 = firstResult.querySelector(".gs_fma_snp")?.textContent || "";
+    const abstract = abstract1.length >= abstract2.length ? abstract1 : abstract2;
 
     // Build scholar search URL
     const scholarUrl = `https://scholar.google.com/scholar?q=${encodeURIComponent(query)}&hl=en`;
@@ -541,7 +573,7 @@ export class CitationPopup {
       if (!this.isMouseOverPopup && !this.isMouseOverAnchor) {
         this.hide();
       }
-    }, 200);
+    }, 400);
   }
 
   cancelClose() {
@@ -573,7 +605,7 @@ export class CitationPopup {
       this.isExpanded = false;
       this.isMouseOverAnchor = false;
       this.isMouseOverPopup = false;
-      this.fullText = "";
+      this.reference = "";
       this.scholarData = null;
       this.scholarError = null;
       this.isLoadingScholar = false;
@@ -589,7 +621,7 @@ export class CitationPopup {
       this.isExpanded = false;
       this.isMouseOverAnchor = false;
       this.isMouseOverPopup = false;
-      this.fullText = "";
+      this.reference = "";
       this.scholarData = null;
       this.scholarError = null;
       this.isLoadingScholar = false;

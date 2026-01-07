@@ -1,6 +1,6 @@
 .citation-popup {
   z-index: 10000;
-  max-width: 420px;
+  max-width: 450px;
   min-width: 320px;
   font-size: 14px;
   display: none;
@@ -11,7 +11,7 @@
     0 10px 45px 0px rgba(0, 0, 0, 0.7),
     0 0 0 1px rgba(255, 255, 255, 0.5),
     inset 0 5px 20px rgba(255, 255, 255, 0.8);
-  background: rgba(255, 255, 255, 0.85);
+  background: rgba(255, 255, 255, 0.5);
   background-clip: padding-box;
   backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
@@ -43,9 +43,7 @@
 
 .citation-popup-header {
   display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 8px 12px 0;
+  padding: 8px 12px 5px;
   border-bottom: 1px solid rgba(0, 0, 0, 0.08);
   background: rgba(255, 255, 255, 0.5);
 }
@@ -53,33 +51,41 @@
 .citation-popup-tabs {
   display: flex;
   gap: 0;
-  background: rgba(0, 0, 0, 0.06);
   border-radius: 8px;
   padding: 3px;
 }
 
+.sep-line {
+  background-color: #ccc;
+  margin: 8px 5px;
+  width: 2px;
+  height: 1rem;
+  border-radius: 4px;
+}
+
 .citation-tab {
-  padding: 6px 16px;
+  padding: 6px 5px;
   border: none;
   background: transparent;
   border-radius: 6px;
-  font-family:
-    -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-  font-size: 12px;
-  font-weight: 500;
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 400;
   color: rgba(0, 0, 0, 0.5);
   cursor: pointer;
   transition: all 0.15s ease;
 }
 
 .citation-tab:hover {
-  color: rgba(0, 0, 0, 0.7);
+  background: rgba(0, 0, 0, 0.06);
+  color: rgba(0, 0, 0, 0.6);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
 }
 
 .citation-tab.active {
-  background: rgba(255, 255, 255, 0.9);
+  background: rgba(0, 0, 0, 0.1);
   color: rgba(0, 0, 0, 0.85);
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+  box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.1);
 }
 
 /* ===========================================
@@ -91,6 +97,7 @@
 }
 
 .citation-popup-text {
+  font-family: Georgia, "Times New Roman", serif;
   color: #333;
   line-height: 1.4;
   white-space: pre-wrap;
@@ -188,8 +195,8 @@
 .scholar-title {
   display: block;
   font-size: 15px;
-  font-weight: 600;
-  color: #1a0dab;
+  font-weight: 500;
+  color: #2252c9;
   text-decoration: none;
   line-height: 1.3;
   margin-bottom: 6px;
@@ -197,7 +204,7 @@
 }
 
 .scholar-title:hover {
-  color: #1a73e8;
+  color: #21419c;
   text-decoration: underline;
 }
 

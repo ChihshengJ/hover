@@ -56,14 +56,14 @@ export class AnnotationManager {
     this.#abortController = new AbortController();
     const { signal } = this.#abortController;
 
-    // Listen for text selection changes
-    document.addEventListener(
-      "selectionchange",
-      () => {
-        this.#onSelectionChange();
-      },
-      { signal },
-    );
+    // listen for text selection changes
+    // document.addeventlistener(
+    //   "selectionchange",
+    //   () => {
+    //     this.#onselectionchange();
+    //   },
+    //   { signal },
+    // );
 
     // Hide toolbar when clicking outside
     document.addEventListener(
@@ -133,10 +133,10 @@ export class AnnotationManager {
     };
   }
 
-  #onSelectionChange() {
-    // Track selection changes but don't show toolbar yet
-    // (wait for mouseup to avoid flickering during selection)
-  }
+  // #onSelectionChange() {
+  //   // Track selection changes but don't show toolbar yet
+  //   // (wait for mouseup to avoid flickering during selection)
+  // }
 
   #hasActiveSelection() {
     const selection = document.getSelection();
@@ -184,7 +184,10 @@ export class AnnotationManager {
     // Filter to rects that are at least partially visible in the viewport
     const visibleRects = clientRects.filter((rect) => {
       // Skip suspiciously large rects (likely container elements)
-      if (rect.width > viewportWidth * 0.9 && rect.height > viewportHeight * 0.3) {
+      if (
+        rect.width > viewportWidth * 0.95 &&
+        rect.height > viewportHeight * 0.3
+      ) {
         return false;
       }
       // Check if rect is in viewport
@@ -411,15 +414,6 @@ export class AnnotationManager {
   refresh() {
     this.#svgLayer.refresh();
     this.#commentDisplay.refresh();
-  }
-
-  /**
-   * Render annotations for a specific page (called when page becomes visible)
-   * With SVG layer, we just ensure the layer is up to date
-   */
-  renderPageAnnotations(pageNumber) {
-    // SVG layer handles all pages, just refresh if needed
-    // This is called after page render, so positions should be stable
   }
 
   destroy() {

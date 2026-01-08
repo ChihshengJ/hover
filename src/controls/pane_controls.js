@@ -77,11 +77,30 @@ export class PaneControls {
     }
   }
 
+  #getRoundedRectPath(w, h, r) {
+    const x = 1;
+    const y = 1;
+    const startX = x + w / 2;
+    const startY = y + h;
+
+    return [
+      `M ${startX} ${startY}`,
+      `H ${x + w - r}`,
+      `A ${r} ${r} 0 0 0 ${x + w} ${y + h - r}`,
+      `V ${y + r}`,
+      `A ${r} ${r} 0 0 0 ${x + w - r} ${y}`,
+      `H ${x + r}`,
+      `A ${r} ${r} 0 0 0 ${x} ${y + r}`,
+      `V ${y + h - r}`,
+      `A ${r} ${r} 0 0 0 ${x + r} ${y + h}`,
+      `H ${startX}`,
+    ].join(' ');
+  }
+
   #createProgressRing() {
     const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
     svg.classList.add("pane-progress-ring");
 
-    // We'll use a path for the rounded rectangle to get proper stroke animation
     svg.innerHTML = `
       <defs>
         <linearGradient id="progress-grad-${this.pane.id}" x1="0%" y1="0%" x2="100%" y2="100%">
@@ -89,22 +108,19 @@ export class PaneControls {
           <stop offset="100%" class="progress-grad-end" />
         </linearGradient>
       </defs>
-      <rect class="progress-ring-bg" x="1" y="1" rx="19" ry="19" />
-      <rect class="progress-ring-fill" x="1" y="1" rx="19" ry="19" />
-      <rect class="progress-ring-glow" x="1" y="1" rx="19" ry="19" />
+      <path class="progress-ring-bg" />
+      <path class="progress-ring-fill" />
+      <path class="progress-ring-glow" />
     `;
 
     this.progressRing = svg;
     this.element.appendChild(svg);
-
-    // Initial size update will happen when shown
     this.#updateRingDimensions();
   }
 
   #updateRingDimensions() {
     if (!this.progressRing || !this.element) return;
 
-    // Get the control bar dimensions after it's in the DOM
     requestAnimationFrame(() => {
       const rect = this.element.getBoundingClientRect();
       if (rect.width === 0) return;
@@ -116,17 +132,19 @@ export class PaneControls {
       this.progressRing.style.width = `${width}px`;
       this.progressRing.style.height = `${height}px`;
 
-      const rects = this.progressRing.querySelectorAll("rect");
-      rects.forEach((r) => {
-        r.setAttribute("width", width - 2);
-        r.setAttribute("height", height - 2);
+      const r = 19;
+      const w = width - 2;
+      const h = height - 2;
+      const pathD = this.#getRoundedRectPath(w, h, r);
+
+      // Update all paths with the same d attribute
+      const paths = this.progressRing.querySelectorAll("path");
+      paths.forEach((p) => {
+        p.setAttribute("d", pathD);
       });
 
-      // Calculate perimeter for stroke-dasharray
-      // Approximate perimeter of rounded rect: 2*(w-2r) + 2*(h-2r) + 2*pi*r
-      const r = 19;
-      const perimeter =
-        2 * (width - 2 - 2 * r) + 2 * (height - 2 - 2 * r) + 2 * Math.PI * r;
+      // Calculate perimeter: 2 straights + 2 straights + 4 quarter circles
+      const perimeter = (w - 2 * r) * 2 + (h - 2 * r) * 2 + 2 * Math.PI * r;
       this.ringPerimeter = perimeter;
 
       // Set initial dash array
@@ -134,11 +152,9 @@ export class PaneControls {
       const glow = this.progressRing.querySelector(".progress-ring-glow");
       if (fill) {
         fill.style.strokeDasharray = `0 ${perimeter}`;
-        fill.style.strokeDashoffset = perimeter / 4; // Start from top
       }
       if (glow) {
         glow.style.strokeDasharray = `0 ${perimeter}`;
-        glow.style.strokeDashoffset = perimeter / 4;
       }
     });
   }

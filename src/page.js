@@ -240,11 +240,15 @@ export class PageView {
 
     // Convert target PDF coordinates to viewport coordinates at current scale
     const [targetX, targetY] = viewport.convertToViewportPoint(left, top);
-    const targetLeft = targetX;
+    const targetLeft = targetX + 10;
     const targetTop = canvas.offsetTop + Math.max(0, viewport.height - targetY);
+    const getPosition = (span) => {
+      const pos = pdfjsLib.Util.transform(viewport.transform, span.transform);
+      return { left: pos[4], top: pos[5] };
+    };
 
     let startIndex = -1;
-    let minDistance = 50;
+    let minDistance = 30;
 
     try {
       // Find the closest span to the target position
@@ -285,11 +289,6 @@ export class PageView {
       const items = texts.items;
       const reference = [];
 
-      const getPosition = (span) => {
-        const pos = pdfjsLib.Util.transform(viewport.transform, span.transform);
-        return { left: pos[4], top: pos[5] };
-      };
-
       // Reference number patterns: [1], (1), 1., 1), [12], etc.
       // at start of text, with leading whitespace
       const refNumberPattern = /^\s*[\[\(]?\d{1,3}[\]\)\.\,]?\s+\S/;
@@ -307,7 +306,7 @@ export class PageView {
         const pos = getPosition(span);
         const text = span.str;
 
-        // Detect line break via vertical movement
+        // Check line break via vertical movement
         const verticalGap = Math.abs(pos.top - currentLineTop);
         const isNewLine = verticalGap > 3;
 
@@ -318,6 +317,9 @@ export class PageView {
           }
           // Check large vertical gap indicates new block/paragraph
           if (baselineLineHeight && verticalGap > baselineLineHeight * 1.8) {
+            // console.log(
+            //   `end at vertical gap, tuple:${items.slice(i - 2, i + 2).map((x) => x.str)}`,
+            // );
             break;
           }
           // Check reference number at start of new line
@@ -336,14 +338,14 @@ export class PageView {
           if (lineCount === 1) {
             continuationLineLeft = pos.left;
           } else if (continuationLineLeft !== null) {
-            const hasHangingIndent = continuationLineLeft > firstLineLeft + 8;
+            const hasHangingIndent = continuationLineLeft > firstLineLeft + 6;
             if (hasHangingIndent) {
-              if (pos.left < continuationLineLeft - 15) {
+              if (pos.left < continuationLineLeft - 10) {
                 break;
               }
             } else {
               const minLeft = Math.min(firstLineLeft, continuationLineLeft);
-              if (pos.left < minLeft - 15) {
+              if (pos.left < minLeft - 10) {
                 break;
               }
             }
@@ -351,15 +353,11 @@ export class PageView {
           currentLineTop = pos.top;
         }
         reference.push(text);
-        // Check year pattern at end
-        if (text.match(/\d{4}\.$/)) {
-          // Only break if next span exists and isn't just whitespace
-          if (i + 1 < items.length && !items[i + 1].str.match(/^\s*$/)) {
-            break;
-          }
-        }
         // Check standalone period often ends a reference
         if (text.trim() === ".") {
+          console.log(
+            `end at standalone period, tuple:${items.slice(i - 2, i + 2).map((x) => x.str)}`,
+          );
           break;
         }
       }

@@ -95,7 +95,7 @@ export class FloatingToolbar {
       </button>
       <button class="tool-btn" data-action="night-mode">
         <div class="inner">
-          <div>â˜½</div>
+          <div>☽</div>
         </div>
       </button>
     `;
@@ -162,7 +162,7 @@ export class FloatingToolbar {
 
       let cumulativeY = 0;
       arr.forEach((btn, i) => {
-        const scale = 1 - i * 0.17;
+        const scale = 1.05 - i * 0.17;
         const gap = 5 - i * 8;
         cumulativeY += gap;
 
@@ -377,12 +377,12 @@ export class FloatingToolbar {
     const padding = 45;
     const expandedWidth = rect.width + padding * 2;
     const expandedHeight = rect.height + padding * 2;
-    
+
     const x = ((e.clientX - rect.left + padding) / expandedWidth) * 100;
     const y = ((e.clientY - rect.top + padding) / expandedHeight) * 100;
-    
-    this.gooContainer.style.setProperty('--x', Math.max(0, Math.min(100, x)));
-    this.gooContainer.style.setProperty('--y', Math.max(0, Math.min(100, y)));
+
+    this.gooContainer.style.setProperty("--x", Math.max(0, Math.min(100, x)));
+    this.gooContainer.style.setProperty("--y", Math.max(0, Math.min(100, y)));
   }
 
   #startDrag(e) {
@@ -540,8 +540,8 @@ export class FloatingToolbar {
     this.gooContainer.classList.remove("dragging");
     document.removeEventListener("mousemove", this.#boundGooUpdate);
     // Reset goo position to center
-    this.gooContainer.style.setProperty('--x', 50);
-    this.gooContainer.style.setProperty('--y', 50);
+    this.gooContainer.style.setProperty("--x", 50);
+    this.gooContainer.style.setProperty("--y", 50);
     document.body.style.cursor = "";
 
     // If tree is not open, snap gooContainer back
@@ -813,14 +813,14 @@ export class FloatingToolbar {
         b.classList.remove("night-mode");
         b.firstElementChild.classList.remove("night-mode");
       }
-      btn.firstElementChild.firstElementChild.textContent = "â˜½";
+      btn.firstElementChild.firstElementChild.textContent = "☽";
     } else {
       this.ball.classList.add("night-mode");
       for (const b of btns) {
         b.classList.add("night-mode");
         b.firstElementChild.classList.add("night-mode");
       }
-      btn.firstElementChild.firstElementChild.textContent = "â˜€";
+      btn.firstElementChild.firstElementChild.textContent = "☼";
       pageInfo.classList.add("night-mode");
     }
 

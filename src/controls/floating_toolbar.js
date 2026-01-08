@@ -11,6 +11,7 @@ export class FloatingToolbar {
    * @param {SplitWindowManager} wm;
    */
 
+  #boundGooUpdate = null;
   constructor(wm) {
     this.wm = wm;
     this.isExpanded = false;
@@ -62,6 +63,9 @@ export class FloatingToolbar {
     this.wrapper = document.createElement("div");
     this.wrapper.className = "floating-toolbar-wrapper";
 
+    this.gooContainer = document.createElement("div");
+    this.gooContainer.className = "goo-container";
+
     this.ball = document.createElement("div");
     this.ball.className = "floating-ball";
     this.ball.innerHTML = `
@@ -72,8 +76,11 @@ export class FloatingToolbar {
       </div>
     `;
 
-    let effect = document.createElement("div");
-    effect.className = "effect";
+    this.gooBlob = document.createElement("div");
+    this.gooBlob.className = "goo-blob";
+
+    this.gooContainer.appendChild(this.ball);
+    this.gooContainer.appendChild(this.gooBlob);
 
     // Top half of the toolbar
     this.toolbarTop = document.createElement("div");
@@ -83,13 +90,11 @@ export class FloatingToolbar {
         <div class="inner">
           <img src="/assets/book.svg" width="25" />
         </div>
-        <div class="effect"></div>
       </button>
       <button class="tool-btn" data-action="split-screen">
         <div class="inner">
           <img src="/assets/split.svg" width="25" />
         </div>
-        <div class="effect"></div>
       </button>
       <button class="tool-btn" data-action="night-mode">
         <div class="inner">
@@ -106,13 +111,11 @@ export class FloatingToolbar {
         <div class="inner">
           <img src="/assets/fit.svg" width="23" />
         </div>
-        <div class="effect"></div>
       </button>
       <button class="tool-btn" data-action="zoom-in">
         <div class="inner">
           <div>+</div>
         </div>
-        <div class="effect"></div>
       </button>
       <button class="tool-btn" data-action="zoom-out">
         <div class="inner">
@@ -122,10 +125,59 @@ export class FloatingToolbar {
     `;
 
     this.wrapper.appendChild(this.toolbarTop);
-    this.wrapper.appendChild(this.ball);
+    this.wrapper.appendChild(this.gooContainer);
     this.wrapper.appendChild(this.toolbarBottom);
-    this.ball.appendChild(effect);
+
     document.body.appendChild(this.wrapper);
+    this.wrapper.dataset.state = "collapsed";
+
+    const svgFilter = document.createElementNS(
+      "http://www.w3.org/2000/svg",
+      "svg",
+    );
+    svgFilter.style.position = "absolute";
+    svgFilter.style.width = "0";
+    svgFilter.style.height = "0";
+    svgFilter.innerHTML = `
+      <defs>
+        <filter id="goo">
+          <feGaussianBlur in="SourceGraphic" stdDeviation="8" result="blur" />
+          <feColorMatrix in="blur" mode="matrix" 
+            values="1 0 0 0 0  
+                    0 1 0 0 0  
+                    0 0 1 0 0  
+                    0 0 0 25 -10" result="goo" />
+        </filter>
+      </defs>
+    `;
+    document.body.appendChild(svgFilter);
+  }
+
+  #animateButtons(state) {
+    const topButtons = this.toolbarTop.querySelectorAll(".tool-btn");
+    const bottomButtons = this.toolbarBottom.querySelectorAll(".tool-btn");
+
+    const animate = (buttons, reverse, direction) => {
+      const arr = [...buttons];
+      if (reverse) arr.reverse();
+
+      let cumulativeY = 0;
+      arr.forEach((btn, i) => {
+        const scale = 1 - i * 0.17;
+        const gap = 5 - i * 8;
+        cumulativeY += gap;
+
+        btn.style.setProperty("--btn-delay", `${i * 60}ms`);
+        btn.style.setProperty("--btn-scale", scale);
+        btn.style.setProperty("--btn-y", `${direction * cumulativeY}px`);
+      });
+    };
+
+    const reverse = state !== "expanding";
+    animate(topButtons, reverse, -1);
+    animate(bottomButtons, reverse, 1);
+
+    this.wrapper.dataset.state = state;
   }
 
   #createHitArea() {
@@ -282,13 +334,11 @@ export class FloatingToolbar {
   #expand() {
     if (this.isExpanded) return;
     this.isExpanded = true;
-    this.wrapper.classList.remove("collapsing");
-    this.wrapper.classList.add("expanding");
+    this.#animateButtons("expanding");
 
     setTimeout(() => {
-      this.wrapper.classList.remove("expanding");
-      this.wrapper.classList.add("expanded");
-    }, 500);
+      this.wrapper.dataset.state = "expanded";
+    }, 300);
 
     this.#startExpandTimer();
   }
@@ -296,12 +346,11 @@ export class FloatingToolbar {
   #collapse() {
     if (!this.isExpanded) return;
     this.isExpanded = false;
-    this.wrapper.classList.remove("expanded", "expanding");
-    this.wrapper.classList.add("collapsing");
+    this.#animateButtons("collapsing");
 
     setTimeout(() => {
-      this.wrapper.classList.remove("collapsing");
-    }, 600);
+      this.wrapper.dataset.state = "collapsed";
+    }, 300);
   }
 
   #handleClick() {
@@ -323,6 +372,26 @@ export class FloatingToolbar {
     }
   }
 
+  #updateGooPosition(e) {
+    const rect = this.ball.getBoundingClientRect();
+    const centerX = rect.left + rect.width / 2;
+    const centerY = rect.top + rect.height / 2;
+
+    // Calculate offset from center, clamped
+    const maxOffset = 30;
+    const offsetX = Math.max(
+      -maxOffset,
+      Math.min(maxOffset, (e.clientX - centerX) * 0.4),
+    );
+    const offsetY = Math.max(
+      -maxOffset,
+      Math.min(maxOffset, (e.clientY - centerY) * 0.4),
+    );
+
+    // Move the blob toward mouse
+    this.gooBlob.style.transform = `translate(calc(-50% + ${offsetX}px), calc(-50% + ${offsetY}px))`;
+  }
+
   #startDrag(e) {
     this.#cancelHideTimer();
     this.#cancelExpandTimer();
@@ -332,8 +401,10 @@ export class FloatingToolbar {
     this.dragStartY = e.clientY;
     this.scrollStartTop = this.pane.scroller.scrollTop;
     this.initialBallY = parseInt(this.ball.style.top) || 0;
-    this.ball.classList.add("dragging");
-    document.body.style.cursor = "grabbing";
+
+    this.gooContainer.classList.add("dragging");
+    this.#boundGooUpdate = (e) => this.#updateGooPosition(e);
+    document.addEventListener("mousemove", this.#boundGooUpdate);
 
     this.currentScrollVelocity = 0;
     this.currentDeltaY = 0;
@@ -450,10 +521,10 @@ export class FloatingToolbar {
     // Store velocity for continuous scrolling (TrackPoint style)
     this.currentScrollVelocity = scrollMultiplier * maxScrollSpeed;
 
-    // Visual feedback - ball follows mouse
-    const visualDelta = deltaY * 0.7;
+    const visualDelta = deltaY * 0.8;
     this.ball.style.transform = `translateY(${visualDelta}px)`;
-    this.ball.style.transition = "none";
+    // Uncomment if you wanna make the ball follow the mouse tightly.
+    // this.ball.style.transition = "none";
 
     // Check for jump zone hover
     this.#checkJumpZones(clientY);
@@ -481,7 +552,9 @@ export class FloatingToolbar {
       this.jumpTimeout = null;
     }
 
-    this.ball.classList.remove("dragging");
+    this.gooContainer.classList.remove("dragging");
+    document.removeEventListener("mousemove", this.#boundGooUpdate);
+    this.gooBlob.style.transform = "translate(-50%, -50%)";
     document.body.style.cursor = "";
 
     // If tree is not open, snap ball back
@@ -503,10 +576,6 @@ export class FloatingToolbar {
       }
     }
   }
-
-  // ═══════════════════════════════════════════════════════════════
-  // Navigation Tree
-  // ═══════════════════════════════════════════════════════════════
 
   #openTree() {
     if (this.isTreeOpen) return;
@@ -551,22 +620,13 @@ export class FloatingToolbar {
   }
 
   #returnBall() {
-    // Only return ball if tree was open
     if (!this.isTreeOpen) return;
     this.isTreeOpen = false;
-
-    // Animate ball back to original position
-    this.wrapper.style.transition = "right 0.4s cubic-bezier(0.4, 0, 0.2, 1)";
+    this.wrapper.style.transition = "right 0.4s cubic-bezier(0.1, 0.3, 0.2, 1)";
     this.wrapper.style.right = `${this.ballOriginalRight}px`;
-
-    // Show toolbar buttons
     this.wrapper.classList.remove("tree-open");
-
-    // Reset ball transform
     this.ball.style.transition = "transform 0.3s ease";
     this.ball.style.transform = "";
-
-    // Cleanup transition after animation
     setTimeout(() => {
       this.wrapper.style.transition = "";
       this.ball.style.transition = "";
@@ -575,14 +635,8 @@ export class FloatingToolbar {
 
   #closeTree() {
     if (!this.isTreeOpen) return;
-
-    // Hide navigation tree (this will trigger the onClose callback which calls #returnBall)
     this.navigationTree.hide();
   }
-
-  // ═══════════════════════════════════════════════════════════════
-  // Jump Indicators (existing functionality)
-  // ═══════════════════════════════════════════════════════════════
 
   #createJumpIndicators() {
     // Create container for jump indicators

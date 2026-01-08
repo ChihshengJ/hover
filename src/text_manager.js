@@ -40,7 +40,7 @@ export class TextSelectionManager {
       textLayerDiv.classList.add("selecting");
     });
 
-    // Normalize unicode and remove null characters
+    // Normalize Unicode and remove null characters
     textLayerDiv.addEventListener("copy", (event) => {
       const selection = document.getSelection();
       const text = this.#normalizeText(selection.toString());

@@ -25,7 +25,7 @@ This process is highly disruptive to the flow of reading, but hard to tackle wit
 Hover solves this problem by heuristically parsing the PDF annotations and finding the text content of the citation.
 
 Just hover your mouse on the citation link, the content of the citation would appear right at the spot.
-You can even directly open up the URL in the citation or search the title of cited document in Google Scholar (under development).
+You can even directly open up the URL in the citation or search the title of cited document in Google Scholar (yeah I ripped them off).
 
 <p align="center">
 <img src="assets/citation_popup_demo.png" width="450" alt="Hover Banner"/>
@@ -67,6 +67,7 @@ Sometimes you gotta wonder, PDFs are longer than codes, so why isn't there a spl
 
 Hover enables split window mode for a single document.
 No more jumping between experiment results and metrics or figures and methodologies, enjoy doubling your reading speed without wasting time on scrolling around.
+
 <p align="center">
 <img src="assets/split_window_demo.png" width="800" alt="Hover Banner"/>
 </p>
@@ -75,6 +76,7 @@ No more jumping between experiment results and metrics or figures and methodolog
 
 Pulling an all-nighter reading papers sounds fun, especially when the white background lights up your entire bedroom.
 With a click of the button, Hover not only turns the background in a soft dark tone, it also renders the contents black.
+
 <p align="center">
 <img src="assets/dark_mode_demo.png" width="800" alt="Hover Banner"/>
 </p>

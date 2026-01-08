@@ -18,94 +18,23 @@ body.night-mode .page-num {
 /*******************/
 /* citation popup */
 body.night-mode .citation-popup {
-  background: rgba(30, 30, 30, 0.95);
+  background: rgba(30, 30, 30, 0.9);
+  color: #ddd;
   box-shadow:
-    0 10px 45px 0px rgba(0, 0, 0, 0.8),
-    0 0 0 1px rgba(255, 255, 255, 0.1),
+    0 10px 45px 0px rgba(255, 255, 255, 0.15),
+    0 0 0 1px rgba(0, 0, 0, 0.5),
     inset 0 5px 20px rgba(0, 0, 0, 0.5);
 }
 
-body.night-mode .citation-popup-header {
-  background: rgba(0, 0, 0, 0.3);
-  border-bottom-color: rgba(255, 255, 255, 0.08);
-}
-
-body.night-mode .citation-popup-tabs {
-  background: rgba(255, 255, 255, 0.08);
-}
-
-body.night-mode .citation-tab {
-  color: rgba(255, 255, 255, 0.5);
-}
-
-body.night-mode .citation-tab:hover {
-  color: rgba(255, 255, 255, 0.7);
-}
-
-body.night-mode .citation-tab.active {
-  background: rgba(255, 255, 255, 0.15);
-  color: rgba(255, 255, 255, 0.9);
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
-}
-
-body.night-mode .citation-popup-text {
-  color: #ddd;
-}
-
 body.night-mode .citation-popup-toggle {
-  color: #ccc;
+  background: #333;
+  border-color: #444;
+  color: #aaa;
 }
 
 body.night-mode .citation-popup-toggle:hover {
-  background: rgba(255, 255, 255, 0.15);
-  color: #fff;
-}
-
-/* Skeleton in night mode */
-body.night-mode .skeleton-bar {
-  background: linear-gradient(
-    90deg,
-    rgba(255, 255, 255, 0.08) 0%,
-    rgba(255, 255, 255, 0.15) 50%,
-    rgba(255, 255, 255, 0.08) 100%
-  );
-}
-
-/* Scholar data in night mode */
-body.night-mode .scholar-title {
-  color: #8ab4f8;
-}
-
-body.night-mode .scholar-title:hover {
-  color: #aecbfa;
-}
-
-body.night-mode .scholar-authors {
-  color: #aaa;
-  border-bottom-color: rgba(255, 255, 255, 0.1);
-}
-
-body.night-mode .scholar-abstract {
-  color: #ccc;
-}
-
-body.night-mode .scholar-no-abstract {
-  color: #777;
-}
-
-body.night-mode .scholar-error-text {
-  color: #999;
-}
-
-body.night-mode .scholar-search-btn {
-  background: rgba(138, 180, 248, 0.15);
-  color: #8ab4f8;
-  border-color: rgba(138, 180, 248, 0.3);
-}
-
-body.night-mode .scholar-search-btn:hover {
-  background: rgba(138, 180, 248, 0.25);
-  border-color: rgba(138, 180, 248, 0.5);
+  background: #444;
+  color: #ddd;
 }
 
 /*******************/
@@ -140,26 +69,28 @@ body.night-mode .scholar-search-btn:hover {
 
 /******************/
 /* floating ball */
-.floating-ball.night-mode {
-  background: linear-gradient(
-    143.5deg,
-    rgba(150, 150, 150, 0.8) 17.38%,
-    rgba(190, 190, 190, 0.8) 62.76%,
-    rgba(250, 250, 250, 0.8) 91.49%
-  );
-  box-shadow:
-    inset -2px -2px 1px 0 #00000080,
-    inset 1px 1px 1px 1px #00000080,
-    0 6px 6px #ffffff10,
-    0 0 20px #ffffff05;
-}
 
-.floating-ball.night-mode:hover {
-  box-shadow:
-    inset -5px -2px 2px 0 #00000080,
-    inset 1px 1px 1px 1px #00000080,
-    0 0 10px 2px #ffffff20,
-    0 0 20px 10px #ffffff10;
+body.night-mode .goo-container::before {
+  filter: url(#goo) drop-shadow(0 0.3em 0.1em #00000099)
+    drop-shadow(0 -0.05em 1em #ffffff4d);
+  background-image:
+    radial-gradient(
+      ellipse 50% 50% at 75% 85%,
+      rgba(0, 0, 0, 0.3) 0%,
+      transparent 45%
+    ),
+    linear-gradient(
+      130deg,
+      rgba(180, 180, 180, 0.4) 10%,
+      rgba(120, 120, 120, 0.5) 45%,
+      rgba(210, 210, 210, 0.5) 90%
+    ),
+    radial-gradient(
+      30px 30px at calc(var(--x) * 1%) calc(var(--y) * 1%),
+      rgba(200, 200, 200, var(--goo-opacity)) 0%,
+      transparent 100%
+    );
+  background-clip: content-box, content-box, border-box;
 }
 
 .page-display.night-mode {
@@ -168,14 +99,14 @@ body.night-mode .scholar-search-btn:hover {
 
 .tool-btn.night-mode {
   background: linear-gradient(
-    143.5deg,
-    rgba(150, 150, 150, 0.8) 17.38%,
-    rgba(190, 190, 190, 0.8) 62.76%,
-    rgba(250, 250, 250, 0.8) 91.49%
+    135deg,
+    rgba(130, 130, 130, 0.8) 18%,
+    rgba(150, 150, 150, 0.8) 65%,
+    rgba(250, 250, 250, 0.8) 90%
   );
   box-shadow:
-    inset -2px -2px 1px 0 #00000080,
-    inset 1px 1px 1px 1px #00000080,
+    inset -2px -2px 2px 1px #00000099,
+    inset 1px 1px 2px 1px #00000099,
     0 3px 5px 2px #ffffff10,
     0 0 10px 2px #ffffff05;
 }

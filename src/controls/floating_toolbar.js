@@ -39,7 +39,7 @@ export class FloatingToolbar {
 
     // Navigation tree state
     this.isTreeOpen = false;
-    this.treeOpenThreshold = 60; // Pixels to drag left before tree opens
+    this.treeOpenThreshold = 100; // Pixels to drag left before tree opens
     this.ballOriginalRight = 35;
     this.ballTreeOpenRight = null; // Calculated based on viewport
 
@@ -66,6 +66,7 @@ export class FloatingToolbar {
     this.gooContainer = document.createElement("div");
     this.gooContainer.className = "goo-container";
 
+    // Content layer - sits on top of the ::before pseudo-element
     this.ball = document.createElement("div");
     this.ball.className = "floating-ball";
     this.ball.innerHTML = `
@@ -76,11 +77,7 @@ export class FloatingToolbar {
       </div>
     `;
 
-    this.gooBlob = document.createElement("div");
-    this.gooBlob.className = "goo-blob";
-
     this.gooContainer.appendChild(this.ball);
-    this.gooContainer.appendChild(this.gooBlob);
 
     // Top half of the toolbar
     this.toolbarTop = document.createElement("div");
@@ -98,7 +95,7 @@ export class FloatingToolbar {
       </button>
       <button class="tool-btn" data-action="night-mode">
         <div class="inner">
-          <div>☽</div>
+          <div>â˜½</div>
         </div>
       </button>
     `;
@@ -140,13 +137,15 @@ export class FloatingToolbar {
     svgFilter.style.height = "0";
     svgFilter.innerHTML = `
       <defs>
-        <filter id="goo">
+        <filter id="goo" x="-75%" y="-75%" width="250%" height="250%">
           <feGaussianBlur in="SourceGraphic" stdDeviation="8" result="blur" />
           <feColorMatrix in="blur" mode="matrix" 
             values="1 0 0 0 0  
                     0 1 0 0 0  
                     0 0 1 0 0  
-                    0 0 0 25 -10" result="goo" />
+                    0 0 0 25 -8" result="goo" />
+          <feGaussianBlur in="goo" stdDeviation="3" result="softGlow"/>
+          <feComposite in="goo" in2="softGlow" operator="over"/>
         </filter>
       </defs>
     `;
@@ -373,23 +372,17 @@ export class FloatingToolbar {
   }
 
   #updateGooPosition(e) {
-    const rect = this.ball.getBoundingClientRect();
-    const centerX = rect.left + rect.width / 2;
-    const centerY = rect.top + rect.height / 2;
-
-    // Calculate offset from center, clamped
-    const maxOffset = 30;
-    const offsetX = Math.max(
-      -maxOffset,
-      Math.min(maxOffset, (e.clientX - centerX) * 0.4),
-    );
-    const offsetY = Math.max(
-      -maxOffset,
-      Math.min(maxOffset, (e.clientY - centerY) * 0.4),
-    );
-
-    // Move the blob toward mouse
-    this.gooBlob.style.transform = `translate(calc(-50% + ${offsetX}px), calc(-50% + ${offsetY}px))`;
+    const rect = this.gooContainer.getBoundingClientRect();
+    // Need to be bigger than the padding in the pseudo element for more viscosity
+    const padding = 45;
+    const expandedWidth = rect.width + padding * 2;
+    const expandedHeight = rect.height + padding * 2;
+    
+    const x = ((e.clientX - rect.left + padding) / expandedWidth) * 100;
+    const y = ((e.clientY - rect.top + padding) / expandedHeight) * 100;
+    
+    this.gooContainer.style.setProperty('--x', Math.max(0, Math.min(100, x)));
+    this.gooContainer.style.setProperty('--y', Math.max(0, Math.min(100, y)));
   }
 
   #startDrag(e) {
@@ -405,12 +398,12 @@ export class FloatingToolbar {
     this.gooContainer.classList.add("dragging");
     this.#boundGooUpdate = (e) => this.#updateGooPosition(e);
     document.addEventListener("mousemove", this.#boundGooUpdate);
+    this.#updateGooPosition(e);
 
     this.currentScrollVelocity = 0;
     this.currentDeltaY = 0;
     this.currentDeltaX = 0;
 
-    // Determine drag mode based on initial movement
     this.dragMode = null; // 'vertical', 'horizontal', or null
 
     if (!this.isTreeOpen) {
@@ -451,13 +444,11 @@ export class FloatingToolbar {
       }
     }
 
-    // Mark as dragged if moved significantly
     if (Math.abs(deltaX) > 5 || Math.abs(deltaY) > 5) {
       this.wasDragged = true;
     }
 
     if (this.isTreeOpen) {
-      // When tree is open, only allow horizontal drag to close
       this.#handleTreeDrag(deltaX);
       return;
     }
@@ -470,19 +461,16 @@ export class FloatingToolbar {
   }
 
   #handleHorizontalDrag(deltaX) {
-    // Visual feedback - ball follows mouse horizontally
     const visualDelta = Math.max(-150, Math.min(0, deltaX * 0.8));
-    this.ball.style.transform = `translateX(${visualDelta}px)`;
-    this.ball.style.transition = "none";
+    this.gooContainer.style.transform = `translateX(${visualDelta}px)`;
+    this.gooContainer.style.transition = "none";
 
-    // Check if past threshold to open tree
     if (deltaX < -this.treeOpenThreshold && !this.isTreeOpen) {
       this.#openTree();
     }
   }
 
   #handleTreeDrag(deltaX) {
-    // When tree is open, dragging right closes it
     if (deltaX > 30) {
       this.#closeTree();
     }
@@ -517,16 +505,13 @@ export class FloatingToolbar {
 
     scrollMultiplier *= Math.sign(normalizedDistance);
     const maxScrollSpeed = 20;
-
-    // Store velocity for continuous scrolling (TrackPoint style)
     this.currentScrollVelocity = scrollMultiplier * maxScrollSpeed;
 
     const visualDelta = deltaY * 0.8;
-    this.ball.style.transform = `translateY(${visualDelta}px)`;
-    // Uncomment if you wanna make the ball follow the mouse tightly.
-    // this.ball.style.transition = "none";
+    // Move the entire goo container, not just the ball
+    this.gooContainer.style.transform = `translateY(${visualDelta}px)`;
+    // this.gooContainer.style.transition = "none";
 
-    // Check for jump zone hover
     this.#checkJumpZones(clientY);
   }
 
@@ -554,18 +539,20 @@ export class FloatingToolbar {
 
     this.gooContainer.classList.remove("dragging");
     document.removeEventListener("mousemove", this.#boundGooUpdate);
-    this.gooBlob.style.transform = "translate(-50%, -50%)";
+    // Reset goo position to center
+    this.gooContainer.style.setProperty('--x', 50);
+    this.gooContainer.style.setProperty('--y', 50);
     document.body.style.cursor = "";
 
-    // If tree is not open, snap ball back
+    // If tree is not open, snap gooContainer back
     if (!this.isTreeOpen) {
-      this.ball.style.transition =
+      this.gooContainer.style.transition =
         "transform 0.3s cubic-bezier(0.68, -0.55, 0.265, 1.55)";
-      this.ball.style.transform = "translateY(0) translateX(0)";
+      this.gooContainer.style.transform = "translateY(0) translateX(0)";
 
       setTimeout(() => {
-        this.ball.style.transition = "";
-        this.ball.style.transform = "";
+        this.gooContainer.style.transition = "";
+        this.gooContainer.style.transform = "";
       }, 300);
     }
 
@@ -596,9 +583,9 @@ export class FloatingToolbar {
     this.wrapper.classList.add("tree-open");
     this.#collapse();
 
-    // Reset ball transform
-    this.ball.style.transition = "transform 0.3s ease";
-    this.ball.style.transform = "";
+    // Reset gooContainer transform (from dragging)
+    this.gooContainer.style.transition = "transform 0.3s ease";
+    this.gooContainer.style.transform = "";
 
     // Animate ball to new position
     this.wrapper.style.transition = "right 0.4s cubic-bezier(0.4, 0, 0.2, 1)";
@@ -615,7 +602,7 @@ export class FloatingToolbar {
     // Cleanup transition after animation
     setTimeout(() => {
       this.wrapper.style.transition = "";
-      this.ball.style.transition = "";
+      this.gooContainer.style.transition = "";
     }, 400);
   }
 
@@ -625,11 +612,11 @@ export class FloatingToolbar {
     this.wrapper.style.transition = "right 0.4s cubic-bezier(0.1, 0.3, 0.2, 1)";
     this.wrapper.style.right = `${this.ballOriginalRight}px`;
     this.wrapper.classList.remove("tree-open");
-    this.ball.style.transition = "transform 0.3s ease";
-    this.ball.style.transform = "";
+    this.gooContainer.style.transition = "transform 0.3s ease";
+    this.gooContainer.style.transform = "";
     setTimeout(() => {
       this.wrapper.style.transition = "";
-      this.ball.style.transition = "";
+      this.gooContainer.style.transition = "";
     }, 400);
   }
 
@@ -644,10 +631,10 @@ export class FloatingToolbar {
     this.jumpIndicators.className = "jump-indicators";
     this.jumpIndicators.innerHTML = `
       <div class="jump-indicator jump-top" data-direction="top">
-         <div>⇈</div>
+         <div>↑</div>
       </div>
       <div class="jump-indicator jump-bottom" data-direction="bottom">
-         <div>⇊</div>
+         <div>↓</div>
       </div>
     `;
     document.body.appendChild(this.jumpIndicators);
@@ -727,7 +714,7 @@ export class FloatingToolbar {
 
   #executeJump(direction) {
     this.isJumping = true;
-    this.ball.classList.add("jumping");
+    this.gooContainer.classList.add("jumping");
 
     if (direction === "top") {
       this.pane.scrollToTop();
@@ -736,7 +723,7 @@ export class FloatingToolbar {
     }
 
     setTimeout(() => {
-      this.ball.classList.remove("jumping");
+      this.gooContainer.classList.remove("jumping");
       this.isJumping = false;
       this.#endDrag();
     }, 150);
@@ -744,7 +731,7 @@ export class FloatingToolbar {
 
   #updatePosition() {
     const containerRect = this.pane.paneEl.getBoundingClientRect();
-    const centerY = containerRect.top + containerRect.height / 2 - 35;
+    const centerY = containerRect.top + containerRect.height / 2;
 
     this.wrapper.style.top = `${centerY}px`;
     if (!this.isTreeOpen) {
@@ -826,14 +813,14 @@ export class FloatingToolbar {
         b.classList.remove("night-mode");
         b.firstElementChild.classList.remove("night-mode");
       }
-      btn.firstElementChild.firstElementChild.textContent = "☽";
+      btn.firstElementChild.firstElementChild.textContent = "â˜½";
     } else {
       this.ball.classList.add("night-mode");
       for (const b of btns) {
         b.classList.add("night-mode");
         b.firstElementChild.classList.add("night-mode");
       }
-      btn.firstElementChild.firstElementChild.textContent = "☀";
+      btn.firstElementChild.firstElementChild.textContent = "â˜€";
       pageInfo.classList.add("night-mode");
     }
 

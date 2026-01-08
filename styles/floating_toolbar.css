@@ -46,58 +46,68 @@
   width: 75px;
   height: 75px;
   z-index: 999;
+  --x: 50;
+  --y: 50;
+  --goo-opacity: 0;
+  transition:
+    transform 0.3s cubic-bezier(0.1, 0.3, 0.2, 1),
+    opacity 0.3s ease;
 }
 
-.goo-container.dragging {
-  filter: url(#goo);
+.goo-container::before {
+  content: "";
+  position: absolute;
+  border-radius: 50%;
+  inset: -25px; /* Expand beyond to allow blob to stretch */
+  filter: url(#goo) drop-shadow(0 .3em .1em #00000099) drop-shadow(0 -.05em .05em #000000e6);
+  background-image:
+    radial-gradient(
+      ellipse 50% 50% at 75% 85%,
+      rgba(0, 0, 0, 0.3) 0%,
+      transparent 45%
+    ),
+    linear-gradient(
+      130deg,
+      rgba(120, 120, 120, 0.5) 12%,
+      rgba(255, 255, 255, 0.4) 35%,
+      rgba(210, 210, 210, 0.5) 91.49%
+    ),
+    radial-gradient(
+      30px 30px at calc(var(--x) * 1%) calc(var(--y) * 1%),
+      rgba(230, 230, 230, var(--goo-opacity)) 0%,
+      transparent 100%
+    );
+  background-clip: content-box, content-box, border-box;
+  padding: 20px;
+  z-index: 0;
+  pointer-events: none;
+  transition:
+    filter 0.3s ease,
+    --goo-opacity 0.3s ease,
+}
+
+.goo-container.dragging::before {
+  --goo-opacity: 1;
 }
 
 .floating-ball {
   position: absolute;
   inset: 0;
-  backdrop-filter: blur(5px) saturate(200%);
-  box-shadow:
-    inset 2px 2px 10px #00000033,
-    inset -1px -2px 10px #0000001a,
-    inset 3px 1px 8px 3px #ffffff66,
-    inset -3px -3px 12px 5px #ffffff4a,
-    0 5px 6px 1px #0000004d;
   border-radius: 50%;
+  backdrop-filter: blur(3px) saturate(180%);
   display: flex;
   align-items: center;
   justify-content: center;
   pointer-events: auto;
   cursor: grab;
   user-select: none;
-  transition:
-    transform 0.3s cubic-bezier(0.1, 0.3, 0.2, 1),
-    box-shadow 0.3s ease,
-    filter 0.3s ease,
-    opacity 0.3s ease;
+  z-index: 1;
 }
 
-.goo-blob {
-  position: absolute;
-  width: 75px;
-  height: 75px;
-  background: inherit;
-  background: linear-gradient(
-    143.5deg,
-    rgba(255, 255, 255, 0.7) 17.38%,
-    rgba(220, 220, 220, 0.7) 62.76%,
-    rgba(180, 180, 180, 0.7) 91.49%
-  );
-  border-radius: 50%;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  opacity: 0;
-  transition: opacity 0.15s ease;
-  pointer-events: none;
-}
-
-.goo-container.dragging .goo-blob {
-  opacity: 1;
+@property --goo-opacity {
+  syntax: "<number>";
+  initial-value: 0;
+  inherits: true;
 }
 
 .inner {
@@ -108,23 +118,16 @@
   justify-content: center;
 }
 
-
-.floating-ball:hover {
-  filter: brightness(1.1);
+.goo-container:hover:not(.dragging) {
   transform: scale(1.1);
-  box-shadow:
-    inset 2px 2px 10px #00000033,
-    inset -1px -2px 10px #0000001a,
-    inset 3px 1px 8px 3px #ffffff1a,
-    inset -3px -3px 12px 5px #ffffff1a,
-    0 5px 6px 1px #0000001a,
+  filter: brightness(1.05);
 }
 
-.floating-ball:active {
-  filter: brightness(1.2);
+.goo-container.dragging {
+  filter: brightness(1.05);
 }
 
-.floating-ball.dragging {
+.goo-container.dragging .floating-ball {
   cursor: grabbing;
 }
 
@@ -189,7 +192,7 @@
     inset 3px 1px 8px 3px #ffffffa6,
     inset -3px -3px 12px 5px #ffffff99,
     inset -2px -1px 1px 0px rgba(0, 0, 0, 0.05),
-    0 4px 10px rgba(0, 0, 0, 0.4);
+    0 4px 10px rgba(0, 0, 0, 0.3);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -275,7 +278,7 @@
 }
 
 /* Ball jumping animation */
-.floating-ball.jumping {
+.goo-container.jumping {
   animation: jump-pulse 0.15s ease-out;
 }
 

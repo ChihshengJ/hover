@@ -29,6 +29,16 @@
  * @property {number} [extraAnnotationCount] - count beyond 3 dots
  */
 
+
+const rightSvg = `
+  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-chevron-right" viewBox="0 0 16 16">
+    <path fill-rule="evenodd" d="M4.646 1.646a.5.5 0 0 1 .708 0l6 6a.5.5 0 0 1 0 .708l-6 6a.5.5 0 0 1-.708-.708L10.293 8 4.646 2.354a.5.5 0 0 1 0-.708"/>
+  </svg>`;
+const downSvg = `
+  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-chevron-down" viewBox="0 0 16 16">
+    <path fill-rule="evenodd" d="M1.646 4.646a.5.5 0 0 1 .708 0L8 10.293l5.646-5.647a.5.5 0 0 1 .708.708l-6 6a.5.5 0 0 1-.708 0l-6-6a.5.5 0 0 1 0-.708"/>
+  </svg>`;
+
 export class NavigationTree {
   /**
    * @param {FloatingToolbar} toolbar
@@ -55,7 +65,7 @@ export class NavigationTree {
     // Sizing
     this.TREE_WIDTH = 220;
     this.NODE_HEIGHT = 26;
-    this.INDENT = 16;
+    this.INDENT = 12;
     this.BRANCH_COLOR = "#555";
     this.BRANCH_WIDTH = 1;
 
@@ -159,9 +169,6 @@ export class NavigationTree {
       }
     };
     document.addEventListener("keydown", this.escapeHandler);
-
-    // Setup mouse leave collapse (now empty - subtree collapse handled by #collapseSiblings)
-    this.#setupContainerMouseLeave();
   }
 
   // ═══════════════════════════════════════════════════════════════
@@ -435,13 +442,13 @@ export class NavigationTree {
     }
 
     const typeName =
-      annotation.type === "highlight" ? "Highlight" : "Underline";
+      annotation.type === "highlight" ? "Hightlight" : "Underline";
+
+    const title = annotation.comment ? `Cmt: ${annotation.comment}` : `${typeName} ${counter} `;
 
     return {
       id: crypto.randomUUID(),
-      title: pageRange
-        ? `${typeName} ${counter} (${pageRange})`
-        : `${typeName} ${counter}`,
+      title: title,
       type: "annotation",
       annotationType: annotation.type,
       color: annotation.color,
@@ -502,10 +509,6 @@ export class NavigationTree {
     return annotations;
   }
 
-  // ═══════════════════════════════════════════════════════════════
-  // Rendering
-  // ═══════════════════════════════════════════════════════════════
-
   #render() {
     this.container.innerHTML = "";
 
@@ -552,21 +555,22 @@ export class NavigationTree {
     wrapper.dataset.nodeId = node.id;
     wrapper.dataset.depth = depth;
     wrapper.dataset.path = JSON.stringify(path);
+    wrapper.style.maxWidth = (window.innerWidth - this.ballRightX) * 0.9;
 
     // Node row
     const row = document.createElement("div");
     row.className = `nav-tree-row nav-tree-row--${node.type}`;
     // Add INDENT to leave room for branch line at each level
-    row.style.paddingLeft = `${depth * this.INDENT + this.INDENT + 4}px`;
+    row.style.marginLeft = `${(1+depth) * this.INDENT}px`;
 
     // Chevron
     const hasChildren = node.children.length > 0;
     const chevron = document.createElement("span");
     chevron.className = "nav-tree-chevron";
     if (hasChildren) {
-      chevron.innerHTML = node.expanded ? "⌄" : "›";
+      chevron.innerHTML = node.expanded ? downSvg : rightSvg;
       chevron.addEventListener("click", (e) => {
-        e.stopPropagation();
+        e.stopPropagation400
         this.#togglePin(node, wrapper, path);
       });
     }
@@ -710,7 +714,7 @@ export class NavigationTree {
     const chevron = wrapper.querySelector(
       ":scope > .nav-tree-row > .nav-tree-chevron",
     );
-    if (chevron) chevron.innerHTML = "⌄";
+    if (chevron) chevron.innerHTML = downSvg;
 
     const childrenContainer = wrapper.querySelector(
       ":scope > .nav-tree-children",
@@ -749,7 +753,7 @@ export class NavigationTree {
     const chevron = wrapper.querySelector(
       ":scope > .nav-tree-row > .nav-tree-chevron",
     );
-    if (chevron) chevron.innerHTML = "›";
+    if (chevron) chevron.innerHTML = rightSvg;
 
     const childrenContainer = wrapper.querySelector(
       ":scope > .nav-tree-children",
@@ -827,13 +831,13 @@ export class NavigationTree {
 
   #navigateTo(node) {
     if (node.type === "annotation" && node.annotationId) {
-      // Select the annotation
       this.pane.annotationManager?.selectAnnotation?.(node.annotationId);
+      const top = window.innerHeight * (1-node.top);
+      this.pane.scrollToPoint(node.pageIndex, 0, top);
+    } else {
+      this.pane.scrollToPoint(node.pageIndex, node.left, node.top);
     }
-
-    this.pane.scrollToPoint(node.pageIndex, node.left, node.top);
-
-    // Don't hide if something is pinned
+ 
     if (this.pinnedPath.length === 0) {
       this.hide();
     }
@@ -848,10 +852,6 @@ export class NavigationTree {
     };
     return colors[colorName] || colors.yellow;
   }
-
-  // ═══════════════════════════════════════════════════════════════
-  // Branch Drawing
-  // ═══════════════════════════════════════════════════════════════
 
   #drawAllBranches() {
     if (!this.branchSvg || !this.treeWrapper) return;
@@ -998,7 +998,7 @@ export class NavigationTree {
     this.container.style.width = "auto";
 
     // Show backdrop - covers right half from ball position
-    this.backdrop.style.left = `${ballRightX - 200}px`;
+    this.backdrop.style.left = `${ballRightX - 300}px`;
     this.backdrop.style.right = "0";
     this.backdrop.style.width = "auto";
     this.backdrop.classList.add("visible");
@@ -1036,15 +1036,6 @@ export class NavigationTree {
 
     this.container.style.top = `${clampedTop}px`;
     this.container.style.maxHeight = `${viewportHeight - padding * 2}px`;
-  }
-
-  #setupContainerMouseLeave() {
-    // This method is intentionally empty now
-    // Subtree collapse is handled by #collapseSiblings when hovering different nodes
-    // The whole tree only closes when:
-    // 1. User clicks outside (on backdrop)
-    // 2. User clicks on a node to navigate
-    // 3. User presses Escape
   }
 
   hide() {

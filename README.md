@@ -123,6 +123,6 @@ Open <http://localhost:5173/?file={append the URL to the file here}> in **Chrome
 
 ## License
 
-MIT
+Apache 2.0
 
 ---

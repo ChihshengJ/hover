@@ -41,7 +41,7 @@ export class FloatingToolbar {
     this.isTreeOpen = false;
     this.treeOpenThreshold = 100; // Pixels to drag left before tree opens
     this.ballOriginalRight = 35;
-    this.ballTreeOpenRight = null; // Calculated based on viewport
+    this.ballTreeOpenRight = null;
 
     this.#createToolbar();
     /** @type {NavigationTree} */
@@ -137,14 +137,14 @@ export class FloatingToolbar {
     svgFilter.style.height = "0";
     svgFilter.innerHTML = `
       <defs>
-        <filter id="goo" x="-75%" y="-75%" width="250%" height="250%">
-          <feGaussianBlur in="SourceGraphic" stdDeviation="8" result="blur" />
+        <filter id="goo" x="-75%" y="-75%" width="300%" height="300%">
+          <feGaussianBlur in="SourceGraphic" stdDeviation="10" result="blur" />
           <feColorMatrix in="blur" mode="matrix" 
             values="1 0 0 0 0  
                     0 1 0 0 0  
                     0 0 1 0 0  
                     0 0 0 25 -8" result="goo" />
-          <feGaussianBlur in="goo" stdDeviation="3" result="softGlow"/>
+          <feGaussianBlur in="goo" stdDeviation="5" result="softGlow"/>
           <feComposite in="goo" in2="softGlow" operator="over"/>
         </filter>
       </defs>
@@ -573,7 +573,7 @@ export class FloatingToolbar {
     const ballWidth = 75;
 
     // Position ball at center of window
-    this.ballTreeOpenRight = (viewportWidth - ballWidth) / 3;
+    this.ballTreeOpenRight = viewportWidth / 3;
 
     // Calculate where the ball will be after animation
     const ballFinalLeft = viewportWidth - this.ballTreeOpenRight - ballWidth;
@@ -731,7 +731,7 @@ export class FloatingToolbar {
 
   #updatePosition() {
     const containerRect = this.pane.paneEl.getBoundingClientRect();
-    const centerY = containerRect.top + containerRect.height / 2;
+    const centerY = containerRect.top + containerRect.height / 2 - 37;
 
     this.wrapper.style.top = `${centerY}px`;
     if (!this.isTreeOpen) {
@@ -785,9 +785,9 @@ export class FloatingToolbar {
     const img = btn.querySelector("img");
 
     const config = {
-      0: { src: "public/book.svg", title: "Single page view" },
-      1: { src: "public/even.png", title: "Even spread (1-2, 3-4...)" },
-      2: { src: "public/odd.png", title: "Odd spread (1, 2-3, 4-5...)" },
+      0: { src: "/assets/book.svg", title: "Single page view" },
+      1: { src: "/assets/even.png", title: "Even spread (1-2, 3-4...)" },
+      2: { src: "/assets/odd.png", title: "Odd spread (1, 2-3, 4-5...)" },
     };
 
     const { src, title } = config[mode];

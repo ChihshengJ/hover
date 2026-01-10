@@ -420,7 +420,7 @@ export class PageView {
         anchor.target = "_blank";
         anchor.rel = "noopener noreferrer";
       } else if (a.dest) {
-        anchor.href = "javascript:void(0)";
+        anchor.href = `${a.dest}`;
         let showTimer = null;
 
         anchor.addEventListener("mouseenter", async (e) => {
@@ -434,15 +434,16 @@ export class PageView {
           showTimer = setTimeout(async () => {
             const result = await this.#resolveDestToPosition(a.dest);
             if (!result) return;
-
             anchor.dataset.dest = `${result.left},${result.pageIndex},${result.top}`;
-            await citationPopup.show(
-              anchor,
-              this.#findCiteText.bind(this),
-              result.left,
-              result.pageIndex,
-              result.top,
-            );
+            if (a.dest.split(".")[0] === "cite") {
+              await citationPopup.show(
+                anchor,
+                this.#findCiteText.bind(this),
+                result.left,
+                result.pageIndex,
+                result.top,
+              );
+            }
           }, 200);
         });
 

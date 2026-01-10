@@ -62,15 +62,16 @@
   filter: url(#goo) drop-shadow(0 .3em .1em #00000099) drop-shadow(0 -.05em .05em #000000e6);
   background-image:
     radial-gradient(
-      ellipse 50% 50% at 75% 85%,
-      rgba(0, 0, 0, 0.3) 0%,
-      transparent 45%
+      ellipse 30% 50% at 75% 85%,
+      rgba(0, 0, 0, 0.9) 0%,
+      transparent 40%
     ),
     linear-gradient(
       130deg,
-      rgba(120, 120, 120, 0.5) 12%,
-      rgba(255, 255, 255, 0.4) 35%,
-      rgba(210, 210, 210, 0.5) 91.49%
+      rgba(100, 100, 100, 0.5) 20%,
+      rgba(255, 255, 255, 0.5) 30%,
+      rgba(255, 255, 255, 0.5) 50%,
+      rgba(190, 190, 190, 0.5) 85%
     ),
     radial-gradient(
       30px 30px at calc(var(--x) * 1%) calc(var(--y) * 1%),
@@ -120,11 +121,6 @@
 
 .goo-container:hover:not(.dragging) {
   transform: scale(1.1);
-  filter: brightness(1.05);
-}
-
-.goo-container.dragging {
-  filter: brightness(1.05);
 }
 
 .goo-container.dragging .floating-ball {

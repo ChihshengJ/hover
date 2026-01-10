@@ -1,4 +1,5 @@
 export class CitationPopup {
+  citation;
   constructor() {
     this.popup = null;
     this.currentAnchor = null;
@@ -46,7 +47,6 @@ export class CitationPopup {
   }
 
   async show(anchor, findCiteTextCallback, left, pageIndex, top) {
-    // If showing the same anchor, just cancel any pending close
     if (this.currentAnchor === anchor && this.popup.style.display === "block") {
       this.cancelClose();
       return;
@@ -282,7 +282,12 @@ export class CitationPopup {
       toggleBtn.addEventListener("click", (e) => {
         e.stopPropagation();
         this.isExpanded = !this.isExpanded;
-        this.#updateTextDisplay(text, textElement, toggleBtn, this.renderTextWithLinks);
+        this.#updateTextDisplay(
+          text,
+          textElement,
+          toggleBtn,
+          this.renderTextWithLinks,
+        );
         // this.positionPopup();
       });
 
@@ -423,14 +428,18 @@ export class CitationPopup {
         toggleBtn.addEventListener("click", (e) => {
           e.stopPropagation();
           this.isExpanded = !this.isExpanded;
-          this.#updateTextDisplay(data.abstract, abstractEl, toggleBtn, renderAbstract);
+          this.#updateTextDisplay(
+            data.abstract,
+            abstractEl,
+            toggleBtn,
+            renderAbstract,
+          );
           this.positionPopup();
         });
         abstractEl.textContent = truncatedText;
         container.appendChild(abstractEl);
         container.appendChild(toggleBtn);
-      }
-      else {
+      } else {
         abstractEl.textContent = data.abstract;
         container.appendChild(abstractEl);
       }
@@ -541,14 +550,16 @@ export class CitationPopup {
 
     // Extract authors from gs_a (contains authors, journal, year)
     const authorsText = [...firstResult.querySelectorAll(".gs_fmaa a")]
-    .map((a) => a.textContent?.trim())
-    .filter(Boolean)
-    .join(", ");
+      .map((a) => a.textContent?.trim())
+      .filter(Boolean)
+      .join(", ");
 
     // Extract abstract/snippet
     const abstract1 = firstResult.querySelector(".gsh_csp")?.textContent || "";
-    const abstract2 = firstResult.querySelector(".gs_fma_snp")?.textContent || "";
-    const abstract = abstract1.length >= abstract2.length ? abstract1 : abstract2;
+    const abstract2 =
+      firstResult.querySelector(".gs_fma_snp")?.textContent || "";
+    const abstract =
+      abstract1.length >= abstract2.length ? abstract1 : abstract2;
 
     // Build scholar search URL
     const scholarUrl = `https://scholar.google.com/scholar?q=${encodeURIComponent(query)}&hl=en`;

@@ -71,7 +71,10 @@ export class TextSelectionManager {
    * @returns {string}
    */
   #normalizeText(text) {
-    return text.replace(/\x00/g, "").normalize("NFC");
+    return text
+      .replace(/\x00/g, "")
+      .replace(/[\r\n]+/g, " ")
+      .normalize("NFC");
   }
 
   /**
@@ -298,7 +301,7 @@ export class TextSelectionManager {
             const isNearEdge =
               rect.top < layerRect.height * 0.07 ||
               rect.top > layerRect.height * 0.92 ||
-              rect.left < layerRect.width * 0.08;
+              rect.left < layerRect.width * 0.06;
             if (isExist && !isWholePage && !isNearEdge) return true;
             return false;
           });

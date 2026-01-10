@@ -217,7 +217,6 @@ export class AnnotationManager {
 
     const { color, type } = options;
 
-    // Build page ranges from selection data, converting to normalized rects
     const pageRanges = this.#pendingSelection.map((sel) => {
       const pageView = this.#pane.pages[sel.pageNumber - 1];
       const layerWidth =
@@ -227,7 +226,6 @@ export class AnnotationManager {
         parseFloat(pageView.textLayer.style.height) ||
         pageView.wrapper.clientHeight;
 
-      // Convert pixel rects to normalized ratios (0-1)
       const normalizedRects = sel.rects.map((rect) => ({
         leftRatio: rect.left / layerWidth,
         topRatio: rect.top / layerHeight,
@@ -242,18 +240,17 @@ export class AnnotationManager {
       };
     });
 
-    // Create annotation in document model
+    console.log(pageRanges);
+
     const annotation = this.#pane.document.addAnnotation({
       type,
       color,
       pageRanges,
     });
 
-    // Clear selection
     document.getSelection()?.removeAllRanges();
     this.#pendingSelection = null;
 
-    // Hide toolbar
     this.#toolbar.hide();
 
     return annotation;

@@ -42,7 +42,7 @@ It all starts with a ball:
 <img src="assets/ball_demo.png" width="120" alt="Hover Banner"/>
 </p>
 
-- **Left-click**: open the full mini toolbar which includes **dark mode**, **split window**, **fit-width**, **horizontal spread**, and **zoom in/out**.
+- **Left-click**: open the full mini toolbar which includes **dark mode**, **split window**, **hand tool/cursor**, **horizontal spread**, and **zoom in/out**.
 
 <p align="center">
 <img src="assets/ball_expand.gif" width="90" alt="Hover Banner"/>
@@ -91,7 +91,7 @@ Full vim motion support for reading, highlighting, and citation preview (under d
 
 This project will be released as a browser extension for Chrome, Safari, and Firefox.
 
-Latest commit is always runnable so you can clone the repo and use npm to run it as a demo locally.
+Latest commit is always runnable so you can clone the repo and use npm to build and load it in Chrome.
 Make sure you install the dependencies using
 
 ```bash
@@ -101,11 +101,10 @@ npm install
 And then use
 
 ```bash
-npm run dev
+npm run build:ext
 ```
 
-To start the service.
-Open <http://localhost:5173/?file={append the URL to the file here}> in **Chrome** and it should be running.
+Open Chrome, navigate to [Chorme extension management](chrome://extensions/) and load the _dist_ folder to use the extension.
 
 ---
 

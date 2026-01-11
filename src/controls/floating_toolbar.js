@@ -104,9 +104,9 @@ export class FloatingToolbar {
     this.toolbarBottom = document.createElement("div");
     this.toolbarBottom.className = "floating-toolbar floating-toolbar-bottom";
     this.toolbarBottom.innerHTML = `
-      <button class="tool-btn" data-action="fit-width">
+      <button class="tool-btn" data-action="hand-tool">
         <div class="inner">
-          <img src="/assets/fit.svg" width="23" />
+          <img src="/assets/handtool.svg" width="20" />
         </div>
       </button>
       <button class="tool-btn" data-action="zoom-in">
@@ -367,6 +367,8 @@ export class FloatingToolbar {
       this.lastClickTime = 0;
     } else {
       // Single click - do nothing now (tree is opened by drag)
+      this.pane.fitWidth(0.8);
+      this.pane.controls.updateZoomDisplay();
       this.lastClickTime = now;
     }
   }
@@ -539,9 +541,6 @@ export class FloatingToolbar {
 
     this.gooContainer.classList.remove("dragging");
     document.removeEventListener("mousemove", this.#boundGooUpdate);
-    // Reset goo position to center
-    this.gooContainer.style.setProperty("--x", 50);
-    this.gooContainer.style.setProperty("--y", 50);
     document.body.style.cursor = "";
 
     // If tree is not open, snap gooContainer back
@@ -683,7 +682,7 @@ export class FloatingToolbar {
     const inBottomZone =
       mouseY >= bottomRect.top && mouseY <= bottomRect.bottom;
 
-    const newZone = inTopZone ? "top" : inBottomZone ? "bottom" : null;
+    const newZone = inTopZone ? 1 : inBottomZone ? 0 : null;
 
     if (newZone !== this.activeJumpZone) {
       if (this.jumpTimeout) {
@@ -697,9 +696,9 @@ export class FloatingToolbar {
 
       this.activeJumpZone = newZone;
 
-      if (newZone) {
+      if (newZone !== null) {
         const indicator =
-          newZone === "top" ? this.jumpTopIndicator : this.jumpBottomIndicator;
+          newZone === 1 ? this.jumpTopIndicator : this.jumpBottomIndicator;
         indicator.classList.add("active");
 
         this.jumpTimeout = setTimeout(() => {
@@ -707,26 +706,24 @@ export class FloatingToolbar {
             indicator.classList.add("triggered");
             this.#executeJump(newZone);
           }
-        }, 200);
+        }, 150);
       }
     }
   }
 
   #executeJump(direction) {
     this.isJumping = true;
-    this.gooContainer.classList.add("jumping");
 
-    if (direction === "top") {
+    if (direction === 1) {
       this.pane.scrollToTop();
     } else {
       this.pane.scrollToBottom();
     }
 
     setTimeout(() => {
-      this.gooContainer.classList.remove("jumping");
       this.isJumping = false;
       this.#endDrag();
-    }, 150);
+    }, 200);
   }
 
   #updatePosition() {
@@ -765,9 +762,9 @@ export class FloatingToolbar {
       case "horizontal-spread":
         this.#spread();
         break;
-      case "fit-width":
-        this.pane.fitWidth();
-        this.pane.controls.updateZoomDisplay();
+      case "hand-tool":
+        const isHandMode = this.pane.toggleHandMode();
+        this.#updateHandModeIcon(isHandMode);
     }
   }
 
@@ -793,6 +790,23 @@ export class FloatingToolbar {
     const { src, title } = config[mode];
     img.src = src;
     btn.title = title;
+  }
+
+  #updateHandModeIcon(isHandMode) {
+    const btn = this.toolbarBottom.querySelector('[data-action="hand-tool"]');
+    const img = btn.querySelector("img");
+    
+    if (isHandMode) {
+      img.src = "/assets/cursor.svg";
+      img.width = "18";
+      btn.title = "Switch to selection mode";
+      btn.classList.add("active");
+    } else {
+      img.src = "/assets/handtool.svg";
+      img.width = "20";
+      btn.title = "Switch to hand mode";
+      btn.classList.remove("active");
+    }
   }
 
   #nightmode() {
@@ -849,6 +863,7 @@ export class FloatingToolbar {
     this.pane.scroller.addEventListener("scroll", () => {
       this.updatePageNumber();
     });
+    this.#updateHandModeIcon(this.pane.handMode);
   }
 
   destroy() {

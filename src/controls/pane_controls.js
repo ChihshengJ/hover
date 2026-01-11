@@ -94,7 +94,7 @@ export class PaneControls {
       `V ${y + h - r}`,
       `A ${r} ${r} 0 0 0 ${x + r} ${y + h}`,
       `H ${startX}`,
-    ].join(' ');
+    ].join(" ");
   }
 
   #createProgressRing() {
@@ -133,7 +133,7 @@ export class PaneControls {
       this.progressRing.style.height = `${height}px`;
 
       const r = 19;
-      const w = width - 2;
+      const w = width - 3;
       const h = height - 2;
       const pathD = this.#getRoundedRectPath(w, h, r);
 

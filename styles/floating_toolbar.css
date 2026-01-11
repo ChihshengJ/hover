@@ -49,6 +49,7 @@
   --x: 50;
   --y: 50;
   --goo-opacity: 0;
+  --brt: 1;
   transition:
     transform 0.3s cubic-bezier(0.1, 0.3, 0.2, 1),
     opacity 0.3s ease;
@@ -59,32 +60,36 @@
   position: absolute;
   border-radius: 50%;
   inset: -25px; /* Expand beyond to allow blob to stretch */
-  filter: url(#goo) drop-shadow(0 .3em .1em #00000099) drop-shadow(0 -.05em .05em #000000e6);
-  background-image:
+  filter: url(#goo) drop-shadow(0 0.3em 0.1em #00000099)
+    drop-shadow(0 -0.05em 0.05em #000000e6) brightness(var(--brt));
+  background:
     radial-gradient(
-      ellipse 30% 50% at 75% 85%,
-      rgba(0, 0, 0, 0.9) 0%,
-      transparent 40%
-    ),
+        ellipse 30% 50% at 75% 85%,
+        rgba(0, 0, 0, 0.3) 0%,
+        transparent 40%
+      )
+      content-box,
     linear-gradient(
-      130deg,
-      rgba(100, 100, 100, 0.5) 20%,
-      rgba(255, 255, 255, 0.5) 30%,
-      rgba(255, 255, 255, 0.5) 50%,
-      rgba(190, 190, 190, 0.5) 85%
-    ),
+        130deg,
+        rgba(180, 180, 180, 0.5) 15%,
+        rgba(255, 255, 255, 0.5) 30%,
+        rgba(255, 255, 255, 0.5) 50%,
+        rgba(190, 190, 190, 0.5) 85%
+      )
+      content-box,
     radial-gradient(
-      30px 30px at calc(var(--x) * 1%) calc(var(--y) * 1%),
-      rgba(230, 230, 230, var(--goo-opacity)) 0%,
-      transparent 100%
-    );
-  background-clip: content-box, content-box, border-box;
+        30px 30px at calc(var(--x) * 1%) calc(var(--y) * 1%),
+        rgba(255, 255, 255, var(--goo-opacity)) 0%,
+        transparent 100%
+      )
+      border-box;
+  /* background-clip: content-box, content-box, border-box; */
   padding: 20px;
   z-index: 0;
   pointer-events: none;
   transition:
-    filter 0.3s ease,
-    --goo-opacity 0.3s ease,
+    filter 0.2s ease,
+    --goo-opacity 0.2s ease;
 }
 
 .goo-container.dragging::before {
@@ -196,9 +201,9 @@
   opacity: 0;
   transform: scale(0) translateY(0);
 
-  transition: 
+  transition:
     opacity 0.3s var(--btn-delay),
-    transform 0.5s var(--btn-delay) cubic-bezier(0.165, 0.840, 0.440, 1.000);
+    transform 0.5s var(--btn-delay) cubic-bezier(0.165, 0.84, 0.44, 1);
 }
 
 [data-state="expanding"] .tool-btn,
@@ -251,12 +256,12 @@
 
 .jump-indicator.jump-top {
   bottom: 100%;
-  margin-bottom: 230px;
+  margin-bottom: 180px;
 }
 
 .jump-indicator.jump-bottom {
   top: 100%;
-  margin-top: 280px;
+  margin-top: 230px;
 }
 
 .jump-indicator.active {
@@ -273,19 +278,3 @@
   transform: translateX(-50%) scale(1.2);
 }
 
-/* Ball jumping animation */
-.goo-container.jumping {
-  animation: jump-pulse 0.15s ease-out;
-}
-
-@keyframes jump-pulse {
-  0% {
-    transform: scale(1);
-  }
-  50% {
-    transform: scale(1.15);
-  }
-  100% {
-    transform: scale(1);
-  }
-}

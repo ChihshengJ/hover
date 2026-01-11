@@ -73,13 +73,17 @@
   font-weight: 400;
   color: rgba(0, 0, 0, 0.5);
   cursor: pointer;
-  transition: all 0.15s ease;
+  transition: all 0.1s ease;
 }
 
 .citation-tab:hover {
   background: rgba(0, 0, 0, 0.06);
   color: rgba(0, 0, 0, 0.6);
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+}
+
+.citation-tab:active {
+  background: rgba(0, 0, 0, 0.3);
 }
 
 .citation-tab.active {

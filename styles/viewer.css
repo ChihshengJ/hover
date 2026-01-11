@@ -99,6 +99,23 @@ body {
     inset 0 0 4px 2px rgba(25, 119, 235, 0.8);
 }
 
+.pane-scroll-area.hand-mode {
+  cursor: grab;
+}
+
+.pane-scroll-area.hand-mode.panning {
+  cursor: grabbing;
+}
+
+.pane-scroll-area.hand-mode .textLayer {
+  user-select: none;
+  pointer-events: none;
+}
+
+.pane-scroll-area.hand-mode .annotationLayer {
+  pointer-events: none;
+}
+
 /***************/
 /* Resizer */
 .split-resizer {

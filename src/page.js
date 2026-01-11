@@ -248,7 +248,8 @@ export class PageView {
     };
 
     let startIndex = -1;
-    let minDistance = 30;
+    // 500 is only an estimate for the largest scale of the system
+    let minDistance = 500;
 
     try {
       // Find the closest span to the target position
@@ -283,7 +284,9 @@ export class PageView {
         }
       }
 
-      if (startIndex === -1) return null;
+      if (startIndex === -1) {
+        throw new Error("Failed to locate the coordinates of the reference.");
+      }
 
       // Collect reference text with smart boundary detection
       const items = texts.items;
@@ -355,9 +358,9 @@ export class PageView {
         reference.push(text);
         // Check standalone period often ends a reference
         if (text.trim() === ".") {
-          console.log(
-            `end at standalone period, tuple:${items.slice(i - 2, i + 2).map((x) => x.str)}`,
-          );
+          // console.log(
+          //   `end at standalone period, tuple:${items.slice(i - 2, i + 2).map((x) => x.str)}`,
+          // );
           break;
         }
       }

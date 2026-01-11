@@ -39,6 +39,10 @@ export class ViewerPane {
     this.spreadMode = 0;
     this.spreadRows = [];
 
+    this.handMode = false;
+    this.isPanning = false;
+    this.panStart = { x: 0, y: 0, scrollLeft: 0, scrollTop: 0};
+
     this.textSelectionManager = new TextSelectionManager(this);
     this.annotationManager = null;
 
@@ -655,6 +659,74 @@ export class ViewerPane {
 
   clearSelection() {
     this.textSelectionManager.clearSelection();
+  }
+
+  toggleHandMode() {
+    this.handMode = !this.handMode;
+    
+    if (this.handMode) {
+      // Clear any existing selection
+      this.clearSelection();
+      this.scroller.classList.add("hand-mode");
+      this.#setupPanHandler();
+    } else {
+      this.scroller.classList.remove("hand-mode", "panning");
+      this.#teardownPanHandler();
+    }
+    
+    return this.handMode;
+  }
+
+  #setupPanHandler() {
+    this._onPanStart = (e) => {
+      // Only handle left mouse button
+      if (e.button !== 0) return;
+      
+      // Ignore clicks on interactive elements
+      if (e.target.closest("a, button, .pane-controls, .annotation-toolbar-container")) return;
+      
+      e.preventDefault();
+      this.isPanning = true;
+      this.scroller.classList.add("panning");
+      
+      this.panStart = {
+        x: e.clientX,
+        y: e.clientY,
+        scrollLeft: this.scroller.scrollLeft,
+        scrollTop: this.scroller.scrollTop,
+      };
+    };
+    
+    this._onPanMove = (e) => {
+      if (!this.isPanning) return;
+      
+      const deltaX = e.clientX - this.panStart.x;
+      const deltaY = e.clientY - this.panStart.y;
+      
+      this.scroller.scrollLeft = this.panStart.scrollLeft - deltaX;
+      this.scroller.scrollTop = this.panStart.scrollTop - deltaY;
+    };
+    
+    this._onPanEnd = () => {
+      if (!this.isPanning) return;
+      this.isPanning = false;
+      this.scroller.classList.remove("panning");
+    };
+    
+    this.scroller.addEventListener("mousedown", this._onPanStart);
+    document.addEventListener("mousemove", this._onPanMove);
+    document.addEventListener("mouseup", this._onPanEnd);
+  }
+
+  #teardownPanHandler() {
+    if (this._onPanStart) {
+      this.scroller.removeEventListener("mousedown", this._onPanStart);
+      document.removeEventListener("mousemove", this._onPanMove);
+      document.removeEventListener("mouseup", this._onPanEnd);
+      this._onPanStart = null;
+      this._onPanMove = null;
+      this._onPanEnd = null;
+    }
   }
 
   destroy() {

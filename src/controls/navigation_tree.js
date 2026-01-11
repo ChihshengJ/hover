@@ -1,17 +1,4 @@
 /**
- * NavigationTree - Vertical expanding tree navigation for PDF viewer
- *
- * Features:
- * - Horizontal drag from ball to open
- * - First level centered on ball
- * - Children expand vertically below parent with indent
- * - Vertical branch lines connecting children
- * - Hover auto-expand at any depth
- * - Path pinning (pinning child pins entire ancestor chain)
- * - Vertical scroll when content overflows
- */
-
-/**
  * @typedef {Object} TreeNode
  * @property {string} id
  * @property {string} title
@@ -28,7 +15,6 @@
  * @property {{color: string}[]} [annotationDots] - dots to show on section
  * @property {number} [extraAnnotationCount] - count beyond 3 dots
  */
-
 
 const rightSvg = `
   <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-chevron-right" viewBox="0 0 16 16">
@@ -550,12 +536,12 @@ export class NavigationTree {
   }
 
   #createNodeElement(node, depth, path) {
-    const wrapper = document.createElement("div");
-    wrapper.className = "nav-tree-item";
-    wrapper.dataset.nodeId = node.id;
-    wrapper.dataset.depth = depth;
-    wrapper.dataset.path = JSON.stringify(path);
-    wrapper.style.maxWidth = (window.innerWidth - this.ballRightX) * 0.9;
+    const item = document.createElement("div");
+    item.className = "nav-tree-item";
+    item.dataset.nodeId = node.id;
+    item.dataset.depth = depth;
+    item.dataset.path = JSON.stringify(path);
+    item.style.maxWidth = this.treeWrapper.style.width;
 
     // Node row
     const row = document.createElement("div");
@@ -571,7 +557,7 @@ export class NavigationTree {
       chevron.innerHTML = node.expanded ? downSvg : rightSvg;
       chevron.addEventListener("click", (e) => {
         e.stopPropagation400
-        this.#togglePin(node, wrapper, path);
+        this.#togglePin(node, item, path);
       });
     }
     row.appendChild(chevron);
@@ -617,7 +603,7 @@ export class NavigationTree {
       row.appendChild(dotsContainer);
     }
 
-    wrapper.appendChild(row);
+    item.appendChild(row);
 
     // Children container
     if (hasChildren) {
@@ -632,13 +618,13 @@ export class NavigationTree {
           childrenContainer.appendChild(childEl);
         });
       }
-      wrapper.appendChild(childrenContainer);
+      item.appendChild(childrenContainer);
     }
 
     // Events
-    this.#attachNodeEvents(row, wrapper, node, path);
+    this.#attachNodeEvents(row, item, node, path);
 
-    return wrapper;
+    return item;
   }
 
   #attachNodeEvents(row, wrapper, node, path) {
@@ -674,7 +660,7 @@ export class NavigationTree {
     });
 
     // Click to navigate
-    row.addEventListener("click", () => {
+    row.querySelector(".nav-tree-title").addEventListener("click", () => {
       this.#navigateTo(node);
     });
   }
@@ -1017,25 +1003,25 @@ export class NavigationTree {
 
   #centerOnBall() {
     // Calculate the center point of the tree content
-    const treeList = this.container.querySelector(".nav-tree-list");
-    if (!treeList) return;
+    const wrapper = this.container.querySelector(".nav-tree-wrapper");
+    if (!wrapper) return;
 
-    const listRect = treeList.getBoundingClientRect();
-    const listHeight = listRect.height;
+    const wrapperRect = wrapper.getBoundingClientRect();
+    const wrapperHeight = wrapperRect.height;
     const viewportHeight = window.innerHeight;
 
     // Target: center of tree aligns with ball center
-    const targetTop = this.ballCenterY - listHeight / 2;
+    const targetTop = this.ballCenterY - wrapperHeight / 2;
 
     // Clamp to viewport bounds with padding
-    const padding = 20;
+    const padding = 30;
     const clampedTop = Math.max(
       padding,
-      Math.min(targetTop, viewportHeight - listHeight - padding),
+      Math.min(targetTop, viewportHeight - wrapperHeight - padding),
     );
 
-    this.container.style.top = `${clampedTop}px`;
-    this.container.style.maxHeight = `${viewportHeight - padding * 2}px`;
+    wrapper.style.top = `${clampedTop}px`;
+    this.container.style.height = `${viewportHeight}px`;
   }
 
   hide() {

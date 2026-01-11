@@ -144,6 +144,7 @@ export class AnnotationManager {
   }
 
   #checkForNewSelection() {
+    if (this.#pane.handMode) return;
     if (!this.#hasActiveSelection()) return;
 
     const selectionData = this.#pane.textSelectionManager.getSelection();

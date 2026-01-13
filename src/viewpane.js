@@ -27,7 +27,7 @@ export class ViewerPane {
     this.id = options.id || crypto.randomUUID();
 
     this.scale = 1;
-    this.fitMode = "width";
+    this.fitMode = 1; // 1 or width, 2 for height
     this.pages = [];
     this.pageMap = new Map();
     this.visiblePages = new Set();
@@ -41,7 +41,7 @@ export class ViewerPane {
 
     this.handMode = false;
     this.isPanning = false;
-    this.panStart = { x: 0, y: 0, scrollLeft: 0, scrollTop: 0};
+    this.panStart = { x: 0, y: 0, scrollLeft: 0, scrollTop: 0 };
 
     this.textSelectionManager = new TextSelectionManager(this);
     this.annotationManager = null;
@@ -75,9 +75,6 @@ export class ViewerPane {
     this.annotationManager = new AnnotationManager(this);
   }
 
-  //*******************
-  // Creating elements
-  // ******************
   #createScroller() {
     this.scroller = document.createElement("div");
     this.scroller.className = "pane-scroll-area";
@@ -486,22 +483,33 @@ export class ViewerPane {
     this.annotationManager?.refresh();
   }
 
-  fitWidth(percentage = 1) {
+  fit(percentage = 1, overrideMode = 0) {
     const viewRect = this.scroller.getBoundingClientRect();
+    const fitMode = overrideMode === 1 ? 1 : this.fitMode;
+    if (fitMode === 1) {
+      if (this.spreadMode === 0) {
+        const intrinsicWidth = this.document.pageDimensions[0]?.width;
+        if (!intrinsicWidth) return;
 
-    if (this.spreadMode === 0) {
-      const intrinsicWidth = this.document.pageDimensions[0]?.width;
-      if (!intrinsicWidth) return;
-
-      const targetScale = (viewRect.width / intrinsicWidth) * percentage;
-      this.zoomAt(targetScale, viewRect.width / 2, viewRect.height / 2);
+        const targetScale = (viewRect.width / intrinsicWidth) * percentage;
+        this.zoomAt(targetScale, viewRect.width / 2, viewRect.height / 2);
+      } else {
+        // For spread mode, use intrinsic width of two pages + gap
+        const pageWidth = this.document.pageDimensions[0]?.width || 0;
+        const spreadWidth = pageWidth * 2 + 4; // 4px gap from CSS
+        const targetScale = (viewRect.width / spreadWidth) * percentage;
+        this.zoomAt(targetScale, viewRect.width / 2, viewRect.height / 2);
+      }
+      this.fitMode = 2;
     } else {
-      // For spread mode, use intrinsic width of two pages + gap
-      const pageWidth = this.document.pageDimensions[0]?.width || 0;
-      const spreadWidth = pageWidth * 2 + 4; // 4px gap from CSS
-      const targetScale = (viewRect.width / spreadWidth) * percentage;
+      const intrinsicHeight = this.document.pageDimensions[0]?.height;
+      if (!intrinsicHeight) return;
+      const targetScale = (viewRect.height / intrinsicHeight) * percentage;
       this.zoomAt(targetScale, viewRect.width / 2, viewRect.height / 2);
+      this.fitMode = 1;
     }
+
+    return this.fitMode;
   }
 
   spread() {
@@ -663,7 +671,7 @@ export class ViewerPane {
 
   toggleHandMode() {
     this.handMode = !this.handMode;
-    
+
     if (this.handMode) {
       // Clear any existing selection
       this.clearSelection();
@@ -673,7 +681,7 @@ export class ViewerPane {
       this.scroller.classList.remove("hand-mode", "panning");
       this.#teardownPanHandler();
     }
-    
+
     return this.handMode;
   }
 
@@ -681,14 +689,19 @@ export class ViewerPane {
     this._onPanStart = (e) => {
       // Only handle left mouse button
       if (e.button !== 0) return;
-      
+
       // Ignore clicks on interactive elements
-      if (e.target.closest("a, button, .pane-controls, .annotation-toolbar-container")) return;
-      
+      if (
+        e.target.closest(
+          "a, button, .pane-controls, .annotation-toolbar-container",
+        )
+      )
+        return;
+
       e.preventDefault();
       this.isPanning = true;
       this.scroller.classList.add("panning");
-      
+
       this.panStart = {
         x: e.clientX,
         y: e.clientY,
@@ -696,23 +709,23 @@ export class ViewerPane {
         scrollTop: this.scroller.scrollTop,
       };
     };
-    
+
     this._onPanMove = (e) => {
       if (!this.isPanning) return;
-      
+
       const deltaX = e.clientX - this.panStart.x;
       const deltaY = e.clientY - this.panStart.y;
-      
+
       this.scroller.scrollLeft = this.panStart.scrollLeft - deltaX;
       this.scroller.scrollTop = this.panStart.scrollTop - deltaY;
     };
-    
+
     this._onPanEnd = () => {
       if (!this.isPanning) return;
       this.isPanning = false;
       this.scroller.classList.remove("panning");
     };
-    
+
     this.scroller.addEventListener("mousedown", this._onPanStart);
     document.addEventListener("mousemove", this._onPanMove);
     document.addEventListener("mouseup", this._onPanEnd);

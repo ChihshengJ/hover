@@ -104,9 +104,9 @@ export class FloatingToolbar {
     this.toolbarBottom = document.createElement("div");
     this.toolbarBottom.className = "floating-toolbar floating-toolbar-bottom";
     this.toolbarBottom.innerHTML = `
-      <button class="tool-btn" data-action="hand-tool">
+      <button class="tool-btn" data-action="fit-width">
         <div class="inner">
-          <img src="/assets/handtool.svg" width="20" />
+          <img src="/assets/fit_width.svg" width="20" />
         </div>
       </button>
       <button class="tool-btn" data-action="zoom-in">
@@ -137,14 +137,14 @@ export class FloatingToolbar {
     svgFilter.style.height = "0";
     svgFilter.innerHTML = `
       <defs>
-        <filter id="goo" x="-75%" y="-75%" width="300%" height="300%">
-          <feGaussianBlur in="SourceGraphic" stdDeviation="10" result="blur" />
+        <filter id="goo" x="-75%" y="-75%" width="200%" height="200%">
+          <feGaussianBlur in="SourceGraphic" stdDeviation="15" result="blur" />
           <feColorMatrix in="blur" mode="matrix" 
             values="1 0 0 0 0  
                     0 1 0 0 0  
                     0 0 1 0 0  
-                    0 0 0 25 -8" result="goo" />
-          <feGaussianBlur in="goo" stdDeviation="5" result="softGlow"/>
+                    0 0 0 20 -8" result="goo" />
+          <feGaussianBlur in="goo" stdDeviation="8" result="softGlow"/>
           <feComposite in="goo" in2="softGlow" operator="over"/>
         </filter>
       </defs>
@@ -367,8 +367,8 @@ export class FloatingToolbar {
       this.lastClickTime = 0;
     } else {
       // Single click - do nothing now (tree is opened by drag)
-      this.pane.fitWidth(0.8);
-      this.pane.controls.updateZoomDisplay();
+      // this.pane.fitWidth(0.8);
+      // this.pane.controls.updateZoomDisplay();
       this.lastClickTime = now;
     }
   }
@@ -762,9 +762,10 @@ export class FloatingToolbar {
       case "horizontal-spread":
         this.#spread();
         break;
-      case "hand-tool":
-        const isHandMode = this.pane.toggleHandMode();
-        this.#updateHandModeIcon(isHandMode);
+      case "fit-width":
+        const fitMode = this.pane.fit();
+        this.#updateFitIcon(fitMode);
+        break;
     }
   }
 
@@ -792,19 +793,19 @@ export class FloatingToolbar {
     btn.title = title;
   }
 
-  #updateHandModeIcon(isHandMode) {
-    const btn = this.toolbarBottom.querySelector('[data-action="hand-tool"]');
+  #updateFitIcon(fitMode) {
+    const btn = this.toolbarBottom.querySelector('[data-action="fit-width"]');
     const img = btn.querySelector("img");
-    
-    if (isHandMode) {
-      img.src = "/assets/cursor.svg";
-      img.width = "18";
-      btn.title = "Switch to selection mode";
+
+    if (fitMode === 1) {
+      img.src = "/assets/fit_width.svg";
+      img.width = "20";
+      btn.title = "Fit horizontal";
       btn.classList.add("active");
     } else {
-      img.src = "/assets/handtool.svg";
-      img.width = "20";
-      btn.title = "Switch to hand mode";
+      img.src = "/assets/fit_height.svg";
+      img.width = "18";
+      btn.title = "Fit vertical";
       btn.classList.remove("active");
     }
   }
@@ -863,7 +864,6 @@ export class FloatingToolbar {
     this.pane.scroller.addEventListener("scroll", () => {
       this.updatePageNumber();
     });
-    this.#updateHandModeIcon(this.pane.handMode);
   }
 
   destroy() {

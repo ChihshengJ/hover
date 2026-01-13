@@ -56,15 +56,6 @@ export class AnnotationManager {
     this.#abortController = new AbortController();
     const { signal } = this.#abortController;
 
-    // listen for text selection changes
-    // document.addeventlistener(
-    //   "selectionchange",
-    //   () => {
-    //     this.#onselectionchange();
-    //   },
-    //   { signal },
-    // );
-
     // Hide toolbar when clicking outside
     document.addEventListener(
       "mousedown",
@@ -132,11 +123,6 @@ export class AnnotationManager {
       this.#selectAnnotation(annotationId);
     };
   }
-
-  // #onSelectionChange() {
-  //   // Track selection changes but don't show toolbar yet
-  //   // (wait for mouseup to avoid flickering during selection)
-  // }
 
   #hasActiveSelection() {
     const selection = document.getSelection();

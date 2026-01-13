@@ -12,7 +12,7 @@
 }
 
 .floating-toolbar-wrapper.hidden {
-  transform: translateX(calc(100% + 50px)); /* Slide out, leave ~10px peek */
+  transform: translateX(calc(100% + 50px));
   opacity: 0.6;
 }
 
@@ -59,26 +59,24 @@
   content: "";
   position: absolute;
   border-radius: 50%;
-  inset: -25px; /* Expand beyond to allow blob to stretch */
-  filter: url(#goo) drop-shadow(0 0.3em 0.1em #00000099)
-    drop-shadow(0 -0.05em 0.05em #000000e6) brightness(var(--brt));
+  inset: -20px; /* Expand beyond to allow blob to stretch */
+  filter: url(#goo) drop-shadow(0 0.3em 0.2em #00000099) brightness(var(--brt));
   background:
     radial-gradient(
         ellipse 30% 50% at 75% 85%,
-        rgba(0, 0, 0, 0.3) 0%,
+        rgba(0, 0, 0, 0.2) 0%,
         transparent 40%
       )
       content-box,
     linear-gradient(
         130deg,
-        rgba(180, 180, 180, 0.5) 15%,
-        rgba(255, 255, 255, 0.5) 30%,
-        rgba(255, 255, 255, 0.5) 50%,
-        rgba(190, 190, 190, 0.5) 85%
+        rgba(255, 255, 255, 1) 10%,
+        rgba(250, 250, 250, 1) 25%,
+        rgba(190, 190, 190, 1) 85%
       )
       content-box,
     radial-gradient(
-        30px 30px at calc(var(--x) * 1%) calc(var(--y) * 1%),
+        40px 40px at calc(var(--x) * 1%) calc(var(--y) * 1%),
         rgba(255, 255, 255, var(--goo-opacity)) 0%,
         transparent 100%
       )
@@ -277,4 +275,3 @@
   color: white;
   transform: translateX(-50%) scale(1.2);
 }
-

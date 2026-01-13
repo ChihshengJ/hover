@@ -177,7 +177,8 @@ body {
 .pane-controls-inner {
   display: flex;
   align-items: center;
-  gap: 12px;
+  justify-content: center;
+  gap: 8px;
   font-size: 13px;
   color: #333;
 }
@@ -208,6 +209,36 @@ body {
   padding: 2px 8px;
   font-size: 16px;
   font-weight: 600;
+}
+
+/* Fix image alignment in pane buttons */
+.pane-btn img {
+  display: block;
+  vertical-align: middle;
+}
+
+.pane-btn.small img {
+  margin: 0 auto;
+}
+
+/* Mode toggle button group */
+.pane-mode-toggle {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  background: rgba(0, 0, 0, 0.05);
+  border-radius: 6px;
+  padding: 2px;
+}
+
+.pane-mode-toggle .pane-btn {
+  padding: 4px 6px;
+  border-radius: 4px;
+}
+
+.pane-mode-toggle .pane-btn.active {
+  background: rgba(59, 130, 246, 0.15);
+  box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.15);
 }
 
 .pane-page-info,

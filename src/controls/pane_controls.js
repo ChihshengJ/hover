@@ -28,7 +28,11 @@ export class PaneControls {
           <span class="pane-zoom-level">100%</span>
           <button class="pane-btn small" data-action="zoom-in">+</button>
         </span>
-        <button class="pane-btn" data-action="fit-width" title="Fit to width">↔</button>
+        <button class="pane-btn small" data-action="fit-width" title="Fit to width">↔</button>
+        <span class="pane-mode-toggle">
+          <button class="pane-btn small active" data-action="cursor" title="Selection mode"><img src="/assets/cursor.svg" width="16" /></button>
+          <button class="pane-btn small" data-action="hand-tool" title="Hand tool"><img src="/assets/handtool.svg" width="16" /></button>
+        </span>
       </div>
     `;
 
@@ -125,7 +129,7 @@ export class PaneControls {
       const rect = this.element.getBoundingClientRect();
       if (rect.width === 0) return;
 
-      const width = rect.width + 6;
+      const width = rect.width + 2;
       const height = rect.height + 6;
 
       this.progressRing.setAttribute("viewBox", `0 0 ${width} ${height}`);
@@ -133,7 +137,7 @@ export class PaneControls {
       this.progressRing.style.height = `${height}px`;
 
       const r = 19;
-      const w = width - 3;
+      const w = width;
       const h = height - 2;
       const pathD = this.#getRoundedRectPath(w, h, r);
 
@@ -203,9 +207,35 @@ export class PaneControls {
         this.updateZoomDisplay();
         break;
       case "fit-width":
-        this.pane.fitWidth?.();
+        //Only fit width
+        this.pane.fit(1, 1);
         this.updateZoomDisplay();
         break;
+      case "hand-tool":
+        if (!this.pane.handMode) {
+          this.pane.toggleHandMode();
+          this.#updateModeToggle(true);
+        }
+        break;
+      case "cursor":
+        if (this.pane.handMode) {
+          this.pane.toggleHandMode();
+          this.#updateModeToggle(false);
+        }
+        break;
+    }
+  }
+
+  #updateModeToggle(isHandMode) {
+    const handBtn = this.element.querySelector('[data-action="hand-tool"]');
+    const cursorBtn = this.element.querySelector('[data-action="cursor"]');
+
+    if (isHandMode) {
+      handBtn.classList.add("active");
+      cursorBtn.classList.remove("active");
+    } else {
+      handBtn.classList.remove("active");
+      cursorBtn.classList.add("active");
     }
   }
 

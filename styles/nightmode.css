@@ -26,7 +26,7 @@ body.night-mode .citation-popup {
 }
 
 body.night-mode .citation-popup-header {
-  background: rgb(47, 48, 53, 1)
+  background: rgb(47, 48, 53, 1);
 }
 
 body.night-mode .citation-tab {
@@ -76,7 +76,21 @@ body.night-mode .citation-popup-toggle {
   color: #aaa;
 }
 
-.night-mode .pane-btn:hover {
+.night-mode .pane-mode-toggle {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.night-mode .pane-btn img {
+  filter: invert(0.8);
+}
+
+.night-mode .pane-btn.active {
+  background: rgba(59, 130, 246, 0.3);
+  border-color: rgba(59, 130, 246, 0.5);
+  box-shadow: inset 0 0 3px 1px rgba(255, 255, 255, 0.1);
+}
+
+.night-mode .pane-btn:not(.active):hover {
   background: rgba(255, 255, 255, 0.1);
   color: #fff;
 }
@@ -91,27 +105,29 @@ body.night-mode .citation-popup-toggle {
 /******************/
 /* floating ball */
 
-body.night-mode .goo-container::before {
+.night-mode .goo-container::before {
   filter: url(#goo) drop-shadow(0 0.3em 0.1em #00000099)
     drop-shadow(0 -0.05em 1em #ffffff4d);
-  background-image:
+  background:
     radial-gradient(
-      ellipse 50% 50% at 75% 85%,
-      rgba(0, 0, 0, 0.3) 0%,
-      transparent 45%
-    ),
+        ellipse 50% 50% at 75% 85%,
+        rgba(0, 0, 0, 0.5) 0%,
+        transparent 45%
+      )
+      content-box,
     linear-gradient(
-      140deg,
-      rgba(200, 200, 200, 0.4) 20%,
-      rgba(120, 120, 120, 0.5) 45%,
-      rgba(230, 230, 230, 0.5) 90%
-    ),
+        140deg,
+        rgba(200, 200, 200, 1) 20%,
+        rgba(120, 120, 120, 1) 45%,
+        rgba(230, 230, 230, 1) 90%
+      )
+      content-box,
     radial-gradient(
-      30px 30px at calc(var(--x) * 1%) calc(var(--y) * 1%),
-      rgba(200, 200, 200, var(--goo-opacity)) 0%,
-      transparent 100%
-    );
-  background-clip: content-box, content-box, border-box;
+        45px 45px at calc(var(--x) * 1%) calc(var(--y) * 1%),
+        rgba(200, 200, 200, var(--goo-opacity)) 0%,
+        transparent 100%
+      )
+      border-box;
 }
 
 .page-display.night-mode {

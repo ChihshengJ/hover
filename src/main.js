@@ -2,6 +2,7 @@ import * as pdfjsLib from "pdfjs-dist";
 import pdfjsWorker from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 import { PDFDocumentModel } from "./doc.js";
 import { SplitWindowManager } from "./window_manager.js";
+import { FileMenu } from "./controls/file_menu.js";
 
 import "../styles/viewer.css";
 import "../styles/text_layer.css";
@@ -11,6 +12,7 @@ import "../styles/navigation_tree.css";
 import "../styles/nightmode.css";
 import "../styles/annotations.css";
 import "../styles/progress_bar.css";
+import "../styles/file_menu.css";
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfjsWorker;
 
@@ -42,6 +44,8 @@ async function loadPdf(url) {
     const pdfDoc = await pdfmodel.load(url);
 
     wm.initialize();
+
+    const fileMenu = new FileMenu(wm);
 
     const metadata = await pdfDoc.getMetadata();
     if (metadata.info.Title) {

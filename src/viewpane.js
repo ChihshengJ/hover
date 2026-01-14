@@ -744,7 +744,13 @@ export class ViewerPane {
 
   destroy() {
     this.document.unsubscribe(this);
-    this.observer?.disconnect();
+    if (this.observer) {
+      for (const page of this.pages) {
+        this.observer.unobserve(page.wrapper);
+      }
+      this.observer?.disconnect();
+      this.observer = null;
+    }
     this.controls.destroy();
     this.textSelectionManager.destroy();
     this.annotationManager?.destroy();

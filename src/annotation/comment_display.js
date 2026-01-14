@@ -284,7 +284,11 @@ export class CommentDisplay {
   }
 
   destroy() {
-    this.#resizeObserver?.disconnect();
+    if (this.#resizeObserver) {
+      this.#resizeObserver.unobserve(this.#pane.scroller);
+      this.#resizeObserver.disconnect();
+      this.#resizeObserver = null;
+    }
     this.clear();
     this.#container?.remove();
   }

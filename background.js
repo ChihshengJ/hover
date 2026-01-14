@@ -12,7 +12,6 @@ async function setupRedirectRules() {
       action: {
         type: "redirect",
         redirect: {
-          // \\0 represents the entire matched URL from the regex
           regexSubstitution: `${viewerUrl}?file=\\0`,
         },
       },
@@ -23,7 +22,6 @@ async function setupRedirectRules() {
     },
   ];
 
-  // Clear existing dynamic rules and register the new ones
   await chrome.declarativeNetRequest.updateDynamicRules({
     removeRuleIds: [1],
     addRules: rules,
@@ -36,18 +34,58 @@ async function setupRedirectRules() {
 chrome.runtime.onInstalled.addListener(setupRedirectRules);
 chrome.runtime.onStartup.addListener(setupRedirectRules);
 
-// Handle messages from the viewer page
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (message.type === "FETCH_PDF") {
+    fetch(message.query)
+      .then((response) => response.arrayBuffer())
+      .then((buffer) => {
+        sendResponse({ data: Array.from(new Uint8Array(buffer)) });
+      })
+      .catch((err) => sendResponse({ error: err.message }));
+    return true;
+  }
+});
+
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.type === "FETCH_SCHOLAR") {
     fetchGoogleScholar(message.query)
       .then((result) => sendResponse({ success: true, data: result }))
       .catch((error) => sendResponse({ success: false, error: error.message }));
-    return true; // Keep message channel open for async response
+    return true;
+  }
+});
+
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (message.type === "FETCH_CITE") {
+    fetchGoogleScholarCite(message.query)
+      .then((result) => sendResponse({ success: true, data: result }))
+      .catch((error) => sendResponse({ success: false, error: error.message }));
+    return true;
   }
 });
 
 async function fetchGoogleScholar(query) {
   const searchUrl = `https://scholar.google.com/scholar?q=${encodeURIComponent(query)}&hl=en`;
+
+  const response = await fetch(searchUrl, {
+    headers: {
+      "User-Agent":
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+      Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+      "Accept-Language": "en-US,en;q=0.9",
+    },
+  });
+
+  if (!response.ok) {
+    throw new Error(`Scholar request failed: ${response.status}`);
+  }
+
+  const html = await response.text();
+  return { html, query };
+}
+
+async function fetchGoogleScholarCite(query) {
+  const searchUrl = `https://scholar.google.com/scholar?q=info:${query}:scholar.google.com&output=cite`;
 
   const response = await fetch(searchUrl, {
     headers: {

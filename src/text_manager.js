@@ -29,23 +29,30 @@ export class TextSelectionManager {
   register(pageView, textLayerDiv, endOfContent) {
     this.#textLayers.set(textLayerDiv, { endOfContent, pageView });
 
-    textLayerDiv.addEventListener("mousedown", (e) => {
+    const mousedownHandler = (e) => {
       if (
         e.target.matches(".textLayer span") ||
         e.target.closest(".textLayer span")
       ) {
         return;
       }
-
       textLayerDiv.classList.add("selecting");
-    });
+    };
 
-    // Normalize Unicode and remove null characters
-    textLayerDiv.addEventListener("copy", (event) => {
+    const copyHandler = (e) => {
       const selection = document.getSelection();
       const text = this.#normalizeText(selection.toString());
-      event.clipboardData.setData("text/plain", text);
-      event.preventDefault();
+      e.clipboardData.setData("text/plain", text);
+      e.preventDefault();
+    };
+
+    textLayerDiv.addEventListener("mousedown", mousedownHandler);
+    textLayerDiv.addEventListener("copy", copyHandler);
+
+    this.#textLayers.set(textLayerDiv, {
+      endOfContent,
+      pageView,
+      handlers: { mousedownHandler, copyHandler },
     });
 
     // Enable global listener if this is the first registration
@@ -58,6 +65,14 @@ export class TextSelectionManager {
    * @param {HTMLElement} textLayerDiv - The text layer element to unregister
    */
   unregister(textLayerDiv) {
+    const entry = this.#textLayers.get(textLayerDiv);
+    if (entry?.handlers) {
+      textLayerDiv.removeEventListener(
+        "mousedown",
+        entry.handlers.mousedownHandler,
+      );
+      textLayerDiv.removeEventListener("copy", entry.handlers.copyHandler);
+    }
     this.#textLayers.delete(textLayerDiv);
 
     if (this.#textLayers.size === 0 && this.#abortController) {

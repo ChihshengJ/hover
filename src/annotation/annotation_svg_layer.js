@@ -69,9 +69,11 @@ export class AnnotationSVGLayer {
    * @param {Array} annotations
    */
   render(annotations) {
-    // Clear existing
-    this.#svg.innerHTML = "";
+    for (const [id, group] of this.#annotationGroups) {
+      group.remove();
+    }
     this.#annotationGroups.clear();
+    this.#svg.innerHTML = "";
 
     for (const annotation of annotations) {
       this.#renderAnnotation(annotation);
@@ -456,7 +458,11 @@ export class AnnotationSVGLayer {
   }
 
   destroy() {
-    this.#resizeObserver?.disconnect();
+    if (this.#resizeObserver) {
+      this.#resizeObserver.unobserve(this.#pane.stage);
+      this.#resizeObserver.disconnect();
+      this.#resizeObserver = null;
+    }
     this.clear();
     this.#svg?.remove();
   }

@@ -53,7 +53,7 @@ export class FileMenu {
           <rect x="6" y="14" width="12" height="8"/>
         </svg>
         <span>Print</span>
-        <span class="shortcut">⌘P</span>
+        <span class="shortcut">âŒ˜P</span>
       </button>
       <button class="file-menu-item" data-action="save">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
@@ -62,7 +62,7 @@ export class FileMenu {
           <line x1="12" y1="15" x2="12" y2="3"/>
         </svg>
         <span>Save PDF</span>
-        <span class="shortcut">⌘S</span>
+        <span class="shortcut">âŒ˜S</span>
       </button>
       <div class="file-menu-divider"></div>
       <button class="file-menu-item" data-action="share">
@@ -275,16 +275,50 @@ export class FileMenu {
     window.print();
   }
 
-  #save() {
-    const pdfUrl = this.wm.document.pdfDoc?.loadingTask?.source?.url;
-    if (pdfUrl) {
-      const link = document.createElement("a");
-      link.href = pdfUrl;
-      link.download = document.title.replace(" - Hover PDF", "") + ".pdf";
-      link.click();
-    } else {
-      console.warn("Cannot save: PDF URL not available");
+  async #save() {
+    const pdfDocument = this.wm.document;
+
+    if (!pdfDocument?.pdfDoc) {
+      console.warn("Cannot save: PDF document not available");
+      return;
     }
+
+    try {
+      // Show saving indicator
+      this.#showToast("Saving PDF...");
+
+      // Get PDF data with annotations embedded
+      const data = await pdfDocument.saveWithAnnotations();
+
+      // Create blob and download
+      const blob = new Blob([data], { type: "application/pdf" });
+      const url = URL.createObjectURL(blob);
+
+      const link = window.document.createElement("a");
+      link.href = url;
+      link.download = this.#getFilename();
+      link.click();
+
+      // Clean up
+      URL.revokeObjectURL(url);
+
+      if (pdfDocument.hasAnnotations()) {
+        this.#showToast("PDF saved with annotations!");
+      } else {
+        this.#showToast("PDF saved!");
+      }
+    } catch (error) {
+      console.error("Error saving PDF:", error);
+      this.#showToast("Error saving PDF");
+    }
+  }
+
+  #getFilename() {
+    let title = window.document.title.replace(" - Hover PDF", "");
+    if (!title.toLowerCase().endsWith(".pdf")) {
+      title += ".pdf";
+    }
+    return title;
   }
 
   #share() {
@@ -355,7 +389,7 @@ export class FileMenu {
       <div class="file-menu-modal">
         <div class="file-menu-modal-header">
           <h2>Document Information</h2>
-          <button class="file-menu-modal-close">×</button>
+          <button class="file-menu-modal-close">Ã—</button>
         </div>
         <div class="file-menu-modal-content">
           <div class="metadata-row">

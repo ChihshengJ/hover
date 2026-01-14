@@ -19,8 +19,7 @@
   align-items: flex-start;
   gap: 0;
   pointer-events: none;
-  transition:
-    filter 0.1s ease;
+  transition: filter 0.2s ease;
 }
 
 .file-menu-button {
@@ -57,15 +56,13 @@
 }
 
 .file-menu-container.active {
-  filter: 
-    url(#file-menu-goo-filter)
-    drop-shadow(0 0 5px rgb(0, 0, 0, 0.5))
-    drop-shadow(-1px -1px 1px rgb(255,255,255, 0.2))
+  filter: url(#file-menu-goo-filter) drop-shadow(0 0 5px rgb(0, 0, 0, 0.5))
+    drop-shadow(-1px -1px 1px rgb(255, 255, 255, 0.2));
 }
 
 /* Activated state (near hit box or hovered) */
 .file-menu-container.active .file-menu-button {
-  background: rgba(240, 240, 240, 0.9);
+  background: rgba(240, 240, 240, 1);
   border-radius: 12px;
   transform: scale(1.05) translateZ(0);
 }
@@ -95,7 +92,7 @@
   z-index: 0;
 
   /* Glass effect */
-  background: rgba(240, 240, 240, 0.9);
+  background: rgba(240, 240, 240, 1);
   border-radius: 16px;
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
@@ -358,24 +355,21 @@
 /* ===========================================
    Night Mode Overrides
    =========================================== */
+.night-mode .file-menu-container.active {
+  filter: url(#file-menu-goo-filter) drop-shadow(0 0 3px rgb(0, 0, 0, 0.5))
+    drop-shadow(-1px -1px 2px rgb(255, 255, 255, 0.1));
+}
 
 body.night-mode .file-menu-icon {
   color: rgba(200, 200, 200, 1);
 }
 
 body.night-mode .file-menu-container.active .file-menu-button {
-  background: rgba(50, 50, 50, 0.9);
-  box-shadow:
-    5px 10px 12px rgba(0, 0, 0, 0.3),
-    inset 0 2px 4px rgba(255, 255, 255, 0);
+  background: rgba(55, 55, 55, 1);
 }
 
 body.night-mode .file-menu-container.active .file-menu-icon {
-  color: rgba(220, 220, 220, 0.9);
-}
-
-body.night-mode .file-menu-button.open {
-  background: rgba(90, 90, 90, 0.85);
+  color: rgba(220, 220, 220, 1);
 }
 
 body.night-mode .file-menu-button.open .file-menu-icon {
@@ -383,11 +377,7 @@ body.night-mode .file-menu-button.open .file-menu-icon {
 }
 
 body.night-mode .file-menu-list {
-  background: rgba(50, 50, 50, 0.9);
-}
-
-body.night-mode .file-menu-goo-bridge {
-  background: rgba(50, 50, 50, 0.9);
+  background: rgba(55, 55, 55, 1);
 }
 
 body.night-mode .file-menu-item {

@@ -171,7 +171,7 @@ body {
 }
 
 .pane-controls.hidden {
-  transform: translateX(-50%) translateY(-55px);
+  transform: translateX(-50%) translateY(-70px);
 }
 
 .pane-controls-inner {

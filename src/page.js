@@ -211,9 +211,14 @@ export class PageView {
     if (this.page) {
       this.page.cleanup();
       this.page = null;
+    }    
+    if (this.textContent) {
+      this.textContent.items = null;
+      this.textContent = null;
     }
-    this.textContent = null;
     this.annotations = null;
+    this.textLayer.innerHTML = "";
+    this.annotationLayer.innerHTML = "";
     this.canvas.dataset.rendered = "false";
     this.endOfContent = this.#createEndOfContent();
   }

@@ -227,8 +227,6 @@ export class AnnotationManager {
       };
     });
 
-    console.log(pageRanges);
-
     const annotation = this.#pane.document.addAnnotation({
       type,
       color,

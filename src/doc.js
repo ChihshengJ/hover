@@ -3,8 +3,6 @@ import pdfjsWorker from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfjsWorker;
 
-// PDF.js AnnotationEditorType constants (from pdf.js source)
-// NOTE: There is NO UNDERLINE type in AnnotationEditorType!
 const AnnotationEditorType = {
   DISABLE: -1,
   NONE: 0,
@@ -14,7 +12,6 @@ const AnnotationEditorType = {
   INK: 15,
 };
 
-// CRITICAL: Keys MUST start with this prefix for SaveDocument to process them
 const AnnotationEditorPrefix = "pdfjs_internal_editor_";
 
 // Color name to RGB (0-255 range) mapping for PDF.js annotationStorage
@@ -23,6 +20,15 @@ const COLOR_TO_RGB = {
   red: [229, 57, 53],
   blue: [30, 136, 229],
   green: [67, 160, 71],
+};
+
+// FreeText annotation settings
+const FREETEXT_CONFIG = {
+  fontSize: 10,
+  fontColor: [0, 0, 0], // Black text
+  width: 100, // Width of comment box in PDF points
+  rightMargin: 0, // Distance from right edge
+  padding: 5, // Internal padding
 };
 
 export class PDFDocumentModel {
@@ -35,112 +41,6 @@ export class PDFDocumentModel {
 
     this.annotations = new Map();
     this.annotationsByPage = new Map();
-
-    // Expose for console debugging
-    window.__pdfDocModel = this;
-  }
-
-  debugAnnotationStorage() {
-    const storage = this.pdfDoc?.annotationStorage;
-    if (!storage) {
-      console.log("No annotationStorage available");
-      return;
-    }
-
-    console.log("=== AnnotationStorage Debug ===");
-    console.log("Size:", storage.size);
-    console.log(
-      "Has Symbol.iterator:",
-      typeof storage[Symbol.iterator] === "function",
-    );
-
-    console.log("\n--- Raw storage contents ---");
-    for (const [key, value] of storage) {
-      console.log("Key:", key);
-      console.log(
-        "  startsWith prefix:",
-        key.startsWith("pdfjs_internal_editor_"),
-      );
-      console.log("  pageIndex:", value?.pageIndex);
-      console.log("  annotationType:", value?.annotationType);
-      console.log("  quadPoints:", value?.quadPoints?.slice(0, 8), "...");
-      console.log("  rect:", value?.rect);
-      console.log("  color:", value?.color);
-      console.log("  outlines count:", value?.outlines?.length);
-      if (value?.outlines?.[0]) {
-        console.log("  first outline:", value.outlines[0]);
-      }
-    }
-
-    console.log("\n--- Serializable check ---");
-    const serializable = storage.serializable;
-    console.log("serializable:", serializable);
-    console.log(
-      "serializable === SerializableEmpty:",
-      serializable?.map?.size === 0,
-    );
-
-    if (serializable?.map) {
-      console.log("Serializable map contents:");
-      for (const [key, value] of serializable.map) {
-        console.log("  Key:", key, "pageIndex:", value?.pageIndex);
-      }
-    }
-
-    return { storage, serializable };
-  }
-
-  /**
-   * Debug helper - test coordinate conversion
-   * Call from console: __pdfDocModel.testCoordinates(1)
-   */
-  async testCoordinates(pageNumber = 1) {
-    const pageInfo = await this.#getPageInfo(pageNumber);
-    console.log("=== Page Coordinate Info ===");
-    console.log("Page:", pageNumber);
-    console.log("pageWidth:", pageInfo.pageWidth);
-    console.log("pageHeight:", pageInfo.pageHeight);
-
-    // Test a sample rect
-    const testRect = {
-      leftRatio: 0.1,
-      topRatio: 0.1,
-      widthRatio: 0.2,
-      heightRatio: 0.05,
-    };
-    const quadPoints = this.#rectToQuadPoints(testRect, pageInfo);
-    const outline = this.#rectToOutline(testRect, pageInfo);
-
-    console.log(
-      "\nTest rect (10% from left, 10% from top, 20% wide, 5% tall):",
-    );
-    console.log("QuadPoints:", quadPoints);
-    console.log("Outline:", outline);
-
-    // Expected values (now without pageX/pageY offsets)
-    const expectedX1 = testRect.leftRatio * pageInfo.pageWidth;
-    const expectedX2 =
-      (testRect.leftRatio + testRect.widthRatio) * pageInfo.pageWidth;
-    const expectedY1 = (1 - testRect.topRatio) * pageInfo.pageHeight;
-    const expectedY2 =
-      (1 - testRect.topRatio - testRect.heightRatio) * pageInfo.pageHeight;
-
-    console.log("\nExpected PDF coords:");
-    console.log(
-      "  X range:",
-      expectedX1.toFixed(2),
-      "to",
-      expectedX2.toFixed(2),
-    );
-    console.log(
-      "  Y range:",
-      expectedY2.toFixed(2),
-      "(bottom) to",
-      expectedY1.toFixed(2),
-      "(top)",
-    );
-
-    return { pageInfo, quadPoints, outline };
   }
 
   async load(url) {
@@ -466,12 +366,13 @@ export class PDFDocumentModel {
   }
 
   /**
-   * Convert one of our annotations to PDF.js serialized format for a specific page
+   * Convert one of our annotations to PDF.js HIGHLIGHT format for a specific page
+   * Works for both 'highlight' and 'underscore' annotation types
    * @param {Object} annotation - Our internal annotation
    * @param {Object} pageRange - The pageRange object for this page
    * @returns {Promise<Object>} PDF.js serialized annotation format
    */
-  async #annotationToPdfFormat(annotation, pageRange) {
+  async #annotationToHighlightFormat(annotation, pageRange) {
     const pageInfo = await this.#getPageInfo(pageRange.pageNumber);
 
     const quadPoints = [];
@@ -488,14 +389,10 @@ export class PDFDocumentModel {
     const rect = this.#calculateBoundingRect(pageRange.rects, pageInfo);
     const color = this.#colorNameToRgb(annotation.color);
 
-    // NOTE: AnnotationEditorType only has HIGHLIGHT (9), not UNDERLINE
-    // For underscore, we still use HIGHLIGHT but could customize appearance
-    const annotationType = AnnotationEditorType.HIGHLIGHT;
-
-    // Format matching HighlightEditor.serialize() output exactly
-    // Based on PDF.js source code analysis
-    const serialized = {
-      annotationType,
+    // Both 'highlight' and 'underscore' use HIGHLIGHT annotationType
+    // PDF.js doesn't have a separate UNDERLINE editor type
+    return {
+      annotationType: AnnotationEditorType.HIGHLIGHT,
       color,
       opacity: 1,
       thickness: 12,
@@ -507,13 +404,58 @@ export class PDFDocumentModel {
       structTreeParentId: null,
       id: null,
     };
+  }
 
-    return serialized;
+  /**
+   * Convert a comment to PDF.js FreeText annotation format
+   * Positions the comment box at the right side of the page, aligned with the first highlight rect
+   * @param {Object} annotation - Our internal annotation with comment
+   * @param {Object} pageRange - The pageRange object for the page where comment should appear
+   * @returns {Promise<Object>} PDF.js serialized FreeText annotation format
+   */
+  async #commentToFreeTextFormat(annotation, pageRange) {
+    const pageInfo = await this.#getPageInfo(pageRange.pageNumber);
+    const { pageWidth, pageHeight } = pageInfo;
+
+    // Get the vertical position from the first rect of the annotation
+    const firstRect = pageRange.rects[0];
+    const topY = (1 - firstRect.topRatio) * pageHeight;
+
+    // Position the comment box at the right margin
+    const { fontSize, fontColor, width, rightMargin, padding } =
+      FREETEXT_CONFIG;
+    const x1 = pageWidth - width - rightMargin;
+    const x2 = pageWidth - rightMargin;
+
+    // Calculate height based on text content
+    // Rough estimate: ~2.5 chars per point width, fontSize height per line
+    const charsPerLine = Math.floor((width - 2 * padding) / (fontSize * 0.5));
+    const commentText = annotation.comment || "";
+    const lines = Math.ceil(commentText.length / charsPerLine) || 1;
+    const textHeight = lines * fontSize * 1.2 + 2 * padding;
+
+    // Position box so top aligns with the highlight
+    const y1 = topY;
+    const y2 = topY - textHeight;
+
+    const rect = [x1, y2, x2, y1];
+
+    return {
+      annotationType: AnnotationEditorType.FREETEXT,
+      color: fontColor,
+      fontSize,
+      value: commentText,
+      rect,
+      pageIndex: pageRange.pageNumber - 1,
+      rotation: 0,
+      structTreeParentId: null,
+      id: null,
+    };
   }
 
   /**
    * Save PDF with annotations embedded
-   * Uses PDF.js native annotation serialization pipeline
+   * Serializes highlights, underlines, and comments as PDF annotations
    * @returns {Promise<Uint8Array>} PDF data with annotations
    */
   async saveWithAnnotations() {
@@ -524,11 +466,9 @@ export class PDFDocumentModel {
     const allAnnotations = this.getAllAnnotations();
 
     if (allAnnotations.length === 0) {
-      console.log("No annotations to save, returning original PDF");
       return await this.pdfDoc.getData();
     }
 
-    // Access the annotation storage from PDF.js
     const annotationStorage = this.pdfDoc.annotationStorage;
 
     if (!annotationStorage) {
@@ -538,134 +478,38 @@ export class PDFDocumentModel {
       return await this.pdfDoc.getData();
     }
 
-    // Debug: Check initial state
-    console.log("=== Initial annotationStorage state ===");
-    console.log("annotationStorage type:", annotationStorage.constructor.name);
-    console.log("Initial size:", annotationStorage.size);
-    console.log(
-      "Available methods:",
-      Object.getOwnPropertyNames(Object.getPrototypeOf(annotationStorage)),
-    );
-
-    // Convert our annotations to PDF.js format and add to storage
-    // CRITICAL: Use simple incrementing index for keys
     let editorIndex = 0;
 
     for (const annotation of allAnnotations) {
-      console.log("\n--- Processing annotation ---");
-      console.log("ID:", annotation.id);
-      console.log("Type:", annotation.type);
-      console.log("Color:", annotation.color);
-      console.log("Page ranges:", annotation.pageRanges.length);
-
+      // Process each page range for highlight/underscore annotations
       for (const pageRange of annotation.pageRanges) {
-        const serialized = await this.#annotationToPdfFormat(
+        // Both 'highlight' and 'underscore' types serialize as HIGHLIGHT
+        const highlightData = await this.#annotationToHighlightFormat(
           annotation,
           pageRange,
         );
 
-        // CRITICAL: Key MUST be pdfjs_internal_editor_N where N is an integer
-        const key = `${AnnotationEditorPrefix}${editorIndex++}`;
+        const highlightKey = `${AnnotationEditorPrefix}${editorIndex++}`;
+        annotationStorage.setValue(highlightKey, highlightData);
+      }
 
-        console.log("\nStoring annotation with key:", key);
-        console.log("pageIndex:", serialized.pageIndex);
-        console.log("annotationType:", serialized.annotationType);
-        console.log("rect:", serialized.rect);
-        console.log("quadPoints length:", serialized.quadPoints?.length);
-        console.log("outlines count:", serialized.outlines?.length);
-        console.log("color:", serialized.color);
+      if (annotation.comment && annotation.pageRanges.length > 0) {
+        const firstPageRange = annotation.pageRanges[0];
+        const freeTextData = await this.#commentToFreeTextFormat(
+          annotation,
+          firstPageRange,
+        );
 
-        // Store in annotation storage
-        annotationStorage.setValue(key, serialized);
-
-        // Verify it was stored
-        const stored = annotationStorage.getRawValue(key);
-        console.log("Verification - stored value exists:", !!stored);
-        console.log("Verification - stored pageIndex:", stored?.pageIndex);
+        const freeTextKey = `${AnnotationEditorPrefix}${editorIndex++}`;
+        annotationStorage.setValue(freeTextKey, freeTextData);
       }
     }
-
-    // Debug: Check storage contents after adding
-    console.log("\n=== Storage after adding annotations ===");
-    console.log("Storage size:", annotationStorage.size);
-
-    // Iterate and log all entries
-    console.log("\nAll storage entries:");
-    for (const [k, v] of annotationStorage) {
-      console.log(`  ${k}:`, {
-        pageIndex: v?.pageIndex,
-        annotationType: v?.annotationType,
-        hasQuadPoints: !!v?.quadPoints,
-        hasOutlines: !!v?.outlines,
-      });
-    }
-
-    // CRITICAL DEBUG: Check what serializable returns
-    console.log("\n=== Checking serializable getter ===");
-    const serializable = annotationStorage.serializable;
-    console.log("serializable type:", typeof serializable);
-    console.log("serializable:", serializable);
-
-    if (serializable) {
-      console.log("serializable.map:", serializable.map);
-      console.log("serializable.hash:", serializable.hash);
-      console.log("serializable.transfer:", serializable.transfer);
-
-      if (serializable.map === null) {
-        console.error(
-          "!!! CRITICAL: serializable.map is NULL - this means PDF.js thinks there's nothing to save !!!",
-        );
-        console.log("This is likely the root cause of the save issue.");
-        console.log(
-          "The storage has entries, but serializable is returning empty.",
-        );
-      } else if (serializable.map) {
-        console.log("serializable.map size:", serializable.map.size);
-        console.log("serializable.map entries:");
-        for (const [k, v] of serializable.map) {
-          console.log(`  ${k}:`, {
-            pageIndex: v?.pageIndex,
-            annotationType: v?.annotationType,
-          });
-        }
-      }
-    }
-
-    // Check modifiedIds
-    console.log("\n=== Checking modifiedIds ===");
-    const modifiedIds = annotationStorage.modifiedIds;
-    console.log("modifiedIds:", modifiedIds);
-    console.log("modifiedIds.ids:", modifiedIds?.ids);
-    console.log("modifiedIds.hash:", modifiedIds?.hash);
 
     try {
-      console.log("\n=== Calling pdfDoc.saveDocument() ===");
       const data = await this.pdfDoc.saveDocument();
-      console.log("saveDocument() completed");
-      console.log("Returned data type:", data?.constructor?.name);
-      console.log("Returned data size:", data?.byteLength, "bytes");
-
-      // Compare to original size
-      const originalData = await this.pdfDoc.getData();
-      console.log("Original PDF size:", originalData?.byteLength, "bytes");
-      console.log(
-        "Size difference:",
-        (data?.byteLength || 0) - (originalData?.byteLength || 0),
-        "bytes",
-      );
-
-      if (data?.byteLength === originalData?.byteLength) {
-        console.warn(
-          "WARNING: Output size equals input size - annotations may not have been embedded!",
-        );
-      }
-
       return data;
     } catch (error) {
       console.error("Error saving document with annotations:", error);
-      console.error("Error name:", error.name);
-      console.error("Error message:", error.message);
-      console.error("Error stack:", error.stack);
       return await this.pdfDoc.getData();
     }
   }

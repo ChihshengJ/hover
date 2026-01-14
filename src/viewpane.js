@@ -70,7 +70,7 @@ export class ViewerPane {
     this.resizeAllCanvases(this.scale);
     await new Promise((resolve) => setTimeout(resolve, 50));
     this.setupLazyRender();
-    this.controls.attach();
+    // this.controls.attach();
     this.#setupGlobalClickToSelect();
     this.annotationManager = new AnnotationManager(this);
   }

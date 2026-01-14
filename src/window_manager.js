@@ -97,6 +97,9 @@ export class SplitWindowManager {
 
     // Enter split mode for progress bar
     this.progressBar?.enterSplitMode();
+    for (const p of this.panes) {
+      p.controls.attach();
+    }
 
     // Ensuring controls are rendered before being shown
     requestAnimationFrame(() => {
@@ -137,9 +140,18 @@ export class SplitWindowManager {
     // Exit split mode for progress bar
     this.progressBar?.exitSplitMode();
 
-    for (const p of this.panes) {
-      p.controls.hide();
-    }
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        for (const p of this.panes) {
+          p.controls.hide();
+        }
+      });
+    });
+    setTimeout(() => {
+      for (const p of this.panes) {
+        p.controls.destroy();
+      }
+    }, 200);
     this.#removeResizer();
     this.#updateLayout();
     this.isSplit = false;

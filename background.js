@@ -53,11 +53,14 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       .catch((error) => sendResponse({ success: false, error: error.message }));
     return true;
   }
-});
-
-chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.type === "FETCH_CITE") {
     fetchGoogleScholarCite(message.query)
+      .then((result) => sendResponse({ success: true, data: result }))
+      .catch((error) => sendResponse({ success: false, error: error.message }));
+    return true;
+  }
+  if (message.type === "FETCH_WEB") {
+    fetchWebsite(message.query)
       .then((result) => sendResponse({ success: true, data: result }))
       .catch((error) => sendResponse({ success: false, error: error.message }));
     return true;
@@ -84,10 +87,10 @@ async function fetchGoogleScholar(query) {
   return { html, query };
 }
 
-async function fetchGoogleScholarCite(query) {
-  const searchUrl = `https://scholar.google.com/scholar?q=info:${query}:scholar.google.com&output=cite`;
+async function fetchGoogleScholarCite(paperId) {
+  const citeUrl = `https://scholar.google.com/scholar?q=info:${paperId}:scholar.google.com/&output=cite&hl=en`;
 
-  const response = await fetch(searchUrl, {
+  const response = await fetch(citeUrl, {
     headers: {
       "User-Agent":
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
@@ -97,7 +100,25 @@ async function fetchGoogleScholarCite(query) {
   });
 
   if (!response.ok) {
-    throw new Error(`Scholar request failed: ${response.status}`);
+    throw new Error(`Citation request failed: ${response.status}`);
+  }
+
+  const html = await response.text();
+  return { html, paperId };
+}
+
+async function fetchWebsite(query) {
+  const response = await fetch(query, {
+    headers: {
+      "User-Agent":
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+      Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+      "Accept-Language": "en-US,en;q=0.9",
+    },
+  });
+
+  if (!response.ok) {
+    throw new Error(`${query} request failed: ${response.status}`);
   }
 
   const html = await response.text();

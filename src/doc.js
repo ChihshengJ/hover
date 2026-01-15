@@ -1,3 +1,7 @@
+/**
+ * @typedef {import('pdfjs-dist').PDFDocumentProxy} PDFDocumentProxy;
+ */
+
 import * as pdfjsLib from "pdfjs-dist";
 import pdfjsWorker from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 
@@ -43,11 +47,120 @@ export class PDFDocumentModel {
     this.annotationsByPage = new Map();
   }
 
-  async load(url) {
-    this.pdfDoc = await pdfjsLib.getDocument(url).promise;
+  /**
+   * Check if there's a locally uploaded PDF in sessionStorage
+   * @returns {boolean}
+   */
+  static hasLocalPdf() {
+    return sessionStorage.getItem("hover_pdf_data") !== null;
+  }
+
+  /**
+   * Get locally uploaded PDF data from sessionStorage
+   * @returns {{data: ArrayBuffer, name: string} | null}
+   */
+  static getLocalPdf() {
+    const base64 = sessionStorage.getItem("hover_pdf_data");
+    const name = sessionStorage.getItem("hover_pdf_name") || "document.pdf";
+    
+    if (!base64) return null;
+    
+    try {
+      // Convert base64 back to ArrayBuffer
+      const binary = atob(base64);
+      const bytes = new Uint8Array(binary.length);
+      for (let i = 0; i < binary.length; i++) {
+        bytes[i] = binary.charCodeAt(i);
+      }
+      return { data: bytes.buffer, name };
+    } catch (error) {
+      console.error("Error parsing local PDF from sessionStorage:", error);
+      return null;
+    }
+  }
+
+  /**
+   * Clear locally uploaded PDF from sessionStorage
+   */
+  static clearLocalPdf() {
+    sessionStorage.removeItem("hover_pdf_data");
+    sessionStorage.removeItem("hover_pdf_name");
+  }
+
+  async load(source) {
+    if (source instanceof ArrayBuffer) {
+      this.pdfDoc = await pdfjsLib.getDocument({ data: source }).promise;
+    } else {
+      try {
+        // Try direct fetch first
+        this.pdfDoc = await pdfjsLib.getDocument(source).promise;
+      } catch (error) {
+        // Check if it's a CORS or network error
+        if (this.#isCorsOrNetworkError(error)) {
+          console.log("CORS error detected, falling back to background fetch...");
+          const arrayBuffer = await this.#fetchViaBackground(source);
+          this.pdfDoc = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+        } else {
+          throw error;
+        }
+      }
+    }
     this.allNamedDests = await this.pdfDoc.getDestinations();
+    this.loadAnnotations(this.pdfDoc);
     await this.#cachePageDimensions();
     return this.pdfDoc;
+  }
+
+  /**
+   * Check if error is likely a CORS or network error
+   * @param {Error} error
+   * @returns {boolean}
+   */
+  #isCorsOrNetworkError(error) {
+    const message = error?.message?.toLowerCase() || "";
+    return (
+      message.includes("cors") ||
+      message.includes("cross-origin") ||
+      message.includes("network") ||
+      message.includes("failed to fetch") ||
+      message.includes("load pdf") ||
+      error.name === "MissingPDFException" ||
+      error.name === "UnexpectedResponseException"
+    );
+  }
+
+  /**
+   * Fetch PDF via background script to bypass CORS
+   * @param {string} url
+   * @returns {Promise<ArrayBuffer>}
+   */
+  async #fetchViaBackground(url) {
+    return new Promise((resolve, reject) => {
+      if (typeof chrome === "undefined" || !chrome.runtime?.sendMessage) {
+        reject(new Error("Chrome runtime not available"));
+        return;
+      }
+
+      chrome.runtime.sendMessage(
+        { type: "FETCH_PDF", query: url },
+        (response) => {
+          if (chrome.runtime.lastError) {
+            reject(new Error(chrome.runtime.lastError.message));
+            return;
+          }
+          if (response?.error) {
+            reject(new Error(response.error));
+            return;
+          }
+          if (response?.data) {
+            const arrayBuffer = new Uint8Array(response.data).buffer;
+            resolve(arrayBuffer);
+          } else {
+            reject(new Error("No data received from background"));
+          }
+        }
+      );
+    });
   }
 
   async #cachePageDimensions() {
@@ -87,9 +200,6 @@ export class PDFDocumentModel {
     this.notify("highlight-added", { pageNum, highlight });
   }
 
-  /**
-   * Generate a unique annotation ID
-   */
   #generateAnnotationId() {
     return `annotation-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
   }
@@ -247,6 +357,15 @@ export class PDFDocumentModel {
     }
 
     this.notify("annotations-imported", { count: annotations.length });
+  }
+
+  /**
+   * @param { PDFDocumentProxy } pdfDoc
+   */
+  loadAnnotations(pdfDoc) {
+    const existingAnnotations = pdfDoc.getAnnotationsByType(new Set([3,9]));
+    console.log(existingAnnotations);
+
   }
 
   notify(event, data) {

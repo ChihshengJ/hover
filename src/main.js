@@ -37,13 +37,38 @@ function getPdfUrl() {
   return "https://arxiv.org/pdf/2501.19393";
 }
 
-async function loadPdf(url) {
+/**
+ * Load PDF from either local upload (sessionStorage) or URL
+ */
+async function loadPdf() {
   try {
     const pdfmodel = new PDFDocumentModel();
     const wm = new SplitWindowManager(el.wd, pdfmodel);
+
+    // Check for locally uploaded PDF first
+    if (PDFDocumentModel.hasLocalPdf()) {
+      const localPdf = PDFDocumentModel.getLocalPdf();
+      if (localPdf) {
+        await pdfmodel.load(localPdf.data);
+        await wm.initialize();
+
+        const fileMenu = new FileMenu(wm);
+
+        // Set title from filename
+        const fileName = localPdf.name.replace(/\.pdf$/i, "");
+        document.title = fileName + " - Hover PDF";
+
+        // Clear sessionStorage after successful load
+        PDFDocumentModel.clearLocalPdf();
+        return;
+      }
+    }
+
+    // Fall back to URL-based loading
+    const url = getPdfUrl();
     const pdfDoc = await pdfmodel.load(url);
 
-    wm.initialize();
+    await wm.initialize();
 
     const fileMenu = new FileMenu(wm);
 
@@ -53,6 +78,8 @@ async function loadPdf(url) {
     }
   } catch (error) {
     console.error("Error loading PDF:", error);
+    // Clear any stored local PDF on error to prevent reload loops
+    PDFDocumentModel.clearLocalPdf();
     el.wd.innerHTML = `
       <div style="color: red; text-align: center; padding: 50px;">
         <h2>Failed to load PDF</h2>
@@ -62,5 +89,4 @@ async function loadPdf(url) {
   }
 }
 
-const pdfUrl = getPdfUrl();
-loadPdf(pdfUrl);
+loadPdf();

@@ -97,6 +97,9 @@ export class PageView {
     const renderContext = {
       canvasContext: ctx,
       viewport: viewport,
+      // Disable native annotation rendering - we handle highlights/underlines
+      // via our SVG layer, and Link annotations via #renderAnnotations
+      annotationMode: pdfjsLib.AnnotationMode?.DISABLE ?? 0,
     };
 
     this.renderTask = page.render(renderContext);
@@ -211,7 +214,7 @@ export class PageView {
     if (this.page) {
       this.page.cleanup();
       this.page = null;
-    }    
+    }
     if (this.textContent) {
       this.textContent.items = null;
       this.textContent = null;

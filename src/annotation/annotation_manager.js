@@ -50,6 +50,12 @@ export class AnnotationManager {
 
     this.#setupEventListeners();
     this.#setupPaneCallbacks();
+
+    // Load any pre-existing annotations from the document
+    // Use requestAnimationFrame to ensure DOM is ready
+    requestAnimationFrame(() => {
+      this.#refreshAllAnnotations();
+    });
   }
 
   #setupEventListeners() {
@@ -187,14 +193,9 @@ export class AnnotationManager {
         rect.height > 0
       );
     });
-
     if (visibleRects.length === 0) {
-      // No visible rects, fall back to bounding rect
       return range.getBoundingClientRect();
     }
-
-    // Use the last visible rect (where the user likely ended their selection)
-    // This provides better UX as the toolbar appears near the cursor
     const lastRect = visibleRects[visibleRects.length - 1];
     return lastRect;
   }

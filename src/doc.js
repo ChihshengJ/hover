@@ -26,14 +26,32 @@ const COLOR_TO_RGB = {
   green: [67, 160, 71],
 };
 
-// FreeText annotation settings
-const FREETEXT_CONFIG = {
-  fontSize: 10,
-  fontColor: [0, 0, 0], // Black text
-  width: 100, // Width of comment box in PDF points
-  rightMargin: 0, // Distance from right edge
-  padding: 5, // Internal padding
-};
+// Reverse mapping: find closest color name from RGB values
+function rgbToColorName(rgb) {
+  if (!rgb || rgb.length < 3) return 'yellow';
+  
+  // Normalize to 0-255 range (PDF.js may return 0-1 or 0-255)
+  const r = rgb[0] > 1 ? rgb[0] : rgb[0] * 255;
+  const g = rgb[1] > 1 ? rgb[1] : rgb[1] * 255;
+  const b = rgb[2] > 1 ? rgb[2] : rgb[2] * 255;
+  
+  let closestColor = 'yellow';
+  let minDistance = Infinity;
+  
+  for (const [name, [cr, cg, cb]] of Object.entries(COLOR_TO_RGB)) {
+    const distance = Math.sqrt(
+      Math.pow(r - cr, 2) + 
+      Math.pow(g - cg, 2) + 
+      Math.pow(b - cb, 2)
+    );
+    if (distance < minDistance) {
+      minDistance = distance;
+      closestColor = name;
+    }
+  }
+  
+  return closestColor;
+}
 
 export class PDFDocumentModel {
   constructor() {
@@ -106,8 +124,8 @@ export class PDFDocumentModel {
       }
     }
     this.allNamedDests = await this.pdfDoc.getDestinations();
-    this.loadAnnotations(this.pdfDoc);
     await this.#cachePageDimensions();
+    await this.loadAnnotations(this.pdfDoc);
     return this.pdfDoc;
   }
 
@@ -222,15 +240,12 @@ export class PDFDocumentModel {
 
     this.annotations.set(annotation.id, annotation);
 
-    // Index by page
     for (const pageRange of annotation.pageRanges) {
       if (!this.annotationsByPage.has(pageRange.pageNumber)) {
         this.annotationsByPage.set(pageRange.pageNumber, new Set());
       }
       this.annotationsByPage.get(pageRange.pageNumber).add(annotation.id);
     }
-
-    // Notify subscribers
     this.notify("annotation-added", { annotation });
 
     return annotation;
@@ -360,12 +375,158 @@ export class PDFDocumentModel {
   }
 
   /**
-   * @param { PDFDocumentProxy } pdfDoc
+   * Load existing annotations from the PDF document
+   * Parses Highlight annotations and their associated Popup comments
+   * @param {PDFDocumentProxy} pdfDoc
    */
-  loadAnnotations(pdfDoc) {
-    const existingAnnotations = pdfDoc.getAnnotationsByType(new Set([3,9]));
-    console.log(existingAnnotations);
+  async loadAnnotations(pdfDoc) {
+    const importedAnnotations = [];
 
+    for (let pageNum = 1; pageNum <= pdfDoc.numPages; pageNum++) {
+      const page = await pdfDoc.getPage(pageNum);
+      const annotations = await page.getAnnotations({ intent: 'display' });
+      const viewport = page.getViewport({ scale: 1 });
+      const pageHeight = viewport.height;
+      const pageWidth = viewport.width;
+
+      for (const annot of annotations) {
+        if (annot.subtype === 'Highlight') {
+          const converted = this.#convertHighlightAnnotation(annot, pageNum, pageWidth, pageHeight);
+          if (converted) {
+            importedAnnotations.push(converted);
+          }
+        }
+      }
+    }
+
+    if (importedAnnotations.length > 0) {
+      console.log(`Loaded ${importedAnnotations.length} annotations from PDF`);
+      this.importAnnotations(importedAnnotations);
+    }
+  }
+
+  /**
+   * Convert a PDF Highlight annotation to our internal format
+   * @param {Object} annot - PDF.js annotation object
+   * @param {number} pageNum - 1-based page number
+   * @param {number} pageWidth - Page width in PDF units
+   * @param {number} pageHeight - Page height in PDF units
+   * @returns {Object|null} Our internal annotation format
+   */
+  #convertHighlightAnnotation(annot, pageNum, pageWidth, pageHeight) {
+    // quadPoints: array of 8 values per quad [tL.x, tL.y, tR.x, tR.y, bL.x, bL.y, bR.x, bR.y]
+    // PDF coordinate system: origin at bottom-left, Y increases upward
+    const quadPoints = annot.quadPoints;
+    if (!quadPoints || quadPoints.length < 8) {
+      // Fall back to rect if no quadPoints
+      return this.#convertRectAnnotation(annot, pageNum, pageWidth, pageHeight);
+    }
+
+    const rects = [];
+    
+    // Process each quad (8 values per quad)
+    for (let i = 0; i < quadPoints.length; i += 8) {
+      const quad = quadPoints.slice(i, i + 8);
+      if (quad.length < 8) break;
+
+      // Extract coordinates from quad
+      // [tL.x, tL.y, tR.x, tR.y, bL.x, bL.y, bR.x, bR.y]
+      const tLx = quad[0], tLy = quad[1];
+      const tRx = quad[2], tRy = quad[3];
+      const bLx = quad[4], bLy = quad[5];
+      const bRx = quad[6], bRy = quad[7];
+
+      // Calculate bounding box
+      const minX = Math.min(tLx, tRx, bLx, bRx);
+      const maxX = Math.max(tLx, tRx, bLx, bRx);
+      const minY = Math.min(tLy, tRy, bLy, bRy); // Bottom in PDF coords
+      const maxY = Math.max(tLy, tRy, bLy, bRy); // Top in PDF coords
+
+      // Convert to our ratio format (top-left origin)
+      // Our topRatio=0 means page top, which is maxY in PDF coords
+      const leftRatio = minX / pageWidth;
+      const topRatio = 1 - (maxY / pageHeight);
+      const widthRatio = (maxX - minX) / pageWidth;
+      const heightRatio = (maxY - minY) / pageHeight;
+
+      rects.push({
+        leftRatio,
+        topRatio,
+        widthRatio,
+        heightRatio
+      });
+    }
+
+    if (rects.length === 0) return null;
+
+    // Determine color from annotation
+    const color = rgbToColorName(annot.color);
+    
+    // Get comment from the Contents field (standard PDF annotation comment)
+    // This is where Popup/anchored notes store their text
+    const comment = annot.contentsObj?.str || annot.contents || null;
+
+    return {
+      id: `imported-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+      type: 'highlight',
+      color,
+      pageRanges: [{
+        pageNumber: pageNum,
+        rects,
+        text: '' // Text extraction would require more work
+      }],
+      comment: comment && comment.trim() ? comment.trim() : null,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+  }
+
+  /**
+   * Convert a PDF annotation using just its rect (fallback)
+   * @param {Object} annot - PDF.js annotation object
+   * @param {number} pageNum - 1-based page number
+   * @param {number} pageWidth - Page width in PDF units
+   * @param {number} pageHeight - Page height in PDF units
+   * @returns {Object|null} Our internal annotation format
+   */
+  #convertRectAnnotation(annot, pageNum, pageWidth, pageHeight) {
+    const rect = annot.rect;
+    if (!rect || rect.length < 4) return null;
+
+    // rect: [x1, y1, x2, y2] in PDF coords
+    const minX = Math.min(rect[0], rect[2]);
+    const maxX = Math.max(rect[0], rect[2]);
+    const minY = Math.min(rect[1], rect[3]);
+    const maxY = Math.max(rect[1], rect[3]);
+
+    const leftRatio = minX / pageWidth;
+    const topRatio = 1 - (maxY / pageHeight);
+    const widthRatio = (maxX - minX) / pageWidth;
+    const heightRatio = (maxY - minY) / pageHeight;
+
+    const color = rgbToColorName(annot.color);
+    
+    // Get comment from the Contents field
+    const comment = annot.contentsObj?.str || annot.contents || null;
+
+    return {
+      id: `imported-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+      type: 'highlight',
+      color,
+      pageRanges: [{
+        pageNumber: pageNum,
+        rects: [{
+          leftRatio,
+          topRatio,
+          widthRatio,
+          heightRatio
+        }],
+        text: ''
+      }],
+      comment: comment && comment.trim() ? comment.trim() : null,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
   }
 
   notify(event, data) {
@@ -373,10 +534,6 @@ export class PDFDocumentModel {
       subscriber.onDocumentChange?.(event, data);
     }
   }
-
-  // ============================================
-  // PDF.js Native Annotation Save/Export Methods
-  // ============================================
 
   /**
    * Convert our color name to RGB array (0-1 range)
@@ -405,8 +562,8 @@ export class PDFDocumentModel {
   }
 
   /**
-   * Convert our rect format to PDF.js QuadPoints
-   * Our format: { leftRatio, topRatio, widthRatio, heightRatio } (top-origin, 0-1 ratios)
+   * Convert internal rect format to PDF.js QuadPoints
+   * Internal format: { leftRatio, topRatio, widthRatio, heightRatio } (top-origin, 0-1 ratios)
    * PDF format: [tL.x, tL.y, tR.x, tR.y, bL.x, bL.y, bR.x, bR.y] (bottom-origin, absolute coords)
    *
    * @param {Object} rect - Our internal rect format
@@ -417,8 +574,6 @@ export class PDFDocumentModel {
     const { pageWidth, pageHeight } = pageInfo;
     const { leftRatio, topRatio, widthRatio, heightRatio } = rect;
 
-    // Convert ratios to absolute PDF coordinates
-    // X: straightforward scaling (0 = left edge)
     const x1 = leftRatio * pageWidth;
     const x2 = (leftRatio + widthRatio) * pageWidth;
 
@@ -431,13 +586,13 @@ export class PDFDocumentModel {
     // PDF.js QuadPoints order: topLeft, topRight, bottomLeft, bottomRight
     return [
       x1,
-      y1, // top-left
+      y1,
       x2,
-      y1, // top-right
+      y1,
       x1,
-      y2, // bottom-left
+      y2,
       x2,
-      y2, // bottom-right
+      y2,
     ];
   }
 
@@ -487,12 +642,15 @@ export class PDFDocumentModel {
   /**
    * Convert one of our annotations to PDF.js HIGHLIGHT format for a specific page
    * Works for both 'highlight' and 'underscore' annotation types
+   * If the annotation has a comment, it includes popup information for anchored notes
    * @param {Object} annotation - Our internal annotation
    * @param {Object} pageRange - The pageRange object for this page
+   * @param {boolean} isFirstPage - Whether this is the first page of the annotation (for popup)
    * @returns {Promise<Object>} PDF.js serialized annotation format
    */
-  async #annotationToHighlightFormat(annotation, pageRange) {
+  async #annotationToHighlightFormat(annotation, pageRange, isFirstPage = false) {
     const pageInfo = await this.#getPageInfo(pageRange.pageNumber);
+    const { pageWidth, pageHeight } = pageInfo;
 
     const quadPoints = [];
     const outlines = [];
@@ -510,7 +668,7 @@ export class PDFDocumentModel {
 
     // Both 'highlight' and 'underscore' use HIGHLIGHT annotationType
     // PDF.js doesn't have a separate UNDERLINE editor type
-    return {
+    const highlightData = {
       annotationType: AnnotationEditorType.HIGHLIGHT,
       color,
       opacity: 1,
@@ -523,58 +681,37 @@ export class PDFDocumentModel {
       structTreeParentId: null,
       id: null,
     };
-  }
 
-  /**
-   * Convert a comment to PDF.js FreeText annotation format
-   * Positions the comment box at the right side of the page, aligned with the first highlight rect
-   * @param {Object} annotation - Our internal annotation with comment
-   * @param {Object} pageRange - The pageRange object for the page where comment should appear
-   * @returns {Promise<Object>} PDF.js serialized FreeText annotation format
-   */
-  async #commentToFreeTextFormat(annotation, pageRange) {
-    const pageInfo = await this.#getPageInfo(pageRange.pageNumber);
-    const { pageWidth, pageHeight } = pageInfo;
+    // If this annotation has a comment and this is the first page,
+    // add popup information for anchored note support
+    if (annotation.comment && isFirstPage) {
+      // Calculate popup rect - positioned at right margin near the highlight
+      const firstRect = pageRange.rects[0];
+      const topY = (1 - firstRect.topRatio) * pageHeight;
+      
+      // Popup dimensions (standard sticky note size)
+      const popupWidth = 200;
+      const popupHeight = 100;
+      const rightMargin = 10;
+      
+      const popupX1 = pageWidth - popupWidth - rightMargin;
+      const popupX2 = pageWidth - rightMargin;
+      const popupY1 = topY - popupHeight;
+      const popupY2 = topY;
+      
+      highlightData.popup = {
+        contents: annotation.comment,
+        rect: [popupX1, popupY1, popupX2, popupY2],
+      };
+    }
 
-    // Get the vertical position from the first rect of the annotation
-    const firstRect = pageRange.rects[0];
-    const topY = (1 - firstRect.topRatio) * pageHeight;
-
-    // Position the comment box at the right margin
-    const { fontSize, fontColor, width, rightMargin, padding } =
-      FREETEXT_CONFIG;
-    const x1 = pageWidth - width - rightMargin;
-    const x2 = pageWidth - rightMargin;
-
-    // Calculate height based on text content
-    // Rough estimate: ~2.5 chars per point width, fontSize height per line
-    const charsPerLine = Math.floor((width - 2 * padding) / (fontSize * 0.5));
-    const commentText = annotation.comment || "";
-    const lines = Math.ceil(commentText.length / charsPerLine) || 1;
-    const textHeight = lines * fontSize * 1.2 + 2 * padding;
-
-    // Position box so top aligns with the highlight
-    const y1 = topY;
-    const y2 = topY - textHeight;
-
-    const rect = [x1, y2, x2, y1];
-
-    return {
-      annotationType: AnnotationEditorType.FREETEXT,
-      color: fontColor,
-      fontSize,
-      value: commentText,
-      rect,
-      pageIndex: pageRange.pageNumber - 1,
-      rotation: 0,
-      structTreeParentId: null,
-      id: null,
-    };
+    return highlightData;
   }
 
   /**
    * Save PDF with annotations embedded
-   * Serializes highlights, underlines, and comments as PDF annotations
+   * Serializes highlights and underlines as PDF annotations
+   * Comments are saved as anchored notes (popup annotations) linked to their parent highlight
    * @returns {Promise<Uint8Array>} PDF data with annotations
    */
   async saveWithAnnotations() {
@@ -600,27 +737,18 @@ export class PDFDocumentModel {
     let editorIndex = 0;
 
     for (const annotation of allAnnotations) {
-      // Process each page range for highlight/underscore annotations
-      for (const pageRange of annotation.pageRanges) {
-        // Both 'highlight' and 'underscore' types serialize as HIGHLIGHT
+      for (let i = 0; i < annotation.pageRanges.length; i++) {
+        const pageRange = annotation.pageRanges[i];
+        const isFirstPage = (i === 0);
+        
         const highlightData = await this.#annotationToHighlightFormat(
           annotation,
           pageRange,
+          isFirstPage,
         );
 
         const highlightKey = `${AnnotationEditorPrefix}${editorIndex++}`;
         annotationStorage.setValue(highlightKey, highlightData);
-      }
-
-      if (annotation.comment && annotation.pageRanges.length > 0) {
-        const firstPageRange = annotation.pageRanges[0];
-        const freeTextData = await this.#commentToFreeTextFormat(
-          annotation,
-          firstPageRange,
-        );
-
-        const freeTextKey = `${AnnotationEditorPrefix}${editorIndex++}`;
-        annotationStorage.setValue(freeTextKey, freeTextData);
       }
     }
 

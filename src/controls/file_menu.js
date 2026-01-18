@@ -338,44 +338,40 @@ export class FileMenu {
     }
     return btoa(binary);
   }
+
   async #print() {
     const docModel = this.wm.document;
 
     // If there are annotations, print the saved version with embedded annotations
-    if (docModel.hasAnnotations()) {
-      try {
-        const pdfData = await docModel.saveWithAnnotations();
-        const blob = new Blob([pdfData], { type: "application/pdf" });
-        const url = URL.createObjectURL(blob);
+    try {
+      const pdfData = await docModel.saveWithAnnotations();
+      const blob = new Blob([pdfData], { type: "application/pdf" });
+      const url = URL.createObjectURL(blob);
 
-        const iframe = document.createElement("iframe");
-        iframe.style.position = "fixed";
-        iframe.style.right = "0";
-        iframe.style.bottom = "0";
-        iframe.style.width = "0";
-        iframe.style.height = "0";
-        iframe.style.border = "none";
-        iframe.src = url;
+      const iframe = document.createElement("iframe");
+      iframe.style.position = "fixed";
+      iframe.style.right = "0";
+      iframe.style.bottom = "0";
+      iframe.style.width = "0";
+      iframe.style.height = "0";
+      iframe.style.border = "none";
+      iframe.src = url;
 
-        iframe.onload = () => {
+      iframe.onload = () => {
+        setTimeout(() => {
+          iframe.contentWindow?.focus();
+          iframe.contentWindow?.print();
+
+          // Clean up after print dialog closes
           setTimeout(() => {
-            iframe.contentWindow?.focus();
-            iframe.contentWindow?.print();
-
-            // Clean up after print dialog closes
-            setTimeout(() => {
-              document.body.removeChild(iframe);
-              URL.revokeObjectURL(url);
-            }, 1000);
-          }, 100);
-        };
-
-        document.body.appendChild(iframe);
-      } catch (error) {
-        console.error("Error printing with annotations:", error);
-        window.print();
-      }
-    } else {
+            document.body.removeChild(iframe);
+            URL.revokeObjectURL(url);
+          }, 1000);
+        }, 100);
+      };
+      document.body.appendChild(iframe);
+    } catch (error) {
+      console.error("Error printing with annotations:", error);
       window.print();
     }
   }

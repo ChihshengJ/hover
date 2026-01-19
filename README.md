@@ -124,6 +124,6 @@ Open Chrome, navigate to [Chorme extension management](chrome://extensions/) and
 
 ## License
 
-Apache 2.0 with common clause. This project will stay open source and free, commercial use of the source code is highly discouraged.
+Apache 2.0 with common clause. This project will stay open sourced and free to use, commercial use of the source code is highly discouraged.
 
 ---

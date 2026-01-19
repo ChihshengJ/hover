@@ -61,7 +61,7 @@ It all starts with a ball:
 
 The functionalities are kept at their minimum, but your interaction with the document is more fluid and intuitive than ever.
 
-### Split window mode
+### Split Window Mode
 
 Sometimes you gotta wonder, PDFs are longer than codes, so why isn't there a split window mode for most PDF readers?
 
@@ -72,7 +72,7 @@ No more jumping between experiment results and metrics or figures and methodolog
 <img src="assets/split_window_demo.png" width="800" alt="Hover Banner"/>
 </p>
 
-### Full Dark mode
+### Full Dark Mode
 
 Pulling an all-nighter reading papers sounds fun, especially when the white background lights up your entire bedroom.
 With a click of the button, Hover not only turns the background in a soft dark tone, it also renders the contents black.
@@ -81,7 +81,11 @@ With a click of the button, Hover not only turns the background in a soft dark t
 <img src="assets/dark_mode_demo.png" width="800" alt="Hover Banner"/>
 </p>
 
-### VIM motion
+### Persistent Annotation
+
+Annotations you made in this reader are embedded into the PDF document, no need for any accounts and cloud to save annotations or to share them with others.
+
+### VIM Motion
 
 Full vim motion support for reading, highlighting, and citation preview (under development).
 
@@ -110,11 +114,9 @@ Open Chrome, navigate to [Chorme extension management](chrome://extensions/) and
 
 ## Road map
 
+- Fuzzy search with range
 - Improve Safari support
-- Improve annotation and export
 - Improve performance and memory usage
-- Improve robustness for academic papers in various templates
-- Configurable citation preview styling (show abstract directly or show texts from reference)
 - Accommodation for Lefties
 - Theme configuration
 
@@ -122,6 +124,6 @@ Open Chrome, navigate to [Chorme extension management](chrome://extensions/) and
 
 ## License
 
-Apache 2.0
+Apache 2.0 with common clause. This project will stay open source and free, commercial use of the source code is highly discouraged.
 
 ---

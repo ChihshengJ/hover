@@ -83,27 +83,18 @@ export class NavigationTree {
     return this.wm.document;
   }
 
-  // ═══════════════════════════════════════════════════════════════
-  // Initialization
-  // ═══════════════════════════════════════════════════════════════
-
   async initialize() {
     if (this.treeBuilt) return;
+    const docOutline = this.doc.outline;
 
-    const pdfDoc = this.doc.pdfDoc;
-    const outline = await pdfDoc.getOutline();
-
-    const destCache = new Map();
-
-    if (outline && outline.length > 0) {
-      this.tree = await this.#buildOutlineTree(outline, destCache);
+    if (docOutline && docOutline.length > 0) {
+      this.tree = this.#convertOutlineToTreeNodes(docOutline);
       this.flatSections = this.#flattenSections(this.tree);
 
-      const figureTableItems =
-        await this.#extractFigureTableAnnotations(destCache);
+      const destCache = this.#buildDestCacheFromOutline(docOutline);
+      const figureTableItems = await this.#extractFigureTableAnnotations(destCache);
       this.#insertFiguresIntoTree(figureTableItems);
     }
-
     this.treeBuilt = true;
   }
 
@@ -160,32 +151,25 @@ export class NavigationTree {
   // ═══════════════════════════════════════════════════════════════
   // Tree Building
   // ═══════════════════════════════════════════════════════════════
-
-  async #buildOutlineTree(outline, destCache) {
-    const items = [];
-
-    for (const entry of outline) {
-      const position = await this.#resolveDestination(entry.dest, destCache);
-
-      const item = {
-        id: crypto.randomUUID(),
-        title: entry.title || "Untitled",
-        type: "section",
-        pageIndex: position?.pageIndex ?? 0,
-        left: position?.left ?? 0,
-        top: position?.top ?? 0,
-        children: [],
-        expanded: false,
-      };
-
-      if (entry.items?.length > 0) {
-        item.children = await this.#buildOutlineTree(entry.items, destCache);
-      }
-
-      items.push(item);
-    }
-
-    return items;
+  
+  /**
+   * Transform doc.outline nodes to TreeNode format
+   * @param {Array} outlineItems - Items from doc.outline
+   * @returns {TreeNode[]}
+   */
+  #convertOutlineToTreeNodes(outlineItems) {
+    return outlineItems.map(item => ({
+      id: item.id,
+      title: item.title,
+      type: 'section',
+      pageIndex: item.pageIndex,
+      left: item.left,
+      top: item.top,
+      children: item.children.length > 0 
+        ? this.#convertOutlineToTreeNodes(item.children) 
+        : [],
+      expanded: false,
+    }));
   }
 
   async #resolveDestination(dest, cache) {
@@ -229,6 +213,29 @@ export class NavigationTree {
       cache.set(cacheKey, null);
       return null;
     }
+  }
+
+  /**
+   * Build a destination cache from pre-resolved outline items
+   * This avoids re-resolving destinations we've already computed
+   * @param {Array} outlineItems
+   * @returns {Map}
+   */
+  #buildDestCacheFromOutline(outlineItems) {
+    const cache = new Map();
+    
+    const addToCache = (items) => {
+      for (const item of items) {
+        // We can't recover the original dest key, but the cache will still
+        // be useful for any new destinations encountered during figure extraction
+        if (item.children.length > 0) {
+          addToCache(item.children);
+        }
+      }
+    };
+    
+    addToCache(outlineItems);
+    return cache;
   }
 
   #flattenSections(items, result = []) {

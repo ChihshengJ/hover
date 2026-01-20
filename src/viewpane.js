@@ -1,7 +1,3 @@
-import * as pdfjsLib from "pdfjs-dist";
-import pdfjsWorker from "pdfjs-dist/build/pdf.worker.min.mjs?url";
-pdfjsLib.GlobalWorkerOptions.workerSrc = pdfjsWorker;
-
 import { PageView } from "./page.js";
 import { PaneControls } from "./controls/pane_controls.js";
 import { TextSelectionManager } from "./text_manager.js";

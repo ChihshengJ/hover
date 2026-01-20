@@ -2,11 +2,8 @@
  * @typedef {import('pdfjs-dist').PDFDocumentProxy} PDFDocumentProxy;
  */
 
-import * as pdfjsLib from "pdfjs-dist";
-import pdfjsWorker from "pdfjs-dist/build/pdf.worker.min.mjs?url";
+import { pdfjsLib } from "./pdfjs-init.js";
 import { SearchIndex } from "./controls/search/search_index.js";
-
-pdfjsLib.GlobalWorkerOptions.workerSrc = pdfjsWorker;
 
 const AnnotationEditorType = {
   DISABLE: -1,
@@ -136,14 +133,14 @@ export class PDFDocumentModel {
     this.allNamedDests = await this.pdfDoc.getDestinations();
     await this.#cachePageDimensions();
     await this.loadAnnotations(this.pdfDoc);
-    
+
     // Build shared outline
     await this.#buildOutline();
-    
+
     // Initialize search index (build in background)
     this.searchIndex = new SearchIndex(this);
     this.#buildSearchIndexAsync();
-    
+
     return this.pdfDoc;
   }
 
@@ -625,7 +622,7 @@ export class PDFDocumentModel {
         this.outline = await this.#parseOutlineItems(pdfOutline);
       }
     } catch (error) {
-      console.error('Error building outline:', error);
+      console.error("Error building outline:", error);
       this.outline = [];
     }
   }
@@ -643,7 +640,7 @@ export class PDFDocumentModel {
 
       const node = {
         id: crypto.randomUUID(),
-        title: item.title || 'Untitled',
+        title: item.title || "Untitled",
         pageIndex: position?.pageIndex ?? 0,
         left: position?.left ?? 0,
         top: position?.top ?? 0,
@@ -672,7 +669,7 @@ export class PDFDocumentModel {
       let explicitDest = dest;
 
       // If it's a named destination, resolve it
-      if (typeof dest === 'string') {
+      if (typeof dest === "string") {
         explicitDest = this.allNamedDests?.[dest];
         if (!explicitDest) {
           explicitDest = await this.pdfDoc.getDestination(dest);
@@ -705,9 +702,9 @@ export class PDFDocumentModel {
     if (!this.searchIndex) return;
 
     try {
-      console.log('[Search] Building search index...');
+      console.log("[Search] Building search index...");
       const startTime = performance.now();
-      
+
       await this.searchIndex.build((pageNum, total) => {
         // Could emit progress event here if needed
         if (pageNum % 10 === 0 || pageNum === total) {
@@ -717,10 +714,10 @@ export class PDFDocumentModel {
 
       const elapsed = performance.now() - startTime;
       console.log(`[Search] Index built in ${elapsed.toFixed(0)}ms`);
-      
-      this.notify('search-index-ready', {});
+
+      this.notify("search-index-ready", {});
     } catch (error) {
-      console.error('[Search] Error building search index:', error);
+      console.error("[Search] Error building search index:", error);
     }
   }
 

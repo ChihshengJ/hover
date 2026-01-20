@@ -6,7 +6,6 @@
 
 Hover is a minimalist PDF reader extension designed for people who spend way too much time reading academic papers in the browser.
 It intentionally keeps only the most essential features, but aims to make the actual experience of reading papers smoother, faster, and more immersive by ---
-
 You've guessed it: **Hopping between the content and the references**  
 Hover solves this problem by providing a pop-up window that gives you the access to the text of the references directly, allowing you to jump directly to an ArXiv paper, or search the title in Google Scholar.
 
@@ -109,6 +108,17 @@ npm run build:ext
 ```
 
 Open Chrome, navigate to [Chorme extension management](chrome://extensions/) and load the _dist_ folder to use the extension.
+
+---
+
+## Buy Me a Coffee
+
+If you love using Hover like I do, please consider support me here:
+[!["Buy Me A Coffee"](https://www.buymeacoffee.com/assets/img/custom_images/orange_img.png)](https://www.buymeacoffee.com/chihshengj)
+
+Even just 5 bucks would still mean a lot to me and to this project!
+
+And if there is any bugs or possible improvements of the codebase, feel free to open an issue.
 
 ---
 

@@ -1,7 +1,4 @@
-import * as pdfjsLib from "pdfjs-dist";
-import pdfjsWorker from "pdfjs-dist/build/pdf.worker.min.mjs?url";
-
-import { PDFDocumentModel } from "./doc.js";
+import { pdfjsLib } from "./pdfjs-init.js";
 import { CitationPopup } from "./controls/citation_popup.js";
 
 /**
@@ -10,7 +7,14 @@ import { CitationPopup } from "./controls/citation_popup.js";
  * @typedef {import('./viewpane.js').ViewerPane} ViewerPane;
  */
 
-pdfjsLib.GlobalWorkerOptions.workerSrc = pdfjsWorker;
+// Cache Safari detection - only need to check once
+let isSafariBrowser = null;
+function isSafari() {
+  if (isSafariBrowser === null) {
+    isSafariBrowser = /^((?!chrome|android).)*safari/i.test(navigator.userAgent);
+  }
+  return isSafariBrowser;
+}
 
 let sharedPopup = null;
 function getSharedPopup() {
@@ -38,13 +42,17 @@ export class PageView {
     this.textLayer = this.#initLayer("text");
     this.annotationLayer = this.#initLayer("annotation");
 
-    this.endOfContent = this.#createEndOfContent();
+    // Don't create endOfContent until first render
+    this.endOfContent = null;
 
     this.page = null;
     this.textContent = null;
     this.annotations = null;
     this.renderTask = null;
     this.scale = 1;
+
+    this._showTimer = null;
+    this._delegatedListenersAttached = false;
   }
 
   async #ensurePageLoaded() {
@@ -52,7 +60,10 @@ export class PageView {
     return this.page;
   }
 
-  #createEndOfContent() {
+  #ensureEndOfContent() {
+    if (this.endOfContent && this.textLayer.contains(this.endOfContent)) {
+      return this.endOfContent;
+    }
     const endOfContent = document.createElement("div");
     endOfContent.className = "endOfContent";
     this.textLayer.appendChild(endOfContent);
@@ -63,7 +74,7 @@ export class PageView {
         endOfContent,
       );
     }
-
+    this.endOfContent = endOfContent;
     return endOfContent;
   }
 
@@ -75,12 +86,10 @@ export class PageView {
     const canvasWidth = this.canvas.width;
     const canvasHeight = this.canvas.height;
 
-    // Create a viewport that EXACTLY matches our canvas dimensions
     const baseViewport = page.getViewport({ scale: 1 });
     const scaleX = canvasWidth / baseViewport.width;
     const scaleY = canvasHeight / baseViewport.height;
 
-    // Use the smaller scale to ensure content fits, or use scaleX if they're very close
     const renderScale = Math.min(scaleX, scaleY);
     const viewport = page.getViewport({ scale: renderScale });
 
@@ -97,8 +106,7 @@ export class PageView {
     const renderContext = {
       canvasContext: ctx,
       viewport: viewport,
-      // Disable native annotation rendering - we handle highlights/underlines
-      // via our SVG layer, and Link annotations via #renderAnnotations
+      // Disable native annotation rendering for customized rendering
       annotationMode: pdfjsLib.AnnotationMode?.DISABLE ?? 0,
     };
 
@@ -113,6 +121,10 @@ export class PageView {
         scale: cssWidth / baseViewport.width,
       });
 
+      if (this.pane.textSelectionManager) {
+        this.pane.textSelectionManager.unregister(this.textLayer);
+      }
+
       this.textLayer.innerHTML = "";
       this.#renderAnnotations(page, textViewport);
       this.textLayer.style.setProperty("--total-scale-factor", `${this.scale}`);
@@ -123,13 +135,12 @@ export class PageView {
         viewport: textViewport,
       });
       await textLayerInstance.render();
-      if (this.#isSafari()) {
+
+      if (isSafari()) {
         this.#fixSafariTextLayer(textViewport);
       }
 
-      if (!this.textLayer.contains(this.endOfContent)) {
-        this.textLayer.appendChild(this.endOfContent);
-      }
+      this.#ensureEndOfContent();
 
       this.textLayer.style.width = `${cssWidth}px`;
       this.textLayer.style.height = `${cssHeight}px`;
@@ -144,28 +155,11 @@ export class PageView {
     this.canvas.dataset.rendered = "true";
   }
 
-  #isSafari() {
-    return /^((?!chrome|android).)*safari/i.test(navigator.userAgent);
-  }
-
   #fixSafariTextLayer(viewport) {
     const spans = this.textLayer.querySelectorAll("span");
     const items = this.textContent.items;
-
-    // What was actually passed to TextLayer?
-    const cssWidth = parseFloat(this.canvas.style.width);
-    const cssHeight = parseFloat(this.canvas.style.height);
-
-    // Get the base viewport to understand the ratio
-    const baseViewport = this.page.getViewport({ scale: 1 });
-
-    const textLayerScale = cssWidth / baseViewport.width;
-
-    // Check a span's actual style after TextLayer render
-    if (spans.length > 0) {
-      const firstSpan = spans[0];
-    }
-
+    // const cssWidth = parseFloat(this.canvas.style.width);
+    // const baseViewport = this.page.getViewport({ scale: 1 });
     const { pageWidth, pageHeight, pageX, pageY } = viewport.rawDims;
     const transform = [1, 0, 0, -1, -pageX, pageY + pageHeight];
 
@@ -202,28 +196,25 @@ export class PageView {
 
   release() {
     this.cancel();
-    this.textLayer.innerHTML = "";
-    this.annotationLayer.innerHTML = "";
-
     if (this.pane.textSelectionManager) {
       this.pane.textSelectionManager.unregister(this.textLayer);
     }
-
+    this.textLayer.innerHTML = "";
+    this.annotationLayer.innerHTML = "";
     const ctx = this.canvas.getContext("2d");
     ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
     if (this.page) {
       this.page.cleanup();
       this.page = null;
     }
-    if (this.textContent) {
-      this.textContent.items = null;
-      this.textContent = null;
-    }
+    this.textContent = null;
     this.annotations = null;
-    this.textLayer.innerHTML = "";
-    this.annotationLayer.innerHTML = "";
+    this.endOfContent = null;
     this.canvas.dataset.rendered = "false";
-    this.endOfContent = this.#createEndOfContent();
+    if (this._showTimer) {
+      clearTimeout(this._showTimer);
+      this._showTimer = null;
+    }
   }
 
   async resize(scale) {
@@ -234,6 +225,82 @@ export class PageView {
   async renderIfNeed() {
     if (this.canvas.dataset.rendered === "true") return;
     await this.render();
+  }
+
+  #setupAnnotationLayerEvents() {
+    if (this._delegatedListenersAttached) return;
+    
+    const citationPopup = getSharedPopup();
+    
+    // Use capture phase (true) for mouseenter/mouseleave to work with delegation
+    this.annotationLayer.addEventListener("mouseenter", (e) => {
+      const anchor = e.target.closest("a[data-dest]");
+      if (anchor) this.#handleAnchorEnter(anchor, citationPopup);
+    }, true);
+    
+    this.annotationLayer.addEventListener("mouseleave", (e) => {
+      const anchor = e.target.closest("a[data-dest]");
+      if (anchor) this.#handleAnchorLeave(anchor, citationPopup);
+    }, true);
+    
+    this.annotationLayer.addEventListener("click", (e) => {
+      const anchor = e.target.closest("a[data-dest]");
+      if (anchor && anchor.dataset.dest !== undefined) {
+        e.preventDefault();
+        this.#handleAnchorClick(anchor);
+      }
+    });
+    
+    this._delegatedListenersAttached = true;
+  }
+
+  async #handleAnchorEnter(anchor, citationPopup) {
+    if (this.wrapper.classList.contains("text-selecting")) return;
+    
+    if (this._showTimer) clearTimeout(this._showTimer);
+    citationPopup.onAnchorEnter();
+    
+    const dest = anchor.getAttribute("href");
+    if (!dest || dest.startsWith("http")) return; // External link
+    
+    this._showTimer = setTimeout(async () => {
+      const result = await this.#resolveDestToPosition(dest);
+      if (!result) return;
+      
+      anchor.dataset.dest = `${result.left},${result.pageIndex},${result.top}`;
+      
+      if (dest.split(".")[0] === "cite") {
+        await citationPopup.show(
+          anchor,
+          this.#findCiteText.bind(this),
+          result.left,
+          result.pageIndex,
+          result.top,
+        );
+      }
+    }, 200);
+  }
+
+  #handleAnchorLeave(anchor, citationPopup) {
+    if (this.wrapper.classList.contains("text-selecting")) return;
+    
+    if (this._showTimer) {
+      clearTimeout(this._showTimer);
+      this._showTimer = null;
+    }
+    
+    if (citationPopup.currentAnchor === anchor) {
+      citationPopup.onAnchorLeave();
+    }
+  }
+
+  async #handleAnchorClick(anchor) {
+    const destStr = anchor.dataset.dest;
+    if (!destStr) return;
+    
+    const [left, page, top] = destStr.split(",").map(parseFloat);
+    const pageIndex = Math.floor(page);
+    await this.pane.scrollToPoint(pageIndex, left, top);
   }
 
   async #findCiteText(left, pageIndex, top) {
@@ -328,9 +395,6 @@ export class PageView {
           }
           // Check large vertical gap indicates new block/paragraph
           if (baselineLineHeight && verticalGap > baselineLineHeight * 1.8) {
-            // console.log(
-            //   `end at vertical gap, tuple:${items.slice(i - 2, i + 2).map((x) => x.str)}`,
-            // );
             break;
           }
           // Check reference number at start of new line
@@ -366,9 +430,6 @@ export class PageView {
         reference.push(text);
         // Check standalone period often ends a reference
         if (text.trim() === ".") {
-          // console.log(
-          //   `end at standalone period, tuple:${items.slice(i - 2, i + 2).map((x) => x.str)}`,
-          // );
           break;
         }
       }
@@ -398,18 +459,18 @@ export class PageView {
 
   #renderAnnotations(page, viewport) {
     this.annotationLayer.innerHTML = "";
-    const citationPopup = getSharedPopup();
+    
+    this.#setupAnnotationLayerEvents();
 
     for (const a of this.annotations) {
-      if (a.subtype != "Link") continue;
+      if (a.subtype !== "Link") continue;
 
       const rect = pdfjsLib.Util.normalizeRect(a.rect);
       const viewportForRects = page.getViewport({
         scale: this.scale,
         dontFlip: true,
       });
-      const [x1, y1, x2, y2] =
-        viewportForRects.convertToViewportRectangle(rect);
+      const [x1, y1, x2, y2] = viewportForRects.convertToViewportRectangle(rect);
       const left = Math.min(x1, x2);
       const bottom = Math.min(y1, y2);
       const width = Math.abs(x1 - x2);
@@ -417,72 +478,23 @@ export class PageView {
       const top = viewport.height - bottom - height;
 
       const anchor = document.createElement("a");
-      anchor.style.position = "absolute";
-      anchor.style.left = `${left}px`;
-      anchor.style.top = `${top}px`;
-      anchor.style.width = `${width}px`;
-      anchor.style.height = `${height}px`;
-      anchor.style.pointerEvents = "auto";
-      anchor.style.backgroundColor = "transparent";
-      anchor.setAttribute("data-dest", "");
+      anchor.style.cssText = `
+        position: absolute;
+        left: ${left}px;
+        top: ${top}px;
+        width: ${width}px;
+        height: ${height}px;
+        pointer-events: auto;
+        background-color: transparent;
+      `;
 
       if (a.url) {
         anchor.href = a.url;
         anchor.target = "_blank";
         anchor.rel = "noopener noreferrer";
       } else if (a.dest) {
-        anchor.href = `${a.dest}`;
-        let showTimer = null;
-
-        anchor.addEventListener("mouseenter", async (e) => {
-          if (this.wrapper.classList.contains("text-selecting")) {
-            return;
-          }
-          if (showTimer) clearTimeout(showTimer);
-
-          citationPopup.onAnchorEnter();
-
-          showTimer = setTimeout(async () => {
-            const result = await this.#resolveDestToPosition(a.dest);
-            if (!result) return;
-            anchor.dataset.dest = `${result.left},${result.pageIndex},${result.top}`;
-            if (a.dest.split(".")[0] === "cite") {
-              await citationPopup.show(
-                anchor,
-                this.#findCiteText.bind(this),
-                result.left,
-                result.pageIndex,
-                result.top,
-              );
-            }
-          }, 200);
-        });
-
-        anchor.addEventListener("mouseleave", (e) => {
-          if (this.wrapper.classList.contains("text-selecting")) {
-            return;
-          }
-          if (showTimer) {
-            clearTimeout(showTimer);
-            showTimer = null;
-          }
-
-          if (citationPopup.currentAnchor === anchor) {
-            citationPopup.onAnchorLeave();
-          }
-        });
-
-        anchor.addEventListener("click", async (e) => {
-          e.preventDefault();
-          const [left, page, top] = anchor.dataset.dest
-            .split(",")
-            .map((item) => parseFloat(item));
-          const pageIndex = Math.floor(page);
-          const targetCanvas = document.querySelector(
-            `[data-page-number="${pageIndex + 1}"]`,
-          );
-          await this.pane.scrollToPoint(pageIndex, left, top);
-        });
+        anchor.href = a.dest;
+        anchor.dataset.dest = "";
       } else {
         continue;
       }

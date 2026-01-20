@@ -860,10 +860,18 @@ export class FloatingToolbar {
     this.ball.querySelector(".page-total").textContent = totalPages;
   }
 
+  // updateActivePane() {
+  //   this.pane.scroller.addEventListener("scroll", () => {
+  //     this.updatePageNumber();
+  //   });
+  // }
+  //
   updateActivePane() {
-    this.pane.scroller.addEventListener("scroll", () => {
-      this.updatePageNumber();
-    });
+    if (this.#scrollCallback) {
+      this.pane.controls.offScroll(this.#scrollCallback);
+    }
+    this.#scrollCallback = () => this.updatePageNumber();
+    this.pane.controls.onScroll(this.#scrollCallback);
   }
 
   destroy() {

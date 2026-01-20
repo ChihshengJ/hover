@@ -1,5 +1,3 @@
-import * as pdfjsLib from "pdfjs-dist";
-import pdfjsWorker from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 import { PDFDocumentModel } from "./doc.js";
 import { SplitWindowManager } from "./window_manager.js";
 import { FileMenu } from "./controls/file_menu.js";
@@ -14,8 +12,6 @@ import "../styles/annotations.css";
 import "../styles/progress_bar.css";
 import "../styles/file_menu.css";
 import "../styles/search.css";
-
-pdfjsLib.GlobalWorkerOptions.workerSrc = pdfjsWorker;
 
 const el = {
   wd: document.getElementById("window-container"),

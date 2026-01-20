@@ -49,6 +49,15 @@ export class SearchIndex {
   /** @type {CanvasRenderingContext2D} */
   #measureCtx = null;
 
+  /** @type {Map<number, Map<string, number>>} - Cache: fontSize -> (char -> width) */
+  #fontWidthCache = new Map();
+
+  /** @type {Map<number, number>} - Cache: fontSize -> average char width */
+  #avgWidthCache = new Map();
+
+  /** @type {string} */
+  #currentFont = "";
+
   constructor(doc) {
     this.#doc = doc;
     this.#createMeasureCanvas();
@@ -117,14 +126,14 @@ export class SearchIndex {
     for (const pageIndex of pagesInRange) {
       const pageText = pageIndex.fullText;
       const pageTextLower = pageText.toLowerCase();
-      
+
       // Find all occurrences of the needle
       let pos = 0;
       while ((pos = pageTextLower.indexOf(needle, pos)) !== -1) {
         const startIdx = pos;
         const endIdx = pos + needle.length - 1;
         const rects = this.#getRectsForRange(pageIndex, startIdx, endIdx);
-        
+
         if (rects.length > 0) {
           matches.push({
             id: `match-${matchId++}`,
@@ -243,7 +252,7 @@ export class SearchIndex {
   }
 
   /**
-   * Calculate character positions within a text span
+   * Calculate character positions within a text span (optimized with caching)
    * @param {string} text - Text string
    * @param {number} totalWidth - Total width of text span
    * @param {number} fontSize - Font size
@@ -253,30 +262,104 @@ export class SearchIndex {
     if (!text || text.length === 0) return [];
     if (text.length === 1) return [0];
 
-    // Use canvas to measure character widths
-    this.#measureCtx.font = `${fontSize}px sans-serif`;
+    // Round fontSize to reduce cache fragmentation (e.g., 12.003 -> 12)
+    const roundedSize = Math.round(fontSize * 10) / 10;
+
+    // Set font only if it changed
+    const fontKey = `${roundedSize}px sans-serif`;
+    if (this.#currentFont !== fontKey) {
+      this.#measureCtx.font = fontKey;
+      this.#currentFont = fontKey;
+    }
+
+    // Get or create char width cache for this font size
+    let charCache = this.#fontWidthCache.get(roundedSize);
+    if (!charCache) {
+      charCache = new Map();
+      this.#fontWidthCache.set(roundedSize, charCache);
+      // Pre-populate with common characters for batch measurement
+      this.#prePopulateCharCache(charCache, roundedSize);
+    }
 
     const positions = [0];
     let cumulativeWidth = 0;
+    let lastCharWidth = 0;
 
-    for (let i = 0; i < text.length - 1; i++) {
-      const charWidth = this.#measureCtx.measureText(text[i]).width;
-      cumulativeWidth += charWidth;
-      positions.push(cumulativeWidth);
+    for (let i = 0; i < text.length; i++) {
+      const char = text[i];
+      let charWidth = charCache.get(char);
+
+      if (charWidth === undefined) {
+        // Measure and cache this character
+        charWidth = this.#measureCtx.measureText(char).width;
+        charCache.set(char, charWidth);
+      }
+
+      if (i < text.length - 1) {
+        cumulativeWidth += charWidth;
+        positions.push(cumulativeWidth);
+      }
+      lastCharWidth = charWidth;
     }
 
     // Scale to match actual total width
-    if (cumulativeWidth > 0 && totalWidth > 0) {
-      const scale =
-        totalWidth /
-        (cumulativeWidth +
-          this.#measureCtx.measureText(text[text.length - 1]).width);
+    const measuredTotal = cumulativeWidth + lastCharWidth;
+    if (measuredTotal > 0 && totalWidth > 0) {
+      const scale = totalWidth / measuredTotal;
       for (let i = 1; i < positions.length; i++) {
         positions[i] *= scale;
       }
     }
 
     return positions;
+  }
+
+  /**
+   * Pre-populate character cache with common characters (batch measurement)
+   * @param {Map<string, number>} cache - Character cache to populate
+   * @param {number} fontSize - Font size
+   */
+  #prePopulateCharCache(cache, fontSize) {
+    // Common characters in English text - measure in batch
+    const commonChars =
+      "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 .,;:!?'-\"()[]{}";
+
+    // Batch measure by getting width of whole string and individual chars
+    // This reduces the number of measureText calls for initial population
+    let totalWidth = 0;
+    const widths = [];
+
+    for (const char of commonChars) {
+      const width = this.#measureCtx.measureText(char).width;
+      widths.push(width);
+      totalWidth += width;
+    }
+
+    // Store in cache
+    for (let i = 0; i < commonChars.length; i++) {
+      cache.set(commonChars[i], widths[i]);
+    }
+
+    // Cache average width for fallback estimates
+    this.#avgWidthCache.set(fontSize, totalWidth / commonChars.length);
+  }
+
+  /**
+   * Get approximate character width (for fallback or estimation)
+   * @param {number} fontSize - Font size
+   * @returns {number} Approximate average character width
+   */
+  #getApproxCharWidth(fontSize) {
+    const roundedSize = Math.round(fontSize * 10) / 10;
+    let avgWidth = this.#avgWidthCache.get(roundedSize);
+
+    if (avgWidth === undefined) {
+      // Approximate: average char is roughly 0.5-0.6x font size for proportional fonts
+      avgWidth = fontSize * 0.55;
+      this.#avgWidthCache.set(roundedSize, avgWidth);
+    }
+
+    return avgWidth;
   }
 
   /**
@@ -511,5 +594,8 @@ export class SearchIndex {
     this.#isBuilt = false;
     this.#measureCanvas = null;
     this.#measureCtx = null;
+    this.#fontWidthCache.clear();
+    this.#avgWidthCache.clear();
+    this.#currentFont = "";
   }
 }

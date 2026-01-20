@@ -6,6 +6,7 @@ export class PaneControls {
     this.progressRing = null;
     this.currentProgress = 0;
     this.ringPerimeter = 0;
+    this._scrollBound = false;
 
     /** @type {Set<Function>} */
     this.scrollCallbacks = new Set();
@@ -43,12 +44,16 @@ export class PaneControls {
       if (btn) this.#handleAction(btn.dataset.action);
     });
 
+    this.pane.paneEl.appendChild(this.element);
+    this.isHidden = true;
+  }
+
+  bindScrollEvents() {
+    if (this._scrollBound) return;
     this.pane.scroller.addEventListener("scroll", () => {
       this.#onScroll();
     });
-
-    this.pane.paneEl.appendChild(this.element);
-    this.isHidden = true;
+    this._scrollBound = true;
   }
 
   /**
@@ -71,9 +76,10 @@ export class PaneControls {
    * Internal scroll handler - updates own UI and notifies subscribers
    */
   #onScroll() {
-    // Update own UI
-    this.#updatePageDisplay();
-    this.#updateProgressRing();
+    if (!this.isHidden) {
+      this.#updatePageDisplay();
+      this.#updateProgressRing();
+    }
 
     // Notify all subscribers
     for (const callback of this.scrollCallbacks) {

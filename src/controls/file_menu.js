@@ -44,15 +44,15 @@ export class FileMenu {
     this.menuList = document.createElement("div");
     this.menuList.className = "file-menu-list";
     this.menuList.innerHTML = `
-      <button class="file-menu-item" data-action="upload">
+      <button class="file-menu-item" data-action="import">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
           <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
           <polyline points="7 8 12 3 17 8"/>
           <line x1="12" y1="3" x2="12" y2="15"/>
         </svg>
-        <span>Upload</span>
+        <span>Import</span>
       </button>
-      <input type="file" id="file-upload" accept="application/pdf" hidden>
+      <input type="file" id="file-import" accept="application/pdf" hidden>
       <div class="file-menu-divider"></div>
       <button class="file-menu-item" data-action="print">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
@@ -61,7 +61,7 @@ export class FileMenu {
           <rect x="6" y="14" width="12" height="8"/>
         </svg>
         <span>Print</span>
-        <span class="shortcut">âŒ˜P</span>
+        <span class="shortcut">⌘P</span>
       </button>
       <button class="file-menu-item" data-action="save">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
@@ -70,7 +70,7 @@ export class FileMenu {
           <line x1="12" y1="15" x2="12" y2="3"/>
         </svg>
         <span>Save PDF</span>
-        <span class="shortcut">âŒ˜S</span>
+        <span class="shortcut">⌘S</span>
       </button>
       <div class="file-menu-divider"></div>
       <button class="file-menu-item" data-action="cite">
@@ -105,7 +105,7 @@ export class FileMenu {
     document.body.appendChild(this.hitArea);
     document.body.appendChild(this.container);
 
-    this.fileInput = document.getElementById("file-upload");
+    this.fileInput = document.getElementById("file-import");
     this.#createGooFilter();
   }
 
@@ -264,8 +264,8 @@ export class FileMenu {
     this.#closeMenu();
 
     switch (action) {
-      case "upload":
-        this.#triggerFileUpload();
+      case "import":
+        this.#triggerFileImport();
         break;
       case "print":
         this.#print();
@@ -285,7 +285,7 @@ export class FileMenu {
     }
   }
 
-  #triggerFileUpload() {
+  #triggerFileImport() {
     this.fileInput.value = "";
     this.fileInput.click();
   }
@@ -342,7 +342,6 @@ export class FileMenu {
   async #print() {
     const docModel = this.wm.document;
 
-    // If there are annotations, print the saved version with embedded annotations
     try {
       const pdfData = await docModel.saveWithAnnotations();
       const blob = new Blob([pdfData], { type: "application/pdf" });

@@ -2,9 +2,11 @@
  * @typedef {import('../window_manager.js').SplitWindowManager} SplitWindowManager;
  * @typedef {import('../viewpane.js').ViewerPane} ViewerPane;
  * @typedef {import('./touch_controls.js').GestureDetector} GestureDetector;
+ * @typedef {import('./search/search_controller.js').SearchController} SearchController;
  */
 
 import { GestureDetector } from "./touch_controls.js";
+import { SearchController } from "./search/search_controller.js";
 
 export class WindowControls {
   /**
@@ -14,6 +16,8 @@ export class WindowControls {
     this.wm = wm;
     /** @type {Map<ViewerPane, GestureDetector>} */
     this.gestureDetectors = new Map();
+    /** @type {SearchController} */
+    this.searchController = new SearchController(wm);
     this.#setupKeyboardShortcuts();
     this.#bindGestures();
     this.MAX_RENDER_SCALE = 7;
@@ -28,9 +32,18 @@ export class WindowControls {
       for (const p of this.wm.panes) {
         await p.refreshAllPages();
       }
+      // Refresh search highlights after resize
+      this.searchController?.refresh();
     });
 
     document.addEventListener("keydown", (e) => {
+      // Handle Escape to close search (even when in search input)
+      if (e.key === "Escape" && this.searchController?.isActive) {
+        e.preventDefault();
+        this.searchController.deactivate();
+        return;
+      }
+
       const activeEl = document.activeElement;
       const isInputActive =
         activeEl &&
@@ -38,6 +51,15 @@ export class WindowControls {
           activeEl.tagName === "TEXTAREA" ||
           activeEl.isContentEditable);
 
+      const isSearchKey = (e.metaKey || e.ctrlKey) && e.key === "f";
+
+      if (isSearchKey) {
+        e.preventDefault();
+        this.showSearch();
+        return;
+      }
+
+      // If in input and not a special key we handle, let it pass
       if (isInputActive) {
         return;
       }
@@ -59,6 +81,8 @@ export class WindowControls {
         else if (e.key === "-" || e.key === "_") pane.zoom(-0.25);
         else if (e.key === "0")
           pane.zoomAt(1, scroller.clientWidth / 2, scroller.clientHeight / 2);
+        // Refresh search highlights after zoom
+        this.searchController?.refresh();
         return;
       }
 
@@ -95,6 +119,10 @@ export class WindowControls {
         this.#switchActivePane();
       }
     });
+  }
+
+  showSearch() {
+    this.searchController?.activate();
   }
 
   #bindGestures() {
@@ -194,6 +222,9 @@ export class WindowControls {
       isTransforming = false;
       pageStates.clear();
       pane.controls.updateZoomDisplay();
+
+      // Refresh search highlights after pinch zoom
+      this.searchController?.refresh();
     });
   }
 
@@ -212,10 +243,15 @@ export class WindowControls {
     const currentIndex = panes.indexOf(this.activePane);
     const nextIndex = (currentIndex + 1) % panes.length;
     this.wm.setActivePane(panes[nextIndex]);
+
+    // Notify search controller of pane change
+    this.searchController?.onPaneChange();
   }
 
   updateActivePane() {
     this.#bindGestures();
+    // Notify search controller of pane change
+    this.searchController?.onPaneChange();
   }
 
   onPaneAdded(pane) {
@@ -231,5 +267,6 @@ export class WindowControls {
       gesture.destroy?.();
     }
     this.gestureDetectors.clear();
+    this.searchController?.destroy();
   }
 }

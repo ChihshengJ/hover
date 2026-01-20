@@ -149,7 +149,7 @@ export class SplitWindowManager {
     });
     setTimeout(() => {
       for (const p of this.panes) {
-        p.controls.destroy();
+        p.controls.element.remove();
       }
     }, 200);
     this.#removeResizer();

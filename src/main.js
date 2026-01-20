@@ -13,6 +13,7 @@ import "../styles/nightmode.css";
 import "../styles/annotations.css";
 import "../styles/progress_bar.css";
 import "../styles/file_menu.css";
+import "../styles/search.css";
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfjsWorker;
 

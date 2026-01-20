@@ -58,6 +58,23 @@ body.night-mode .citation-popup-toggle {
   color: white;
 }
 
+body.night-mode .scholar-title {
+  color: #4778f5;
+}
+
+body.night-mode .scholar-title:hover {
+  color: #4795f5;
+}
+
+body.night-mode .scholar-abstract {
+  color: white;
+}
+
+body.night-mode .scholar-authors {
+  color: rgb(230, 230, 230);
+  border-bottom: 1px solid rgba(180, 180, 180);
+}
+
 /*******************/
 /* panel controls */
 .night-mode .pane-controls {

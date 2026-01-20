@@ -40,13 +40,11 @@ export class SplitWindowManager {
     this.panes.push(pane);
     this.activePane = pane;
 
+    // The order matters here, the toolbar needs to be initialized first.
     this.#updateLayout();
     this.toolbar = new FloatingToolbar(this);
     this.toolbar.updatePageNumber();
-
     this.controls = new WindowControls(this);
-
-    // Initialize progress bar after toolbar (needs navigation popup)
     this.progressBar = new ProgressBar(this);
     await this.progressBar.initialize();
   }

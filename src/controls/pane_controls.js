@@ -2,7 +2,7 @@ export class PaneControls {
   constructor(pane) {
     this.pane = pane;
     this.element = null;
-    this.isHidden = false;
+    this.isHidden = true;
     this.progressRing = null;
     this.currentProgress = 0;
     this.ringPerimeter = 0;

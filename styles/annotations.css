@@ -440,16 +440,17 @@
 
 /* Expanded content */
 .comment-expanded-content {
-  width: 220px;
-  background: rgba(255, 255, 255, 0.8);
-  backdrop-filter: blur(8px);
-  border-radius: 8px;
-  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.3);
+  /* background: rgba(255, 255, 255, 0.8); */
+  backdrop-filter: blur(5px) brightness(1.1);
+  border-radius: 5px;
+  box-shadow:
+    inset 0 1px 10px 1px rgb(255, 255, 255, 0.4),
+    0 3px 8px rgba(0, 0, 0, 0.4);
   overflow: hidden;
 }
 
 .comment-text {
-  padding: 10px 12px;
+  padding: 8px 12px;
   font-family: georgia;
   font-size: 13px;
   line-height: 1.5;
@@ -463,7 +464,6 @@
   justify-content: flex-end;
   gap: 4px;
   padding: 6px 8px;
-  border-top: 1px solid rgba(255, 255, 255, 0.1);
   opacity: 0;
   transition: opacity 0.15s ease;
 }
@@ -490,7 +490,7 @@
 .comment-edit-btn:hover,
 .comment-delete-btn:hover {
   background: rgba(255, 255, 255, 0.1);
-  color: white;
+  color: black;
 }
 
 .comment-delete-btn:hover {
@@ -523,22 +523,22 @@
 }
 
 .comment-card[data-color="yellow"] .comment-expanded-content {
-  border-left: 3px solid #ffd54f;
+  background: rgba(255, 246, 222, 0.8);
 }
 .comment-card[data-color="red"] .comment-expanded-content {
-  border-left: 3px solid #ef5350;
+  background: rgba(253, 222, 220, 0.8);
 }
 .comment-card[data-color="blue"] .comment-expanded-content {
-  border-left: 3px solid #42a5f5;
+  background: rgba(219, 237, 253, 0.8);
 }
 .comment-card[data-color="green"] .comment-expanded-content {
-  border-left: 3px solid #66bb6a;
+  background: rgba(226, 241, 226, 0.8);
 }
 
 .comment-card.highlighted .comment-expanded-content {
   box-shadow:
-    0 0 0 2px rgba(66, 165, 245, 0.5),
-    0 2px 12px rgba(0, 0, 0, 0.3);
+    inset 0 1px 10px 1px rgb(255, 255, 255, 0.4),
+    0 3px 12px rgba(0, 0, 0, 0.5);
 }
 
 /* ===========================================

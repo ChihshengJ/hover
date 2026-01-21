@@ -435,12 +435,10 @@ export class ViewerPane {
       const dims = this.document.pageDimensions[i];
       page.canvas.dataset.rendered = "false";
 
-      // Round WIDTH only, then derive height to maintain aspect ratio
       const visualWidth = Math.round(dims.width * effectiveScale);
       const aspectRatio = dims.height / dims.width;
       const visualHeight = Math.round(visualWidth * aspectRatio);
 
-      // Canvas buffer dimensions
       const canvasWidth = visualWidth * outputScale;
       const canvasHeight = visualHeight * outputScale;
 
@@ -475,7 +473,6 @@ export class ViewerPane {
   async refreshAllPages() {
     await this.resizeAllCanvases(this.scale);
     this.#renderVisiblePages();
-    // Refresh annotations after layout changes
     this.annotationManager?.refresh();
   }
 
@@ -534,7 +531,7 @@ export class ViewerPane {
     }
 
     requestAnimationFrame(() => {
-      this.fitWidth();
+      this.fit();
       this.#renderVisiblePages();
       this.annotationManager?.refresh();
     });

@@ -221,7 +221,9 @@ export class WindowControls {
 
       isTransforming = false;
       pageStates.clear();
-      pane.controls.updateZoomDisplay();
+      if (!pane.controls.isHidden) {
+        pane.controls.updateZoomDisplay();
+      }
 
       // Refresh search highlights after pinch zoom
       this.searchController?.refresh();

@@ -743,11 +743,15 @@ export class FloatingToolbar {
     switch (action) {
       case "zoom-in":
         this.pane.zoom(0.25);
-        this.pane.controls.updateZoomDisplay();
+        if (!this.pane.controls.isHidden) {
+          this.pane.controls.updateZoomDisplay();
+        }
         break;
       case "zoom-out":
         this.pane.zoom(-0.25);
-        this.pane.controls.updateZoomDisplay();
+        if (!this.pane.controls.isHidden) {
+          this.pane.controls.updateZoomDisplay();
+        }
         break;
       case "night-mode":
         this.#nightmode();

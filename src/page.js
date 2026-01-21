@@ -7,15 +7,6 @@ import { CitationPopup } from "./controls/citation_popup.js";
  * @typedef {import('./viewpane.js').ViewerPane} ViewerPane;
  */
 
-// Cache Safari detection - only need to check once
-let isSafariBrowser = null;
-function isSafari() {
-  if (isSafariBrowser === null) {
-    isSafariBrowser = /^((?!chrome|android).)*safari/i.test(navigator.userAgent);
-  }
-  return isSafariBrowser;
-}
-
 let sharedPopup = null;
 function getSharedPopup() {
   if (!sharedPopup) {
@@ -136,10 +127,6 @@ export class PageView {
       });
       await textLayerInstance.render();
 
-      if (isSafari()) {
-        this.#fixSafariTextLayer(textViewport);
-      }
-
       this.#ensureEndOfContent();
 
       this.textLayer.style.width = `${cssWidth}px`;
@@ -153,38 +140,6 @@ export class PageView {
       this.renderTask = null;
     }
     this.canvas.dataset.rendered = "true";
-  }
-
-  #fixSafariTextLayer(viewport) {
-    const spans = this.textLayer.querySelectorAll("span");
-    const items = this.textContent.items;
-    // const cssWidth = parseFloat(this.canvas.style.width);
-    // const baseViewport = this.page.getViewport({ scale: 1 });
-    const { pageWidth, pageHeight, pageX, pageY } = viewport.rawDims;
-    const transform = [1, 0, 0, -1, -pageX, pageY + pageHeight];
-
-    let itemIndex = 0;
-    for (const span of spans) {
-      if (!span.textContent) continue;
-      while (itemIndex < items.length && items[itemIndex].str === "") {
-        itemIndex++;
-      }
-      if (itemIndex < items.length) {
-        const item = items[itemIndex];
-        const tx = pdfjsLib.Util.transform(transform, item.transform);
-        const calculatedHeight = Math.hypot(tx[2], tx[3]);
-
-        span.style.setProperty(
-          "--font-height",
-          `${calculatedHeight.toFixed(2)}px`,
-        );
-        span.style.setProperty(
-          "font-size",
-          `calc(var(--total-scale-factor) * var(--font-height))`,
-        );
-      }
-      itemIndex++;
-    }
   }
 
   cancel() {
@@ -229,20 +184,28 @@ export class PageView {
 
   #setupAnnotationLayerEvents() {
     if (this._delegatedListenersAttached) return;
-    
+
     const citationPopup = getSharedPopup();
-    
+
     // Use capture phase (true) for mouseenter/mouseleave to work with delegation
-    this.annotationLayer.addEventListener("mouseenter", (e) => {
-      const anchor = e.target.closest("a[data-dest]");
-      if (anchor) this.#handleAnchorEnter(anchor, citationPopup);
-    }, true);
-    
-    this.annotationLayer.addEventListener("mouseleave", (e) => {
-      const anchor = e.target.closest("a[data-dest]");
-      if (anchor) this.#handleAnchorLeave(anchor, citationPopup);
-    }, true);
-    
+    this.annotationLayer.addEventListener(
+      "mouseenter",
+      (e) => {
+        const anchor = e.target.closest("a[data-dest]");
+        if (anchor) this.#handleAnchorEnter(anchor, citationPopup);
+      },
+      true,
+    );
+
+    this.annotationLayer.addEventListener(
+      "mouseleave",
+      (e) => {
+        const anchor = e.target.closest("a[data-dest]");
+        if (anchor) this.#handleAnchorLeave(anchor, citationPopup);
+      },
+      true,
+    );
+
     this.annotationLayer.addEventListener("click", (e) => {
       const anchor = e.target.closest("a[data-dest]");
       if (anchor && anchor.dataset.dest !== undefined) {
@@ -250,25 +213,25 @@ export class PageView {
         this.#handleAnchorClick(anchor);
       }
     });
-    
+
     this._delegatedListenersAttached = true;
   }
 
   async #handleAnchorEnter(anchor, citationPopup) {
     if (this.wrapper.classList.contains("text-selecting")) return;
-    
+
     if (this._showTimer) clearTimeout(this._showTimer);
     citationPopup.onAnchorEnter();
-    
+
     const dest = anchor.getAttribute("href");
     if (!dest || dest.startsWith("http")) return; // External link
-    
+
     this._showTimer = setTimeout(async () => {
       const result = await this.#resolveDestToPosition(dest);
       if (!result) return;
-      
+
       anchor.dataset.dest = `${result.left},${result.pageIndex},${result.top}`;
-      
+
       if (dest.split(".")[0] === "cite") {
         await citationPopup.show(
           anchor,
@@ -283,12 +246,12 @@ export class PageView {
 
   #handleAnchorLeave(anchor, citationPopup) {
     if (this.wrapper.classList.contains("text-selecting")) return;
-    
+
     if (this._showTimer) {
       clearTimeout(this._showTimer);
       this._showTimer = null;
     }
-    
+
     if (citationPopup.currentAnchor === anchor) {
       citationPopup.onAnchorLeave();
     }
@@ -297,7 +260,7 @@ export class PageView {
   async #handleAnchorClick(anchor) {
     const destStr = anchor.dataset.dest;
     if (!destStr) return;
-    
+
     const [left, page, top] = destStr.split(",").map(parseFloat);
     const pageIndex = Math.floor(page);
     await this.pane.scrollToPoint(pageIndex, left, top);
@@ -459,7 +422,7 @@ export class PageView {
 
   #renderAnnotations(page, viewport) {
     this.annotationLayer.innerHTML = "";
-    
+
     this.#setupAnnotationLayerEvents();
 
     for (const a of this.annotations) {
@@ -470,7 +433,8 @@ export class PageView {
         scale: this.scale,
         dontFlip: true,
       });
-      const [x1, y1, x2, y2] = viewportForRects.convertToViewportRectangle(rect);
+      const [x1, y1, x2, y2] =
+        viewportForRects.convertToViewportRectangle(rect);
       const left = Math.min(x1, x2);
       const bottom = Math.min(y1, y2);
       const width = Math.abs(x1 - x2);

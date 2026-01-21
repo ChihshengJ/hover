@@ -1,10 +1,3 @@
-/**
- * CommentDisplay - Manages comment cards displayed on the right side of pages
- *
- * Comments can be in two states:
- * - Expanded: Full card shown when there's space on the right
- * - Collapsed: Small strip when canvas takes full width
- */
 export class CommentDisplay {
   /** @type {ViewerPane} */
   #pane = null;

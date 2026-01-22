@@ -1,23 +1,24 @@
-body.night-mode {
-  background: rgba(46, 48, 53, 1);
-}
+/* ===========================================
+   Canvas Filters (can't be done with variables)
+   =========================================== */
 
-/* invert color */
-body.night-mode .page-wrapper canvas {
+.night-mode .page-wrapper canvas {
   filter: invert(1) hue-rotate(75deg) brightness(1.1) contrast(0.9);
 }
 
-body.night-mode .page-wrapper {
+.night-mode .page-wrapper {
   box-shadow: 0px 0px 10px 2px rgba(0, 0, 0, 0.5);
 }
 
-body.night-mode .page-num {
+.night-mode .page-num {
   color: #888;
 }
 
-/*******************/
-/* citation popup */
-body.night-mode .citation-popup {
+/* ===========================================
+   Citation Popup - Complex shadows
+   =========================================== */
+
+.night-mode .citation-popup {
   background: rgba(0, 0, 0, 0.2);
   box-shadow:
     0 10px 20px 20px rgba(0, 0, 0, 0.5),
@@ -25,76 +26,60 @@ body.night-mode .citation-popup {
     inset 0 0 20px 3px rgba(255, 255, 255, 0.3);
 }
 
-body.night-mode .citation-popup-header {
+.night-mode .citation-popup-header {
   background: rgb(47, 48, 53, 1);
 }
 
-body.night-mode .citation-tab {
+.night-mode .citation-tab {
   color: white;
 }
 
-body.night-mode .citation-tabs {
+.night-mode .citation-tabs {
   background: rgb(50, 50, 50, 1);
 }
 
-body.night-mode .citation-tab:hover {
+.night-mode .citation-tab:hover {
   background: rgb(100, 100, 100, 0.7);
 }
 
-body.night-mode .citation-tab:active {
+.night-mode .citation-tab:active {
   background: rgb(150, 150, 150, 1);
 }
 
-body.night-mode .citation-tab.active {
+.night-mode .citation-tab.active {
   background: rgb(100, 100, 100, 1);
   box-shadow: inset 0 0 5px 1px rgb(255, 255, 255, 0.1);
 }
 
-body.night-mode .citation-popup-text {
+.night-mode .citation-popup-text,
+.night-mode .citation-popup-toggle,
+.night-mode .scholar-abstract {
   color: white;
 }
 
-body.night-mode .citation-popup-toggle {
-  color: white;
-}
-
-body.night-mode .scholar-title {
+.night-mode .scholar-title {
   color: #4778f5;
 }
 
-body.night-mode .scholar-title:hover {
+.night-mode .scholar-title:hover {
   color: #4795f5;
 }
 
-body.night-mode .scholar-abstract {
-  color: white;
-}
-
-body.night-mode .scholar-authors {
+.night-mode .scholar-authors {
   color: rgb(230, 230, 230);
   border-bottom: 1px solid rgba(180, 180, 180);
 }
 
-/*******************/
-/* panel controls */
+/* ===========================================
+   Pane Controls - Complex shadows
+   =========================================== */
+
 .night-mode .pane-controls {
   background: rgba(40, 40, 40, 0.85);
   box-shadow:
     0 2px 12px rgba(0, 0, 0, 0.3),
     0 0 0 1px rgba(255, 255, 255, 0.1),
     inset 0px -2px 10px 1px rgba(255, 255, 255, 0.1);
-}
-
-.night-mode .pane-controls-inner {
-  color: #e0e0e0;
-}
-
-.night-mode .pane-btn {
-  color: #aaa;
-}
-
-.night-mode .pane-mode-toggle {
-  background: rgba(255, 255, 255, 0.1);
 }
 
 .night-mode .pane-btn img {
@@ -107,20 +92,9 @@ body.night-mode .scholar-authors {
   box-shadow: inset 0 0 3px 1px rgba(255, 255, 255, 0.1);
 }
 
-.night-mode .pane-btn:not(.active):hover {
-  background: rgba(255, 255, 255, 0.1);
-  color: #fff;
-}
-
-.night-mode .viewer-pane.active .pane-controls {
-  box-shadow:
-    0 2px 12px rgba(0, 0, 0, 0.2),
-    0 0 0 1px rgba(0, 0, 0, 0.05),
-    inset 0 0 4px 2px rgba(219, 147, 52, 0.8);
-}
-
-/******************/
-/* floating ball */
+/* ===========================================
+   Floating Ball - Complex gradients
+   =========================================== */
 
 .night-mode .goo-container::before {
   filter: url(#goo) drop-shadow(0 0.3em 0.1em #00000099)
@@ -169,8 +143,10 @@ body.night-mode .scholar-authors {
   filter: invert(1);
 }
 
-/***************/
-/* jump-indicators */
+/* ===========================================
+   Jump Indicators
+   =========================================== */
+
 .night-mode .jump-indicator {
   color: rgba(255, 255, 255, 0.5);
   background: rgba(255, 255, 255, 0.2);
@@ -180,4 +156,127 @@ body.night-mode .scholar-authors {
 .night-mode .jump-indicator.active {
   background: rgba(100, 150, 255, 0.3);
   border-color: rgba(100, 150, 255, 0.5);
+}
+
+/* ===========================================
+   File Menu - Complex filters
+   =========================================== */
+
+.night-mode .file-menu-container.active {
+  filter: url(#file-menu-goo-filter) drop-shadow(0 0 3px rgb(0, 0, 0, 0.5))
+    drop-shadow(-1px -1px 2px rgb(255, 255, 255, 0.1));
+}
+
+/* ===========================================
+   Progress Bar
+   =========================================== */
+
+.night-mode .progress-bar-track {
+  background: linear-gradient(
+    to bottom,
+    rgba(255, 255, 255, 0.05) 0%,
+    rgba(255, 255, 255, 0.1) 50%,
+    rgba(255, 255, 255, 0.05) 100%
+  );
+}
+
+.night-mode .progress-bar-glow {
+  background: linear-gradient(
+    to bottom,
+    rgba(200, 220, 255, 0.5) 0%,
+    rgba(180, 200, 255, 0.8) 100%
+  );
+  box-shadow:
+    0 0 8px rgba(180, 200, 255, 0.6),
+    0 0 16px rgba(150, 180, 255, 0.3),
+    0 0 24px rgba(120, 160, 255, 0.15);
+}
+
+.night-mode .indicator-core {
+  background: radial-gradient(
+    circle at 40% 40%,
+    rgba(200, 220, 255, 1) 0%,
+    rgba(180, 200, 255, 0.9) 40%,
+    rgba(150, 180, 255, 0.8) 100%
+  );
+}
+
+.night-mode .section-tick {
+  background: rgba(100, 100, 100, 0.5);
+}
+
+.night-mode .section-mark.reached .section-tick {
+  background: rgba(180, 200, 255, 0.8);
+  box-shadow:
+    0 0 4px rgba(180, 200, 255, 0.5),
+    0 0 8px rgba(150, 180, 255, 0.3);
+}
+
+.night-mode .progress-end-marker {
+  background: rgba(100, 100, 100, 0.4);
+}
+
+.night-mode .progress-end-marker.reached {
+  background: rgba(180, 200, 255, 0.9);
+  box-shadow:
+    0 0 6px rgba(180, 200, 255, 0.7),
+    0 0 12px rgba(150, 180, 255, 0.4);
+}
+
+/* Night mode pane progress */
+.night-mode .pane-progress-ring .progress-ring-bg {
+  stroke: rgba(100, 100, 100, 0.2);
+}
+
+.night-mode .pane-progress-ring .progress-ring-fill {
+  stroke: rgba(219, 147, 52, 0.4);
+}
+
+.night-mode .pane-progress-ring .progress-ring-glow {
+  stroke: rgba(219, 147, 52, 0.2);
+}
+
+.night-mode .viewer-pane.active .pane-progress-ring .progress-ring-fill {
+  stroke: rgba(219, 147, 52, 0.8);
+}
+
+.night-mode .viewer-pane.active .pane-progress-ring .progress-ring-glow {
+  stroke: rgba(219, 147, 52, 0.4);
+}
+
+.night-mode .pane-progress-ring.completed .progress-ring-fill {
+  stroke: rgba(180, 200, 255, 0.8);
+}
+
+.night-mode .pane-progress-ring.completed .progress-ring-glow {
+  stroke: rgba(180, 200, 255, 0.4);
+}
+
+.night-mode .viewer-pane:not(.active) .pane-progress-ring .progress-ring-fill {
+  stroke: rgba(100, 100, 100, 0.3);
+}
+
+.night-mode .viewer-pane:not(.active) .pane-progress-ring .progress-ring-glow {
+  stroke: rgba(100, 100, 100, 0.15);
+}
+
+/* Annotation Tool Bar */
+.night-mode .annotation-toolbar {
+  background: rgba(255, 255, 255, 0.3);
+}
+.night-mode .toolbar-divider {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+.night-mode .action-btn {
+  filter: invert(1) hue-rotate(75deg);
+}
+
+.night-mode .action-btn.active {
+  background: rgba(255, 255, 255, 0.3);
+}
+
+.night-mode .action-btn.delete-btn:hover {
+  color: rgb(255, 60, 60);
+  filter: none;
 }

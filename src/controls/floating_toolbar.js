@@ -95,7 +95,7 @@ export class FloatingToolbar {
       </button>
       <button class="tool-btn" data-action="night-mode">
         <div class="inner">
-          <div>☽</div>
+            <img src="/assets/moon.svg" width="18" />
         </div>
       </button>
     `;
@@ -111,12 +111,12 @@ export class FloatingToolbar {
       </button>
       <button class="tool-btn" data-action="zoom-in">
         <div class="inner">
-          <div>+</div>
+            <img src="/assets/plus.svg" width="24" />
         </div>
       </button>
       <button class="tool-btn" data-action="zoom-out">
         <div class="inner">
-          <div>-</div>
+            <img src="/assets/minus.svg" width="24" />
         </div>
       </button>
     `;
@@ -832,28 +832,25 @@ export class FloatingToolbar {
         b.classList.remove("night-mode");
         b.firstElementChild.classList.remove("night-mode");
       }
-      btn.firstElementChild.firstElementChild.textContent = "☽";
+      btn.firstElementChild.innerHTML = '<img src="/assets/moon.svg" width="18" />';
     } else {
       this.ball.classList.add("night-mode");
       for (const b of btns) {
         b.classList.add("night-mode");
         b.firstElementChild.classList.add("night-mode");
       }
-      btn.firstElementChild.firstElementChild.textContent = "☼";
+      btn.firstElementChild.innerHTML = '<img src="/assets/sun.svg" width="20" />';
       pageInfo.classList.add("night-mode");
     }
 
-    // document body animation
-    setTimeout(() => {
-      if (isCurrentlyNight) {
-        document.body.classList.remove("night-mode");
-      } else {
-        document.body.classList.add("night-mode");
-      }
+    if (isCurrentlyNight) {
+      document.body.classList.remove("night-mode");
+    } else {
+      document.body.classList.add("night-mode");
+    }
 
-      this.pane.scroller.scrollTop = scrollPos;
-      this.nightModeAnimating = false;
-    }, 50);
+    this.pane.scroller.scrollTop = scrollPos;
+    this.nightModeAnimating = false;
   }
 
   updatePageNumber() {
@@ -864,12 +861,6 @@ export class FloatingToolbar {
     this.ball.querySelector(".page-total").textContent = totalPages;
   }
 
-  // updateActivePane() {
-  //   this.pane.scroller.addEventListener("scroll", () => {
-  //     this.updatePageNumber();
-  //   });
-  // }
-  //
   updateActivePane() {
     if (this.#scrollCallback) {
       this.pane.controls.offScroll(this.#scrollCallback);

@@ -1,7 +1,3 @@
-/**
- * SearchBar - Floating search bar UI component
- */
-
 export class SearchBar {
   /** @type {import('./search_controller.js').SearchController} */
   #controller = null;
@@ -26,9 +22,9 @@ export class SearchBar {
 
   /** @type {HTMLInputElement} */
   #toInput = null;
-
-  /** @type {boolean} */
-  #isToRelative = false;
+  
+  /** @type {HTMLElement[]} */
+  #clearBtns = null;
 
   /** @type {boolean} */
   #fromSelected = false;
@@ -49,8 +45,8 @@ export class SearchBar {
   }
 
   #createElements() {
-    this.#container = document.createElement('div');
-    this.#container.className = 'search-bar';
+    this.#container = document.createElement("div");
+    this.#container.className = "search-bar";
     this.#container.innerHTML = `
       <button class="search-close-btn" title="Close (Esc)">×</button>
       
@@ -72,6 +68,7 @@ export class SearchBar {
           <label>From</label>
           <div class="search-range-input-wrapper">
             <input type="text" class="search-range-input search-from-input" placeholder="Page or section" />
+            <button type="button" class="clear-button" id="clear-1">×</button>
             <div class="search-dropdown search-from-dropdown"></div>
           </div>
         </div>
@@ -80,6 +77,7 @@ export class SearchBar {
           <label>To</label>
           <div class="search-range-input-wrapper">
             <input type="text" class="search-range-input search-to-input" placeholder="Page or section" disabled />
+            <button type="button" class="clear-button" id="clear-2">×</button>
             <div class="search-dropdown search-to-dropdown"></div>
           </div>
         </div>
@@ -87,90 +85,103 @@ export class SearchBar {
     `;
 
     // Get references
-    this.#searchInput = this.#container.querySelector('.search-input');
-    this.#resultCount = this.#container.querySelector('.search-result-count');
-    this.#fromInput = this.#container.querySelector('.search-from-input');
-    this.#toInput = this.#container.querySelector('.search-to-input');
-    this.#fromSelect = this.#container.querySelector('.search-from-dropdown');
-    this.#toSelect = this.#container.querySelector('.search-to-dropdown');
+    this.#searchInput = this.#container.querySelector(".search-input");
+    this.#resultCount = this.#container.querySelector(".search-result-count");
+    this.#fromInput = this.#container.querySelector(".search-from-input");
+    this.#toInput = this.#container.querySelector(".search-to-input");
+    this.#fromSelect = this.#container.querySelector(".search-from-dropdown");
+    this.#toSelect = this.#container.querySelector(".search-to-dropdown");
+    this.#clearBtns = [this.#container.querySelector("#clear-1"), this.#container.querySelector("#clear-2")];
+
 
     document.body.appendChild(this.#container);
   }
 
   #setupEventListeners() {
     // Close button
-    this.#container.querySelector('.search-close-btn').addEventListener('click', () => {
-      this.#controller.deactivate();
-      this.#container.classList.remove("visible");
-    });
+    this.#container
+      .querySelector(".search-close-btn")
+      .addEventListener("click", () => {
+        this.#controller.deactivate();
+        this.#container.classList.remove("visible");
+      });
 
     // Search input
-    this.#searchInput.addEventListener('input', () => {
+    this.#searchInput.addEventListener("input", () => {
       this.#debounceSearch();
     });
 
-    this.#searchInput.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter') {
+    this.#searchInput.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") {
         e.preventDefault();
         if (e.shiftKey) {
           this.#controller.focusPrev();
         } else {
           this.#controller.focusNext();
         }
-      } else if (e.key === 'Escape') {
+      } else if (e.key === "Escape") {
         this.#controller.deactivate();
       }
     });
 
     // From input
-    this.#fromInput.addEventListener('focus', () => {
+    this.#fromInput.addEventListener("focus", () => {
       this.#showFromDropdown();
     });
 
-    this.#fromInput.addEventListener('blur', (e) => {
+    this.#fromInput.addEventListener("blur", (e) => {
       // Delay hide to allow click on dropdown
       setTimeout(() => this.#hideDropdown(this.#fromSelect), 150);
     });
 
-    this.#fromInput.addEventListener('input', () => {
+    this.#fromInput.addEventListener("input", () => {
       this.#handleFromInput();
     });
 
-    this.#fromInput.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter') {
+    this.#fromInput.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") {
         this.#confirmFromSelection();
         this.#hideDropdown(this.#fromSelect);
       }
     });
 
     // To input
-    this.#toInput.addEventListener('focus', () => {
+    this.#toInput.addEventListener("focus", () => {
       if (this.#fromSelected) {
         this.#showToDropdown();
       }
     });
 
-    this.#toInput.addEventListener('blur', () => {
+    this.#toInput.addEventListener("blur", () => {
       setTimeout(() => this.#hideDropdown(this.#toSelect), 150);
     });
 
-    this.#toInput.addEventListener('input', () => {
+    this.#toInput.addEventListener("input", () => {
       this.#handleToInput();
     });
 
-    this.#toInput.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter') {
+    this.#toInput.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") {
         this.#confirmToSelection();
         this.#hideDropdown(this.#toSelect);
       }
     });
 
     // Prevent search bar from stealing focus when clicking container
-    this.#container.addEventListener('mousedown', (e) => {
+    this.#container.addEventListener("mousedown", (e) => {
       if (e.target === this.#container) {
         e.preventDefault();
       }
     });
+
+    this.#clearBtns[0].addEventListener("click", () => {
+      this.#fromInput.value = "";
+    });
+
+    this.#clearBtns[1].addEventListener("click", () => {
+      this.#toInput.value = "";
+    });
+
   }
 
   #debounceSearch() {
@@ -188,16 +199,16 @@ export class SearchBar {
 
   #showFromDropdown() {
     const dropdown = this.#fromSelect;
-    dropdown.innerHTML = '';
+    dropdown.innerHTML = "";
 
     // Add "Current page" option
     const currentPage = this.#controller.getCurrentPage();
     const currentOption = this.#createDropdownOption(
       `Current page (${currentPage})`,
-      'current',
+      "current",
       () => {
-        this.#selectFrom('current', currentPage);
-      }
+        this.#selectFrom("current", currentPage);
+      },
     );
     dropdown.appendChild(currentOption);
 
@@ -207,14 +218,14 @@ export class SearchBar {
         section.title,
         section.pageNumber,
         () => {
-          this.#selectFrom('section', section.pageNumber, section.title);
-        }
+          this.#selectFrom("section", section.pageNumber, section.title);
+        },
       );
       option.style.paddingLeft = `${12 + section.depth * 12}px`;
       dropdown.appendChild(option);
     }
 
-    dropdown.classList.add('visible');
+    dropdown.classList.add("visible");
   }
 
   #handleFromInput() {
@@ -223,17 +234,21 @@ export class SearchBar {
 
     // Filter dropdown based on input
     const dropdown = this.#fromSelect;
-    const options = dropdown.querySelectorAll('.search-dropdown-option');
+    const options = dropdown.querySelectorAll(".search-dropdown-option");
 
     for (const option of options) {
       const text = option.textContent.toLowerCase();
-      const matches = text.includes(value.toLowerCase()) || 
-                      option.dataset.page === value;
-      option.style.display = matches ? '' : 'none';
+      const matches =
+        text.includes(value.toLowerCase()) || option.dataset.page === value;
+      option.style.display = matches ? "" : "none";
     }
 
     // If it's a valid page number, enable it
-    if (!isNaN(pageNum) && pageNum >= 1 && pageNum <= this.#controller.totalPages) {
+    if (
+      !isNaN(pageNum) &&
+      pageNum >= 1 &&
+      pageNum <= this.#controller.totalPages
+    ) {
       // Valid page number entered
     }
   }
@@ -242,15 +257,15 @@ export class SearchBar {
     this.#currentFromPage = pageNumber;
     this.#fromSelected = true;
 
-    if (type === 'current') {
+    if (type === "current") {
       this.#fromInput.value = `Current page (${pageNumber})`;
-      this.#fromInput.dataset.type = 'current';
-    } else if (type === 'section') {
+      this.#fromInput.dataset.type = "current";
+    } else if (type === "section") {
       this.#fromInput.value = title || `Page ${pageNumber}`;
-      this.#fromInput.dataset.type = 'section';
+      this.#fromInput.dataset.type = "section";
     } else {
       this.#fromInput.value = `Page ${pageNumber}`;
-      this.#fromInput.dataset.type = 'page';
+      this.#fromInput.dataset.type = "page";
     }
 
     this.#fromInput.dataset.page = pageNumber;
@@ -268,8 +283,12 @@ export class SearchBar {
     const value = this.#fromInput.value.trim();
     const pageNum = parseInt(value, 10);
 
-    if (!isNaN(pageNum) && pageNum >= 1 && pageNum <= this.#controller.totalPages) {
-      this.#selectFrom('page', pageNum);
+    if (
+      !isNaN(pageNum) &&
+      pageNum >= 1 &&
+      pageNum <= this.#controller.totalPages
+    ) {
+      this.#selectFrom("page", pageNum);
     }
   }
 
@@ -278,31 +297,31 @@ export class SearchBar {
   // =========================================
 
   #enableToField() {
-    const toField = this.#container.querySelector('.search-to-field');
-    toField.classList.remove('disabled');
+    const toField = this.#container.querySelector(".search-to-field");
+    toField.classList.remove("disabled");
     this.#toInput.disabled = false;
   }
 
   #disableToField() {
-    const toField = this.#container.querySelector('.search-to-field');
-    toField.classList.add('disabled');
+    const toField = this.#container.querySelector(".search-to-field");
+    toField.classList.add("disabled");
     this.#toInput.disabled = true;
-    this.#toInput.value = '';
+    this.#toInput.value = "";
   }
 
   #showToDropdown() {
     const dropdown = this.#toSelect;
-    dropdown.innerHTML = '';
+    dropdown.innerHTML = "";
 
     const fromPage = this.#currentFromPage;
 
     // Add "End of document" option
     const endOption = this.#createDropdownOption(
-      'End of document',
+      "End of document",
       this.#controller.totalPages,
       () => {
-        this.#selectTo('end', this.#controller.totalPages);
-      }
+        this.#selectTo("end", this.#controller.totalPages);
+      },
     );
     dropdown.appendChild(endOption);
 
@@ -313,15 +332,15 @@ export class SearchBar {
           section.title,
           section.pageNumber,
           () => {
-            this.#selectTo('section', section.pageNumber, section.title);
-          }
+            this.#selectTo("section", section.pageNumber, section.title);
+          },
         );
         option.style.paddingLeft = `${12 + section.depth * 12}px`;
         dropdown.appendChild(option);
       }
     }
 
-    dropdown.classList.add('visible');
+    dropdown.classList.add("visible");
   }
 
   #handleToInput() {
@@ -337,19 +356,22 @@ export class SearchBar {
       // Relative mode: value is number of pages
       if (!isNaN(pageNum) && pageNum > 0) {
         const toPage = this.#currentFromPage + pageNum;
-        this.#toInput.dataset.page = Math.min(toPage, this.#controller.totalPages);
+        this.#toInput.dataset.page = Math.min(
+          toPage,
+          this.#controller.totalPages,
+        );
         this.#updateRange();
       }
     } else {
       // Absolute mode: filter dropdown
       const dropdown = this.#toSelect;
-      const options = dropdown.querySelectorAll('.search-dropdown-option');
+      const options = dropdown.querySelectorAll(".search-dropdown-option");
 
       for (const option of options) {
         const text = option.textContent.toLowerCase();
-        const matches = text.includes(value.toLowerCase()) ||
-                        option.dataset.page === value;
-        option.style.display = matches ? '' : 'none';
+        const matches =
+          text.includes(value.toLowerCase()) || option.dataset.page === value;
+        option.style.display = matches ? "" : "none";
       }
     }
   }
@@ -357,9 +379,9 @@ export class SearchBar {
   #selectTo(type, pageNumber, title = null) {
     this.#toInput.dataset.page = pageNumber;
 
-    if (type === 'end') {
-      this.#toInput.value = 'End of document';
-    } else if (type === 'section') {
+    if (type === "end") {
+      this.#toInput.value = "End of document";
+    } else if (type === "section") {
       this.#toInput.value = title || `Page ${pageNumber}`;
     } else {
       this.#toInput.value = `Page ${pageNumber}`;
@@ -373,20 +395,24 @@ export class SearchBar {
     const value = this.#toInput.value.trim();
     const pageNum = parseInt(value, 10);
 
-    if (!isNaN(pageNum) && pageNum > this.#currentFromPage && pageNum <= this.#controller.totalPages) {
-      this.#selectTo('page', pageNum);
+    if (
+      !isNaN(pageNum) &&
+      pageNum > this.#currentFromPage &&
+      pageNum <= this.#controller.totalPages
+    ) {
+      this.#selectTo("page", pageNum);
     }
   }
 
   #validateToSelection() {
     const toPage = parseInt(this.#toInput.dataset.page, 10);
-    
+
     if (!isNaN(toPage) && toPage <= this.#currentFromPage) {
       // To page is now invalid, reset it
-      this.#toInput.value = '';
-      this.#toInput.dataset.page = '';
-      this.#toInput.classList.add('invalid');
-      setTimeout(() => this.#toInput.classList.remove('invalid'), 500);
+      this.#toInput.value = "";
+      this.#toInput.dataset.page = "";
+      this.#toInput.classList.add("invalid");
+      setTimeout(() => this.#toInput.classList.remove("invalid"), 500);
       this.#updateRange();
     }
   }
@@ -396,11 +422,11 @@ export class SearchBar {
   // =========================================
 
   #createDropdownOption(text, pageNumber, onClick) {
-    const option = document.createElement('div');
-    option.className = 'search-dropdown-option';
+    const option = document.createElement("div");
+    option.className = "search-dropdown-option";
     option.textContent = text;
     option.dataset.page = pageNumber;
-    option.addEventListener('mousedown', (e) => {
+    option.addEventListener("mousedown", (e) => {
       e.preventDefault();
       onClick();
     });
@@ -408,13 +434,14 @@ export class SearchBar {
   }
 
   #hideDropdown(dropdown) {
-    dropdown.classList.remove('visible');
+    dropdown.classList.remove("visible");
   }
 
   #updateRange() {
     const fromPage = this.#currentFromPage || 1;
-    const toPage = parseInt(this.#toInput.dataset.page, 10) || this.#controller.totalPages;
-    
+    const toPage =
+      parseInt(this.#toInput.dataset.page, 10) || this.#controller.totalPages;
+
     this.#controller.onRangeChange(fromPage, toPage);
   }
 
@@ -426,7 +453,7 @@ export class SearchBar {
    * Show the search bar
    */
   show() {
-    this.#container.classList.add('visible');
+    this.#container.classList.add("visible");
     setTimeout(() => {
       this.#searchInput.focus();
     }, 100);
@@ -436,7 +463,7 @@ export class SearchBar {
    * Hide the search bar
    */
   hide() {
-    this.#container.classList.remove('visible');
+    this.#container.classList.remove("visible");
     this.#hideDropdown(this.#fromSelect);
     this.#hideDropdown(this.#toSelect);
     this.reset();
@@ -446,12 +473,12 @@ export class SearchBar {
    * Reset the search bar state
    */
   reset() {
-    this.#searchInput.value = '';
-    this.#fromInput.value = '';
-    this.#fromInput.dataset.page = '';
-    this.#fromInput.dataset.type = '';
-    this.#toInput.value = '';
-    this.#toInput.dataset.page = '';
+    this.#searchInput.value = "";
+    this.#fromInput.value = "";
+    this.#fromInput.dataset.page = "";
+    this.#fromInput.dataset.type = "";
+    this.#toInput.value = "";
+    this.#toInput.dataset.page = "";
     this.#fromSelected = false;
     this.#currentFromPage = 1;
     this.#disableToField();
@@ -464,12 +491,15 @@ export class SearchBar {
    * @param {number} total - Total number of results
    */
   updateResultCount(current, total) {
-    this.#container.querySelector('.search-current').textContent = current;
-    this.#container.querySelector('.search-total').textContent = total;
-    
-    const resultCount = this.#container.querySelector('.search-result-count');
-    resultCount.classList.toggle('has-results', total > 0);
-    resultCount.classList.toggle('no-results', total === 0 && this.#searchInput.value.length > 0);
+    this.#container.querySelector(".search-current").textContent = current;
+    this.#container.querySelector(".search-total").textContent = total;
+
+    const resultCount = this.#container.querySelector(".search-result-count");
+    resultCount.classList.toggle("has-results", total > 0);
+    resultCount.classList.toggle(
+      "no-results",
+      total === 0 && this.#searchInput.value.length > 0,
+    );
   }
 
   /**
@@ -486,7 +516,7 @@ export class SearchBar {
    */
   updateCurrentPage(pageNumber) {
     // If "current page" was selected, update the from value
-    if (this.#fromInput.dataset.type === 'current') {
+    if (this.#fromInput.dataset.type === "current") {
       this.#currentFromPage = pageNumber;
       this.#fromInput.value = `Current page (${pageNumber})`;
       this.#fromInput.dataset.page = pageNumber;

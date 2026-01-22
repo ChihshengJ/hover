@@ -111,11 +111,11 @@ export class PDFDocumentModel {
 
   async load(source) {
     if (source instanceof ArrayBuffer) {
-      this.pdfDoc = await pdfjsLib.getDocument({ data: source }).promise;
+      this.pdfDoc = await pdfjsLib.getDocument({ data: source, verbosity: 0}).promise;
     } else {
       try {
         // Try direct fetch first
-        this.pdfDoc = await pdfjsLib.getDocument(source).promise;
+        this.pdfDoc = await pdfjsLib.getDocument({ url: source, verbosity: 0 }).promise;
       } catch (error) {
         // Check if it's a CORS or network error
         if (this.#isCorsOrNetworkError(error)) {
@@ -123,7 +123,7 @@ export class PDFDocumentModel {
             "CORS error detected, falling back to background fetch...",
           );
           const arrayBuffer = await this.#fetchViaBackground(source);
-          this.pdfDoc = await pdfjsLib.getDocument({ data: arrayBuffer })
+          this.pdfDoc = await pdfjsLib.getDocument({ data: arrayBuffer, verbosity: 0 })
             .promise;
         } else {
           throw error;

@@ -4,22 +4,21 @@
   bottom: 0;
   width: 130px;
   height: 130px;
-  z-index: 9998;
+  z-index: calc(var(--z-modal) - 1);
   pointer-events: auto;
-  /* background: rgba(255, 0, 0, 0.5); */
 }
 
 .file-menu-container {
   position: fixed;
   bottom: 48px;
   right: 48px;
-  z-index: 9999;
+  z-index: var(--z-modal);
   display: flex;
   flex-direction: row-reverse;
   align-items: flex-start;
   gap: 0;
   pointer-events: none;
-  transition: filter 0.2s ease;
+  transition: filter var(--transition-normal);
 }
 
 .file-menu-button {
@@ -27,15 +26,15 @@
   width: 40px;
   height: 40px;
   border: none;
-  border-radius: 16px;
+  border-radius: var(--radius-xl);
   cursor: pointer;
   pointer-events: auto;
   z-index: 2;
   background: transparent;
   transition:
-    background 0.2s cubic-bezier(0.34, 1.56, 0.64, 1),
-    transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1),
-    border-radius 0.2s ease;
+    background var(--transition-bounce),
+    transform var(--transition-bounce),
+    border-radius var(--transition-normal);
 }
 
 .file-menu-icon {
@@ -44,10 +43,10 @@
   justify-content: center;
   width: 100%;
   height: 100%;
-  color: rgba(80, 80, 80, 1);
+  color: var(--text-secondary);
   transition:
-    color 0.3s ease,
-    transform 0.3s ease;
+    color var(--transition-slow),
+    transform var(--transition-slow);
 }
 
 .file-menu-icon svg {
@@ -56,14 +55,14 @@
 }
 
 .file-menu-container.active {
-  filter: url(#file-menu-goo-filter) drop-shadow(0 0 5px rgb(0, 0, 0, 0.5))
-    drop-shadow(-1px -1px 1px rgb(255, 255, 255, 0.2));
+  filter: url(#file-menu-goo-filter) drop-shadow(0 0 5px rgba(0, 0, 0, 0.5))
+    drop-shadow(-1px -1px 1px rgba(255, 255, 255, 0.2));
 }
 
 /* Activated state (near hit box or hovered) */
 .file-menu-container.active .file-menu-button {
-  background: rgba(240, 240, 240, 1);
-  border-radius: 12px;
+  background: var(--bg-secondary);
+  border-radius: var(--radius-lg);
   transform: scale(1.05) translateZ(0);
 }
 
@@ -75,7 +74,7 @@
 
 .file-menu-button.open .file-menu-icon {
   transform: rotate(90deg);
-  color: rgba(40, 40, 40, 1);
+  color: var(--text-primary);
 }
 
 .file-menu-container.active .file-menu-button:hover {
@@ -90,10 +89,8 @@
   padding: 8px 0;
   pointer-events: none;
   z-index: 0;
-
-  /* Glass effect */
-  background: rgba(240, 240, 240, 1);
-  border-radius: 16px;
+  background: var(--bg-secondary);
+  border-radius: var(--radius-xl);
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
   box-shadow:
@@ -101,20 +98,17 @@
     0 16px 64px rgba(0, 0, 0, 0.1),
     inset 0 1px 2px rgba(255, 255, 255, 0.9),
     inset 0 -1px 2px rgba(0, 0, 0, 0.05);
-
-  /* Hidden state */
   opacity: 0;
   transform: scale(0.2) translateX(50px) translateY(50px);
   transform-origin: bottom right;
-
   transition:
-    opacity 0.2s ease,
-    transform 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+    opacity var(--transition-normal),
+    transform var(--transition-bounce);
 }
 
 .file-menu-container.open .file-menu-list {
   opacity: 1;
-  border-radius: 16px;
+  border-radius: var(--radius-xl);
   transform: scale(1) translateX(0) translateY(0);
   pointer-events: auto;
 }
@@ -138,17 +132,15 @@ input[type="file"] {
   cursor: pointer;
   font-family: inherit;
   font-size: 14px;
-  color: #333;
+  color: var(--text-primary);
   text-align: left;
-
-  /* Animation for stagger effect */
   opacity: 0;
   transform: translateX(10px);
   transition:
-    opacity 0.2s ease var(--item-delay, 0ms),
-    transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1) var(--item-delay, 0ms),
-    background 0.15s ease,
-    color 0.15s ease;
+    opacity var(--transition-normal) var(--item-delay, 0ms),
+    transform var(--transition-bounce) var(--item-delay, 0ms),
+    background var(--transition-fast),
+    color var(--transition-fast);
 }
 
 .file-menu-container.open .file-menu-item {
@@ -157,12 +149,12 @@ input[type="file"] {
 }
 
 .file-menu-item:hover {
-  background: rgba(0, 0, 0, 0.06);
-  color: #000;
+  background: var(--bg-hover);
+  color: var(--text-primary);
 }
 
 .file-menu-item:active {
-  background: rgba(0, 0, 0, 0.1);
+  background: var(--bg-active);
   transform: scale(0.98);
 }
 
@@ -171,7 +163,7 @@ input[type="file"] {
   height: 18px;
   flex-shrink: 0;
   opacity: 0.7;
-  transition: opacity 0.15s ease;
+  transition: opacity var(--transition-fast);
 }
 
 .file-menu-item:hover svg {
@@ -184,7 +176,7 @@ input[type="file"] {
 
 .file-menu-item .shortcut {
   font-size: 11px;
-  color: rgba(0, 0, 0, 0.35);
+  color: var(--text-muted);
   font-family: system-ui, sans-serif;
 }
 
@@ -195,15 +187,13 @@ input[type="file"] {
 .file-menu-divider {
   height: 1px;
   margin: 6px 12px;
-  background: rgba(0, 0, 0, 0.08);
-
-  /* Stagger animation */
+  background: var(--border-color);
   opacity: 0;
   transform: scaleX(0);
   transform-origin: left;
   transition:
-    opacity 0.2s ease var(--item-delay, 0ms),
-    transform 0.3s ease var(--item-delay, 0ms);
+    opacity var(--transition-normal) var(--item-delay, 0ms),
+    transform var(--transition-slow) var(--item-delay, 0ms);
 }
 
 .file-menu-container.open .file-menu-divider {
@@ -224,9 +214,9 @@ input[type="file"] {
   display: flex;
   align-items: center;
   justify-content: center;
-  z-index: 100000;
+  z-index: calc(var(--z-popover) * 10);
   opacity: 0;
-  transition: opacity 0.3s ease;
+  transition: opacity var(--transition-slow);
 }
 
 .file-menu-modal-overlay.visible {
@@ -234,10 +224,10 @@ input[type="file"] {
 }
 
 .file-menu-modal {
-  background: rgba(255, 255, 255, 0.9);
+  background: var(--bg-glass-solid);
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
-  border-radius: 20px;
+  border-radius: var(--radius-2xl);
   box-shadow:
     0 16px 64px rgba(0, 0, 0, 0.3),
     0 8px 32px rgba(0, 0, 0, 0.2),
@@ -246,9 +236,8 @@ input[type="file"] {
   width: 90%;
   max-height: 80vh;
   overflow: hidden;
-
   transform: scale(0.9) translateY(20px);
-  transition: transform 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+  transition: transform var(--transition-bounce);
 }
 
 .file-menu-modal-overlay.visible .file-menu-modal {
@@ -260,14 +249,14 @@ input[type="file"] {
   align-items: center;
   justify-content: space-between;
   padding: 16px 20px;
-  border-bottom: 1px solid rgba(0, 0, 0, 0.08);
+  border-bottom: 1px solid var(--border-color);
 }
 
 .file-menu-modal-header h2 {
   margin: 0;
   font-size: 18px;
   font-weight: 500;
-  color: #222;
+  color: var(--text-primary);
 }
 
 .file-menu-modal-close {
@@ -275,19 +264,19 @@ input[type="file"] {
   height: 32px;
   border: none;
   background: transparent;
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   cursor: pointer;
   font-size: 24px;
-  color: #666;
+  color: var(--text-secondary);
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: all 0.15s ease;
+  transition: all var(--transition-fast);
 }
 
 .file-menu-modal-close:hover {
-  background: rgba(0, 0, 0, 0.08);
-  color: #333;
+  background: var(--bg-hover);
+  color: var(--text-primary);
 }
 
 .file-menu-modal-content {
@@ -311,20 +300,20 @@ input[type="file"] {
   flex-shrink: 0;
   width: 80px;
   font-size: 13px;
-  color: #888;
+  color: var(--text-tertiary);
 }
 
 .metadata-value {
   flex: 1;
   font-size: 14px;
-  color: #333;
+  color: var(--text-primary);
   word-break: break-word;
 }
 
 .metadata-divider {
   height: 1px;
   margin: 12px 0;
-  background: rgba(0, 0, 0, 0.08);
+  background: var(--border-color);
 }
 
 /* ===========================================
@@ -342,13 +331,13 @@ input[type="file"] {
   -webkit-backdrop-filter: blur(8px);
   color: white;
   font-size: 14px;
-  border-radius: 12px;
+  border-radius: var(--radius-lg);
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
-  z-index: 100001;
+  z-index: calc(var(--z-popover) * 10 + 1);
   opacity: 0;
   transition:
-    opacity 0.3s ease,
-    transform 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+    opacity var(--transition-slow),
+    transform var(--transition-bounce);
 }
 
 .file-menu-toast.visible {
@@ -356,7 +345,9 @@ input[type="file"] {
   transform: translateX(-50%) translateY(0);
 }
 
-
+/* ===========================================
+   Citation Modal
+   =========================================== */
 
 .citation-modal {
   max-width: 560px;
@@ -374,15 +365,15 @@ input[type="file"] {
   justify-content: space-between;
   align-items: center;
   padding: 10px 14px;
-  background: rgba(0, 0, 0, 0.04);
-  border-radius: 8px;
+  background: var(--bg-tertiary);
+  border-radius: var(--radius-md);
   margin-bottom: 16px;
   font-size: 12px;
   gap: 12px;
 }
 
 .citation-query-text {
-  color: #555;
+  color: var(--text-secondary);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -409,16 +400,18 @@ input[type="file"] {
 }
 
 .citation-format-card {
-  background: rgba(255, 255, 255, 0.9);
-  border: 1px solid rgba(0, 0, 0, 0.08);
+  background: var(--bg-glass-solid);
+  border: 1px solid var(--border-color);
   border-radius: 10px;
   overflow: hidden;
-  transition: border-color 0.2s, box-shadow 0.2s;
+  transition:
+    border-color var(--transition-normal),
+    box-shadow var(--transition-normal);
 }
 
 .citation-format-card:hover {
-  border-color: rgba(0, 0, 0, 0.15);
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+  border-color: var(--border-color-strong);
+  box-shadow: var(--shadow-sm);
 }
 
 .citation-format-header {
@@ -426,14 +419,14 @@ input[type="file"] {
   justify-content: space-between;
   align-items: center;
   padding: 10px 14px;
-  background: rgba(0, 0, 0, 0.03);
-  border-bottom: 1px solid rgba(0, 0, 0, 0.05);
+  background: var(--bg-tertiary);
+  border-bottom: 1px solid var(--border-color-subtle);
 }
 
 .citation-format-name {
   font-size: 12px;
   font-weight: 600;
-  color: #333;
+  color: var(--text-primary);
   text-transform: uppercase;
   letter-spacing: 0.5px;
 }
@@ -444,18 +437,18 @@ input[type="file"] {
   gap: 5px;
   padding: 5px 10px;
   background: transparent;
-  color: #666;
-  border: 1px solid rgba(0, 0, 0, 0.12);
+  color: var(--text-secondary);
+  border: 1px solid var(--border-color-strong);
   border-radius: 5px;
   font-size: 11px;
   cursor: pointer;
-  transition: all 0.15s ease;
+  transition: all var(--transition-fast);
 }
 
 .citation-copy-btn:hover {
-  background: rgba(0, 0, 0, 0.05);
-  border-color: rgba(0, 0, 0, 0.2);
-  color: #333;
+  background: var(--bg-tertiary);
+  border-color: var(--border-color-strong);
+  color: var(--text-primary);
 }
 
 .citation-copy-btn.copied {
@@ -472,7 +465,7 @@ input[type="file"] {
   padding: 12px 14px;
   font-size: 13px;
   line-height: 1.55;
-  color: #333;
+  color: var(--text-primary);
   cursor: text;
   user-select: text;
 }
@@ -488,11 +481,11 @@ input[type="file"] {
 .bibtex-text {
   margin: 0;
   padding: 12px 14px;
-  font-family: 'SF Mono', 'Menlo', 'Monaco', 'Consolas', monospace;
+  font-family: "SF Mono", "Menlo", monospace;
   font-size: 11px;
   line-height: 1.5;
-  color: #333;
-  background: rgba(0, 0, 0, 0.02);
+  color: var(--text-primary);
+  background: var(--bg-tertiary);
   white-space: pre-wrap;
   word-break: break-word;
   cursor: text;
@@ -504,7 +497,7 @@ input[type="file"] {
 .citation-no-results {
   text-align: center;
   padding: 32px 24px;
-  color: #666;
+  color: var(--text-secondary);
 }
 
 .citation-no-results p {
@@ -520,98 +513,23 @@ input[type="file"] {
   text-decoration: underline;
 }
 
-
 /* ===========================================
-   Night Mode Overrides
+   Tutorial Section
    =========================================== */
-.night-mode .file-menu-container.active {
-  filter: url(#file-menu-goo-filter) drop-shadow(0 0 3px rgb(0, 0, 0, 0.5))
-    drop-shadow(-1px -1px 2px rgb(255, 255, 255, 0.1));
+
+.tutorial-section h3 {
+  color: var(--text-primary);
 }
 
-body.night-mode .file-menu-icon {
-  color: rgba(200, 200, 200, 1);
+.tutorial-section li {
+  color: var(--text-secondary);
 }
 
-body.night-mode .file-menu-container.active .file-menu-button {
-  background: rgba(55, 55, 55, 1);
+.tutorial-section li strong {
+  color: var(--text-primary);
 }
 
-body.night-mode .file-menu-container.active .file-menu-icon {
-  color: rgba(220, 220, 220, 1);
-}
-
-body.night-mode .file-menu-button.open .file-menu-icon {
-  color: rgba(240, 240, 240, 1);
-}
-
-body.night-mode .file-menu-list {
-  background: rgba(55, 55, 55, 1);
-}
-
-body.night-mode .file-menu-item {
-  color: #ddd;
-}
-
-body.night-mode .file-menu-item:hover {
-  background: rgba(255, 255, 255, 0.08);
-  color: #fff;
-}
-
-body.night-mode .file-menu-item .shortcut {
-  color: rgba(255, 255, 255, 0.3);
-}
-
-body.night-mode .file-menu-divider {
-  background: rgba(255, 255, 255, 0.1);
-}
-
-body.night-mode .file-menu-modal {
-  background: rgba(40, 40, 40, 0.95);
-}
-
-body.night-mode .file-menu-modal-header {
-  border-bottom-color: rgba(255, 255, 255, 0.1);
-}
-
-body.night-mode .file-menu-modal-header h2 {
-  color: #eee;
-}
-
-body.night-mode .file-menu-modal-close {
-  color: #aaa;
-}
-
-body.night-mode .file-menu-modal-close:hover {
-  background: rgba(255, 255, 255, 0.1);
-  color: #ddd;
-}
-
-body.night-mode .metadata-label {
-  color: #888;
-}
-
-body.night-mode .metadata-value {
-  color: #ddd;
-}
-
-body.night-mode .metadata-divider {
-  background: rgba(255, 255, 255, 0.1);
-}
-
-body.night-mode .tutorial-section h3 {
-  color: #eee;
-}
-
-body.night-mode .tutorial-section li {
-  color: #bbb;
-}
-
-body.night-mode .tutorial-section li strong {
-  color: #eee;
-}
-
-body.night-mode .tutorial-section kbd {
-  background: rgba(255, 255, 255, 0.1);
-  color: #ccc;
+.tutorial-section kbd {
+  background: var(--bg-tertiary);
+  color: var(--text-secondary);
 }

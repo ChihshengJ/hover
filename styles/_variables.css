@@ -1,0 +1,217 @@
+/* ===========================================
+   CSS Custom Properties - Core Design Tokens
+   =========================================== */
+
+:root {
+  /* ─────────────────────────────────────────
+     Color Palette
+     ───────────────────────────────────────── */
+  
+  /* Primary UI colors */
+  --color-accent: #3b82f6;
+  --color-accent-hover: #2563eb;
+  --color-accent-light: rgba(59, 130, 246, 0.1);
+  --color-accent-border: rgba(59, 130, 246, 0.5);
+  
+  --color-danger: #ef4444;
+  --color-danger-light: rgba(239, 68, 68, 0.15);
+  --color-success: #22c55e;
+  --color-success-light: rgba(34, 197, 94, 0.15);
+  
+  /* ─────────────────────────────────────────
+     Theme Colors (Light Mode Defaults)
+     ───────────────────────────────────────── */
+  
+  /* Backgrounds */
+  --bg-body: linear-gradient(210deg, rgba(210, 210, 210, 1) 13%, rgba(179, 179, 179, 1) 48%, rgba(150, 150, 150, 1) 90%);
+  --bg-primary: rgba(255, 255, 255, 0.9);
+  --bg-secondary: rgba(240, 240, 240, 1);
+  --bg-tertiary: rgba(0, 0, 0, 0.1);
+  --bg-glass: rgba(255, 255, 255, 0.5);
+  --bg-glass-solid: rgba(255, 255, 255, 0.9);
+  --bg-hover: rgba(0, 0, 0, 0.06);
+  --bg-active: rgba(0, 0, 0, 0.2);
+  
+  /* Text */
+  --text-primary: #222;
+  --text-secondary: #666;
+  --text-tertiary: #888;
+  --text-muted: #aaa;
+  --text-inverse: #fff;
+  
+  /* Borders */
+  --border-color: rgba(0, 0, 0, 0.1);
+  --border-color-strong: rgba(0, 0, 0, 0.2);
+  --border-color-subtle: rgba(0, 0, 0, 0.05);
+  
+  /* ─────────────────────────────────────────
+     Shadows
+     ───────────────────────────────────────── */
+  
+  --shadow-sm: 0 2px 4px rgba(0, 0, 0, 0.1);
+  --shadow-md: 0 4px 10px rgba(0, 0, 0, 0.15);
+  --shadow-lg: 0 8px 20px rgba(0, 0, 0, 0.2);
+  --shadow-xl: 0 16px 40px rgba(0, 0, 0, 0.25);
+  
+  /* Glassmorphism shadows */
+  --shadow-glass: 
+    0 8px 32px rgba(0, 0, 0, 0.3),
+    inset 0 1px 2px rgba(255, 255, 255, 0.9);
+  --shadow-glass-hover:
+    0 8px 32px rgba(0, 0, 0, 0.4),
+    inset 0 1px 2px rgba(255, 255, 255, 0.9);
+  
+  /* Elevated elements */
+  --shadow-elevated: 
+    0 2px 12px rgba(0, 0, 0, 0.3),
+    0 0 0 1px rgba(0, 0, 0, 0.05);
+  --shadow-elevated-active:
+    0 2px 12px rgba(0, 0, 0, 0.2),
+    0 0 0 1px rgba(0, 0, 0, 0.05),
+    inset 0 0 4px 2px rgba(25, 119, 235, 0.8);
+  
+  /* Floating elements */
+  --shadow-float: 0 5px 10px rgba(0, 0, 0, 0.3);
+  --shadow-popup: 0 10px 45px rgba(0, 0, 0, 0.7);
+  
+  /* Inset shadows */
+  --shadow-inset: inset 0 1px 3px rgba(0, 0, 0, 0.15);
+  --shadow-inset-light: inset 0 0 5px 2px rgba(0, 0, 0, 0.1);
+  
+  /* ─────────────────────────────────────────
+     Transitions
+     ───────────────────────────────────────── */
+  
+  --transition-fast: 0.15s ease;
+  --transition-normal: 0.2s ease;
+  --transition-slow: 0.3s ease;
+  --transition-bounce: 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+  --transition-smooth: 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+  
+  /* ─────────────────────────────────────────
+     Spacing & Sizing
+     ───────────────────────────────────────── */
+  
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+  --radius-2xl: 20px;
+  --radius-full: 9999px;
+  
+  /* ─────────────────────────────────────────
+     Z-Index Scale
+     ───────────────────────────────────────── */
+  
+  --z-base: 0;
+  --z-dropdown: 100;
+  --z-sticky: 500;
+  --z-overlay: 998;
+  --z-modal: 1000;
+  --z-popover: 10000;
+  --z-tooltip: 10001;
+}
+
+/* ===========================================
+   Annotation Color Theming
+   =========================================== */
+
+/* Yellow */
+[data-color="yellow"] {
+  --anno-primary: #ffd54f;
+  --anno-secondary: #ffb300;
+  --anno-fill: rgba(255, 235, 59, 0.35);
+  --anno-fill-hover: rgba(255, 235, 59, 0.55);
+  --anno-fill-selected: rgba(255, 235, 59, 0.6);
+  --anno-shadow: rgba(255, 179, 0, 0.4);
+  --anno-bg: rgba(255, 246, 222, 0.8);
+  --anno-stroke: #f9a825;
+  --anno-text: #5d4037;
+  --anno-underline: rgba(255, 193, 7, 0.85);
+  --anno-underline-hover: rgba(255, 193, 7, 1);
+}
+
+/* Red */
+[data-color="red"] {
+  --anno-primary: #ef5350;
+  --anno-secondary: #e53935;
+  --anno-fill: rgba(244, 67, 54, 0.3);
+  --anno-fill-hover: rgba(244, 67, 54, 0.5);
+  --anno-fill-selected: rgba(244, 67, 54, 0.55);
+  --anno-shadow: rgba(229, 57, 53, 0.4);
+  --anno-bg: rgba(253, 222, 220, 0.8);
+  --anno-stroke: #c62828;
+  --anno-text: #fff;
+  --anno-underline: rgba(229, 57, 53, 0.85);
+  --anno-underline-hover: rgba(229, 57, 53, 1);
+}
+
+/* Blue */
+[data-color="blue"] {
+  --anno-primary: #42a5f5;
+  --anno-secondary: #1e88e5;
+  --anno-fill: rgba(33, 150, 243, 0.3);
+  --anno-fill-hover: rgba(33, 150, 243, 0.5);
+  --anno-fill-selected: rgba(33, 150, 243, 0.55);
+  --anno-shadow: rgba(30, 136, 229, 0.4);
+  --anno-bg: rgba(219, 237, 253, 0.8);
+  --anno-stroke: #1565c0;
+  --anno-text: #fff;
+  --anno-underline: rgba(30, 136, 229, 0.85);
+  --anno-underline-hover: rgba(30, 136, 229, 1);
+}
+
+/* Green */
+[data-color="green"] {
+  --anno-primary: #66bb6a;
+  --anno-secondary: #43a047;
+  --anno-fill: rgba(76, 175, 80, 0.3);
+  --anno-fill-hover: rgba(76, 175, 80, 0.5);
+  --anno-fill-selected: rgba(76, 175, 80, 0.55);
+  --anno-shadow: rgba(67, 160, 71, 0.4);
+  --anno-bg: rgba(226, 241, 226, 0.8);
+  --anno-stroke: #2e7d32;
+  --anno-text: #fff;
+  --anno-underline: rgba(56, 142, 60, 0.85);
+  --anno-underline-hover: rgba(56, 142, 60, 1);
+}
+
+/* ===========================================
+   Night Mode Theme Overrides
+   =========================================== */
+
+body.night-mode {
+  /* Backgrounds */
+  --bg-body: rgba(46, 48, 53, 1);
+  --bg-primary: rgba(40, 40, 40, 0.95);
+  --bg-secondary: rgba(55, 55, 55, 1);
+  --bg-tertiary: rgba(255, 255, 255, 0.1);
+  --bg-glass: rgba(0, 0, 0, 0.2);
+  --bg-glass-solid: rgba(40, 40, 40, 0.85);
+  --bg-hover: rgba(255, 255, 255, 0.08);
+  --bg-active: rgba(255, 255, 255, 0.12);
+  
+  /* Text */
+  --text-primary: #eee;
+  --text-secondary: #aaa;
+  --text-tertiary: #888;
+  --text-muted: #666;
+  --text-inverse: #333;
+  
+  /* Borders */
+  --border-color: rgba(255, 255, 255, 0.1);
+  --border-color-strong: rgba(255, 255, 255, 0.2);
+  --border-color-subtle: rgba(255, 255, 255, 0.05);
+  
+  /* Shadows */
+  --shadow-float: 0 5px 10px rgba(0, 0, 0, 0.5);
+  --shadow-popup: 0 10px 20px 20px rgba(0, 0, 0, 0.5);
+  --shadow-elevated-active:
+    0 2px 12px rgba(0, 0, 0, 0.2),
+    0 0 0 1px rgba(0, 0, 0, 0.05),
+    inset 0 0 4px 2px rgba(219, 147, 52, 0.8);
+  
+  /* Accent adjustments for night mode */
+  --color-accent: #60a5fa;
+  --color-accent-hover: #3b82f6;
+}

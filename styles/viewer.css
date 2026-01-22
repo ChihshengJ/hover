@@ -2,12 +2,7 @@ html,
 body {
   margin: 0;
   padding: 0;
-  background: linear-gradient(
-    210deg,
-    rgba(210, 210, 210, 1) 13%,
-    rgba(179, 179, 179, 1) 48%,
-    rgba(150, 150, 150, 1) 90%
-  );
+  background: var(--bg-body);
   font-family: "Elms Sans", monospace;
   display: flex;
   flex-direction: column;
@@ -23,15 +18,17 @@ body {
   box-sizing: inherit;
 }
 
-/*******************/
-/* Split container */
+/* ===========================================
+   Split container
+   =========================================== */
+
 .window-container {
   display: flex;
   flex: 1;
   width: 100%;
   height: 100%;
   overflow: hidden;
-  z-index: 0;
+  z-index: var(--z-base);
 }
 
 .window-container.split-vertical {
@@ -42,8 +39,10 @@ body {
   flex-direction: column;
 }
 
-/***************/
-/* Viewer pane */
+/* ===========================================
+   Viewer pane
+   =========================================== */
+
 .viewer-pane {
   flex: 1;
   min-height: 0;
@@ -93,10 +92,7 @@ body {
 }
 
 .viewer-pane.active .pane-controls {
-  box-shadow:
-    0 2px 12px rgba(0, 0, 0, 0.2),
-    0 0 0 1px rgba(0, 0, 0, 0.05),
-    inset 0 0 4px 2px rgba(25, 119, 235, 0.8);
+  box-shadow: var(--shadow-elevated-active);
 }
 
 .pane-scroll-area.hand-mode {
@@ -116,8 +112,10 @@ body {
   pointer-events: none;
 }
 
-/***************/
-/* Resizer */
+/* ===========================================
+   Resizer
+   =========================================== */
+
 .split-resizer {
   flex-shrink: 0;
   background: rgba(50, 50, 50, 0.1);
@@ -125,7 +123,7 @@ body {
     0 2px 12px rgba(0, 0, 0, 0.3),
     0 0 0 1px rgba(0, 0, 0, 0.05),
     inset 1px 0 2px 1px rgba(50, 50, 50, 0.3);
-  transition: background 0.2s;
+  transition: background var(--transition-normal);
 }
 
 .split-resizer.vertical {
@@ -147,27 +145,24 @@ body {
   background: rgba(255, 255, 255, 0.4);
 }
 
-/***************/
-/* Pane controls */
+/* ===========================================
+   Pane controls
+   =========================================== */
+
 .pane-controls {
   position: absolute;
   top: 12px;
   left: 50%;
   transform: translateX(-50%);
-  z-index: 100;
-
-  background: rgba(255, 255, 255, 0.9);
+  z-index: var(--z-dropdown);
+  background: var(--bg-glass-solid);
   backdrop-filter: blur(5px);
-  border-radius: 20px;
-  box-shadow:
-    0 2px 12px rgba(0, 0, 0, 0.3),
-    0 0 0 1px rgba(0, 0, 0, 0.05);
+  border-radius: var(--radius-2xl);
+  box-shadow: var(--shadow-elevated);
   padding: 6px 16px;
   pointer-events: auto;
   user-select: none;
-  transition:
-    opacity 0.2s,
-    transform 0.2s;
+  transition: opacity var(--transition-normal), transform var(--transition-normal);
 }
 
 .pane-controls.hidden {
@@ -180,7 +175,7 @@ body {
   justify-content: center;
   gap: 8px;
   font-size: 13px;
-  color: #333;
+  color: var(--text-primary);
 }
 
 .pane-btn {
@@ -189,20 +184,20 @@ body {
   border-radius: 6px;
   padding: 4px 8px;
   cursor: pointer;
-  transition: all 0.15s;
+  transition: all var(--transition-fast);
   font-size: 14px;
-  color: #555;
+  color: var(--text-secondary);
 }
 
 .pane-btn:hover {
-  background: rgba(0, 0, 0, 0.08);
-  color: #000;
+  background: var(--bg-hover);
+  color: var(--text-primary);
 }
 
 .pane-btn.active {
-  background: rgba(59, 130, 246, 0.15);
-  border-color: rgba(59, 130, 246, 0.3);
-  color: #2563eb;
+  background: var(--color-accent-light);
+  border-color: var(--color-accent-border);
+  color: var(--color-accent-hover);
 }
 
 .pane-btn.small {
@@ -226,19 +221,19 @@ body {
   display: flex;
   align-items: center;
   gap: 2px;
-  background: rgba(0, 0, 0, 0.05);
+  background: var(--bg-tertiary);
   border-radius: 6px;
   padding: 2px;
 }
 
 .pane-mode-toggle .pane-btn {
   padding: 4px 6px;
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
 }
 
 .pane-mode-toggle .pane-btn.active {
-  background: rgba(59, 130, 246, 0.15);
-  box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.15);
+  background: var(--color-accent-light);
+  box-shadow: var(--shadow-inset);
 }
 
 .pane-page-info,
@@ -261,8 +256,10 @@ body {
   font-variant-numeric: tabular-nums;
 }
 
-/***************/
-/* Viewer stage and document layers */
+/* ===========================================
+   Viewer stage and document layers
+   =========================================== */
+
 .viewer-stage {
   position: relative;
   display: flex;
@@ -324,8 +321,10 @@ body {
   z-index: -1;
 }
 
-/* ********************** */
-/* horizontal spread */
+/* ===========================================
+   Horizontal spread
+   =========================================== */
+
 .spread-container {
   display: flex;
   flex-direction: column;
@@ -347,19 +346,7 @@ body {
 }
 
 .spread-page {
-  margin: 0 !important; /* Override individual page margins */
-}
-
-.spread-page-single {
-  /* Single page in spread mode - centered */
-}
-
-.spread-page-left {
-  /* Left page styling if needed */
-}
-
-.spread-page-right {
-  /* Right page styling if needed */
+  margin: 0 !important;
 }
 
 /* Ensure page wrappers don't have conflicting margins in spread mode */

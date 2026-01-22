@@ -2,6 +2,7 @@ import { PDFDocumentModel } from "./doc.js";
 import { SplitWindowManager } from "./window_manager.js";
 import { FileMenu } from "./controls/file_menu.js";
 
+import "../styles/_variables.css";
 import "../styles/viewer.css";
 import "../styles/text_layer.css";
 import "../styles/floating_toolbar.css";

@@ -1,14 +1,12 @@
 .floating-toolbar-wrapper {
   position: fixed;
-  z-index: 1000;
+  z-index: var(--z-modal);
   pointer-events: none;
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 10px;
-  transition:
-    transform 0.4s cubic-bezier(0.4, 0, 0.2, 1),
-    opacity 0.4s ease;
+  transition: transform var(--transition-smooth), opacity 0.4s ease;
 }
 
 .floating-toolbar-wrapper.hidden {
@@ -33,61 +31,38 @@
   right: 0;
   pointer-events: none;
   z-index: 0;
-  /* background: rgba(255, 0, 0, 0.1); */
 }
 
 .floating-toolbar-hit-area.active {
   pointer-events: auto;
-  /* background: rgba(0, 255, 0, 0.1); */
 }
 
 .goo-container {
   position: relative;
   width: 75px;
   height: 75px;
-  z-index: 999;
+  z-index: calc(var(--z-overlay) + 1);
   --x: 50;
   --y: 50;
   --goo-opacity: 0;
   --brt: 1;
-  transition:
-    transform 0.3s cubic-bezier(0.1, 0.3, 0.2, 1),
-    opacity 0.3s ease;
+  transition: transform var(--transition-slow) cubic-bezier(0.1, 0.3, 0.2, 1), opacity var(--transition-slow);
 }
 
 .goo-container::before {
   content: "";
   position: absolute;
   border-radius: 50%;
-  inset: -20px; /* Expand beyond to allow blob to stretch */
+  inset: -20px;
   filter: url(#goo) drop-shadow(0 0.3em 0.2em #00000099) brightness(var(--brt));
   background:
-    radial-gradient(
-        ellipse 30% 50% at 75% 85%,
-        rgba(0, 0, 0, 0.2) 0%,
-        transparent 40%
-      )
-      content-box,
-    linear-gradient(
-        130deg,
-        rgba(255, 255, 255, 1) 10%,
-        rgba(250, 250, 250, 1) 25%,
-        rgba(190, 190, 190, 1) 85%
-      )
-      content-box,
-    radial-gradient(
-        40px 40px at calc(var(--x) * 1%) calc(var(--y) * 1%),
-        rgba(255, 255, 255, var(--goo-opacity)) 0%,
-        transparent 100%
-      )
-      border-box;
-  /* background-clip: content-box, content-box, border-box; */
+    radial-gradient(ellipse 30% 50% at 75% 85%, rgba(0, 0, 0, 0.2) 0%, transparent 40%) content-box,
+    linear-gradient(130deg, rgba(255, 255, 255, 1) 10%, rgba(250, 250, 250, 1) 25%, rgba(190, 190, 190, 1) 85%) content-box,
+    radial-gradient(40px 40px at calc(var(--x) * 1%) calc(var(--y) * 1%), rgba(255, 255, 255, var(--goo-opacity)) 0%, transparent 100%) border-box;
   padding: 20px;
   z-index: 0;
   pointer-events: none;
-  transition:
-    filter 0.2s ease,
-    --goo-opacity 0.2s ease;
+  transition: filter var(--transition-normal), --goo-opacity var(--transition-normal);
 }
 
 .goo-container.dragging::before {
@@ -116,7 +91,7 @@
 
 .inner {
   position: absolute;
-  z-index: 997;
+  z-index: calc(var(--z-overlay) - 1);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -139,7 +114,7 @@
   font-size: 20px;
   font-weight: 300;
   line-height: 1;
-  z-index: 1002;
+  z-index: calc(var(--z-modal) + 2);
 }
 
 .page-divider {
@@ -156,10 +131,8 @@
   flex-direction: column;
   gap: 8px;
   pointer-events: none;
-  z-index: 990;
-  transition:
-    opacity 0.3s ease,
-    transform 0.3s ease;
+  z-index: calc(var(--z-overlay) - 8);
+  transition: opacity var(--transition-slow), transform var(--transition-slow);
 }
 
 .floating-toolbar-top {
@@ -181,7 +154,7 @@
   border: none;
   background: rgba(255, 255, 255, 0.8);
   backdrop-filter: blur(5px) saturate(180%);
-  color: #333;
+  color: var(--text-primary);
   font-size: 20px;
   font-weight: 300;
   cursor: pointer;
@@ -198,9 +171,8 @@
   pointer-events: auto;
   opacity: 0;
   transform: scale(0) translateY(0);
-
   transition:
-    opacity 0.3s var(--btn-delay),
+    opacity var(--transition-slow) var(--btn-delay),
     transform 0.5s var(--btn-delay) cubic-bezier(0.165, 0.84, 0.44, 1);
 }
 
@@ -226,9 +198,9 @@
 .jump-indicators {
   position: fixed;
   pointer-events: none;
-  z-index: 10000;
+  z-index: var(--z-popover);
   opacity: 0;
-  transition: opacity 0.2s ease;
+  transition: opacity var(--transition-normal);
 }
 
 .jump-indicators.visible {
@@ -246,7 +218,7 @@
   align-items: center;
   justify-content: center;
   color: rgba(50, 50, 50, 0.8);
-  transition: all 0.15s ease;
+  transition: all var(--transition-fast);
   transform: translateX(-50%);
   left: 50%;
   font-size: 30px;

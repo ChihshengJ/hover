@@ -531,8 +531,7 @@ export class ViewerPane {
     }
 
     requestAnimationFrame(() => {
-      this.fit();
-      this.#renderVisiblePages();
+      this.fit(1, 1);
       this.annotationManager?.refresh();
     });
   }

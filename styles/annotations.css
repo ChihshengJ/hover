@@ -4,13 +4,11 @@
 
 .annotation-toolbar-container {
   position: fixed;
-  z-index: 10000;
+  z-index: var(--z-popover);
   pointer-events: none;
   opacity: 0;
   transform: scale(0.8);
-  transition:
-    opacity 0.15s ease,
-    transform 0.15s ease;
+  transition: opacity var(--transition-fast), transform var(--transition-fast);
 }
 
 .annotation-toolbar-container.visible {
@@ -32,7 +30,7 @@
     0 2px 4px 5px rgba(0, 0, 0, 0.1);
   padding: 0;
   overflow: hidden;
-  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  transition: all var(--transition-normal) cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 /* Collapsed state - just a ball */
@@ -62,33 +60,11 @@
   width: 28px;
   height: 28px;
   border-radius: 50%;
-  transition:
-    background 0.2s ease,
-    box-shadow 0.2s ease;
+  transition: background var(--transition-normal), box-shadow var(--transition-normal);
+  background: linear-gradient(135deg, var(--anno-primary) 0%, var(--anno-secondary) 100%);
+  box-shadow: 0 2px 8px var(--anno-shadow);
 }
 
-/* Dynamic collapsed ball colors */
-.annotation-toolbar[data-color="yellow"] .toolbar-ball::after {
-  background: linear-gradient(135deg, #ffd54f 0%, #ffb300 100%);
-  box-shadow: 0 2px 8px rgba(255, 179, 0, 0.4);
-}
-
-.annotation-toolbar[data-color="red"] .toolbar-ball::after {
-  background: linear-gradient(135deg, #ef5350 0%, #e53935 100%);
-  box-shadow: 0 2px 8px rgba(229, 57, 53, 0.4);
-}
-
-.annotation-toolbar[data-color="blue"] .toolbar-ball::after {
-  background: linear-gradient(135deg, #42a5f5 0%, #1e88e5 100%);
-  box-shadow: 0 2px 8px rgba(30, 136, 229, 0.4);
-}
-
-.annotation-toolbar[data-color="green"] .toolbar-ball::after {
-  background: linear-gradient(135deg, #66bb6a 0%, #43a047 100%);
-  box-shadow: 0 2px 8px rgba(67, 160, 71, 0.4);
-}
-
-/* Expanded state */
 .annotation-toolbar.expanded {
   width: auto;
   height: 44px;
@@ -111,7 +87,7 @@
   display: flex;
   align-items: center;
   gap: 4px;
-  transition: opacity 0.15s ease;
+  transition: opacity var(--transition-fast);
 }
 
 .toolbar-colors {
@@ -130,9 +106,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  transition:
-    transform 0.15s ease,
-    background-color 0.15s ease;
+  transition: transform var(--transition-fast), background-color var(--transition-fast);
 }
 
 .color-btn:hover {
@@ -144,9 +118,7 @@
   height: 26px;
   border-radius: 50%;
   box-shadow: 1px 2px 4px 1px rgba(0, 0, 0, 0.2);
-  transition:
-    transform 0.15s ease,
-    box-shadow 0.15s ease;
+  transition: transform var(--transition-fast), box-shadow var(--transition-fast);
 }
 
 .color-circle.yellow {
@@ -181,13 +153,13 @@
   height: 32px;
   border: none;
   background: transparent;
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
   color: rgba(50, 50, 50, 0.7);
-  transition: all 0.15s ease;
+  transition: all var(--transition-fast);
 }
 
 .action-btn:hover {
@@ -197,7 +169,7 @@
 
 .action-btn.active {
   background: rgba(50, 50, 50, 0.15);
-  box-shadow: inset 0 0 5px 2px rgba(0, 0, 0, 0.1);
+  box-shadow: var(--shadow-inset-light);
   color: white;
 }
 
@@ -221,13 +193,11 @@
 
 .comment-input-container {
   position: fixed;
-  z-index: 10001;
+  z-index: calc(var(--z-popover) + 1);
   pointer-events: none;
   opacity: 0;
   transform: scale(0.9) translateY(-10px);
-  transition:
-    opacity 0.2s ease,
-    transform 0.2s ease;
+  transition: opacity var(--transition-normal), transform var(--transition-normal);
 }
 
 .comment-input-container.visible {
@@ -240,39 +210,16 @@
   width: 280px;
   background: rgba(255, 255, 255, 0.6);
   backdrop-filter: blur(10px);
-  border-radius: 12px;
+  border-radius: var(--radius-lg);
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
   overflow: hidden;
 }
 
-/* Color theming */
-.comment-input-container[data-color="yellow"] .comment-input-header {
-  background: linear-gradient(
-    135deg,
-    rgba(255, 213, 79, 0.9) 0%,
-    rgba(255, 179, 0, 0.7) 100%
-  );
-}
-.comment-input-container[data-color="red"] .comment-input-header {
-  background: linear-gradient(
-    135deg,
-    rgba(239, 83, 80, 0.9) 0%,
-    rgba(229, 57, 53, 0.7) 100%
-  );
-}
-.comment-input-container[data-color="blue"] .comment-input-header {
-  background: linear-gradient(
-    135deg,
-    rgba(66, 165, 245, 0.9) 0%,
-    rgba(30, 136, 229, 0.7) 100%
-  );
-}
-.comment-input-container[data-color="green"] .comment-input-header {
-  background: linear-gradient(
-    135deg,
-    rgba(102, 187, 106, 0.9) 0%,
-    rgba(67, 160, 71, 0.7) 100%
-  );
+/* Color theming for comment input - uses CSS variables */
+.comment-input-container .comment-input-header {
+  background: linear-gradient(135deg, 
+    color-mix(in srgb, var(--anno-primary) 90%, transparent) 0%, 
+    color-mix(in srgb, var(--anno-secondary) 70%, transparent) 100%);
 }
 
 .comment-input-header {
@@ -303,7 +250,7 @@
   align-items: center;
   justify-content: center;
   color: rgba(255, 255, 255, 0.9);
-  transition: all 0.15s ease;
+  transition: all var(--transition-fast);
   font-size: 14px;
 }
 
@@ -345,7 +292,7 @@
   font-size: 14px;
   font-weight: 400;
   cursor: pointer;
-  transition: all 0.15s ease;
+  transition: all var(--transition-fast);
   background: rgba(50, 50, 50, 0.3);
   color: white;
 }
@@ -366,7 +313,7 @@
   right: 0;
   width: 260px;
   pointer-events: none;
-  z-index: 100;
+  z-index: var(--z-dropdown);
 }
 
 .comments-container.collapsed-mode {
@@ -377,7 +324,7 @@
   position: absolute;
   right: 16px;
   pointer-events: auto;
-  transition: all 0.2s ease;
+  transition: all var(--transition-normal);
 }
 
 .comments-container.collapsed-mode .comment-card {
@@ -394,7 +341,10 @@
   align-items: center;
   justify-content: center;
   box-shadow: -2px 0 8px rgba(0, 0, 0, 0.2);
-  transition: all 0.15s ease;
+  transition: all var(--transition-fast);
+  /* Uses color variable */
+  background: var(--anno-primary, rgba(255, 213, 79, 0.9));
+  color: var(--anno-text, #5d4037);
 }
 
 .comment-collapsed-indicator svg {
@@ -415,9 +365,7 @@
   display: none;
 }
 
-.comments-container.collapsed-mode
-  .comment-card.force-expanded
-  .comment-expanded-content {
+.comments-container.collapsed-mode .comment-card.force-expanded .comment-expanded-content {
   display: block;
   position: absolute;
   right: 40px;
@@ -425,28 +373,24 @@
   width: 220px;
 }
 
-.comments-container.collapsed-mode
-  .comment-card.force-expanded
-  .comment-collapsed-indicator {
+.comments-container.collapsed-mode .comment-card.force-expanded .comment-collapsed-indicator {
   background: rgba(255, 255, 255, 1) !important;
 }
 
-.comments-container.collapsed-mode
-  .comment-card.force-expanded
-  .comment-collapsed-indicator
-  svg {
+.comments-container.collapsed-mode .comment-card.force-expanded .comment-collapsed-indicator svg {
   color: #5c5c5c;
 }
 
 /* Expanded content */
 .comment-expanded-content {
-  /* background: rgba(255, 255, 255, 0.8); */
   backdrop-filter: blur(5px) brightness(1.1);
   border-radius: 5px;
   box-shadow:
-    inset 0 1px 10px 1px rgb(255, 255, 255, 0.4),
+    inset 0 1px 10px 1px rgba(255, 255, 255, 0.4),
     0 3px 8px rgba(0, 0, 0, 0.4);
   overflow: hidden;
+  /* Uses color variable */
+  background: var(--anno-bg, rgba(255, 246, 222, 0.8));
 }
 
 .comment-text {
@@ -465,7 +409,7 @@
   gap: 4px;
   padding: 6px 8px;
   opacity: 0;
-  transition: opacity 0.15s ease;
+  transition: opacity var(--transition-fast);
 }
 
 .comment-card:hover .comment-actions {
@@ -484,7 +428,7 @@
   align-items: center;
   justify-content: center;
   color: #5c5c5c;
-  transition: all 0.15s ease;
+  transition: all var(--transition-fast);
 }
 
 .comment-edit-btn:hover,
@@ -504,40 +448,9 @@
   height: 14px;
 }
 
-/* Color theming for comment cards */
-.comment-card[data-color="yellow"] .comment-collapsed-indicator {
-  background: rgba(255, 213, 79, 0.9);
-  color: #5d4037;
-}
-.comment-card[data-color="red"] .comment-collapsed-indicator {
-  background: rgba(239, 83, 80, 0.9);
-  color: white;
-}
-.comment-card[data-color="blue"] .comment-collapsed-indicator {
-  background: rgba(66, 165, 245, 0.9);
-  color: white;
-}
-.comment-card[data-color="green"] .comment-collapsed-indicator {
-  background: rgba(102, 187, 106, 0.9);
-  color: white;
-}
-
-.comment-card[data-color="yellow"] .comment-expanded-content {
-  background: rgba(255, 246, 222, 0.8);
-}
-.comment-card[data-color="red"] .comment-expanded-content {
-  background: rgba(253, 222, 220, 0.8);
-}
-.comment-card[data-color="blue"] .comment-expanded-content {
-  background: rgba(219, 237, 253, 0.8);
-}
-.comment-card[data-color="green"] .comment-expanded-content {
-  background: rgba(226, 241, 226, 0.8);
-}
-
 .comment-card.highlighted .comment-expanded-content {
   box-shadow:
-    inset 0 1px 10px 1px rgb(255, 255, 255, 0.4),
+    inset 0 1px 10px 1px rgba(255, 255, 255, 0.4),
     0 3px 12px rgba(0, 0, 0, 0.5);
 }
 
@@ -565,30 +478,15 @@
 /* Outline element - hidden by default */
 .annotation-group .annotation-outline {
   opacity: 0;
-  transition: opacity 0.15s ease;
+  transition: opacity var(--transition-fast);
+  /* Uses color variable */
+  stroke: var(--anno-stroke, #f9a825);
 }
 
 /* Show outline on hover */
 .annotation-group.hovered .annotation-outline,
 .annotation-group.selected .annotation-outline {
   opacity: 1;
-}
-
-/* Outline colors */
-.annotation-group .annotation-outline[data-color="yellow"] {
-  stroke: #f9a825;
-}
-
-.annotation-group .annotation-outline[data-color="red"] {
-  stroke: #c62828;
-}
-
-.annotation-group .annotation-outline[data-color="blue"] {
-  stroke: #1565c0;
-}
-
-.annotation-group .annotation-outline[data-color="green"] {
-  stroke: #2e7d32;
 }
 
 /* ===========================================
@@ -598,95 +496,33 @@
 .annotation-mark {
   pointer-events: auto;
   cursor: pointer;
-  transition:
-    fill 0.15s ease,
-    opacity 0.15s ease;
+  transition: fill var(--transition-fast), opacity var(--transition-fast);
 }
 
-/* Highlight colors - default state */
-.annotation-mark.highlight[data-color="yellow"] {
-  fill: rgba(255, 235, 59, 0.35);
-}
-
-.annotation-mark.highlight[data-color="red"] {
-  fill: rgba(244, 67, 54, 0.3);
-}
-
-.annotation-mark.highlight[data-color="blue"] {
-  fill: rgba(33, 150, 243, 0.3);
-}
-
-.annotation-mark.highlight[data-color="green"] {
-  fill: rgba(76, 175, 80, 0.3);
+/* Highlight colors - uses CSS variables */
+.annotation-mark.highlight {
+  fill: var(--anno-fill, rgba(255, 235, 59, 0.35));
 }
 
 /* Highlight colors - hover state */
-.annotation-group.hovered .annotation-mark.highlight[data-color="yellow"] {
-  fill: rgba(255, 235, 59, 0.55);
-}
-
-.annotation-group.hovered .annotation-mark.highlight[data-color="red"] {
-  fill: rgba(244, 67, 54, 0.5);
-}
-
-.annotation-group.hovered .annotation-mark.highlight[data-color="blue"] {
-  fill: rgba(33, 150, 243, 0.5);
-}
-
-.annotation-group.hovered .annotation-mark.highlight[data-color="green"] {
-  fill: rgba(76, 175, 80, 0.5);
+.annotation-group.hovered .annotation-mark.highlight {
+  fill: var(--anno-fill-hover, rgba(255, 235, 59, 0.55));
 }
 
 /* Highlight colors - selected state */
-.annotation-group.selected .annotation-mark.highlight[data-color="yellow"] {
-  fill: rgba(255, 235, 59, 0.6);
-}
-
-.annotation-group.selected .annotation-mark.highlight[data-color="red"] {
-  fill: rgba(244, 67, 54, 0.55);
-}
-
-.annotation-group.selected .annotation-mark.highlight[data-color="blue"] {
-  fill: rgba(33, 150, 243, 0.55);
-}
-
-.annotation-group.selected .annotation-mark.highlight[data-color="green"] {
-  fill: rgba(76, 175, 80, 0.55);
+.annotation-group.selected .annotation-mark.highlight {
+  fill: var(--anno-fill-selected, rgba(255, 235, 59, 0.6));
 }
 
 /* ===========================================
    Annotation Marks - Underlines (SVG)
    =========================================== */
 
-.annotation-mark.underline[data-color="yellow"] {
-  fill: rgba(255, 193, 7, 0.85);
-}
-
-.annotation-mark.underline[data-color="red"] {
-  fill: rgba(229, 57, 53, 0.85);
-}
-
-.annotation-mark.underline[data-color="blue"] {
-  fill: rgba(30, 136, 229, 0.85);
-}
-
-.annotation-mark.underline[data-color="green"] {
-  fill: rgba(56, 142, 60, 0.85);
+.annotation-mark.underline {
+  fill: var(--anno-underline, rgba(255, 193, 7, 0.85));
 }
 
 /* Underline - hover state */
-.annotation-group.hovered .annotation-mark.underline[data-color="yellow"] {
-  fill: rgba(255, 193, 7, 1);
-}
-
-.annotation-group.hovered .annotation-mark.underline[data-color="red"] {
-  fill: rgba(229, 57, 53, 1);
-}
-
-.annotation-group.hovered .annotation-mark.underline[data-color="blue"] {
-  fill: rgba(30, 136, 229, 1);
-}
-
-.annotation-group.hovered .annotation-mark.underline[data-color="green"] {
-  fill: rgba(56, 142, 60, 1);
+.annotation-group.hovered .annotation-mark.underline {
+  fill: var(--anno-underline-hover, rgba(255, 193, 7, 1));
 }

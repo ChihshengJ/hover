@@ -43,20 +43,20 @@ export class SearchIndex {
   /** @type {boolean} */
   #isBuilding = false;
 
+  /** @type {number} */
+  #buildProgress = 0;
+
   /** @type {HTMLCanvasElement} */
   #measureCanvas = null;
 
   /** @type {CanvasRenderingContext2D} */
   #measureCtx = null;
 
-  /** @type {Map<number, Map<string, number>>} - Cache: fontSize -> (char -> width) */
-  #fontWidthCache = new Map();
-
-  /** @type {Map<number, number>} - Cache: fontSize -> average char width */
-  #avgWidthCache = new Map();
-
   /** @type {string} */
-  #currentFont = "";
+  #currentFont = null;
+
+  /** @type {number} */
+  static BATCH_SIZE = 4; // Process 4 pages concurrently
 
   constructor(doc) {
     this.#doc = doc;
@@ -71,29 +71,68 @@ export class SearchIndex {
     return this.#isBuilding;
   }
 
+  get buildProgress() {
+    return this.#buildProgress;
+  }
+
   /**
-   * Build the search index for all pages
-   * @param {Function} [onProgress] - Progress callback (pageNumber, totalPages)
+   * Build the search index for all pages using parallel batch processing
+   * @param {Function} [onProgress] - Progress callback (pageNumber, totalPages, percent)
    */
   async build(onProgress = null) {
     if (this.#isBuilt || this.#isBuilding) return;
     this.#isBuilding = true;
+    this.#buildProgress = 0;
 
     const pdfDoc = this.#doc.pdfDoc;
     const numPages = pdfDoc.numPages;
-    this.#pageIndices = [];
+
+    // Pre-allocate array for proper ordering
+    this.#pageIndices = new Array(numPages);
 
     try {
-      for (let pageNum = 1; pageNum <= numPages; pageNum++) {
-        const pageIndex = await this.#buildPageIndex(pageNum);
-        this.#pageIndices.push(pageIndex);
+      let completedPages = 0;
+
+      // Process pages in parallel batches
+      for (
+        let batchStart = 0;
+        batchStart < numPages;
+        batchStart += SearchIndex.BATCH_SIZE
+      ) {
+        const batchEnd = Math.min(
+          batchStart + SearchIndex.BATCH_SIZE,
+          numPages,
+        );
+        const batchPromises = [];
+
+        // Create promises for this batch
+        for (let pageNum = batchStart + 1; pageNum <= batchEnd; pageNum++) {
+          batchPromises.push(
+            this.#buildPageIndex(pageNum).then((pageIndex) => {
+              // Store at correct index (0-based)
+              this.#pageIndices[pageNum - 1] = pageIndex;
+              return pageIndex;
+            }),
+          );
+        }
+
+        // Wait for batch to complete
+        await Promise.all(batchPromises);
+
+        // Update progress
+        completedPages = batchEnd;
+        this.#buildProgress = Math.round((completedPages / numPages) * 100);
 
         if (onProgress) {
-          onProgress(pageNum, numPages);
+          onProgress(completedPages, numPages, this.#buildProgress);
         }
+
+        // Yield to main thread for UI responsiveness
+        await new Promise((r) => requestAnimationFrame(r));
       }
 
       this.#isBuilt = true;
+      this.#buildProgress = 100;
     } finally {
       this.#isBuilding = false;
     }
@@ -252,7 +291,8 @@ export class SearchIndex {
   }
 
   /**
-   * Calculate character positions within a text span (optimized with caching)
+   * Calculate character positions within a text span
+   * Uses font caching and substring measurement for better performance
    * @param {string} text - Text string
    * @param {number} totalWidth - Total width of text span
    * @param {number} fontSize - Font size
@@ -262,52 +302,36 @@ export class SearchIndex {
     if (!text || text.length === 0) return [];
     if (text.length === 1) return [0];
 
-    // Round fontSize to reduce cache fragmentation (e.g., 12.003 -> 12)
-    const roundedSize = Math.round(fontSize * 10) / 10;
-
-    // Set font only if it changed
-    const fontKey = `${roundedSize}px sans-serif`;
+    // Only set font if changed (font caching)
+    const fontKey = `${Math.round(fontSize)}px sans-serif`;
     if (this.#currentFont !== fontKey) {
       this.#measureCtx.font = fontKey;
       this.#currentFont = fontKey;
     }
 
-    // Get or create char width cache for this font size
-    let charCache = this.#fontWidthCache.get(roundedSize);
-    if (!charCache) {
-      charCache = new Map();
-      this.#fontWidthCache.set(roundedSize, charCache);
-      // Pre-populate with common characters for batch measurement
-      this.#prePopulateCharCache(charCache, roundedSize);
-    }
-
+    // Use substring measurement for cumulative positions
+    // This is more accurate than summing individual char widths
     const positions = [0];
-    let cumulativeWidth = 0;
-    let lastCharWidth = 0;
 
-    for (let i = 0; i < text.length; i++) {
-      const char = text[i];
-      let charWidth = charCache.get(char);
+    // Measure full text width once
+    const measuredFullWidth = this.#measureCtx.measureText(text).width;
 
-      if (charWidth === undefined) {
-        // Measure and cache this character
-        charWidth = this.#measureCtx.measureText(char).width;
-        charCache.set(char, charWidth);
+    // Only measure if we need scaling
+    if (measuredFullWidth > 0 && totalWidth > 0) {
+      const scale = totalWidth / measuredFullWidth;
+
+      // Measure cumulative widths using substrings
+      for (let i = 1; i < text.length; i++) {
+        const substringWidth = this.#measureCtx.measureText(
+          text.substring(0, i),
+        ).width;
+        positions.push(substringWidth * scale);
       }
-
-      if (i < text.length - 1) {
-        cumulativeWidth += charWidth;
-        positions.push(cumulativeWidth);
-      }
-      lastCharWidth = charWidth;
-    }
-
-    // Scale to match actual total width
-    const measuredTotal = cumulativeWidth + lastCharWidth;
-    if (measuredTotal > 0 && totalWidth > 0) {
-      const scale = totalWidth / measuredTotal;
-      for (let i = 1; i < positions.length; i++) {
-        positions[i] *= scale;
+    } else {
+      // Fallback: equal distribution
+      const charWidth = totalWidth / text.length;
+      for (let i = 1; i < text.length; i++) {
+        positions.push(i * charWidth);
       }
     }
 
@@ -315,61 +339,17 @@ export class SearchIndex {
   }
 
   /**
-   * Pre-populate character cache with common characters (batch measurement)
-   * @param {Map<string, number>} cache - Character cache to populate
-   * @param {number} fontSize - Font size
-   */
-  #prePopulateCharCache(cache, fontSize) {
-    // Common characters in English text - measure in batch
-    const commonChars =
-      "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 .,;:!?'-\"()[]{}";
-
-    // Batch measure by getting width of whole string and individual chars
-    // This reduces the number of measureText calls for initial population
-    let totalWidth = 0;
-    const widths = [];
-
-    for (const char of commonChars) {
-      const width = this.#measureCtx.measureText(char).width;
-      widths.push(width);
-      totalWidth += width;
-    }
-
-    // Store in cache
-    for (let i = 0; i < commonChars.length; i++) {
-      cache.set(commonChars[i], widths[i]);
-    }
-
-    // Cache average width for fallback estimates
-    this.#avgWidthCache.set(fontSize, totalWidth / commonChars.length);
-  }
-
-  /**
-   * Get approximate character width (for fallback or estimation)
-   * @param {number} fontSize - Font size
-   * @returns {number} Approximate average character width
-   */
-  #getApproxCharWidth(fontSize) {
-    const roundedSize = Math.round(fontSize * 10) / 10;
-    let avgWidth = this.#avgWidthCache.get(roundedSize);
-
-    if (avgWidth === undefined) {
-      // Approximate: average char is roughly 0.5-0.6x font size for proportional fonts
-      avgWidth = fontSize * 0.55;
-      this.#avgWidthCache.set(roundedSize, avgWidth);
-    }
-
-    return avgWidth;
-  }
-
-  /**
    * Reconstruct text with proper word breaks and build char map
+   * Uses pre-computed index map for O(1) lookups
    * @param {TextItem[]} items - Text items
    * @param {Object} viewport - PDF.js viewport
    * @returns {{fullText: string, charMap: CharMapEntry[]}}
    */
   #reconstructText(items, viewport) {
     if (items.length === 0) return { fullText: "", charMap: [] };
+
+    // Pre-compute item index map for O(1) lookups
+    const itemIndexMap = new Map(items.map((item, idx) => [item, idx]));
 
     // Group items by line (similar Y position)
     const lines = this.#groupIntoLines(items);
@@ -380,7 +360,12 @@ export class SearchIndex {
 
     for (let lineIdx = 0; lineIdx < lines.length; lineIdx++) {
       const line = lines[lineIdx];
-      const lineText = this.#processLine(line, charMap, fullText.length, items);
+      const lineText = this.#processLine(
+        line,
+        charMap,
+        fullText.length,
+        itemIndexMap,
+      );
 
       // Check for hyphenation at end of line
       if (lineIdx < lines.length - 1 && lineText.endsWith("-")) {
@@ -465,15 +450,15 @@ export class SearchIndex {
    * @param {TextItem[]} lineItems - Items in this line
    * @param {CharMapEntry[]} charMap - Char map to append to
    * @param {number} textOffset - Current offset in fullText
-   * @param {TextItem[]} allItems - All items (for index lookup)
+   * @param {Map<TextItem, number>} itemIndexMap - Pre-computed index map for O(1) lookups
    * @returns {string} Processed line text
    */
-  #processLine(lineItems, charMap, textOffset, allItems) {
+  #processLine(lineItems, charMap, textOffset, itemIndexMap) {
     let lineText = "";
 
     for (let i = 0; i < lineItems.length; i++) {
       const item = lineItems[i];
-      const itemIndex = allItems.indexOf(item);
+      const itemIndex = itemIndexMap.get(item);
 
       // Check if we need a space before this item
       if (i > 0) {
@@ -592,10 +577,10 @@ export class SearchIndex {
   destroy() {
     this.#pageIndices = [];
     this.#isBuilt = false;
+    this.#isBuilding = false;
+    this.#buildProgress = 0;
     this.#measureCanvas = null;
     this.#measureCtx = null;
-    this.#fontWidthCache.clear();
-    this.#avgWidthCache.clear();
-    this.#currentFont = "";
+    this.#currentFont = null;
   }
 }

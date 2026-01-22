@@ -1,11 +1,5 @@
-/**
- * SearchController - Main orchestrator for search functionality
- * 
- * Manages search state, coordinates between SearchBar, SearchIndex, and SearchHighlightLayer
- */
-
-import { SearchBar } from './search_bar.js';
-import { SearchHighlightLayer } from './search_highlight_layer.js';
+import { SearchBar } from "./search_bar.js";
+import { SearchHighlightLayer } from "./search_highlight_layer.js";
 
 export class SearchController {
   /** @type {import('../../window_manager.js').SplitWindowManager} */
@@ -30,7 +24,7 @@ export class SearchController {
   #range = { from: 1, to: null };
 
   /** @type {string} */
-  #currentQuery = '';
+  #currentQuery = "";
 
   /** @type {Function|null} */
   #scrollCallback = null;
@@ -38,8 +32,21 @@ export class SearchController {
   /** @type {number|null} */
   #searchDebounceTimer = null;
 
+  /** @type {Function|null} */
+  #indexingStartHandler = null;
+
+  /** @type {Function|null} */
+  #indexingProgressHandler = null;
+
+  /** @type {Function|null} */
+  #indexingReadyHandler = null;
+
+  /** @type {Object|null} */
+  #indexingSubscriber = null;
+
   constructor(wm) {
     this.#wm = wm;
+    this.#setupIndexingListeners();
   }
 
   /** @returns {import('../../viewpane.js').ViewerPane} */
@@ -68,6 +75,52 @@ export class SearchController {
   // =========================================
 
   /**
+   * Setup listeners for search index building events
+   */
+  #setupIndexingListeners() {
+    this.#indexingStartHandler = ({ totalPages }) => {
+      this.#searchBar?.setIndexingState(true, 0);
+    };
+
+    this.#indexingProgressHandler = ({
+      completedPages,
+      totalPages,
+      percent,
+    }) => {
+      this.#searchBar?.updateIndexingProgress(percent);
+    };
+
+    this.#indexingReadyHandler = ({ elapsedMs }) => {
+      this.#searchBar?.setIndexingState(false);
+
+      // If there's a pending query, run the search now
+      if (this.#currentQuery.trim()) {
+        this.#performSearch();
+      }
+    };
+
+    // Subscribe to document events using the correct callback interface
+    const subscriber = {
+      onDocumentChange: (event, data) => {
+        switch (event) {
+          case "search-index-start":
+            this.#indexingStartHandler(data);
+            break;
+          case "search-index-progress":
+            this.#indexingProgressHandler(data);
+            break;
+          case "search-index-ready":
+            this.#indexingReadyHandler(data);
+            break;
+        }
+      },
+    };
+
+    this.#doc?.subscribe(subscriber);
+    this.#indexingSubscriber = subscriber;
+  }
+
+  /**
    * Activate search mode
    */
   async activate() {
@@ -79,15 +132,21 @@ export class SearchController {
 
     this.#isActive = true;
 
-    if (!this.#searchIndex?.isBuilt) {
-      console.warn('Search index not built yet');
-      // Could show loading indicator here
-    }
-
     // Create search bar if needed
     if (!this.#searchBar) {
       this.#searchBar = new SearchBar(this);
       this.#updateSearchBarOutline();
+    }
+
+    // Check current indexing state and update UI
+    if (this.#searchIndex?.isBuilding) {
+      this.#searchBar.setIndexingState(
+        true,
+        this.#searchIndex.buildProgress || 0,
+      );
+    } else if (!this.#searchIndex?.isBuilt) {
+      // Index not started yet - show indexing at 0%
+      this.#searchBar.setIndexingState(true, 0);
     }
 
     // Create highlight layer for active pane
@@ -123,7 +182,7 @@ export class SearchController {
     // Reset state
     this.#results = [];
     this.#focusIndex = -1;
-    this.#currentQuery = '';
+    this.#currentQuery = "";
     this.#range = { from: 1, to: null };
   }
 
@@ -137,7 +196,7 @@ export class SearchController {
    */
   onQueryChange(query) {
     this.#currentQuery = query;
-    
+
     if (!query.trim()) {
       this.#results = [];
       this.#focusIndex = -1;
@@ -163,7 +222,7 @@ export class SearchController {
    */
   onRangeChange(from, to) {
     this.#range = { from, to: to || this.totalPages };
-    
+
     // Re-run search if there's a query
     if (this.#currentQuery.trim()) {
       this.#performSearch();
@@ -175,7 +234,7 @@ export class SearchController {
    */
   #performSearch() {
     if (!this.#searchIndex?.isBuilt) {
-      console.warn('Search index not ready');
+      console.warn("Search index not ready");
       return;
     }
 
@@ -215,7 +274,8 @@ export class SearchController {
   focusPrev() {
     if (this.#results.length === 0) return;
 
-    this.#focusIndex = (this.#focusIndex - 1 + this.#results.length) % this.#results.length;
+    this.#focusIndex =
+      (this.#focusIndex - 1 + this.#results.length) % this.#results.length;
     this.#focusCurrentResult();
   }
 
@@ -223,15 +283,19 @@ export class SearchController {
    * Focus the current result and scroll to it
    */
   #focusCurrentResult() {
-    if (this.#focusIndex < 0 || this.#focusIndex >= this.#results.length) return;
+    if (this.#focusIndex < 0 || this.#focusIndex >= this.#results.length)
+      return;
 
     const match = this.#results[this.#focusIndex];
-    
+
     // Update highlight layer focus
     this.#highlightLayer?.setFocus(match.id);
 
     // Update result count
-    this.#searchBar?.updateResultCount(this.#focusIndex + 1, this.#results.length);
+    this.#searchBar?.updateResultCount(
+      this.#focusIndex + 1,
+      this.#results.length,
+    );
 
     // Scroll to center the match
     this.#scrollToMatch(match.id);
@@ -247,13 +311,13 @@ export class SearchController {
 
     const scroller = this.#pane.scroller;
     const scrollerHeight = scroller.clientHeight;
-    
+
     // Calculate scroll position to center the match
     const targetScrollTop = position.offsetTop - scrollerHeight / 2;
-    
+
     scroller.scrollTo({
       top: Math.max(0, targetScrollTop),
-      behavior: 'smooth',
+      behavior: "smooth",
     });
   }
 
@@ -328,19 +392,19 @@ export class SearchController {
    */
   #flattenOutline(outline, depth = 0) {
     const result = [];
-    
+
     for (const item of outline) {
       result.push({
         title: item.title,
         pageNumber: item.pageIndex + 1, // Convert 0-based to 1-based
         depth,
       });
-      
+
       if (item.children && item.children.length > 0) {
         result.push(...this.#flattenOutline(item.children, depth + 1));
       }
     }
-    
+
     return result;
   }
 
@@ -352,7 +416,7 @@ export class SearchController {
 
     // Recreate highlight layer for new pane
     this.#createHighlightLayer();
-    
+
     // Re-render highlights
     if (this.#results.length > 0) {
       this.#highlightLayer?.render(this.#results);
@@ -378,6 +442,13 @@ export class SearchController {
    */
   destroy() {
     this.deactivate();
+
+    // Unsubscribe from document events
+    if (this.#indexingSubscriber) {
+      this.#doc?.unsubscribe(this.#indexingSubscriber);
+      this.#indexingSubscriber = null;
+    }
+
     this.#searchBar?.destroy();
     this.#searchBar = null;
   }

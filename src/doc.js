@@ -48,6 +48,11 @@ function rgbToColorName(rgb) {
   return closestColor;
 }
 
+/**
+ * @callback LoadProgressCallback
+ * @param {{loaded: number, total: number, percent: number, phase: string}} progress
+ */
+
 export class PDFDocumentModel {
   constructor() {
     this.pdfDoc = null;
@@ -60,11 +65,9 @@ export class PDFDocumentModel {
     this.annotationsByPage = new Map();
     this.importedPdfAnnotations = new Map();
 
-    // Shared outline tree (for navigation tree and search)
     /** @type {Array<{id: string, title: string, pageIndex: number, left: number, top: number, children: Array}>} */
     this.outline = [];
 
-    // Search index
     /** @type {SearchIndex|null} */
     this.searchIndex = null;
   }
@@ -109,37 +112,87 @@ export class PDFDocumentModel {
     sessionStorage.removeItem("hover_pdf_name");
   }
 
-  async load(source) {
+  /**
+   * Load PDF from URL or ArrayBuffer
+   * @param {string|ArrayBuffer} source - URL or ArrayBuffer of PDF data
+   * @param {LoadProgressCallback} [onProgress] - Optional progress callback
+   * @returns {Promise<PDFDocumentProxy>}
+   */
+  async load(source, onProgress) {
+    const reportProgress = (loaded, total, phase) => {
+      if (onProgress) {
+        const percent = total > 0 ? Math.round((loaded / total) * 100) : 0;
+        onProgress({ loaded, total, percent, phase });
+      }
+    };
+
     if (source instanceof ArrayBuffer) {
-      this.pdfDoc = await pdfjsLib.getDocument({ data: source, verbosity: 0}).promise;
+      // ArrayBuffer loading - no progress available during PDF.js parsing
+      reportProgress(0, 100, "parsing");
+      this.pdfDoc = await pdfjsLib.getDocument({ data: source, verbosity: 0 })
+        .promise;
+      reportProgress(50, 100, "parsing");
     } else {
       try {
-        // Try direct fetch first
-        this.pdfDoc = await pdfjsLib.getDocument({ url: source, verbosity: 0 }).promise;
+        // URL-based loading - progress available during download
+        const loadingTask = pdfjsLib.getDocument({ url: source, verbosity: 0 });
+
+        // Set up progress callback for download phase
+        loadingTask.onProgress = (progressData) => {
+          if (progressData.total > 0) {
+            // We have a known total - report actual progress
+            reportProgress(
+              progressData.loaded,
+              progressData.total,
+              "downloading",
+            );
+          } else {
+            // Unknown total - report loaded bytes, use -1 for indeterminate
+            reportProgress(progressData.loaded, -1, "downloading");
+          }
+        };
+
+        this.pdfDoc = await loadingTask.promise;
       } catch (error) {
         // Check if it's a CORS or network error
         if (this.#isCorsOrNetworkError(error)) {
           console.log(
             "CORS error detected, falling back to background fetch...",
           );
-          const arrayBuffer = await this.#fetchViaBackground(source);
-          this.pdfDoc = await pdfjsLib.getDocument({ data: arrayBuffer, verbosity: 0 })
-            .promise;
+          reportProgress(0, -1, "downloading");
+          const arrayBuffer = await this.#fetchViaBackground(
+            source,
+            reportProgress,
+          );
+          reportProgress(50, 100, "parsing");
+          this.pdfDoc = await pdfjsLib.getDocument({
+            data: arrayBuffer,
+            verbosity: 0,
+          }).promise;
         } else {
           throw error;
         }
       }
     }
+
+    // Post-download processing phases
+    reportProgress(60, 100, "processing");
     this.allNamedDests = await this.pdfDoc.getDestinations();
+
+    reportProgress(70, 100, "caching");
     await this.#cachePageDimensions();
+
+    reportProgress(80, 100, "loading annotations");
     await this.loadAnnotations(this.pdfDoc);
 
-    // Build shared outline
+    reportProgress(90, 100, "building outline");
     await this.#buildOutline();
 
-    // Initialize search index (build in background)
+    reportProgress(95, 100, "initializing search");
     this.searchIndex = new SearchIndex(this);
     this.#buildSearchIndexAsync();
+
+    reportProgress(100, 100, "complete");
 
     return this.pdfDoc;
   }
@@ -165,9 +218,10 @@ export class PDFDocumentModel {
   /**
    * Fetch PDF via background script to bypass CORS
    * @param {string} url
+   * @param {Function} [reportProgress] - Optional progress reporter
    * @returns {Promise<ArrayBuffer>}
    */
-  async #fetchViaBackground(url) {
+  async #fetchViaBackground(url, reportProgress) {
     return new Promise((resolve, reject) => {
       if (typeof chrome === "undefined" || !chrome.runtime?.sendMessage) {
         reject(new Error("Chrome runtime not available"));
@@ -187,6 +241,13 @@ export class PDFDocumentModel {
           }
           if (response?.data) {
             const arrayBuffer = new Uint8Array(response.data).buffer;
+            if (reportProgress) {
+              reportProgress(
+                response.data.length,
+                response.data.length,
+                "downloading",
+              );
+            }
             resolve(arrayBuffer);
           } else {
             reject(new Error("No data received from background"));
@@ -252,20 +313,14 @@ export class PDFDocumentModel {
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     };
-
     this.annotations.set(annotation.id, annotation);
-
-    // Index by page
     for (const pageRange of annotation.pageRanges) {
       if (!this.annotationsByPage.has(pageRange.pageNumber)) {
         this.annotationsByPage.set(pageRange.pageNumber, new Set());
       }
       this.annotationsByPage.get(pageRange.pageNumber).add(annotation.id);
     }
-
-    // Notify subscribers
     this.notify("annotation-added", { annotation });
-
     return annotation;
   }
 
@@ -278,11 +333,47 @@ export class PDFDocumentModel {
   updateAnnotation(id, updates) {
     const annotation = this.annotations.get(id);
     if (!annotation) return null;
-
-    // Apply updates
     if (updates.color !== undefined) annotation.color = updates.color;
     if (updates.type !== undefined) annotation.type = updates.type;
     if (updates.comment !== undefined) annotation.comment = updates.comment;
+    annotation.updatedAt = new Date().toISOString();
+    this.notify("annotation-updated", { annotation });
+    return annotation;
+  }
+
+  /**
+   * Get annotation by ID
+   * @param {string} id
+   * @returns {Object|undefined}
+   */
+  getAnnotation(id) {
+    return this.annotations.get(id);
+  }
+
+  /**
+   * Get annotations for a specific page
+   * @param {number} pageNumber
+   * @returns {Array<Object>}
+   */
+  getAnnotationsForPage(pageNumber) {
+    const ids = this.annotationsByPage.get(pageNumber);
+    if (!ids) return [];
+    return Array.from(ids)
+      .map((id) => this.annotations.get(id))
+      .filter(Boolean);
+  }
+
+  /**
+   * Update annotation comment
+   * @param {string} id
+   * @param {string} comment
+   * @returns {Object|null}
+   */
+  updateAnnotationComment(id, comment) {
+    const annotation = this.annotations.get(id);
+    if (!annotation) return null;
+
+    annotation.comment = comment;
     annotation.updatedAt = new Date().toISOString();
 
     // Notify subscribers
@@ -292,9 +383,9 @@ export class PDFDocumentModel {
   }
 
   /**
-   * Delete an annotation
+   * Delete an annotation completely
    * @param {string} id
-   * @returns {boolean} Success
+   * @returns {boolean}
    */
   deleteAnnotation(id) {
     const annotation = this.annotations.get(id);
@@ -302,41 +393,19 @@ export class PDFDocumentModel {
 
     // Remove from page index
     for (const pageRange of annotation.pageRanges) {
-      const pageAnnotations = this.annotationsByPage.get(pageRange.pageNumber);
-      if (pageAnnotations) {
-        pageAnnotations.delete(id);
+      const pageIds = this.annotationsByPage.get(pageRange.pageNumber);
+      if (pageIds) {
+        pageIds.delete(id);
       }
     }
 
+    // Remove from main store
     this.annotations.delete(id);
 
     // Notify subscribers
-    this.notify("annotation-deleted", { annotationId: id });
+    this.notify("annotation-deleted", { annotation });
 
     return true;
-  }
-
-  /**
-   * Get a single annotation by ID
-   * @param {string} id
-   * @returns {Object|null}
-   */
-  getAnnotation(id) {
-    return this.annotations.get(id) || null;
-  }
-
-  /**
-   * Get all annotations for a specific page
-   * @param {number} pageNumber
-   * @returns {Array<Object>}
-   */
-  getAnnotationsForPage(pageNumber) {
-    const annotationIds = this.annotationsByPage.get(pageNumber);
-    if (!annotationIds) return [];
-
-    return Array.from(annotationIds)
-      .map((id) => this.annotations.get(id))
-      .filter(Boolean);
   }
 
   /**
@@ -365,6 +434,10 @@ export class PDFDocumentModel {
     return true;
   }
 
+  // ============================================
+  // Annotation I/O
+  // ============================================
+
   /**
    * Export annotations for saving
    * @returns {Array<Object>}
@@ -392,7 +465,7 @@ export class PDFDocumentModel {
     this.notify("annotations-imported", { count: annotations.length });
   }
 
-  /**
+    /**
    * Load existing annotations from the PDF document
    * Parses Highlight annotations and their associated Popup comments
    * @param {PDFDocumentProxy} pdfDoc
@@ -611,64 +684,39 @@ export class PDFDocumentModel {
   // Outline Building (shared with NavigationTree and Search)
   // ============================================
 
-  /**
-   * Build the document outline tree
-   * This is shared between NavigationTree and SearchController
-   */
   async #buildOutline() {
-    try {
-      const pdfOutline = await this.pdfDoc.getOutline();
-      if (pdfOutline && pdfOutline.length > 0) {
-        this.outline = await this.#parseOutlineItems(pdfOutline);
-      }
-    } catch (error) {
-      console.error("Error building outline:", error);
+    const outline = await this.pdfDoc.getOutline();
+    if (!outline) {
       this.outline = [];
+      return;
     }
+
+    this.outline = await this.#processOutlineItems(outline);
   }
 
-  /**
-   * Recursively parse outline items
-   * @param {Array} items - PDF.js outline items
-   * @returns {Promise<Array>}
-   */
-  async #parseOutlineItems(items) {
+  async #processOutlineItems(items) {
     const result = [];
 
     for (const item of items) {
-      const position = await this.#resolveOutlineDestination(item.dest);
-
-      const node = {
+      const dest = await this.#resolveDestination(item.dest);
+      const outlineItem = {
         id: crypto.randomUUID(),
-        title: item.title || "Untitled",
-        pageIndex: position?.pageIndex ?? 0,
-        left: position?.left ?? 0,
-        top: position?.top ?? 0,
-        children: [],
+        title: item.title,
+        pageIndex: dest?.pageIndex ?? 0,
+        left: dest?.left ?? 0,
+        top: dest?.top ?? 0,
+        children: item.items ? await this.#processOutlineItems(item.items) : [],
       };
-
-      if (item.items && item.items.length > 0) {
-        node.children = await this.#parseOutlineItems(item.items);
-      }
-
-      result.push(node);
+      result.push(outlineItem);
     }
 
     return result;
   }
 
-  /**
-   * Resolve an outline destination to page coordinates
-   * @param {string|Array} dest - Destination reference
-   * @returns {Promise<{pageIndex: number, left: number, top: number}|null>}
-   */
-  async #resolveOutlineDestination(dest) {
-    if (!dest) return null;
-
+  async #resolveDestination(dest) {
     try {
       let explicitDest = dest;
 
-      // If it's a named destination, resolve it
       if (typeof dest === "string") {
         explicitDest = this.allNamedDests?.[dest];
         if (!explicitDest) {
@@ -695,9 +743,6 @@ export class PDFDocumentModel {
   // Search Index Building
   // ============================================
 
-  /**
-   * Build search index asynchronously (doesn't block UI)
-   */
   async #buildSearchIndexAsync() {
     if (!this.searchIndex) return;
 
@@ -705,19 +750,30 @@ export class PDFDocumentModel {
       console.log("[Search] Building search index...");
       const startTime = performance.now();
 
-      await this.searchIndex.build((pageNum, total) => {
-        // Could emit progress event here if needed
-        if (pageNum % 10 === 0 || pageNum === total) {
-          console.log(`[Search] Indexed page ${pageNum}/${total}`);
+      // Emit start event
+      this.notify("search-index-start", { totalPages: this.numPages });
+
+      await this.searchIndex.build((completedPages, totalPages, percent) => {
+        this.notify("search-index-progress", {
+          completedPages,
+          totalPages,
+          percent,
+        });
+
+        if (completedPages % 10 === 0 || completedPages === totalPages) {
+          console.log(
+            `[Search] Indexed ${completedPages}/${totalPages} pages (${percent}%)`,
+          );
         }
       });
 
       const elapsed = performance.now() - startTime;
       console.log(`[Search] Index built in ${elapsed.toFixed(0)}ms`);
 
-      this.notify("search-index-ready", {});
+      this.notify("search-index-ready", { elapsedMs: elapsed });
     } catch (error) {
       console.error("[Search] Error building search index:", error);
+      this.notify("search-index-error", { error: error.message });
     }
   }
 
@@ -743,8 +799,6 @@ export class PDFDocumentModel {
     const page = await this.pdfDoc.getPage(pageNumber);
     const viewport = page.getViewport({ scale: 1 });
 
-    // We only need the page dimensions, not the transform offsets
-    // PDF coordinates: origin at bottom-left, Y increases upward
     return {
       pageWidth: viewport.width,
       pageHeight: viewport.height,
@@ -962,9 +1016,6 @@ export class PDFDocumentModel {
       // Get PDF with new annotations added
       let data = await this.pdfDoc.saveDocument();
 
-      // Debug: Show /Annots arrays before modification
-      this.#debugAnnotsArrays(data, "BEFORE cleanup");
-
       // Post-process to remove original imported annotations
       if (this.importedPdfAnnotations.size > 0) {
         console.log(
@@ -980,8 +1031,6 @@ export class PDFDocumentModel {
         }
 
         data = this.#removeImportedAnnotationsFromPdf(data);
-
-        this.#debugAnnotsArrays(data, "AFTER cleanup");
       }
 
       return data;

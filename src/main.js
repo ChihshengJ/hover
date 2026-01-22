@@ -1,6 +1,7 @@
 import { PDFDocumentModel } from "./doc.js";
 import { SplitWindowManager } from "./window_manager.js";
 import { FileMenu } from "./controls/file_menu.js";
+import { LoadingOverlay } from "./controls/loading_overlay.js";
 
 import "../styles/_variables.css";
 import "../styles/viewer.css";
@@ -13,6 +14,7 @@ import "../styles/annotations.css";
 import "../styles/progress_bar.css";
 import "../styles/file_menu.css";
 import "../styles/search.css";
+import "../styles/loading_overlay.css";
 
 const el = {
   wd: document.getElementById("window-container"),
@@ -36,48 +38,79 @@ function getPdfUrl() {
 }
 
 /**
+ * Get human-readable status message for loading phase
+ * @param {string} phase
+ * @returns {string}
+ */
+function getStatusMessage(phase) {
+  const messages = {
+    downloading: "Downloading document...",
+    parsing: "Parsing PDF...",
+    processing: "Processing document...",
+    caching: "Caching pages...",
+    "loading annotations": "Loading annotations...",
+    "building outline": "Building outline...",
+    "initializing search": "Initializing search...",
+    complete: "Complete",
+  };
+  return messages[phase] || "Loading...";
+}
+
+/**
  * Load PDF from either local upload (sessionStorage) or URL
  */
 async function loadPdf() {
+  const loadingOverlay = new LoadingOverlay();
+  loadingOverlay.show();
+
   try {
     const pdfmodel = new PDFDocumentModel();
     const wm = new SplitWindowManager(el.wd, pdfmodel);
+
+    // Progress callback for loading updates
+    const onProgress = ({ loaded, total, percent, phase }) => {
+      if (total === -1) {
+        // Indeterminate progress (unknown total size)
+        loadingOverlay.setIndeterminate(getStatusMessage(phase));
+      } else {
+        loadingOverlay.setProgress(percent / 100, getStatusMessage(phase));
+      }
+    };
 
     // Check for locally uploaded PDF first
     if (PDFDocumentModel.hasLocalPdf()) {
       const localPdf = PDFDocumentModel.getLocalPdf();
       if (localPdf) {
-        await pdfmodel.load(localPdf.data);
+        loadingOverlay.setProgress(0.1, "Loading local file...");
+        await pdfmodel.load(localPdf.data, onProgress);
+        loadingOverlay.setProgress(0.9, "Initializing viewer...");
         await wm.initialize();
-
         const fileMenu = new FileMenu(wm);
-
-        // Set title from filename
         const fileName = localPdf.name.replace(/\.pdf$/i, "");
         document.title = fileName + " - Hover PDF";
-
-        // Clear sessionStorage after successful load
         PDFDocumentModel.clearLocalPdf();
+        await loadingOverlay.hide();
         return;
       }
     }
 
     // Fall back to URL-based loading
     const url = getPdfUrl();
-    const pdfDoc = await pdfmodel.load(url);
-
+    const pdfDoc = await pdfmodel.load(url, onProgress);
+    loadingOverlay.setProgress(0.95, "Initializing viewer...");
     await wm.initialize();
-
     const fileMenu = new FileMenu(wm);
 
     const metadata = await pdfDoc.getMetadata();
     if (metadata.info.Title) {
       document.title = metadata.info.Title + " - Hover PDF";
     }
+
+    await loadingOverlay.hide();
   } catch (error) {
     console.error("Error loading PDF:", error);
-    // Clear any stored local PDF on error to prevent reload loops
     PDFDocumentModel.clearLocalPdf();
+    loadingOverlay.destroy();
     el.wd.innerHTML = `
       <div style="color: red; text-align: center; padding: 50px;">
         <h2>Failed to load PDF</h2>

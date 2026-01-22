@@ -1,4 +1,7 @@
 export class SearchBar {
+  /** @type {Boolean} */
+  #isIndexing = null;
+
   /** @type {import('./search_controller.js').SearchController} */
   #controller = null;
 
@@ -12,6 +15,9 @@ export class SearchBar {
   #resultCount = null;
 
   /** @type {HTMLElement} */
+  #indexingIndicator = null;
+
+  /** @type {HTMLElement} */
   #fromSelect = null;
 
   /** @type {HTMLInputElement} */
@@ -22,7 +28,7 @@ export class SearchBar {
 
   /** @type {HTMLInputElement} */
   #toInput = null;
-  
+
   /** @type {HTMLElement[]} */
   #clearBtns = null;
 
@@ -60,6 +66,12 @@ export class SearchBar {
           <span class="search-result-count">
             <span class="search-current">0</span>/<span class="search-total">0</span>
           </span>
+          <span class="search-indexing-indicator" style="display: none;">
+            <svg class="search-indexing-spinner" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/>
+            </svg>
+            <span class="search-indexing-text">Indexing...</span>
+          </span>
         </div>
       </div>
       
@@ -87,12 +99,17 @@ export class SearchBar {
     // Get references
     this.#searchInput = this.#container.querySelector(".search-input");
     this.#resultCount = this.#container.querySelector(".search-result-count");
+    this.#indexingIndicator = this.#container.querySelector(
+      ".search-indexing-indicator",
+    );
     this.#fromInput = this.#container.querySelector(".search-from-input");
     this.#toInput = this.#container.querySelector(".search-to-input");
     this.#fromSelect = this.#container.querySelector(".search-from-dropdown");
     this.#toSelect = this.#container.querySelector(".search-to-dropdown");
-    this.#clearBtns = [this.#container.querySelector("#clear-1"), this.#container.querySelector("#clear-2")];
-
+    this.#clearBtns = [
+      this.#container.querySelector("#clear-1"),
+      this.#container.querySelector("#clear-2"),
+    ];
 
     document.body.appendChild(this.#container);
   }
@@ -181,7 +198,6 @@ export class SearchBar {
     this.#clearBtns[1].addEventListener("click", () => {
       this.#toInput.value = "";
     });
-
   }
 
   #debounceSearch() {
@@ -522,6 +538,54 @@ export class SearchBar {
       this.#fromInput.dataset.page = pageNumber;
       this.#validateToSelection();
       this.#updateRange();
+    }
+  }
+
+  /**
+   * Set indexing state - shows/hides the indexing indicator
+   * @param {boolean} isIndexing - Whether indexing is in progress
+   * @param {number} [percent=0] - Progress percentage (0-100)
+   */
+  setIndexingState(isIndexing, percent = 0) {
+    this.#isIndexing = isIndexing;
+
+    if (isIndexing) {
+      this.#indexingIndicator.style.display = "flex";
+      this.#resultCount.style.display = "none";
+      this.#searchInput.placeholder = `Indexing... ${percent}%`;
+      this.#searchInput.disabled = true;
+      this.#container.classList.add("indexing");
+
+      // Update progress text
+      const textEl = this.#indexingIndicator.querySelector(
+        ".search-indexing-text",
+      );
+      if (textEl) {
+        textEl.textContent = `Indexing... ${percent}%`;
+      }
+    } else {
+      this.#indexingIndicator.style.display = "none";
+      this.#resultCount.style.display = "";
+      this.#searchInput.placeholder = "Search in document...";
+      this.#searchInput.disabled = false;
+      this.#container.classList.remove("indexing");
+    }
+  }
+
+  /**
+   * Update indexing progress
+   * @param {number} percent - Progress percentage (0-100)
+   */
+  updateIndexingProgress(percent) {
+    if (!this.#isIndexing) return;
+
+    this.#searchInput.placeholder = `Indexing... ${percent}%`;
+
+    const textEl = this.#indexingIndicator.querySelector(
+      ".search-indexing-text",
+    );
+    if (textEl) {
+      textEl.textContent = `Indexing... ${percent}%`;
     }
   }
 

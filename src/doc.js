@@ -190,7 +190,7 @@ export class PDFDocumentModel {
 
     reportProgress(95, 100, "initializing search");
     this.searchIndex = new SearchIndex(this);
-    this.#buildSearchIndexAsync();
+    await this.#buildSearchIndexAsync();
 
     reportProgress(100, 100, "complete");
 
@@ -313,14 +313,20 @@ export class PDFDocumentModel {
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     };
+
     this.annotations.set(annotation.id, annotation);
+
+    // Index by page
     for (const pageRange of annotation.pageRanges) {
       if (!this.annotationsByPage.has(pageRange.pageNumber)) {
         this.annotationsByPage.set(pageRange.pageNumber, new Set());
       }
       this.annotationsByPage.get(pageRange.pageNumber).add(annotation.id);
     }
+
+    // Notify subscribers
     this.notify("annotation-added", { annotation });
+
     return annotation;
   }
 
@@ -333,47 +339,11 @@ export class PDFDocumentModel {
   updateAnnotation(id, updates) {
     const annotation = this.annotations.get(id);
     if (!annotation) return null;
+
+    // Apply updates
     if (updates.color !== undefined) annotation.color = updates.color;
     if (updates.type !== undefined) annotation.type = updates.type;
     if (updates.comment !== undefined) annotation.comment = updates.comment;
-    annotation.updatedAt = new Date().toISOString();
-    this.notify("annotation-updated", { annotation });
-    return annotation;
-  }
-
-  /**
-   * Get annotation by ID
-   * @param {string} id
-   * @returns {Object|undefined}
-   */
-  getAnnotation(id) {
-    return this.annotations.get(id);
-  }
-
-  /**
-   * Get annotations for a specific page
-   * @param {number} pageNumber
-   * @returns {Array<Object>}
-   */
-  getAnnotationsForPage(pageNumber) {
-    const ids = this.annotationsByPage.get(pageNumber);
-    if (!ids) return [];
-    return Array.from(ids)
-      .map((id) => this.annotations.get(id))
-      .filter(Boolean);
-  }
-
-  /**
-   * Update annotation comment
-   * @param {string} id
-   * @param {string} comment
-   * @returns {Object|null}
-   */
-  updateAnnotationComment(id, comment) {
-    const annotation = this.annotations.get(id);
-    if (!annotation) return null;
-
-    annotation.comment = comment;
     annotation.updatedAt = new Date().toISOString();
 
     // Notify subscribers
@@ -383,9 +353,9 @@ export class PDFDocumentModel {
   }
 
   /**
-   * Delete an annotation completely
+   * Delete an annotation
    * @param {string} id
-   * @returns {boolean}
+   * @returns {boolean} Success
    */
   deleteAnnotation(id) {
     const annotation = this.annotations.get(id);
@@ -393,19 +363,41 @@ export class PDFDocumentModel {
 
     // Remove from page index
     for (const pageRange of annotation.pageRanges) {
-      const pageIds = this.annotationsByPage.get(pageRange.pageNumber);
-      if (pageIds) {
-        pageIds.delete(id);
+      const pageAnnotations = this.annotationsByPage.get(pageRange.pageNumber);
+      if (pageAnnotations) {
+        pageAnnotations.delete(id);
       }
     }
 
-    // Remove from main store
     this.annotations.delete(id);
 
     // Notify subscribers
-    this.notify("annotation-deleted", { annotation });
+    this.notify("annotation-deleted", { annotationId: id });
 
     return true;
+  }
+
+  /**
+   * Get a single annotation by ID
+   * @param {string} id
+   * @returns {Object|null}
+   */
+  getAnnotation(id) {
+    return this.annotations.get(id) || null;
+  }
+
+  /**
+   * Get all annotations for a specific page
+   * @param {number} pageNumber
+   * @returns {Array<Object>}
+   */
+  getAnnotationsForPage(pageNumber) {
+    const annotationIds = this.annotationsByPage.get(pageNumber);
+    if (!annotationIds) return [];
+
+    return Array.from(annotationIds)
+      .map((id) => this.annotations.get(id))
+      .filter(Boolean);
   }
 
   /**
@@ -465,7 +457,7 @@ export class PDFDocumentModel {
     this.notify("annotations-imported", { count: annotations.length });
   }
 
-    /**
+  /**
    * Load existing annotations from the PDF document
    * Parses Highlight annotations and their associated Popup comments
    * @param {PDFDocumentProxy} pdfDoc
@@ -681,7 +673,7 @@ export class PDFDocumentModel {
   }
 
   // ============================================
-  // Outline Building (shared with NavigationTree and Search)
+  // Outline Building
   // ============================================
 
   async #buildOutline() {

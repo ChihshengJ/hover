@@ -21,27 +21,16 @@ export class LoadingOverlay {
   }
 
   #createDOM() {
-    // Main overlay - covers entire window with blur
     this.overlay = document.createElement("div");
     this.overlay.className = "loading-overlay";
-
-    // Loading bar container - centered
     this.loadingBar = document.createElement("div");
     this.loadingBar.className = "loading-bar";
-
-    // Track (background)
     const track = document.createElement("div");
     track.className = "loading-bar-track";
-
-    // Progress fill (the white beam)
     this.progressFill = document.createElement("div");
     this.progressFill.className = "loading-bar-fill";
-
-    // Glow effect
     this.progressGlow = document.createElement("div");
     this.progressGlow.className = "loading-bar-glow";
-
-    // Progress indicator (moving light source at end of fill)
     this.progressIndicator = document.createElement("div");
     this.progressIndicator.className = "loading-bar-indicator";
     this.progressIndicator.innerHTML = `
@@ -49,29 +38,19 @@ export class LoadingOverlay {
       <div class="loading-indicator-glow"></div>
       <div class="loading-indicator-pulse"></div>
     `;
-
-    // Percentage text
     this.percentText = document.createElement("div");
     this.percentText.className = "loading-percent";
     this.percentText.textContent = "0%";
-
-    // Status text
     this.statusText = document.createElement("div");
     this.statusText.className = "loading-status";
     this.statusText.textContent = "Loading document...";
-
-    // Assemble loading bar
     track.appendChild(this.progressFill);
     track.appendChild(this.progressGlow);
     track.appendChild(this.progressIndicator);
-
     this.loadingBar.appendChild(track);
     this.loadingBar.appendChild(this.percentText);
     this.loadingBar.appendChild(this.statusText);
-
     this.overlay.appendChild(this.loadingBar);
-
-    // Insert into DOM
     document.body.appendChild(this.overlay);
   }
 
@@ -147,7 +126,7 @@ export class LoadingOverlay {
         this.overlay.classList.add("dissolving");
         this.overlay.classList.remove("visible");
 
-        // Wait for animation to complete (0.2s as specified)
+        // Wait for animation to complete
         setTimeout(() => {
           this.isVisible = false;
           document.body.classList.remove("pdf-loading");

@@ -89,6 +89,7 @@ export class TextSelectionManager {
     return text
       .replace(/\x00/g, "")
       .replace(/[\r\n]+/g, " ")
+      .replace(/-\s/g, "")
       .normalize("NFC");
   }
 

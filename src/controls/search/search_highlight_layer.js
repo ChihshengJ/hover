@@ -1,7 +1,3 @@
-/**
- * SearchHighlightLayer - SVG layer for rendering search result highlights
- */
-
 export class SearchHighlightLayer {
   /** @type {import('../../viewpane.js').ViewerPane} */
   #pane = null;
@@ -21,6 +17,24 @@ export class SearchHighlightLayer {
   /** @type {Array} */
   #matches = [];
 
+  /** @type {Map<number, Array>} */
+  #matchesByPage = new Map();
+
+  /** @type {Set<number>} */
+  #renderedPages = new Set();
+
+  /** @type {Map<number, {top: number, left: number}>} */
+  #pageLayoutCache = new Map();
+
+  /** @type {boolean} */
+  #layoutCacheValid = false;
+
+  /** @type {Function|null} */
+  #scrollHandler = null;
+
+  /** @type {number|null} */
+  #scrollRafId = null;
+
   // Single highlight color for all matches
   static HIGHLIGHT_COLOR = "#fabd1e";
 
@@ -28,6 +42,7 @@ export class SearchHighlightLayer {
     this.#pane = pane;
     this.#createSVG();
     this.#setupResizeObserver();
+    this.#setupScrollHandler();
   }
 
   #createSVG() {
@@ -51,9 +66,26 @@ export class SearchHighlightLayer {
 
   #setupResizeObserver() {
     this.#resizeObserver = new ResizeObserver(() => {
+      this.#invalidateLayoutCache();
       this.refresh();
     });
     this.#resizeObserver.observe(this.#pane.stage);
+  }
+
+  #setupScrollHandler() {
+    this.#scrollHandler = () => {
+      // Use RAF to throttle scroll handling
+      if (this.#scrollRafId) return;
+
+      this.#scrollRafId = requestAnimationFrame(() => {
+        this.#scrollRafId = null;
+        this.#renderVisiblePages();
+      });
+    };
+
+    this.#pane.scroller.addEventListener("scroll", this.#scrollHandler, {
+      passive: true,
+    });
   }
 
   #updateSVGSize() {
@@ -66,6 +98,64 @@ export class SearchHighlightLayer {
     );
   }
 
+  #invalidateLayoutCache() {
+    this.#layoutCacheValid = false;
+    this.#pageLayoutCache.clear();
+  }
+
+  /**
+   * Get page layout info, using cache when valid
+   * @param {number} pageNumber - 1-based page number
+   * @returns {{top: number, left: number}|null}
+   */
+  #getPageLayout(pageNumber) {
+    if (this.#layoutCacheValid && this.#pageLayoutCache.has(pageNumber)) {
+      return this.#pageLayoutCache.get(pageNumber);
+    }
+
+    const pageView = this.#pane.pages[pageNumber - 1];
+    if (!pageView) return null;
+
+    const layout = {
+      top: pageView.wrapper.offsetTop,
+      left: pageView.wrapper.offsetLeft,
+    };
+
+    this.#pageLayoutCache.set(pageNumber, layout);
+    return layout;
+  }
+
+  /**
+   * Batch read all layout properties for given pages
+   * @param {Set<number>} pageNumbers - Page numbers to read layouts for
+   */
+  #batchReadLayouts(pageNumbers) {
+    for (const pageNum of pageNumbers) {
+      if (!this.#pageLayoutCache.has(pageNum)) {
+        const pageView = this.#pane.pages[pageNum - 1];
+        if (pageView) {
+          this.#pageLayoutCache.set(pageNum, {
+            top: pageView.wrapper.offsetTop,
+            left: pageView.wrapper.offsetLeft,
+          });
+        }
+      }
+    }
+    this.#layoutCacheValid = true;
+  }
+
+  /**
+   * Get currently visible page numbers
+   * @returns {Set<number>}
+   */
+  #getVisiblePageNumbers() {
+    const visible = new Set();
+    for (const pageView of this.#pane.visiblePages) {
+      visible.add(pageView.pageNumber);
+    }
+    return visible;
+  }
+
   /**
    * Render search highlights
    * @param {Array} matches - Array of SearchMatch objects
@@ -74,35 +164,82 @@ export class SearchHighlightLayer {
     this.clear();
     this.#matches = matches;
 
+    // Group matches by page for efficient lookup
+    this.#matchesByPage.clear();
     for (const match of matches) {
-      this.#renderMatch(match);
+      if (!this.#matchesByPage.has(match.pageNumber)) {
+        this.#matchesByPage.set(match.pageNumber, []);
+      }
+      this.#matchesByPage.get(match.pageNumber).push(match);
+    }
+
+    // Render only visible pages
+    this.#renderVisiblePages();
+  }
+
+  /**
+   * Render highlights for currently visible pages only
+   */
+  #renderVisiblePages() {
+    const visiblePages = this.#getVisiblePageNumbers();
+    const pagesToRender = new Set();
+    
+    for (const pageNum of visiblePages) {
+      if (
+        !this.#renderedPages.has(pageNum) &&
+        this.#matchesByPage.has(pageNum)
+      ) {
+        pagesToRender.add(pageNum);
+      }
+    }
+    
+    if (pagesToRender.size === 0) return;
+    this.#batchReadLayouts(pagesToRender);
+    const scale = this.#pane.scale;
+    const fragment = document.createDocumentFragment();
+
+    for (const pageNum of pagesToRender) {
+      const layout = this.#pageLayoutCache.get(pageNum);
+      if (!layout) continue;
+
+      const pageMatches = this.#matchesByPage.get(pageNum) || [];
+
+      for (const match of pageMatches) {
+        const group = this.#createMatchGroup(match, layout, scale);
+        if (group) {
+          fragment.appendChild(group);
+          this.#highlightGroups.set(match.id, group);
+        }
+      }
+      this.#renderedPages.add(pageNum);
+    }
+
+    if (fragment.childNodes.length > 0) {
+      this.#svg.appendChild(fragment);
     }
   }
 
   /**
-   * Render a single search match
+   * Create SVG group for a single match (no DOM operations)
    * @param {Object} match - SearchMatch object
+   * @param {{top: number, left: number}} layout - Page layout info
+   * @param {number} scale - Current scale
+   * @returns {SVGGElement|null}
    */
-  #renderMatch(match) {
+  #createMatchGroup(match, layout, scale) {
     const ns = "http://www.w3.org/2000/svg";
-    const pageView = this.#pane.pages[match.pageNumber - 1];
-    if (!pageView) return;
 
     const group = document.createElementNS(ns, "g");
     group.classList.add("search-highlight-group");
     group.dataset.matchId = match.id;
-
-    const pageTop = pageView.wrapper.offsetTop;
-    const pageLeft = pageView.wrapper.offsetLeft;
-    const scale = this.#pane.scale;
 
     for (const rect of match.rects) {
       const element = document.createElementNS(ns, "rect");
       element.classList.add("search-highlight-rect");
 
       // Convert PDF coordinates to screen coordinates
-      const x = pageLeft + rect.x * scale;
-      const y = pageTop + rect.y * scale;
+      const x = layout.left + rect.x * scale;
+      const y = layout.top + rect.y * scale;
       const width = rect.width * scale;
       const height = rect.height * scale;
 
@@ -119,11 +256,15 @@ export class SearchHighlightLayer {
     }
 
     // Create focus outline (hidden by default)
-    const outline = this.#createFocusOutline(match, pageLeft, pageTop, scale);
+    const outline = this.#createFocusOutline(
+      match,
+      layout.left,
+      layout.top,
+      scale,
+    );
     group.insertBefore(outline, group.firstChild);
 
-    this.#svg.appendChild(group);
-    this.#highlightGroups.set(match.id, group);
+    return group;
   }
 
   /**
@@ -186,6 +327,22 @@ export class SearchHighlightLayer {
 
     // Add focus to new
     if (matchId) {
+      // Ensure the match's page is rendered
+      const match = this.#matches.find((m) => m.id === matchId);
+      if (match && !this.#renderedPages.has(match.pageNumber)) {
+        // Force render this page
+        this.#batchReadLayouts(new Set([match.pageNumber]));
+        const layout = this.#pageLayoutCache.get(match.pageNumber);
+        if (layout) {
+          const group = this.#createMatchGroup(match, layout, this.#pane.scale);
+          if (group) {
+            this.#svg.appendChild(group);
+            this.#highlightGroups.set(match.id, group);
+            this.#renderedPages.add(match.pageNumber);
+          }
+        }
+      }
+
       const group = this.#highlightGroups.get(matchId);
       if (group) {
         group.classList.add("focused");
@@ -204,12 +361,10 @@ export class SearchHighlightLayer {
     const match = this.#matches.find((m) => m.id === matchId);
     if (!match) return null;
 
-    const pageView = this.#pane.pages[match.pageNumber - 1];
-    if (!pageView) return null;
+    const layout = this.#getPageLayout(match.pageNumber);
+    if (!layout) return null;
 
     const scale = this.#pane.scale;
-    const pageTop = pageView.wrapper.offsetTop;
-    const pageLeft = pageView.wrapper.offsetLeft;
 
     // Calculate bounding box
     let minX = Infinity,
@@ -218,8 +373,8 @@ export class SearchHighlightLayer {
       maxY = -Infinity;
 
     for (const rect of match.rects) {
-      const x = pageLeft + rect.x * scale;
-      const y = pageTop + rect.y * scale;
+      const x = layout.left + rect.x * scale;
+      const y = layout.top + rect.y * scale;
       const width = rect.width * scale;
       const height = rect.height * scale;
 
@@ -241,8 +396,8 @@ export class SearchHighlightLayer {
     const match = this.#matches.find((m) => m.id === matchId);
     if (!match) return null;
 
-    const pageView = this.#pane.pages[match.pageNumber - 1];
-    if (!pageView) return null;
+    const layout = this.#getPageLayout(match.pageNumber);
+    if (!layout) return null;
 
     const scale = this.#pane.scale;
 
@@ -252,7 +407,7 @@ export class SearchHighlightLayer {
 
     return {
       pageNumber: match.pageNumber,
-      offsetTop: pageView.wrapper.offsetTop + centerY,
+      offsetTop: layout.top + centerY,
     };
   }
 
@@ -263,7 +418,16 @@ export class SearchHighlightLayer {
     this.#updateSVGSize();
     if (this.#matches.length > 0) {
       const focusedId = this.#focusedId;
-      this.render(this.#matches);
+
+      // Clear rendered state but keep matches grouped
+      this.#svg.innerHTML = "";
+      this.#highlightGroups.clear();
+      this.#renderedPages.clear();
+      this.#invalidateLayoutCache();
+
+      // Re-render visible pages
+      this.#renderVisiblePages();
+
       if (focusedId) {
         this.setFocus(focusedId);
       }
@@ -278,17 +442,32 @@ export class SearchHighlightLayer {
     this.#highlightGroups.clear();
     this.#focusedId = null;
     this.#matches = [];
+    this.#matchesByPage.clear();
+    this.#renderedPages.clear();
+    this.#invalidateLayoutCache();
   }
 
   /**
    * Destroy and cleanup
    */
   destroy() {
+    // Clean up scroll handler
+    if (this.#scrollHandler) {
+      this.#pane.scroller.removeEventListener("scroll", this.#scrollHandler);
+      this.#scrollHandler = null;
+    }
+
+    if (this.#scrollRafId) {
+      cancelAnimationFrame(this.#scrollRafId);
+      this.#scrollRafId = null;
+    }
+
     if (this.#resizeObserver) {
       this.#resizeObserver.unobserve(this.#pane.stage);
       this.#resizeObserver.disconnect();
       this.#resizeObserver = null;
     }
+
     this.clear();
     this.#svg?.remove();
   }

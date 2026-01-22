@@ -29,9 +29,6 @@ export class SearchController {
   /** @type {Function|null} */
   #scrollCallback = null;
 
-  /** @type {number|null} */
-  #searchDebounceTimer = null;
-
   /** @type {Function|null} */
   #indexingStartHandler = null;
 
@@ -205,14 +202,8 @@ export class SearchController {
       return;
     }
 
-    // Debounce search for performance
-    if (this.#searchDebounceTimer) {
-      clearTimeout(this.#searchDebounceTimer);
-    }
-
-    this.#searchDebounceTimer = setTimeout(() => {
-      this.#performSearch();
-    }, 100);
+    // SearchBar already debounces, so perform search immediately
+    this.#performSearch();
   }
 
   /**

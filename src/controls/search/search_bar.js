@@ -54,7 +54,7 @@ export class SearchBar {
     this.#container = document.createElement("div");
     this.#container.className = "search-bar";
     this.#container.innerHTML = `
-      <button class="search-close-btn" title="Close (Esc)">×</button>
+      <button class="search-close-btn">×</button>
       
       <div class="search-main">
         <div class="search-input-wrapper">
@@ -206,7 +206,7 @@ export class SearchBar {
     }
     this.#debounceTimer = setTimeout(() => {
       this.#controller.onQueryChange(this.#searchInput.value);
-    }, 150);
+    }, 80);
   }
 
   // =========================================

@@ -1,5 +1,6 @@
 /**
  * SearchIndex - Handles text extraction, word reconstruction, and substring search
+ * Supports multi-column layouts with proper reading order detection.
  *
  * @typedef {Object} TextItem
  * @property {string} str - The text string
@@ -28,6 +29,17 @@
  * @property {number} pageNumber - Page where match occurs
  * @property {string} matchText - The matched text
  * @property {Array<{x: number, y: number, width: number, height: number}>} rects - Highlight rectangles
+ *
+ * @typedef {Object} ColumnBoundary
+ * @property {number} left - Left X boundary
+ * @property {number} right - Right X boundary
+ *
+ * @typedef {Object} LayoutSegment
+ * @property {'full-width'|'columns'} type - Segment type
+ * @property {number} yStart - Top Y position
+ * @property {number} yEnd - Bottom Y position
+ * @property {TextItem[]} [items] - Items for full-width segments
+ * @property {TextItem[][]} [columns] - Items per column for multi-column segments
  */
 
 export class SearchIndex {
@@ -58,6 +70,12 @@ export class SearchIndex {
   /** @type {number} */
   static BATCH_SIZE = 4; // Process 4 pages concurrently
 
+  // Column detection constants
+  static MIN_LINES_FOR_COLUMN_DETECTION = 5; // Need enough lines to detect pattern
+  static GUTTER_LINE_THRESHOLD = 0.25; // Gap must appear on 25%+ of lines
+  static CLUSTER_TOLERANCE_RATIO = 0.03; // 3% of page width for clustering
+  static FULL_WIDTH_THRESHOLD = 0.7; // Item spanning >70% of page = full-width
+
   constructor(doc) {
     this.#doc = doc;
     this.#createMeasureCanvas();
@@ -83,17 +101,13 @@ export class SearchIndex {
     if (this.#isBuilt || this.#isBuilding) return;
     this.#isBuilding = true;
     this.#buildProgress = 0;
-
     const pdfDoc = this.#doc.pdfDoc;
     const numPages = pdfDoc.numPages;
 
-    // Pre-allocate array for proper ordering
     this.#pageIndices = new Array(numPages);
 
     try {
       let completedPages = 0;
-
-      // Process pages in parallel batches
       for (
         let batchStart = 0;
         batchStart < numPages;
@@ -104,8 +118,6 @@ export class SearchIndex {
           numPages,
         );
         const batchPromises = [];
-
-        // Create promises for this batch
         for (let pageNum = batchStart + 1; pageNum <= batchEnd; pageNum++) {
           batchPromises.push(
             this.#buildPageIndex(pageNum).then((pageIndex) => {
@@ -115,18 +127,12 @@ export class SearchIndex {
             }),
           );
         }
-
-        // Wait for batch to complete
         await Promise.all(batchPromises);
-
-        // Update progress
         completedPages = batchEnd;
         this.#buildProgress = Math.round((completedPages / numPages) * 100);
-
         if (onProgress) {
           onProgress(completedPages, numPages, this.#buildProgress);
         }
-
         // Yield to main thread for UI responsiveness
         await new Promise((r) => requestAnimationFrame(r));
       }
@@ -205,6 +211,76 @@ export class SearchIndex {
     return this.#pageIndices[pageNumber - 1] || null;
   }
 
+  /**
+   * Debug method to analyze column detection on a specific page
+   * @param {number} pageNumber - 1-based page number
+   * @returns {Object} Debug info including detected gutters and line gaps
+   */
+  debugColumnDetection(pageNumber) {
+    const pageIndex = this.#pageIndices[pageNumber - 1];
+    if (!pageIndex) return null;
+
+    const items = pageIndex.textItems;
+    const pageWidth = pageIndex.pageWidth;
+
+    const lines = this.#groupIntoLines(items);
+    const lineGapInfo = [];
+
+    for (let lineIdx = 0; lineIdx < lines.length; lineIdx++) {
+      const line = lines[lineIdx];
+      if (line.length < 2) continue;
+
+      const sortedLine = [...line].sort((a, b) => a.x - b.x);
+      const gaps = [];
+
+      for (let i = 0; i < sortedLine.length - 1; i++) {
+        const current = sortedLine[i];
+        const next = sortedLine[i + 1];
+        const gapWidth = next.x - (current.x + current.width);
+
+        if (gapWidth > 0) {
+          gaps.push({
+            x: current.x + current.width + gapWidth / 2,
+            width: gapWidth,
+            between: `"${current.str.slice(-10)}" → "${next.str.slice(0, 10)}"`,
+          });
+        }
+      }
+
+      if (gaps.length > 0) {
+        const largest = gaps.reduce((a, b) => (a.width > b.width ? a : b));
+        const median = [...gaps].sort((a, b) => a.width - b.width)[
+          Math.floor(gaps.length / 2)
+        ];
+
+        lineGapInfo.push({
+          lineIdx,
+          y: line[0].y,
+          gapCount: gaps.length,
+          largestGap: largest,
+          medianGapWidth: median.width,
+          ratio: largest.width / median.width,
+        });
+      }
+    }
+
+    const gutters = this.#detectColumnGutters(items, pageWidth);
+
+    return {
+      pageNumber,
+      pageWidth,
+      totalLines: lines.length,
+      linesWithGaps: lineGapInfo.length,
+      guttersDetected: gutters,
+      lineGapInfo: lineGapInfo.slice(0, 20), // First 20 lines for brevity
+      thresholds: {
+        minLines: SearchIndex.MIN_LINES_FOR_COLUMN_DETECTION,
+        gutterLineThreshold: SearchIndex.GUTTER_LINE_THRESHOLD,
+        clusterTolerance: pageWidth * SearchIndex.CLUSTER_TOLERANCE_RATIO,
+      },
+    };
+  }
+
   // =========================================
   // Private methods
   // =========================================
@@ -229,7 +305,7 @@ export class SearchIndex {
     // Extract and enrich text items with character positions
     const textItems = this.#extractTextItems(textContent, viewport);
 
-    // Reconstruct text with proper word breaks
+    // Reconstruct text with proper word breaks and column handling
     const { fullText, charMap } = this.#reconstructText(textItems, viewport);
 
     page.cleanup();
@@ -338,9 +414,316 @@ export class SearchIndex {
     return positions;
   }
 
+  // =========================================
+  // Column Detection Methods (Line-Gap Based)
+  // =========================================
+
   /**
-   * Reconstruct text with proper word breaks and build char map
-   * Uses pre-computed index map for O(1) lookups
+   * Detect column gutters by finding consistent large gaps across lines.
+   * 
+   * Algorithm:
+   * 1. Group items into lines (by Y position)
+   * 2. For each line, find all gaps between items
+   * 3. Identify the largest gap on each line (potential column gutter)
+   * 4. Cluster these large gaps by X position
+   * 5. Consistent clusters = column boundaries
+   * 
+   * @param {TextItem[]} items - Text items on the page
+   * @param {number} pageWidth - Page width in PDF units
+   * @returns {number[]} Array of X positions marking gutter centers
+   */
+  #detectColumnGutters(items, pageWidth) {
+    if (items.length === 0) return [];
+
+    // Group items into lines
+    const lines = this.#groupIntoLines(items);
+    if (lines.length < SearchIndex.MIN_LINES_FOR_COLUMN_DETECTION) return [];
+
+    // Collect the largest gap from each line
+    const candidateGaps = [];
+    let validLineCount = 0;
+
+    for (const line of lines) {
+      if (line.length < 2) continue;
+      validLineCount++;
+
+      // Sort line by X position
+      const sortedLine = [...line].sort((a, b) => a.x - b.x);
+
+      // Calculate line metrics
+      const lineStart = sortedLine[0].x;
+      const lastItem = sortedLine[sortedLine.length - 1];
+      const lineEnd = lastItem.x + lastItem.width;
+      const lineWidth = lineEnd - lineStart;
+
+      if (lineWidth <= 0) continue;
+
+      // Find all gaps on this line
+      const gaps = [];
+      for (let i = 0; i < sortedLine.length - 1; i++) {
+        const current = sortedLine[i];
+        const next = sortedLine[i + 1];
+        const gapStart = current.x + current.width;
+        const gapEnd = next.x;
+        const gapWidth = gapEnd - gapStart;
+
+        if (gapWidth > 0) {
+          gaps.push({
+            x: (gapStart + gapEnd) / 2, // Center of gap
+            width: gapWidth,
+            start: gapStart,
+            end: gapEnd,
+          });
+        }
+      }
+
+      if (gaps.length === 0) continue;
+
+      // Find the largest gap on this line
+      let largestGap = gaps[0];
+      for (const gap of gaps) {
+        if (gap.width > largestGap.width) {
+          largestGap = gap;
+        }
+      }
+
+      // Calculate median gap (typical word spacing)
+      const sortedGapWidths = gaps.map((g) => g.width).sort((a, b) => a - b);
+      const medianGapWidth = sortedGapWidths[Math.floor(sortedGapWidths.length / 2)];
+
+      // Only consider as column gutter candidate if:
+      // - It's significantly larger than median word spacing (1.8x+)
+      // - OR it's a significant portion of line width (3%+)
+      const isSignificantlyLarger = largestGap.width > medianGapWidth * 1.8;
+      const isSignificantPortion = largestGap.width > lineWidth * 0.03;
+
+      if (isSignificantlyLarger || isSignificantPortion) {
+        candidateGaps.push(largestGap);
+      }
+    }
+
+    // Need enough lines with candidate gaps
+    const minGapsRequired = validLineCount * SearchIndex.GUTTER_LINE_THRESHOLD;
+    if (candidateGaps.length < minGapsRequired) return [];
+
+    // Cluster candidate gaps by X position
+    const tolerance = pageWidth * SearchIndex.CLUSTER_TOLERANCE_RATIO;
+    candidateGaps.sort((a, b) => a.x - b.x);
+
+    const clusters = [];
+    let currentCluster = [candidateGaps[0]];
+
+    for (let i = 1; i < candidateGaps.length; i++) {
+      const gap = candidateGaps[i];
+      const clusterAvgX =
+        currentCluster.reduce((sum, g) => sum + g.x, 0) / currentCluster.length;
+
+      if (Math.abs(gap.x - clusterAvgX) <= tolerance) {
+        currentCluster.push(gap);
+      } else {
+        // Save cluster if it has enough members
+        if (currentCluster.length >= minGapsRequired) {
+          clusters.push(currentCluster);
+        }
+        currentCluster = [gap];
+      }
+    }
+
+    // Don't forget last cluster
+    if (currentCluster.length >= minGapsRequired) {
+      clusters.push(currentCluster);
+    }
+
+    // Convert clusters to gutter X positions
+    const gutters = clusters.map((cluster) => {
+      // Use average X of all gaps in cluster
+      return cluster.reduce((sum, g) => sum + g.x, 0) / cluster.length;
+    });
+
+    // Filter out gutters too close to edges (likely margins, not columns)
+    const minEdgeDistance = pageWidth * 0.1; // Must be 10% from edge
+    return gutters.filter(
+      (x) => x > minEdgeDistance && x < pageWidth - minEdgeDistance
+    );
+  }
+
+  /**
+   * Build column boundaries from gutter positions
+   * @param {number[]} gutters - Array of gutter center X positions
+   * @param {number} pageWidth - Page width
+   * @param {number} marginLeft - Left margin (estimated from items)
+   * @param {number} marginRight - Right margin (estimated from items)
+   * @returns {ColumnBoundary[]}
+   */
+  #buildColumnBoundaries(gutters, pageWidth, marginLeft, marginRight) {
+    if (gutters.length === 0) {
+      return [{ left: marginLeft, right: pageWidth - marginRight }];
+    }
+
+    const boundaries = [];
+    const sortedGutters = [...gutters].sort((a, b) => a - b);
+
+    // First column: from left margin to first gutter
+    boundaries.push({ left: marginLeft, right: sortedGutters[0] });
+
+    // Middle columns: between gutters
+    for (let i = 0; i < sortedGutters.length - 1; i++) {
+      boundaries.push({ left: sortedGutters[i], right: sortedGutters[i + 1] });
+    }
+
+    // Last column: from last gutter to right margin
+    boundaries.push({
+      left: sortedGutters[sortedGutters.length - 1],
+      right: pageWidth - marginRight,
+    });
+
+    return boundaries;
+  }
+
+  /**
+   * Determine which column an item belongs to based on its center X
+   * @param {TextItem} item - Text item
+   * @param {ColumnBoundary[]} columns - Column boundaries
+   * @returns {number} Column index (0-based)
+   */
+  #getItemColumn(item, columns) {
+    const centerX = item.x + item.width / 2;
+
+    for (let i = 0; i < columns.length; i++) {
+      if (centerX >= columns[i].left && centerX <= columns[i].right) {
+        return i;
+      }
+    }
+
+    // Fallback: assign to nearest column
+    let minDist = Infinity;
+    let nearestCol = 0;
+
+    for (let i = 0; i < columns.length; i++) {
+      const colCenter = (columns[i].left + columns[i].right) / 2;
+      const dist = Math.abs(centerX - colCenter);
+
+      if (dist < minDist) {
+        minDist = dist;
+        nearestCol = i;
+      }
+    }
+
+    return nearestCol;
+  }
+
+  /**
+   * Check if an item is full-width (spans across columns)
+   * @param {TextItem} item - Text item
+   * @param {number} pageWidth - Page width
+   * @param {number} marginLeft - Left margin
+   * @param {number} marginRight - Right margin
+   * @returns {boolean}
+   */
+  #isFullWidthItem(item, pageWidth, marginLeft, marginRight) {
+    const contentWidth = pageWidth - marginLeft - marginRight;
+    return item.width >= contentWidth * SearchIndex.FULL_WIDTH_THRESHOLD;
+  }
+
+  /**
+   * Segment page into layout regions (full-width vs multi-column)
+   * @param {TextItem[]} items - Text items sorted by Y
+   * @param {ColumnBoundary[]} columns - Column boundaries
+   * @param {number} pageWidth - Page width
+   * @param {number} marginLeft - Left margin
+   * @param {number} marginRight - Right margin
+   * @returns {LayoutSegment[]}
+   */
+  #segmentPageByLayout(items, columns, pageWidth, marginLeft, marginRight) {
+    if (items.length === 0) return [];
+    if (columns.length <= 1) {
+      // Single column - treat all as full-width
+      return [{ type: "full-width", yStart: 0, yEnd: Infinity, items }];
+    }
+
+    // Sort items by Y position
+    const sortedByY = [...items].sort((a, b) => a.y - b.y);
+
+    const segments = [];
+    let currentSegment = null;
+    let currentType = null;
+
+    // Group items into Y bands and determine segment type
+    const avgHeight =
+      items.reduce((sum, item) => sum + item.height, 0) / items.length;
+    const bandThreshold = avgHeight * 1.5;
+
+    for (const item of sortedByY) {
+      const isFullWidth = this.#isFullWidthItem(
+        item,
+        pageWidth,
+        marginLeft,
+        marginRight,
+      );
+      const itemType = isFullWidth ? "full-width" : "columns";
+
+      // Check if we need to start a new segment
+      const needNewSegment =
+        !currentSegment ||
+        itemType !== currentType ||
+        (currentSegment.items &&
+          item.y - currentSegment.yEnd > bandThreshold * 2);
+
+      if (needNewSegment) {
+        // Finalize current segment
+        if (currentSegment) {
+          segments.push(currentSegment);
+        }
+
+        // Start new segment
+        if (itemType === "full-width") {
+          currentSegment = {
+            type: "full-width",
+            yStart: item.y,
+            yEnd: item.y + item.height,
+            items: [item],
+          };
+        } else {
+          currentSegment = {
+            type: "columns",
+            yStart: item.y,
+            yEnd: item.y + item.height,
+            columns: columns.map(() => []),
+          };
+          const colIdx = this.#getItemColumn(item, columns);
+          currentSegment.columns[colIdx].push(item);
+        }
+        currentType = itemType;
+      } else {
+        // Add to current segment
+        currentSegment.yEnd = Math.max(
+          currentSegment.yEnd,
+          item.y + item.height,
+        );
+
+        if (itemType === "full-width") {
+          currentSegment.items.push(item);
+        } else {
+          const colIdx = this.#getItemColumn(item, columns);
+          currentSegment.columns[colIdx].push(item);
+        }
+      }
+    }
+
+    // Don't forget the last segment
+    if (currentSegment) {
+      segments.push(currentSegment);
+    }
+
+    return segments;
+  }
+
+  // =========================================
+  // Text Reconstruction Methods
+  // =========================================
+
+  /**
+   * Reconstruct text with proper reading order for multi-column layouts
    * @param {TextItem[]} items - Text items
    * @param {Object} viewport - PDF.js viewport
    * @returns {{fullText: string, charMap: CharMapEntry[]}}
@@ -348,13 +731,113 @@ export class SearchIndex {
   #reconstructText(items, viewport) {
     if (items.length === 0) return { fullText: "", charMap: [] };
 
+    const pageWidth = viewport.width;
+
     // Pre-compute item index map for O(1) lookups
     const itemIndexMap = new Map(items.map((item, idx) => [item, idx]));
 
-    // Group items by line (similar Y position)
+    // Estimate margins from item positions
+    const marginLeft = Math.max(0, Math.min(...items.map((i) => i.x)) - 5);
+    const marginRight = Math.max(
+      0,
+      pageWidth - Math.max(...items.map((i) => i.x + i.width)) - 5,
+    );
+
+    // Detect column gutters
+    const gutters = this.#detectColumnGutters(items, pageWidth);
+
+    // If no columns detected, use simple single-column logic
+    if (gutters.length === 0) {
+      return this.#reconstructSingleColumn(items, itemIndexMap);
+    }
+
+    // Build column boundaries
+    const columns = this.#buildColumnBoundaries(
+      gutters,
+      pageWidth,
+      marginLeft,
+      marginRight,
+    );
+
+    // Segment page by layout type
+    const segments = this.#segmentPageByLayout(
+      items,
+      columns,
+      pageWidth,
+      marginLeft,
+      marginRight,
+    );
+
+    // Process segments in order
+    let fullText = "";
+    const charMap = [];
+
+    for (let segIdx = 0; segIdx < segments.length; segIdx++) {
+      const segment = segments[segIdx];
+
+      if (segment.type === "full-width") {
+        const result = this.#processSegmentItems(
+          segment.items,
+          charMap,
+          fullText.length,
+          itemIndexMap,
+        );
+        fullText += result.text;
+      } else {
+        // Process columns left to right
+        for (let colIdx = 0; colIdx < segment.columns.length; colIdx++) {
+          const columnItems = segment.columns[colIdx];
+          if (columnItems.length === 0) continue;
+
+          const result = this.#processSegmentItems(
+            columnItems,
+            charMap,
+            fullText.length,
+            itemIndexMap,
+          );
+          fullText += result.text;
+
+          // Add space between columns (but not after last column)
+          if (colIdx < segment.columns.length - 1 && result.text.length > 0) {
+            fullText += " ";
+            charMap.push({
+              itemIndex: -1,
+              charIndex: -1,
+              x: 0,
+              y: 0,
+              width: 0,
+              height: 0,
+            });
+          }
+        }
+      }
+
+      // Add space between segments
+      if (segIdx < segments.length - 1 && fullText.length > 0) {
+        fullText += " ";
+        charMap.push({
+          itemIndex: -1,
+          charIndex: -1,
+          x: 0,
+          y: 0,
+          width: 0,
+          height: 0,
+        });
+      }
+    }
+
+    return { fullText, charMap };
+  }
+
+  /**
+   * Simple single-column text reconstruction (original algorithm)
+   * @param {TextItem[]} items - Text items
+   * @param {Map<TextItem, number>} itemIndexMap - Item index map
+   * @returns {{fullText: string, charMap: CharMapEntry[]}}
+   */
+  #reconstructSingleColumn(items, itemIndexMap) {
     const lines = this.#groupIntoLines(items);
 
-    // Process each line
     let fullText = "";
     const charMap = [];
 
@@ -368,7 +851,7 @@ export class SearchIndex {
       );
 
       // Check for hyphenation at end of line
-      if (lineIdx < lines.length - 1 && lineText.endsWith("-")) {
+      if (lineIdx < lines.length - 1 && !!lineText.match(/[-]$/)) {
         const nextLine = lines[lineIdx + 1];
         if (nextLine.length > 0) {
           const nextFirstItem = nextLine[0];
@@ -385,10 +868,9 @@ export class SearchIndex {
 
       fullText += lineText;
 
-      // Add space or newline between lines
+      // Add space between lines
       if (lineIdx < lines.length - 1) {
         fullText += " ";
-        // Add a space entry to charMap (maps to nothing specific)
         charMap.push({
           itemIndex: -1,
           charIndex: -1,
@@ -401,6 +883,63 @@ export class SearchIndex {
     }
 
     return { fullText, charMap };
+  }
+
+  /**
+   * Process items within a segment (column or full-width region)
+   * @param {TextItem[]} items - Items in the segment
+   * @param {CharMapEntry[]} charMap - Char map to append to
+   * @param {number} textOffset - Current offset in fullText
+   * @param {Map<TextItem, number>} itemIndexMap - Item index map
+   * @returns {{text: string}}
+   */
+  #processSegmentItems(items, charMap, textOffset, itemIndexMap) {
+    if (items.length === 0) return { text: "" };
+
+    // Group into lines within this segment
+    const lines = this.#groupIntoLines(items);
+
+    let text = "";
+
+    for (let lineIdx = 0; lineIdx < lines.length; lineIdx++) {
+      const line = lines[lineIdx];
+      const lineText = this.#processLine(
+        line,
+        charMap,
+        textOffset + text.length,
+        itemIndexMap,
+      );
+
+      // Check for hyphenation at end of line
+      if (lineIdx < lines.length - 1 && !!lineText.match(/[-]$/)) {
+        const nextLine = lines[lineIdx + 1];
+        if (nextLine.length > 0) {
+          const nextFirstItem = nextLine[0];
+          if (nextFirstItem.str && /^[a-z]/.test(nextFirstItem.str)) {
+            text += lineText.slice(0, -1);
+            charMap.pop();
+            continue;
+          }
+        }
+      }
+
+      text += lineText;
+
+      // Add space between lines
+      if (lineIdx < lines.length - 1) {
+        text += " ";
+        charMap.push({
+          itemIndex: -1,
+          charIndex: -1,
+          x: 0,
+          y: 0,
+          width: 0,
+          height: 0,
+        });
+      }
+    }
+
+    return { text };
   }
 
   /**
@@ -438,7 +977,6 @@ export class SearchIndex {
       }
     }
 
-    // Don't forget the last line
     currentLine.sort((a, b) => a.x - b.x);
     lines.push(currentLine);
 
@@ -504,71 +1042,84 @@ export class SearchIndex {
     return lineText;
   }
 
+  // =========================================
+  // Highlight Rectangle Generation
+  // =========================================
+
   /**
    * Get highlight rectangles for a character range
+   * Handles multi-line and multi-column matches properly
    * @param {PageIndex} pageIndex - Page index data
    * @param {number} startIdx - Start character index in fullText
    * @param {number} endIdx - End character index in fullText
    * @returns {Array<{x: number, y: number, width: number, height: number}>}
    */
   #getRectsForRange(pageIndex, startIdx, endIdx) {
-    const rects = [];
     const charMap = pageIndex.charMap;
 
     if (startIdx >= charMap.length || endIdx >= charMap.length) {
-      return rects;
+      return [];
     }
 
-    // Group consecutive characters into rectangles by line
-    let currentRect = null;
-
+    // Collect all valid character entries in the range
+    const entries = [];
     for (let i = startIdx; i <= endIdx && i < charMap.length; i++) {
       const entry = charMap[i];
-
-      // Skip space entries
-      if (entry.itemIndex === -1) {
-        if (currentRect) {
-          rects.push(currentRect);
-          currentRect = null;
-        }
-        continue;
+      // Skip space/separator entries
+      if (entry.itemIndex !== -1) {
+        entries.push(entry);
       }
+    }
 
-      if (!currentRect) {
-        currentRect = {
+    if (entries.length === 0) return [];
+
+    // Group entries into visual runs
+    // A new run starts when:
+    //   - Y position changes significantly (new line)
+    //   - X position jumps backward significantly (new line or new column)
+    const runs = [];
+    let currentRun = null;
+
+    for (const entry of entries) {
+      const shouldStartNewRun =
+        !currentRun ||
+        // Different line (Y changed)
+        Math.abs(entry.y - currentRun.y) > entry.height * 0.5 ||
+        // X jumped backward (wrap to new line or column)
+        entry.x < currentRun.endX - entry.height;
+
+      if (shouldStartNewRun) {
+        if (currentRun) {
+          runs.push(currentRun);
+        }
+        currentRun = {
           x: entry.x,
           y: entry.y,
-          width: entry.width,
+          endX: entry.x + entry.width,
           height: entry.height,
+          minY: entry.y,
+          maxY: entry.y + entry.height,
         };
       } else {
-        // Check if same line (similar Y position)
-        const sameLine = Math.abs(entry.y - currentRect.y) < 3;
-        const adjacent =
-          Math.abs(entry.x - (currentRect.x + currentRect.width)) < 5;
-
-        if (sameLine && adjacent) {
-          // Extend current rect
-          currentRect.width = entry.x + entry.width - currentRect.x;
-          currentRect.height = Math.max(currentRect.height, entry.height);
-        } else {
-          // Start new rect
-          rects.push(currentRect);
-          currentRect = {
-            x: entry.x,
-            y: entry.y,
-            width: entry.width,
-            height: entry.height,
-          };
-        }
+        // Extend current run
+        currentRun.endX = entry.x + entry.width;
+        currentRun.height = Math.max(currentRun.height, entry.height);
+        currentRun.minY = Math.min(currentRun.minY, entry.y);
+        currentRun.maxY = Math.max(currentRun.maxY, entry.y + entry.height);
       }
     }
 
-    if (currentRect) {
-      rects.push(currentRect);
+    if (currentRun) {
+      runs.push(currentRun);
     }
 
-    return rects;
+    // Convert runs to rectangles
+    return runs.map((run) => ({
+      x: run.x,
+      y: run.minY,
+      width: run.endX - run.x,
+      height: run.maxY - run.minY,
+    }));
   }
 
   /**

@@ -1,0 +1,466 @@
+/* ================================
+   Onboarding Walkthrough Styles
+   ================================ */
+
+/* ================================
+   Overlay
+   ================================ */
+
+.onboarding-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-modal, 9999);
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.4s ease;
+}
+
+.onboarding-overlay.visible {
+  opacity: 1;
+}
+
+.onboarding-overlay.interactive {
+  pointer-events: auto;
+}
+
+/* ================================
+   Spotlight (creates the "cutout" effect)
+   Uses box-shadow technique for simplicity
+   ================================ */
+
+.onboarding-spotlight {
+  position: fixed;
+  z-index: var(--z-modal, 9999);
+  pointer-events: none;
+  border-radius: 8px;
+
+  /* The element itself is transparent */
+  background: transparent;
+
+  /* Massive box-shadow creates the dark overlay with a hole */
+  box-shadow:
+    0 0 0 9999px rgba(0, 0, 0, 0.75),
+    0 0 40px 10px rgba(0, 0, 0, 0.5) inset;
+
+  /* Blur effect on the edges */
+  filter: blur(0px);
+
+  /* Smooth transitions */
+  transition:
+    top 0.4s cubic-bezier(0.4, 0, 0.2, 1),
+    left 0.4s cubic-bezier(0.4, 0, 0.2, 1),
+    width 0.4s cubic-bezier(0.4, 0, 0.2, 1),
+    height 0.4s cubic-bezier(0.4, 0, 0.2, 1),
+    border-radius 0.3s ease,
+    opacity 0.3s ease;
+
+  opacity: 0;
+}
+
+.onboarding-spotlight.visible {
+  opacity: 1;
+}
+
+/* Blurred edge effect using pseudo-element */
+.onboarding-spotlight::before {
+  content: "";
+  position: absolute;
+  inset: -20px;
+  border-radius: inherit;
+  background: transparent;
+  box-shadow: 0 0 30px 15px rgba(0, 0, 0, 0.4);
+  pointer-events: none;
+  filter: blur(10px);
+}
+
+/* When no spotlight is needed (full overlay) */
+.onboarding-spotlight.hidden {
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* Full overlay mode (no cutout) */
+.onboarding-full-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-modal, 9999);
+  background: rgba(0, 0, 0, 0.75);
+  backdrop-filter: blur(4px);
+  opacity: 0;
+  transition: opacity 0.4s ease;
+  pointer-events: none; /* Don't block clicks when invisible */
+}
+
+.onboarding-full-overlay.visible {
+  opacity: 1;
+  pointer-events: auto; /* Only block clicks when visible */
+}
+
+/* ================================
+   Tooltip / Popup
+   ================================ */
+
+.onboarding-tooltip {
+  position: fixed;
+  z-index: calc(var(--z-modal, 9999) + 1);
+  max-width: 320px;
+  min-width: 200px;
+
+  /* Glassmorphic styling */
+  background: rgba(35, 35, 40, 0.92);
+  backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 12px;
+  box-shadow:
+    0 8px 32px rgba(0, 0, 0, 0.4),
+    0 0 0 1px rgba(255, 255, 255, 0.05) inset;
+
+  padding: 20px 24px;
+
+  /* Font styling */
+  font-family:
+    "DM Sans",
+    -apple-system,
+    BlinkMacSystemFont,
+    sans-serif;
+  color: #ffffff;
+
+  /* Animation */
+  opacity: 0;
+  transform: translateY(10px) scale(0.95);
+  transition:
+    opacity 0.3s ease,
+    transform 0.3s cubic-bezier(0.4, 0, 0.2, 1),
+    top 0.4s cubic-bezier(0.4, 0, 0.2, 1),
+    left 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+
+  pointer-events: auto;
+}
+
+.onboarding-tooltip.visible {
+  opacity: 1;
+  transform: translateY(0) scale(1);
+}
+
+/* Centered tooltip (for welcome/finale messages) */
+.onboarding-tooltip.centered {
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%) scale(0.95);
+}
+
+.onboarding-tooltip.centered.visible {
+  transform: translate(-50%, -50%) scale(1);
+}
+
+/* Tooltip content */
+.onboarding-tooltip-text {
+  font-size: 18px;
+  font-weight: 600;
+  line-height: 1.4;
+  margin: 0 0 8px 0;
+  color: #ffffff;
+}
+
+.onboarding-tooltip-subtext {
+  font-size: 14px;
+  font-weight: 400;
+  line-height: 1.5;
+  margin: 0;
+  color: rgba(255, 255, 255, 0.7);
+}
+
+/* Button container */
+.onboarding-tooltip-buttons {
+  display: flex;
+  gap: 12px;
+  margin-top: 20px;
+  justify-content: flex-end;
+}
+
+/* Primary button (Next, Get Started, etc.) */
+.onboarding-btn-primary {
+  padding: 10px 20px;
+  border: none;
+  border-radius: 8px;
+  background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+  color: #ffffff;
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  box-shadow: 0 2px 8px rgba(59, 130, 246, 0.3);
+}
+
+.onboarding-btn-primary:hover {
+  background: linear-gradient(135deg, #60a5fa 0%, #3b82f6 100%);
+  box-shadow: 0 4px 12px rgba(59, 130, 246, 0.4);
+  transform: translateY(-1px);
+}
+
+.onboarding-btn-primary:active {
+  transform: translateY(0);
+}
+
+/* ================================
+   Skip Button
+   ================================ */
+
+.onboarding-skip-btn {
+  position: fixed;
+  top: 20px;
+  right: 20px;
+  z-index: calc(var(--z-modal, 9999) + 2);
+
+  padding: 8px 16px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 20px;
+  background: rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(8px);
+
+  font-family:
+    "Elms Sans",
+    -apple-system,
+    BlinkMacSystemFont,
+    sans-serif;
+  font-size: 13px;
+  font-weight: 500;
+  color: rgba(255, 255, 255, 0.7);
+
+  cursor: pointer;
+  transition: all 0.2s ease;
+  opacity: 0;
+  pointer-events: none; /* Hidden by default */
+}
+
+.onboarding-skip-btn.visible {
+  opacity: 1;
+  pointer-events: auto; /* Clickable when visible */
+}
+
+.onboarding-skip-btn:hover {
+  background: rgba(0, 0, 0, 0.7);
+  border-color: rgba(255, 255, 255, 0.3);
+  color: #ffffff;
+}
+
+/* ================================
+   Indicators (circles, pulses)
+   ================================ */
+
+/* Container for indicators - positioned to cover viewport */
+.onboarding-indicators {
+  position: fixed;
+  inset: 0;
+  z-index: calc(var(--z-modal, 9999) + 1);
+  pointer-events: none;
+}
+
+.onboarding-indicator {
+  position: fixed;
+  z-index: calc(var(--z-modal, 9999) + 1);
+  pointer-events: none;
+}
+
+/* Circle indicator for highlighting interactive elements */
+.onboarding-circle-indicator {
+  width: 40px;
+  height: 40px;
+  border: 3px solid #3b82f6;
+  border-radius: 50%;
+  background: rgba(59, 130, 246, 0.1);
+  animation: onboarding-pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes onboarding-pulse {
+  0%,
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  50% {
+    transform: scale(1.15);
+    opacity: 0.7;
+  }
+}
+
+/* Larger pulse ring */
+.onboarding-circle-indicator::before {
+  content: "";
+  position: absolute;
+  inset: -8px;
+  border: 2px solid rgba(59, 130, 246, 0.4);
+  border-radius: 50%;
+  animation: onboarding-ring-pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes onboarding-ring-pulse {
+  0%,
+  100% {
+    transform: scale(1);
+    opacity: 0.5;
+  }
+  50% {
+    transform: scale(1.3);
+    opacity: 0;
+  }
+}
+
+/* ================================
+   Tool Button Labels
+   ================================ */
+
+.onboarding-tool-label {
+  position: absolute;
+  z-index: calc(var(--z-modal, 9999) + 1);
+
+  padding: 6px 12px;
+  background: rgba(35, 35, 40, 0.95);
+  backdrop-filter: blur(8px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 6px;
+
+  font-family:
+    "DM Sans",
+    -apple-system,
+    BlinkMacSystemFont,
+    sans-serif;
+  font-size: 12px;
+  font-weight: 500;
+  color: #ffffff;
+  white-space: nowrap;
+
+  pointer-events: none;
+  opacity: 0;
+  transform: translateX(-10px);
+  transition: all 0.3s ease;
+}
+
+.onboarding-tool-label.visible {
+  opacity: 1;
+  transform: translateX(0);
+}
+
+/* Arrow pointing to the button */
+.onboarding-tool-label::before {
+  content: "";
+  position: absolute;
+  left: 101%;
+  top: 50%;
+  transform: translateY(-50%);
+  border: 4px solid;
+  border-color: transparent transparent transparent rgba(35, 35, 40, 0.95);
+}
+
+/* Staggered animation delays for labels */
+.onboarding-tool-label:nth-child(1) {
+  transition-delay: 0ms;
+}
+.onboarding-tool-label:nth-child(2) {
+  transition-delay: 50ms;
+}
+.onboarding-tool-label:nth-child(3) {
+  transition-delay: 100ms;
+}
+.onboarding-tool-label:nth-child(4) {
+  transition-delay: 150ms;
+}
+.onboarding-tool-label:nth-child(5) {
+  transition-delay: 200ms;
+}
+.onboarding-tool-label:nth-child(6) {
+  transition-delay: 250ms;
+}
+
+/* ================================
+   Floating tooltip (no overlay mode)
+   ================================ */
+
+.onboarding-tooltip.floating {
+  background: rgba(35, 35, 40, 0.98);
+  box-shadow:
+    0 12px 40px rgba(0, 0, 0, 0.5),
+    0 0 0 1px rgba(255, 255, 255, 0.08) inset,
+    0 0 60px rgba(0, 0, 0, 0.3);
+}
+
+/* ================================
+   Step progress indicator (optional)
+   ================================ */
+
+.onboarding-progress {
+  display: flex;
+  gap: 6px;
+  margin-top: 16px;
+  justify-content: center;
+}
+
+.onboarding-progress-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.3);
+  transition: all 0.3s ease;
+}
+
+.onboarding-progress-dot.active {
+  background: #3b82f6;
+  transform: scale(1.2);
+}
+
+.onboarding-progress-dot.completed {
+  background: rgba(59, 130, 246, 0.5);
+}
+
+/* ================================
+   Keyboard shortcut styling
+   ================================ */
+
+.onboarding-kbd {
+  display: inline-block;
+  padding: 3px 8px;
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 4px;
+  font-family: "Elms Sans", "Monaco", "Consolas", monospace;
+  font-size: 12px;
+  font-weight: 500;
+  color: #ffffff;
+}
+
+/* ================================
+   Responsive adjustments
+   ================================ */
+
+@media (max-width: 768px) {
+  .onboarding-tooltip {
+    max-width: 280px;
+    padding: 16px 20px;
+  }
+
+  .onboarding-tooltip-text {
+    font-size: 16px;
+  }
+
+  .onboarding-tooltip-subtext {
+    font-size: 13px;
+  }
+}
+
+/* ================================
+   Night mode compatibility
+   ================================ */
+
+.night-mode .onboarding-tooltip {
+  background: rgba(25, 25, 30, 0.95);
+  border-color: rgba(255, 255, 255, 0.08);
+}
+
+.night-mode .onboarding-skip-btn {
+  background: rgba(15, 15, 20, 0.8);
+}
+
+.night-mode .onboarding-tool-label {
+  background: rgba(25, 25, 30, 0.98);
+}

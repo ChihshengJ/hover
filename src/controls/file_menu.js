@@ -1,6 +1,9 @@
 /**
  * @typedef {import('./window_manager.js').SplitWindowManager} SplitWindowManager;
+ * @typedef {import('../onboarding.js').OnboardingWalkThrough} OnboardingWalkThrough;
  */
+
+import { OnboardingWalkthrough } from "../onboarding.js";
 
 export class FileMenu {
   /**
@@ -13,6 +16,9 @@ export class FileMenu {
     this.isNearHitBox = false;
 
     this.fileInput = null;
+
+    /** @type {OnboardingWalkthrough|null} */
+    this.onboarding = null;
 
     this.#createDOM();
     this.#setupEventListeners();
@@ -278,11 +284,14 @@ export class FileMenu {
         this.#showMetadata();
         break;
       case "tutorial":
-        this.#showTutorial();
+        this.#startTutorial();
         break;
       case "about":
         this.#showAbout();
         break;
+    }
+    if (!["import"].includes(action)) {
+      this.#closeMenu();
     }
   }
 
@@ -910,32 +919,26 @@ export class FileMenu {
     });
   }
 
-  #showTutorial() {
-    const existing = document.querySelector(".file-menu-modal-overlay");
-    if (existing) existing.remove();
+  async #startTutorial() {
+    // Close the menu first
+    this.#closeMenu();
 
-    const overlay = document.createElement("div");
-    overlay.className = "file-menu-modal-overlay";
-    overlay.innerHTML = `
-    `;
+    // Small delay for menu close animation
+    await new Promise((resolve) => setTimeout(resolve, 300));
 
-    document.body.appendChild(overlay);
+    // Create and start onboarding
+    this.onboarding = new OnboardingWalkthrough(this.wm, this);
 
-    requestAnimationFrame(() => {
-      overlay.classList.add("visible");
-    });
+    // Configure citation link position
+    // You may want to dynamically find a citation link here
+    this.onboarding.setCitationLinkPosition(
+      770, // x
+      580, // y
+      60, // width
+      18, // height
+    );
 
-    const close = () => {
-      overlay.classList.remove("visible");
-      setTimeout(() => overlay.remove(), 300);
-    };
-
-    overlay
-      .querySelector(".file-menu-modal-close")
-      .addEventListener("click", close);
-    overlay.addEventListener("click", (e) => {
-      if (e.target === overlay) close();
-    });
+    await this.onboarding.start();
   }
 
   #showToast(message) {

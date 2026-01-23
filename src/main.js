@@ -2,6 +2,7 @@ import { PDFDocumentModel } from "./doc.js";
 import { SplitWindowManager } from "./window_manager.js";
 import { FileMenu } from "./controls/file_menu.js";
 import { LoadingOverlay } from "./controls/loading_overlay.js";
+import { OnboardingWalkthrough } from "./onboarding.js";
 
 import "../styles/_variables.css";
 import "../styles/viewer.css";
@@ -15,13 +16,14 @@ import "../styles/progress_bar.css";
 import "../styles/file_menu.css";
 import "../styles/search.css";
 import "../styles/loading_overlay.css";
+import "../styles/onboarding.css";
 
 const el = {
   wd: document.getElementById("window-container"),
   pageNum: document.getElementById("current-page"),
 };
 
-function getPdfUrl() {
+function getIntendedPdfUrl() {
   const urlParams = new URLSearchParams(window.location.search);
   const urlParam = urlParams.get("file");
   if (urlParam) {
@@ -33,8 +35,15 @@ function getPdfUrl() {
     if (hashUrl) return hashUrl;
   }
 
-  // Development fallback
   return "https://arxiv.org/pdf/2501.19393";
+}
+
+function getPdfUrl(forceDefault = false) {
+  if (forceDefault) {
+    return OnboardingWalkthrough.getDefaultPaperUrl();
+  }
+
+  return getIntendedPdfUrl() || OnboardingWalkthrough.getDefaultPaperUrl();
 }
 
 /**
@@ -72,7 +81,7 @@ async function getLocalPdfFromBackground() {
         resolve(null);
         return;
       }
-      
+
       if (response?.success && response?.data?.data) {
         try {
           // Convert base64 back to ArrayBuffer
@@ -81,9 +90,9 @@ async function getLocalPdfFromBackground() {
           for (let i = 0; i < binary.length; i++) {
             bytes[i] = binary.charCodeAt(i);
           }
-          resolve({ 
-            data: bytes.buffer, 
-            name: response.data.name || "document.pdf" 
+          resolve({
+            data: bytes.buffer,
+            name: response.data.name || "document.pdf",
           });
         } catch (error) {
           console.error("Error parsing local PDF from background:", error);
@@ -98,8 +107,9 @@ async function getLocalPdfFromBackground() {
 
 /**
  * Load PDF from either local upload (sessionStorage), background script, or URL
+ * @param {boolean} isFirstLaunch - Whether this is the first launch
  */
-async function loadPdf() {
+async function loadPdf(isFirstLaunch = false) {
   const loadingOverlay = new LoadingOverlay();
   loadingOverlay.show();
 
@@ -110,14 +120,34 @@ async function loadPdf() {
     // Progress callback for loading updates
     const onProgress = ({ loaded, total, percent, phase }) => {
       if (total === -1) {
-        // Indeterminate progress (unknown total size)
         loadingOverlay.setIndeterminate(getStatusMessage(phase));
       } else {
         loadingOverlay.setProgress(percent / 100, getStatusMessage(phase));
       }
     };
 
-    // Check for locally uploaded PDF first (from sessionStorage - file_menu.js uploads)
+    if (isFirstLaunch) {
+      // For first launch, always load the default paper
+      // (ignore any local uploads or URL params)
+      const url = OnboardingWalkthrough.getDefaultPaperUrl();
+      const pdfDoc = await pdfmodel.load(url, onProgress);
+      loadingOverlay.setProgress(0.95, "Initializing viewer...");
+      await wm.initialize();
+      const fileMenu = new FileMenu(wm);
+
+      document.title = "Welcome to Hover - Tutorial";
+      await loadingOverlay.hide();
+
+      // Start onboarding after a short delay
+      setTimeout(async () => {
+        const onboarding = new OnboardingWalkthrough(wm, fileMenu);
+        await onboarding.start();
+      }, 500);
+
+      return;
+    }
+
+    // Check for locally uploaded PDF first (from sessionStorage)
     if (PDFDocumentModel.hasLocalPdf()) {
       const localPdf = PDFDocumentModel.getLocalPdf();
       if (localPdf) {
@@ -174,4 +204,22 @@ async function loadPdf() {
   }
 }
 
-loadPdf();
+async function main() {
+  const isFirstLaunch = await OnboardingWalkthrough.isFirstLaunch();
+
+  if (isFirstLaunch) {
+    // Save the user's intended URL before we override it
+    const intendedUrl = getIntendedPdfUrl();
+    if (intendedUrl) {
+      OnboardingWalkthrough.saveIntendedUrl(intendedUrl);
+    }
+
+    // Also clear any local PDF data to avoid confusion
+    PDFDocumentModel.clearLocalPdf();
+  }
+
+  // Load with first-launch flag
+  await loadPdf(isFirstLaunch);
+}
+
+main();

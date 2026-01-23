@@ -103,6 +103,7 @@ export class OnboardingWalkthrough {
     /** @type {MutationObserver|null} */
     this.#mutationObserver = null;
 
+
     // Bound methods for event listeners
     this.#boundHandlers = {
       onResize: this.#handleResize.bind(this),
@@ -122,9 +123,10 @@ export class OnboardingWalkthrough {
   /** @type {MutationObserver|null} */
   #mutationObserver = null;
 
-  // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+  /** @type {Function|null} */
+  #searchRangeFocusCleanup = null;
+
   // Static Methods - Storage & First Launch Detection
-  // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
   /**
    * Check if this is the first launch (onboarding not yet completed)
@@ -218,9 +220,7 @@ export class OnboardingWalkthrough {
     return DEFAULT_PAPER_URL;
   }
 
-  // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
   // Step Definitions
-  // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
   /**
    * Define all onboarding steps
@@ -234,7 +234,7 @@ export class OnboardingWalkthrough {
         type: "message",
         spotlight: null,
         tooltip: {
-          text: "Hello, welcome to Hover",
+          text: "Hello, welcome to Hover!",
           subtext: "Let's take a quick tour of the features",
           position: "center",
           showNextButton: true,
@@ -248,7 +248,7 @@ export class OnboardingWalkthrough {
       {
         id: "progress-bar",
         type: "highlight",
-        spotlight: null, // Calculated dynamically
+        spotlight: null,
         tooltip: {
           text: "This is the progress bar",
           subtext: "The ticks show the sections of this paper.",
@@ -311,7 +311,8 @@ export class OnboardingWalkthrough {
         spotlight: null,
         tooltip: {
           text: "The extracted reference appears here",
-          subtext: "Click the Abstract button to see more",
+          subtext:
+            "Click the Abstract button to see the abstract from Google Scholar",
           position: "left",
         },
         waitFor: "abstractTabClicked",
@@ -326,7 +327,8 @@ export class OnboardingWalkthrough {
         spotlight: null,
         tooltip: {
           text: "Google Scholar abstract loaded",
-          subtext: "Quickly preview paper abstracts without leaving",
+          subtext:
+            "Now you can preview paper abstracts without leaving the paper",
           position: "left",
           showNextButton: true,
         },
@@ -345,7 +347,7 @@ export class OnboardingWalkthrough {
           position: "left",
         },
         waitFor: "ballDraggedVertically",
-        autoAdvanceDelay: 3000,
+        autoAdvanceDelay: 8000,
         onEnter: () => this.#onBallVerticalDragEnter(),
         onExit: () => this.#onBallVerticalDragExit(),
       },
@@ -356,9 +358,9 @@ export class OnboardingWalkthrough {
         type: "highlight",
         spotlight: null,
         tooltip: {
-          text: "Jump indicators",
+          text: "Move your mouse to the arrow at the bottom while dragging",
           subtext:
-            "Move your mouse here to quickly scroll to the top or bottom",
+            "These two arrows help you jump to the top and bottom quickly",
           position: "left",
           showNextButton: true,
         },
@@ -391,7 +393,7 @@ export class OnboardingWalkthrough {
         tooltip: {
           text: "Paper Outline",
           subtext:
-            "Hover over titles to expand them. Click an arrow to pin a branch.",
+            "Hover over titles to expand them. Try clicking an arrow to pin a branch.",
           position: "right",
         },
         waitFor: "outlinePinClicked",
@@ -406,7 +408,7 @@ export class OnboardingWalkthrough {
         spotlight: null,
         noOverlay: true,
         tooltip: {
-          text: "Drag the ball to the right",
+          text: "Now let's drag the ball to the right",
           subtext: "This closes the outline",
           position: "left",
         },
@@ -422,7 +424,7 @@ export class OnboardingWalkthrough {
         spotlight: null,
         noOverlay: true,
         tooltip: {
-          text: "Double-click the ball",
+          text: "Double click the ball",
           subtext: "This scrolls the paper to the top",
           position: "left",
         },
@@ -470,8 +472,9 @@ export class OnboardingWalkthrough {
         spotlight: null,
         noOverlay: true,
         tooltip: {
-          text: "You're now in split view",
-          subtext: "Click the split button again to exit",
+          text: "You're now in split view!",
+          subtext:
+            "Expand the toolbar and click the split button again to exit",
           position: "left",
         },
         waitFor: "splitModeExited",
@@ -504,15 +507,32 @@ export class OnboardingWalkthrough {
         tooltip: {
           text: "Search Range",
           subtext:
-            'Use these fields to limit search. Try "+2" in the "to" field for next 2 pages. Press ESC to close.',
+            'Use these fields to limit search. Try "+2" in the "to" field for next 2 pages.',
           position: "top",
+          showNextButton: true,
         },
-        waitFor: "searchClosed",
         onEnter: () => this.#onSearchRangeEnter(),
         onExit: () => this.#onSearchRangeExit(),
       },
 
-      // Step 18: Finale - thank you message
+      //step 18: Close search
+      {
+        id: "close-search",
+        type: "interactive",
+        spotlight: null,
+        noOverlay: true,
+        tooltip: {
+          text: "Press ESC or the close button on the left to quit search mode",
+          subtext:
+            "Thanks for staying with me til the end. This is the last step of the tutorial.",
+          position: "top",
+        },
+        waitFor: "searchClosed",
+        onEnter: () => this.#onCloseSearchEnter(),
+        onExit: () => this.#onCloseSearchExit(),
+      },
+
+      // Step 19: Finale - thank you message
       {
         id: "finale",
         type: "message",
@@ -703,6 +723,9 @@ export class OnboardingWalkthrough {
       this.autoAdvanceTimer = null;
     }
 
+    // Hide tooltip during step transition to prevent wrong-position flash
+    this.tooltip.classList.remove("visible");
+
     // Update index
     this.currentStepIndex = index;
     const step = this.steps[index];
@@ -716,7 +739,7 @@ export class OnboardingWalkthrough {
       this.#showSpotlightOverlay(step.spotlight);
     }
 
-    // Update tooltip
+    // Update tooltip content and position (will show if spotlight is available)
     this.#updateTooltip(step.tooltip, step.spotlight, step.noOverlay);
 
     if (step.tooltip.showSkipButton === false) {
@@ -736,7 +759,7 @@ export class OnboardingWalkthrough {
       }, step.autoAdvanceDelay);
     }
 
-    // Call onEnter
+    // Call onEnter - this may position and show the tooltip if spotlight was null
     if (step.onEnter) {
       await step.onEnter();
     }
@@ -899,26 +922,25 @@ export class OnboardingWalkthrough {
     this.tooltip.classList.toggle("floating", isFloating);
     this.tooltip.classList.toggle("centered", config.position === "center");
 
-    // Position tooltip
-    this.tooltip.classList.remove("visible");
+    // If no spotlight config and not centered, onEnter will handle positioning and visibility
+    if (!spotlightConfig && config.position !== "center") {
+      return;
+    }
 
-    requestAnimationFrame(() => {
-      if (config.position === "center") {
-        this.tooltip.style.left = "50%";
-        this.tooltip.style.top = "50%";
-      } else {
-        this.#positionTooltip(
-          config.position,
-          spotlightConfig,
-          config.offsetX || 0,
-          config.offsetY || 0,
-        );
-      }
+    // Position the tooltip
+    if (config.position === "center") {
+      this.tooltip.style.left = "50%";
+      this.tooltip.style.top = "50%";
+    } else {
+      this.#positionTooltip(
+        config.position,
+        spotlightConfig,
+        config.offsetX || 0,
+        config.offsetY || 0,
+      );
+    }
 
-      setTimeout(() => {
-        this.tooltip.classList.add("visible");
-      }, 100);
-    });
+    this.tooltip.classList.add("visible");
   }
 
   /**
@@ -939,33 +961,31 @@ export class OnboardingWalkthrough {
 
     let x, y;
 
-    {
-      const spotX = spotlightConfig.x;
-      const spotY = spotlightConfig.y;
-      const spotW = spotlightConfig.width;
-      const spotH = spotlightConfig.height;
+    const spotX = spotlightConfig.x;
+    const spotY = spotlightConfig.y;
+    const spotW = spotlightConfig.width;
+    const spotH = spotlightConfig.height;
 
-      switch (position) {
-        case "top":
-          x = spotX + spotW / 2 - tooltipRect.width / 2;
-          y = spotY - tooltipRect.height - gap;
-          break;
-        case "bottom":
-          x = spotX + spotW / 2 - tooltipRect.width / 2;
-          y = spotY + spotH + gap;
-          break;
-        case "left":
-          x = spotX - tooltipRect.width - gap;
-          y = spotY + spotH / 2 - tooltipRect.height / 2;
-          break;
-        case "right":
-          x = spotX + spotW + gap;
-          y = spotY + spotH / 2 - tooltipRect.height / 2;
-          break;
-        default:
-          x = spotX + spotW / 2 - tooltipRect.width / 2;
-          y = spotY + spotH + gap;
-      }
+    switch (position) {
+      case "top":
+        x = spotX + spotW / 2 - tooltipRect.width / 2;
+        y = spotY - tooltipRect.height - gap;
+        break;
+      case "bottom":
+        x = spotX + spotW / 2 - tooltipRect.width / 2;
+        y = spotY + spotH + gap;
+        break;
+      case "left":
+        x = spotX - tooltipRect.width - gap;
+        y = spotY + spotH / 2 - tooltipRect.height / 2;
+        break;
+      case "right":
+        x = spotX + spotW + gap;
+        y = spotY + spotH / 2 - tooltipRect.height / 2;
+        break;
+      default:
+        x = spotX + spotW / 2 - tooltipRect.width / 2;
+        y = spotY + spotH + gap;
     }
 
     // Apply offsets
@@ -1297,9 +1317,7 @@ export class OnboardingWalkthrough {
     }
   }
 
-  // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
   // Indicator Helpers
-  // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
   /**
    * Show a pulsing circle indicator on an element
@@ -1442,11 +1460,11 @@ export class OnboardingWalkthrough {
     if (container) {
       // Wait a moment for menu to animate open
       setTimeout(() => {
-        const config = this.#getSpotlightFromElement(container, 10);
+        const config = this.#getSpotlightFromElement(container, 8);
         this.steps[3].spotlight = config;
         this.#showSpotlightOverlay(config);
         this.#updateTooltip(this.steps[3].tooltip, config);
-      }, 200);
+      }, 150);
     }
   }
   #onFileMenuExpandedExit() {
@@ -1462,8 +1480,12 @@ export class OnboardingWalkthrough {
   #onCitationLinkEnter() {
     const step = this.steps[4];
     const link = document.querySelectorAll("a")[9];
-    link.scrollIntoView({ top: link.style.top, block: "center", behavior: "instant" });
-    step.spotlight = this.#getSpotlightFromElement(link, 2);
+    link.scrollIntoView({
+      top: link.style.top,
+      block: "center",
+      behavior: "instant",
+    });
+    step.spotlight = this.#getSpotlightFromElement(link, 3);
     if (step.spotlight) {
       this.#showSpotlightOverlay(step.spotlight);
       this.#updateTooltip(step.tooltip, step.spotlight);
@@ -1479,7 +1501,7 @@ export class OnboardingWalkthrough {
     setTimeout(() => {
       const popup = document.querySelector(".citation-popup");
       if (popup) {
-        const config = this.#getSpotlightFromElement(popup, 8);
+        const config = this.#getSpotlightFromElement(popup, 10);
         this.steps[5].spotlight = config;
         this.#showSpotlightOverlay(config);
         this.#updateTooltip(this.steps[5].tooltip, config);
@@ -1496,7 +1518,7 @@ export class OnboardingWalkthrough {
     setTimeout(() => {
       const popup = document.querySelector(".citation-popup");
       if (popup) {
-        const config = this.#getSpotlightFromElement(popup, 8);
+        const config = this.#getSpotlightFromElement(popup, 10);
         this.steps[6].spotlight = config;
         this.#showSpotlightOverlay(config);
         this.#updateTooltip(this.steps[6].tooltip, config);
@@ -1592,12 +1614,12 @@ export class OnboardingWalkthrough {
       if (tree) {
         const rect = tree.getBoundingClientRect();
         const tooltipConfig = {
-          x: rect.left,
+          x: rect.left - 450,
           y: rect.top - 200,
-          width: rect.width,
+          width: rect.width - 20,
           height: rect.height,
         };
-        this.#positionTooltip("right", tooltipConfig, 20, 0);
+        this.#positionTooltip("right", tooltipConfig, 0, 0);
         this.tooltip.classList.add("visible");
       }
     }, 300);
@@ -1729,21 +1751,43 @@ export class OnboardingWalkthrough {
 
   // --- Step 17: Search Range ---
   #onSearchRangeEnter() {
-    // Position tooltip near search bar (above it)
     setTimeout(() => {
       const rangeSection = document.querySelector(".search-range");
       const searchBar = document.querySelector(".search-bar");
 
       if (rangeSection) {
         const rect = rangeSection.getBoundingClientRect();
-        const tooltipConfig = {
+        const baseTooltipConfig = {
           x: rect.left,
           y: rect.top,
           width: rect.width,
           height: rect.height,
         };
-        this.#positionTooltip("top", tooltipConfig, 0, -10);
+        this.#positionTooltip("top", baseTooltipConfig, 0, -10);
         this.tooltip.classList.add("visible");
+
+        const fromInput = rangeSection.querySelector(".search-range-field:first-child .search-range-input");
+        const toInput = rangeSection.querySelector(".search-range-field:last-child .search-range-input");
+
+        const shiftTooltip = () => {
+          this.#positionTooltip("top", baseTooltipConfig, -300, -10);
+        };
+        const resetTooltip = () => {
+          this.#positionTooltip("top", baseTooltipConfig, 0, -10);
+        };
+
+        fromInput?.addEventListener("focus", shiftTooltip);
+        fromInput?.addEventListener("blur", resetTooltip);
+        toInput?.addEventListener("focus", shiftTooltip);
+        toInput?.addEventListener("blur", resetTooltip);
+
+        // Store cleanup function
+        this.#searchRangeFocusCleanup = () => {
+          fromInput?.removeEventListener("focus", shiftTooltip);
+          fromInput?.removeEventListener("blur", resetTooltip);
+          toInput?.removeEventListener("focus", shiftTooltip);
+          toInput?.removeEventListener("blur", resetTooltip);
+        };
       } else if (searchBar) {
         const rect = searchBar.getBoundingClientRect();
         this.tooltip.style.left = `${rect.left + rect.width / 2 - 150}px`;
@@ -1753,10 +1797,25 @@ export class OnboardingWalkthrough {
     }, 200);
   }
   #onSearchRangeExit() {
-    // Nothing to clean up
+    // Clean up focus listeners
+    if (this.#searchRangeFocusCleanup) {
+      this.#searchRangeFocusCleanup();
+      this.#searchRangeFocusCleanup = null;
+    }
   }
 
-  // --- Step 18: Finale ---
+  // --- Step 18: Close Search ---
+  #onCloseSearchEnter() {
+    this.tooltip.style.left = "50%";
+    this.tooltip.style.top = "60%";
+    this.tooltip.style.transform = "translateX(-50%)";
+    this.tooltip.classList.add("visible");
+  }
+  #onCloseSearchExit() {
+    this.tooltip.style.transform = "";
+  }
+
+  // --- Step 19: Finale ---
   #onFinaleEnter() {
     // Full overlay returns for the finale message
   }

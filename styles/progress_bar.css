@@ -12,7 +12,9 @@
   z-index: var(--z-sticky);
   pointer-events: none;
   opacity: 1;
-  transition: opacity 0.4s ease, transform var(--transition-smooth);
+  transition:
+    opacity 0.4s ease,
+    transform var(--transition-smooth);
 }
 
 /* Hide in split mode */
@@ -62,7 +64,7 @@
     0 0 6px rgba(255, 255, 255, 0.6),
     0 0 12px rgba(255, 255, 255, 0.3),
     0 0 20px rgba(255, 255, 255, 0.15);
-  transition: height var(--transition-fast);
+  transition: height 0.15s ease-out;
 }
 
 /* Completion pulse animation */
@@ -101,7 +103,7 @@
   width: 12px;
   height: 12px;
   z-index: 10;
-  transition: top 0.1s ease-out;
+  transition: top 0.15s ease-out;
 }
 
 .indicator-core {
@@ -141,17 +143,18 @@
     transparent 70%
   );
   border-radius: 50%;
-  opacity: 0.5;
+  opacity: 0.7;
   animation: indicator-breathe 2s ease-in-out infinite;
 }
 
 @keyframes indicator-breathe {
-  0%, 100% {
+  0%,
+  100% {
     transform: scale(1);
     opacity: 0.5;
   }
   50% {
-    transform: scale(1.3);
+    transform: scale(1.5);
     opacity: 0.3;
   }
 }
@@ -235,7 +238,10 @@
   background: rgba(50, 50, 50, 0.4);
   box-shadow: 1px 1px 3px 1px rgba(0, 0, 0, 0.1);
   border-radius: 1px;
-  transition: background var(--transition-slow), width var(--transition-slow), box-shadow var(--transition-slow);
+  transition:
+    background var(--transition-slow),
+    width var(--transition-slow),
+    box-shadow var(--transition-slow);
 }
 
 /* Reached state */
@@ -296,14 +302,17 @@
 
 .progress-end-marker {
   position: absolute;
-  bottom: -8px;
+  bottom: -2px;
   left: 50%;
   transform: translateX(-50%);
   width: 6px;
   height: 6px;
   background: rgba(150, 150, 150, 0.3);
   border-radius: 50%;
-  transition: background var(--transition-slow), box-shadow var(--transition-slow), transform var(--transition-slow);
+  transition:
+    background var(--transition-normal),
+    box-shadow var(--transition-normal),
+    transform var(--transition-normal);
 }
 
 .progress-end-marker.reached {
@@ -431,15 +440,30 @@
 }
 
 @keyframes progress-ring-complete-pulse {
-  0% { stroke-width: 2.5; }
-  40% { stroke-width: 4; }
-  100% { stroke-width: 2.5; }
+  0% {
+    stroke-width: 2.5;
+  }
+  40% {
+    stroke-width: 4;
+  }
+  100% {
+    stroke-width: 2.5;
+  }
 }
 
 @keyframes progress-ring-glow-pulse {
-  0% { stroke-width: 5; filter: blur(3px); }
-  40% { stroke-width: 10; filter: blur(6px); }
-  100% { stroke-width: 5; filter: blur(3px); }
+  0% {
+    stroke-width: 5;
+    filter: blur(3px);
+  }
+  40% {
+    stroke-width: 10;
+    filter: blur(6px);
+  }
+  100% {
+    stroke-width: 5;
+    filter: blur(3px);
+  }
 }
 
 /* Override existing active pane border styling when progress bar is present */

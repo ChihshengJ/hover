@@ -183,7 +183,7 @@ export class SearchHighlightLayer {
   #renderVisiblePages() {
     const visiblePages = this.#getVisiblePageNumbers();
     const pagesToRender = new Set();
-    
+
     for (const pageNum of visiblePages) {
       if (
         !this.#renderedPages.has(pageNum) &&
@@ -192,7 +192,7 @@ export class SearchHighlightLayer {
         pagesToRender.add(pageNum);
       }
     }
-    
+
     if (pagesToRender.size === 0) return;
     this.#batchReadLayouts(pagesToRender);
     const scale = this.#pane.scale;

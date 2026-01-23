@@ -19,15 +19,12 @@ export class FileMenu {
   }
 
   #createDOM() {
-    // Hit area for detecting mouse proximity
     this.hitArea = document.createElement("div");
     this.hitArea.className = "file-menu-hit-area";
 
-    // Main container
     this.container = document.createElement("div");
     this.container.className = "file-menu-container";
 
-    // The menu button (rounded square)
     this.button = document.createElement("button");
     this.button.className = "file-menu-button";
     this.button.innerHTML = `
@@ -40,7 +37,6 @@ export class FileMenu {
       </div>
     `;
 
-    // Menu list container
     this.menuList = document.createElement("div");
     this.menuList.className = "file-menu-list";
     this.menuList.innerHTML = `
@@ -97,6 +93,12 @@ export class FileMenu {
         </svg>
         <span>Tutorial</span>
       </button>
+      <div class="file-menu-divider"></div>
+      <button class="file-menu-item" data-action="about">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+        </svg>
+        <span>About</span>
+      </button>
     `;
 
     this.container.appendChild(this.button);
@@ -137,12 +139,10 @@ export class FileMenu {
   }
 
   #setupEventListeners() {
-    // Hit area hover detection
     this.hitArea.addEventListener("mouseenter", () => {
       this.isNearHitBox = true;
       this.#activateButton();
     });
-
     this.hitArea.addEventListener("mouseleave", () => {
       this.isNearHitBox = false;
       if (!this.isHovered && !this.isOpen) {
@@ -150,12 +150,10 @@ export class FileMenu {
       }
     });
 
-    // Button hover
     this.button.addEventListener("mouseenter", () => {
       this.isHovered = true;
       this.#activateButton();
     });
-
     this.button.addEventListener("mouseleave", () => {
       this.isHovered = false;
       if (!this.isNearHitBox && !this.isOpen) {
@@ -281,6 +279,9 @@ export class FileMenu {
         break;
       case "tutorial":
         this.#showTutorial();
+        break;
+      case "about":
+        this.#showAbout();
         break;
     }
   }
@@ -839,6 +840,63 @@ export class FileMenu {
     });
 
     // Close handlers
+    const close = () => {
+      overlay.classList.remove("visible");
+      setTimeout(() => overlay.remove(), 300);
+    };
+
+    overlay
+      .querySelector(".file-menu-modal-close")
+      .addEventListener("click", close);
+    overlay.addEventListener("click", (e) => {
+      if (e.target === overlay) close();
+    });
+  }
+
+  #showAbout() {
+    const existing = document.querySelector(".file-menu-modal-overlay");
+    if (existing) existing.remove();
+
+    const overlay = document.createElement("div");
+    overlay.className = "file-menu-modal-overlay";
+    overlay.innerHTML = `
+      <div class="file-menu-modal">
+        <div class="file-menu-modal-header">
+          <h2>About</h2>
+          <button class="file-menu-modal-close">✕</button>
+        </div>
+        <div class="file-menu-modal-content">
+          <div class="metadata-row">
+            <span class="metadata-label">Version</span>
+            <span class="metadata-value">0.1.0</span>
+          </div>
+          <div class="metadata-row">
+            <span class="metadata-label">Author</span>
+            <span class="metadata-value">
+              <a href="https://chihshengj.github.io/">Chihsheng Jin</a>
+            </span>
+          </div>
+          <div class="metadata-row">
+            <span class="metadata-label">Feedback</span>
+            <span class="metadata-value">If you have any issues or concerns while using this app, please feel free to raise an issue on <a href="https://github.com/ChihshengJ/hover">GitHub</a> or at the support hub.</span>
+          </div>
+          <div class="metadata-row">
+            <span class="metadata-label">Donate</span>
+            <span class="metadata-value">
+              I developed this app on my own, so if it makes your PDF reading experience better, please consider donating through the link below. It means a ton to this project and to me! Thank you!
+              <a href="https://www.buymeacoffee.com/chihshengj" target="_blank"><img src="https://www.buymeacoffee.com/assets/img/custom_images/orange_img.png" alt="Buy Me A Coffee" style="width: 120px !important;box-shadow: 0px 3px 2px 0px rgba(190, 190, 190, 0.5) !important;-webkit-box-shadow: 0px 3px 2px 0px rgba(190, 190, 190, 0.5) !important;" ></a>
+            </span>
+          </div>
+        </div>
+      </div>
+    `;
+
+    document.body.appendChild(overlay);
+
+    requestAnimationFrame(() => {
+      overlay.classList.add("visible");
+    });
+
     const close = () => {
       overlay.classList.remove("visible");
       setTimeout(() => overlay.remove(), 300);

@@ -1,7 +1,3 @@
-/* ===========================================
-   Loading Overlay - PDF Initial Load
-   =========================================== */
-
 body.pdf-loading .window-container {
   filter: blur(4px);
   transition: filter 0.2s ease;

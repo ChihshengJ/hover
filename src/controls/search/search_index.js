@@ -73,7 +73,7 @@ export class SearchIndex {
   // Column detection constants
   static MIN_LINES_FOR_COLUMN_DETECTION = 5; // Need enough lines to detect pattern
   static GUTTER_LINE_THRESHOLD = 0.25; // Gap must appear on 25%+ of lines
-  static CLUSTER_TOLERANCE_RATIO = 0.03; // 3% of page width for clustering
+  static CLUSTER_TOLERANCE_RATIO = 0.05; // 3% of page width for clustering
   static FULL_WIDTH_THRESHOLD = 0.7; // Item spanning >70% of page = full-width
 
   constructor(doc) {
@@ -420,14 +420,14 @@ export class SearchIndex {
 
   /**
    * Detect column gutters by finding consistent large gaps across lines.
-   * 
+   *
    * Algorithm:
    * 1. Group items into lines (by Y position)
    * 2. For each line, find all gaps between items
    * 3. Identify the largest gap on each line (potential column gutter)
    * 4. Cluster these large gaps by X position
    * 5. Consistent clusters = column boundaries
-   * 
+   *
    * @param {TextItem[]} items - Text items on the page
    * @param {number} pageWidth - Page width in PDF units
    * @returns {number[]} Array of X positions marking gutter centers
@@ -489,7 +489,8 @@ export class SearchIndex {
 
       // Calculate median gap (typical word spacing)
       const sortedGapWidths = gaps.map((g) => g.width).sort((a, b) => a - b);
-      const medianGapWidth = sortedGapWidths[Math.floor(sortedGapWidths.length / 2)];
+      const medianGapWidth =
+        sortedGapWidths[Math.floor(sortedGapWidths.length / 2)];
 
       // Only consider as column gutter candidate if:
       // - It's significantly larger than median word spacing (1.8x+)
@@ -543,7 +544,7 @@ export class SearchIndex {
     // Filter out gutters too close to edges (likely margins, not columns)
     const minEdgeDistance = pageWidth * 0.1; // Must be 10% from edge
     return gutters.filter(
-      (x) => x > minEdgeDistance && x < pageWidth - minEdgeDistance
+      (x) => x > minEdgeDistance && x < pageWidth - minEdgeDistance,
     );
   }
 

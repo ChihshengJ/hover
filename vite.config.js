@@ -1,5 +1,6 @@
 import { defineConfig } from "vite";
 import { resolve } from "path";
+import { copyFileSync } from "fs";
 
 export default defineConfig({
   root: ".",
@@ -9,6 +10,7 @@ export default defineConfig({
         main: resolve(__dirname, "index.html"),
         background: resolve(__dirname, "background.js"),
         content: resolve(__dirname, "content.js"),
+        popup: resolve(__dirname, "popup.html"),
       },
       output: {
         // Keep predictable names for extension scripts
@@ -34,4 +36,24 @@ export default defineConfig({
       "@": resolve(__dirname, "src"),
     },
   },
+  plugins: [
+    {
+      name: 'copy-popup-files',
+      closeBundle() {
+        // Copy popup.css and popup.js to dist (they're not processed by Vite)
+        try {
+          copyFileSync(
+            resolve(__dirname, "popup.css"),
+            resolve(__dirname, "dist/popup.css")
+          );
+          copyFileSync(
+            resolve(__dirname, "popup.js"),
+            resolve(__dirname, "dist/popup.js")
+          );
+        } catch (err) {
+          console.warn("Could not copy popup files:", err.message);
+        }
+      }
+    }
+  ]
 });

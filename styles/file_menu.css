@@ -59,14 +59,12 @@
     drop-shadow(-1px -1px 1px rgba(255, 255, 255, 0.2));
 }
 
-/* Activated state (near hit box or hovered) */
 .file-menu-container.active .file-menu-button {
   background: var(--bg-secondary);
   border-radius: var(--radius-lg);
   transform: scale(1.05) translateZ(0);
 }
 
-/* Open state */
 .file-menu-button.open {
   border-radius: 4px 16px 16px 16px;
   transform: scale(1.08);

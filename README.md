@@ -114,9 +114,10 @@ Open Chrome, navigate to [Chorme extension management](chrome://extensions/) and
 ## Buy Me a Coffee
 
 If you love using Hover like I do, please consider support me here:
+
 [!["Buy Me A Coffee"](https://www.buymeacoffee.com/assets/img/custom_images/orange_img.png)](https://www.buymeacoffee.com/chihshengj)
 
-Even just 5 bucks would still mean a lot to me and to this project!
+Every donation means a ton to me and to this project!
 
 And if there is any bugs or possible improvements of the codebase, feel free to open an issue.
 
@@ -124,10 +125,8 @@ And if there is any bugs or possible improvements of the codebase, feel free to 
 
 ## Road map
 
-- Fuzzy search with range
 - Improve Safari support
 - Improve performance and memory usage
-- Accommodation for Lefties
 - Theme configuration
 
 ---

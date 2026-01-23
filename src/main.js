@@ -57,7 +57,47 @@ function getStatusMessage(phase) {
 }
 
 /**
- * Load PDF from either local upload (sessionStorage) or URL
+ * Check for local PDF from background script (for popup-initiated loads)
+ * @returns {Promise<{data: ArrayBuffer, name: string} | null>}
+ */
+async function getLocalPdfFromBackground() {
+  // Only try if we're in extension context
+  if (typeof chrome === "undefined" || !chrome.runtime?.sendMessage) {
+    return null;
+  }
+
+  return new Promise((resolve) => {
+    chrome.runtime.sendMessage({ type: "GET_LOCAL_PDF" }, (response) => {
+      if (chrome.runtime.lastError) {
+        resolve(null);
+        return;
+      }
+      
+      if (response?.success && response?.data?.data) {
+        try {
+          // Convert base64 back to ArrayBuffer
+          const binary = atob(response.data.data);
+          const bytes = new Uint8Array(binary.length);
+          for (let i = 0; i < binary.length; i++) {
+            bytes[i] = binary.charCodeAt(i);
+          }
+          resolve({ 
+            data: bytes.buffer, 
+            name: response.data.name || "document.pdf" 
+          });
+        } catch (error) {
+          console.error("Error parsing local PDF from background:", error);
+          resolve(null);
+        }
+      } else {
+        resolve(null);
+      }
+    });
+  });
+}
+
+/**
+ * Load PDF from either local upload (sessionStorage), background script, or URL
  */
 async function loadPdf() {
   const loadingOverlay = new LoadingOverlay();
@@ -77,7 +117,7 @@ async function loadPdf() {
       }
     };
 
-    // Check for locally uploaded PDF first
+    // Check for locally uploaded PDF first (from sessionStorage - file_menu.js uploads)
     if (PDFDocumentModel.hasLocalPdf()) {
       const localPdf = PDFDocumentModel.getLocalPdf();
       if (localPdf) {
@@ -92,6 +132,20 @@ async function loadPdf() {
         await loadingOverlay.hide();
         return;
       }
+    }
+
+    // Check for local PDF from background script (from popup uploads)
+    const backgroundPdf = await getLocalPdfFromBackground();
+    if (backgroundPdf) {
+      loadingOverlay.setProgress(0.1, "Loading local file...");
+      await pdfmodel.load(backgroundPdf.data, onProgress);
+      loadingOverlay.setProgress(0.9, "Initializing viewer...");
+      await wm.initialize();
+      const fileMenu = new FileMenu(wm);
+      const fileName = backgroundPdf.name.replace(/\.pdf$/i, "");
+      document.title = fileName + " - Hover PDF";
+      await loadingOverlay.hide();
+      return;
     }
 
     // Fall back to URL-based loading

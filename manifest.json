@@ -7,11 +7,22 @@
     "declarativeNetRequest",
     "declarativeNetRequestFeedback",
     "webNavigation",
-    "tabs"
+    "tabs",
+    "storage"
   ],
   "host_permissions": [
     "<all_urls>"
   ],
+  "action": {
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "icon16.png",
+      "32": "icon32.png",
+      "48": "icon48.png",
+      "128": "icon128.png"
+    },
+    "default_title": "Hover PDF Viewer"
+  },
   "background": {
     "service_worker": "background.js"
   },
@@ -30,7 +41,10 @@
     {
       "resources": [
         "index.html",
-        "assets/*"
+        "assets/*",
+        "popup.html",
+        "popup.css",
+        "popup.js"
       ],
       "matches": [
         "<all_urls>"

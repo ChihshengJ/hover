@@ -84,16 +84,12 @@ export class ProgressBar {
     return this.wm.activePane;
   }
 
-  /**
-   * Initialize the progress bar system
-   */
   async initialize() {
     if (this.#initialized) return;
 
     this.createProgressBar();
     this.#setupEventListeners();
 
-    // Wait for navigation popup to build its tree
     await this.#waitForSections();
     this.#createSectionMarks();
 
@@ -105,9 +101,6 @@ export class ProgressBar {
     });
   }
 
-  /**
-   * Wait for the navigation popup to build its tree
-   */
   async #waitForSections() {
     const toolbar = this.wm.toolbar;
     if (!toolbar?.navigationTree) return;
@@ -117,14 +110,12 @@ export class ProgressBar {
   }
 
   /**
-   * Get top-level sections from navigation tree
    * @returns {Array<{title: string, pageIndex: number, top: number}>}
    */
   #getTopLevelSections() {
     const toolbar = this.wm.toolbar;
     if (!toolbar?.navigationTree?.tree) return [];
 
-    // Get only top-level sections (first level of outline)
     return toolbar.navigationTree.tree
       .filter((item) => item.type === "section")
       .map((item) => ({
@@ -134,23 +125,13 @@ export class ProgressBar {
       }));
   }
 
-  /**
-   * Create the left-side progress bar DOM
-   */
   createProgressBar() {
-    // Main container
     this.container = document.createElement("div");
     this.container.className = "progress-bar-container";
-
-    // The glowing track/line
     this.track = document.createElement("div");
     this.track.className = "progress-bar-track";
-
-    // Glow effect layer
     this.glowLine = document.createElement("div");
     this.glowLine.className = "progress-bar-glow";
-
-    // Progress indicator (the dot/light source)
     this.progressIndicator = document.createElement("div");
     this.progressIndicator.className = "progress-indicator";
     this.progressIndicator.innerHTML = `
@@ -158,28 +139,18 @@ export class ProgressBar {
       <div class="indicator-glow"></div>
       <div class="indicator-pulse"></div>
     `;
-
-    // Section marks container
     this.sectionsContainer = document.createElement("div");
     this.sectionsContainer.className = "progress-sections";
-
-    // End marker
     this.endMarker = document.createElement("div");
     this.endMarker.className = "progress-end-marker";
-
-    // Assemble
     this.track.appendChild(this.glowLine);
     this.track.appendChild(this.sectionsContainer);
     this.track.appendChild(this.progressIndicator);
     this.track.appendChild(this.endMarker);
     this.container.appendChild(this.track);
-
     document.body.appendChild(this.container);
   }
 
-  /**
-   * Create section mark elements based on navigation tree
-   */
   #createSectionMarks() {
     const sections = this.#getTopLevelSections();
     if (sections.length === 0) return;
@@ -194,35 +165,27 @@ export class ProgressBar {
       const pageView = pane.pages[section.pageIndex];
       if (!pageView) return;
 
-      // Calculate absolute position in document
       const pageTop = pageView.wrapper.offsetTop;
       const pageHeight = pageView.wrapper.offsetHeight;
       const pageDims = this.doc.pageDimensions[section.pageIndex];
-
-      // Convert PDF coordinates to pixel position within page
       const topRatio = pageDims
         ? (pageDims.height - section.top) / pageDims.height
         : 0;
       const absolutePosition = pageTop + pageHeight * topRatio;
-
-      // Normalize to 0-1
       const normalizedPosition =
         totalHeight > 0 ? absolutePosition / totalHeight : 0;
 
-      // Create mark element
       const mark = document.createElement("div");
       mark.className = "section-mark";
       mark.style.top = `${normalizedPosition * 100}%`;
       mark.dataset.index = index;
       mark.title = section.title;
 
-      // Add subtle tick
       const tick = document.createElement("div");
       tick.className = "section-tick";
       mark.appendChild(tick);
 
       this.sectionsContainer.appendChild(mark);
-
       this.sectionMarks.push({
         title: section.title,
         position: normalizedPosition,
@@ -232,15 +195,10 @@ export class ProgressBar {
     });
   }
 
-  /**
-   * Setup event listeners
-   */
   #setupEventListeners() {
-    // Register scroll callback with active pane's controls
     this.activePane?.controls.onScroll(this.#scrollCallback);
     this.#previousPane = this.activePane;
 
-    // Handle resize
     this.#resizeHandler = () => {
       this.#recalculateSections();
       this.#updateProgress();
@@ -248,9 +206,6 @@ export class ProgressBar {
     window.addEventListener("resize", this.#resizeHandler);
   }
 
-  /**
-   * Update progress based on current scroll position
-   */
   #updateProgress() {
     const pane = this.activePane;
     if (!pane || this.isSplitMode) return;
@@ -269,9 +224,6 @@ export class ProgressBar {
     this.#checkEndCompletion();
   }
 
-  /**
-   * Check if we've reached any section milestones
-   */
   #checkSectionMilestones() {
     this.sectionMarks.forEach((section, index) => {
       const wasReached = section.reached;
@@ -291,20 +243,16 @@ export class ProgressBar {
   }
 
   /**
-   * Celebrate reaching a section with micro-interaction
    * @param {SectionMark} section
    */
   #celebrateSection(section) {
-    // Add celebration class
     section.element.classList.add("celebrating");
     this.progressIndicator.classList.add("section-pulse");
 
-    // Create ripple effect
     const ripple = document.createElement("div");
     ripple.className = "section-ripple";
     section.element.appendChild(ripple);
 
-    // Remove after animation
     setTimeout(() => {
       section.element.classList.remove("celebrating");
       this.progressIndicator.classList.remove("section-pulse");
@@ -317,7 +265,7 @@ export class ProgressBar {
    */
   #checkEndCompletion() {
     const wasAtEnd = this.hasReachedEnd;
-    this.hasReachedEnd = this.currentProgress >= 0.98;
+    this.hasReachedEnd = this.currentProgress >= 0.99;
 
     if (this.hasReachedEnd && !wasAtEnd) {
       this.#celebrateCompletion();
@@ -341,7 +289,7 @@ export class ProgressBar {
       this.container.classList.remove("completion-celebration");
       this.endMarker.classList.remove("celebrating");
       this.track.classList.remove("completion-pulse");
-    }, 1200);
+    }, 1000);
   }
 
   /**
@@ -379,41 +327,26 @@ export class ProgressBar {
     });
   }
 
-  /**
-   * Enter split mode - fade out left progress bar
-   */
   enterSplitMode() {
     this.isSplitMode = true;
     this.container.classList.add("split-mode");
   }
 
-  /**
-   * Exit split mode - fade in left progress bar
-   */
   exitSplitMode() {
     this.isSplitMode = false;
     this.container.classList.remove("split-mode");
 
-    // Update progress
     this.#recalculateSections();
     this.#updateProgress();
   }
 
-  /**
-   * Handle active pane change
-   */
   updateActivePane() {
     if (this.isSplitMode) return;
-
-    // Unregister from previous pane's controls
     if (this.#previousPane && this.#previousPane !== this.activePane) {
       this.#previousPane.controls.offScroll(this.#scrollCallback);
     }
-
-    // Register with new active pane's controls
     this.activePane?.controls.onScroll(this.#scrollCallback);
     this.#previousPane = this.activePane;
-
     this.#recalculateSections();
     this.#updateProgress();
   }

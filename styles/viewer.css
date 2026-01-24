@@ -3,7 +3,6 @@ body {
   margin: 0;
   padding: 0;
   background: var(--bg-body);
-  background: white;
   font-family: "Elms Sans", monospace;
   display: flex;
   flex-direction: column;

@@ -9,6 +9,8 @@
  * @property {number} width - Width of text
  * @property {number} height - Height of text (font size)
  * @property {number[]} charPositions - X offset for each character
+ * @property {string} [fontName] - Font name from PDF (e.g., "CMBX12", "TimesNewRoman-Bold")
+ * @property {number} originalY - Original Y in PDF coordinates (baseline, from bottom)
  *
  * @typedef {Object} PageIndex
  * @property {number} pageNumber - 1-based page number
@@ -68,13 +70,13 @@ export class SearchIndex {
   #currentFont = null;
 
   /** @type {number} */
-  static BATCH_SIZE = 4; // Process 4 pages concurrently
+  static BATCH_SIZE = 6; // Process 4 pages concurrently
 
   // Column detection constants
-  static MIN_LINES_FOR_COLUMN_DETECTION = 5; // Need enough lines to detect pattern
+  static MIN_LINES_FOR_COLUMN_DETECTION = 10; // Need enough lines to detect pattern
   static GUTTER_LINE_THRESHOLD = 0.25; // Gap must appear on 25%+ of lines
-  static CLUSTER_TOLERANCE_RATIO = 0.05; // 3% of page width for clustering
-  static FULL_WIDTH_THRESHOLD = 0.7; // Item spanning >70% of page = full-width
+  static CLUSTER_TOLERANCE_RATIO = 0.04; // 3% of page width for clustering
+  static FULL_WIDTH_THRESHOLD = 0.65; // Item spanning >70% of page = full-width
 
   constructor(doc) {
     this.#doc = doc;
@@ -212,6 +214,122 @@ export class SearchIndex {
   }
 
   /**
+   * Get total number of indexed pages
+   * @returns {number}
+   */
+  getPageCount() {
+    return this.#pageIndices.length;
+  }
+
+  /**
+   * Get ordered lines for a page with font information
+   * Lines are returned in reading order (respecting multi-column layouts)
+   * 
+   * @typedef {Object} OrderedLine
+   * @property {string} text - Combined text of the line
+   * @property {number} x - Left X position of first item
+   * @property {number} y - Y position (top-left origin)
+   * @property {number} originalY - Original Y in PDF coords (baseline, from bottom)
+   * @property {number} fontSize - Dominant font size in line
+   * @property {string|null} fontName - Dominant font name in line
+   * @property {TextItem[]} items - Original text items in this line
+   * 
+   * @param {number} pageNumber - 1-based page number
+   * @returns {OrderedLine[]|null}
+   */
+  getOrderedLines(pageNumber) {
+    const pageIndex = this.#pageIndices[pageNumber - 1];
+    if (!pageIndex) return null;
+
+    const items = pageIndex.textItems;
+    if (!items || items.length === 0) return [];
+
+    const pageWidth = pageIndex.pageWidth;
+
+    // Detect column gutters for proper reading order
+    const gutters = this.#detectColumnGutters(items, pageWidth);
+
+    let orderedItems;
+    
+    if (gutters.length === 0) {
+      // Single column - simple top-to-bottom, left-to-right
+      orderedItems = [...items].sort((a, b) => {
+        const yDiff = a.y - b.y;
+        if (Math.abs(yDiff) > 3) return yDiff;
+        return a.x - b.x;
+      });
+    } else {
+      // Multi-column - need to respect column order
+      const marginLeft = Math.max(0, Math.min(...items.map(i => i.x)) - 5);
+      const marginRight = Math.max(0, pageWidth - Math.max(...items.map(i => i.x + i.width)) - 5);
+      const columns = this.#buildColumnBoundaries(gutters, pageWidth, marginLeft, marginRight);
+      const segments = this.#segmentPageByLayout(items, columns, pageWidth, marginLeft, marginRight);
+      
+      orderedItems = [];
+      for (const segment of segments) {
+        if (segment.type === 'full-width') {
+          orderedItems.push(...segment.items);
+        } else {
+          // Process columns left to right
+          for (const columnItems of segment.columns) {
+            orderedItems.push(...columnItems);
+          }
+        }
+      }
+    }
+
+    // Group into lines
+    const lines = this.#groupIntoLines(orderedItems);
+
+    // Convert to OrderedLine format
+    return lines.map(lineItems => {
+      // Combine text
+      const text = lineItems.map(item => item.str).join(' ');
+      
+      // Find dominant font size (max in line, as headings are larger)
+      const fontSize = Math.max(...lineItems.map(item => item.height));
+      
+      // Find most common font name in line
+      const fontNames = lineItems.map(item => item.fontName).filter(Boolean);
+      const fontName = fontNames.length > 0 ? this.#getMostCommon(fontNames) : null;
+      
+      // Get first item's position
+      const firstItem = lineItems[0];
+      
+      return {
+        text,
+        x: firstItem.x,
+        y: firstItem.y,
+        originalY: firstItem.originalY,
+        fontSize,
+        fontName,
+        items: lineItems,
+      };
+    });
+  }
+
+  /**
+   * Get most common element in array
+   * @param {Array} arr
+   * @returns {*}
+   */
+  #getMostCommon(arr) {
+    const counts = new Map();
+    for (const item of arr) {
+      counts.set(item, (counts.get(item) || 0) + 1);
+    }
+    let maxCount = 0;
+    let mostCommon = arr[0];
+    for (const [item, count] of counts) {
+      if (count > maxCount) {
+        maxCount = count;
+        mostCommon = item;
+      }
+    }
+    return mostCommon;
+  }
+
+  /**
    * Debug method to analyze column detection on a specific page
    * @param {number} pageNumber - 1-based page number
    * @returns {Object} Debug info including detected gutters and line gaps
@@ -242,7 +360,7 @@ export class SearchIndex {
           gaps.push({
             x: current.x + current.width + gapWidth / 2,
             width: gapWidth,
-            between: `"${current.str.slice(-10)}" → "${next.str.slice(0, 10)}"`,
+            between: `"${current.str.slice(-10)}" â†’ "${next.str.slice(0, 10)}"`,
           });
         }
       }
@@ -359,7 +477,8 @@ export class SearchIndex {
         width: item.width || 0,
         height: fontSize,
         charPositions,
-        originalY: y, // Keep original for sorting
+        fontName: item.fontName || null,
+        originalY: y,
       });
     }
 
@@ -503,9 +622,10 @@ export class SearchIndex {
       }
     }
 
+
     // Need enough lines with candidate gaps
     const minGapsRequired = validLineCount * SearchIndex.GUTTER_LINE_THRESHOLD;
-    if (candidateGaps.length < minGapsRequired) return [];
+    if (candidateGaps.length === 0 || candidateGaps.length < minGapsRequired) return [];
 
     // Cluster candidate gaps by X position
     const tolerance = pageWidth * SearchIndex.CLUSTER_TOLERANCE_RATIO;
@@ -530,7 +650,6 @@ export class SearchIndex {
       }
     }
 
-    // Don't forget last cluster
     if (currentCluster.length >= minGapsRequired) {
       clusters.push(currentCluster);
     }

@@ -4,6 +4,7 @@
 
 import { pdfjsLib } from "./pdfjs-init.js";
 import { SearchIndex } from "./controls/search/search_index.js";
+import { buildOutline } from "./outline_builder.js";
 
 const AnnotationEditorType = {
   DISABLE: -1,
@@ -185,12 +186,12 @@ export class PDFDocumentModel {
     reportProgress(80, 100, "loading annotations");
     await this.loadAnnotations(this.pdfDoc);
 
-    reportProgress(90, 100, "building outline");
-    await this.#buildOutline();
-
-    reportProgress(95, 100, "initializing search");
+    reportProgress(85, 100, "initializing search");
     this.searchIndex = new SearchIndex(this);
     await this.#buildSearchIndexAsync();
+
+    reportProgress(95, 100, "building outline");
+    await this.#buildOutline();
 
     reportProgress(100, 100, "complete");
 
@@ -677,58 +678,11 @@ export class PDFDocumentModel {
   // ============================================
 
   async #buildOutline() {
-    const outline = await this.pdfDoc.getOutline();
-    if (!outline) {
-      this.outline = [];
-      return;
-    }
-
-    this.outline = await this.#processOutlineItems(outline);
-  }
-
-  async #processOutlineItems(items) {
-    const result = [];
-
-    for (const item of items) {
-      const dest = await this.#resolveDestination(item.dest);
-      const outlineItem = {
-        id: crypto.randomUUID(),
-        title: item.title,
-        pageIndex: dest?.pageIndex ?? 0,
-        left: dest?.left ?? 0,
-        top: dest?.top ?? 0,
-        children: item.items ? await this.#processOutlineItems(item.items) : [],
-      };
-      result.push(outlineItem);
-    }
-
-    return result;
-  }
-
-  async #resolveDestination(dest) {
-    try {
-      let explicitDest = dest;
-
-      if (typeof dest === "string") {
-        explicitDest = this.allNamedDests?.[dest];
-        if (!explicitDest) {
-          explicitDest = await this.pdfDoc.getDestination(dest);
-        }
-      }
-
-      if (!Array.isArray(explicitDest)) return null;
-
-      const [ref, , left, top] = explicitDest;
-      const pageIndex = await this.pdfDoc.getPageIndex(ref);
-
-      return {
-        pageIndex,
-        left: left ?? 0,
-        top: top ?? 0,
-      };
-    } catch (error) {
-      return null;
-    }
+    this.outline = await buildOutline(
+      this.pdfDoc,
+      this.searchIndex,
+      this.allNamedDests
+    );
   }
 
   // ============================================
@@ -1223,8 +1177,8 @@ export class PDFDocumentModel {
       const end = Math.min(str.length, idx + 150);
       const context = str
         .substring(start, end)
-        .replace(/[\x00-\x1f]/g, "·") // Replace control chars for display
-        .replace(/\n/g, "↵");
+        .replace(/[\x00-\x1f]/g, "Â·") // Replace control chars for display
+        .replace(/\n/g, "â†µ");
 
       console.log(
         `[PDF Debug ${label}] /Annots occurrence #${count} at byte ${idx}:`,

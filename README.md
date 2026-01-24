@@ -2,14 +2,14 @@
   <img src="assets/IMG_3047.png" width="140" alt="Hover Banner"/>
 </p>
 
-<h1 align="center">Hover — A Lightweight PDF Reader Extension</h1>
+<h1 align="center">Hover — An immersive PDF Reader Extension</h1>
 
-Hover is a minimalist PDF reader extension designed for people who spend way too much time reading academic papers in the browser.
-It intentionally keeps only the most essential features, but aims to make the actual experience of reading papers smoother, faster, and more immersive by ---
-You've guessed it: **Hopping between the content and the references**  
-Hover solves this problem by providing a pop-up window that gives you the access to the text of the references directly, allowing you to jump directly to an ArXiv paper, or search the title in Google Scholar.
+Hover is a minimalist PDF reader browser extension designed for people who spend way too much time reading academic papers in the browser.
 
-Beyond that, with the detailed modern UX design, Hover creates the most intuitive, fluid reading experience to maximize your knowledge intake, a barely noticeable handy tool that always sits right under your palm.
+It intentionally keeps only the most essential features, but aims to make the actual experience of reading papers smoother, faster, and more immersive by introducing a carefully designed UI system for desktop reading based on a single ball-shaped controller.
+Every action and command revolves around the single controller, and everything irrelevant to reading fades into the background.
+
+**Currently the main functionalities only works on LaTeX compiled PDF documents. But heuristic parsing will be supported later for all kinds of papers.**
 
 The project is based on [PDF.js](https://github.com/mozilla/pdf.js), which means that you can also directly access the texts as HTML elements, if you're interested in taking advantage of this feature, feel free to fork this project!
 
@@ -17,20 +17,19 @@ The project is based on [PDF.js](https://github.com/mozilla/pdf.js), which means
 
 ## Features
 
-### Inline Citation Preview
+### 1. Inline Citation Preview
 
-Hover's main purpose is to solve the problem of LaTeX citation links that direct you straight to the references when reading most scientific papers.
-This process is highly disruptive to the flow of reading, but hard to tackle with in practice since the hyperlink in LaTeX usually only contains the positional information within the document.
-Hover solves this problem by heuristically parsing the PDF annotations and finding the text content of the citation.
+The main goal of creating Hover is to solve the problem of LaTeX citation links that direct you straight to the references when reading most STEM papers.
+Hover solves this problem by searching the nearest reference based on the coordinates linked to the citation.
 
 Just hover your mouse on the citation link, the content of the citation would appear right at the spot.
-You can even directly open up the URL in the citation or search the title of cited document in Google Scholar (yeah I ripped them off).
+You can even directly open up the URL in the citation or check out the abstract of the paper extracted from Google Scholar.
 
-<p align="center">
-<img src="assets/citation_popup_demo.png" width="450" alt="Hover Banner"/>
-</p>
+| Actual reference                      | Google Scholar Abstract               |
+| ------------------------------------- | ------------------------------------- |
+| ![cat](assets/citation_preview_1.png) | ![dog](assets/citation_preview_2.png) |
 
-### Innovative Navigation System
+### 2. Innovative Navigation System
 
 PDF readers are boring as hell.
 
@@ -47,7 +46,7 @@ It all starts with a ball:
 <img src="assets/ball_expand.gif" width="90" alt="Hover Banner"/>
 </p>
 
-- **Double-click**: go to the first page
+- **Double-click**: go to top
 - **Drag it vertically**: scroll the document
 <p align="center">
 <img src="assets/drag_scroll.gif" width="800" alt="Hover Banner"/>
@@ -60,7 +59,7 @@ It all starts with a ball:
 
 The functionalities are kept at their minimum, but your interaction with the document is more fluid and intuitive than ever.
 
-### Split Window Mode
+### 3. Split Window Mode
 
 Sometimes you gotta wonder, PDFs are longer than codes, so why isn't there a split window mode for most PDF readers?
 
@@ -71,7 +70,7 @@ No more jumping between experiment results and metrics or figures and methodolog
 <img src="assets/split_window_demo.png" width="800" alt="Hover Banner"/>
 </p>
 
-### Full Dark Mode
+### 4. Full Dark Mode
 
 Pulling an all-nighter reading papers sounds fun, especially when the white background lights up your entire bedroom.
 With a click of the button, Hover not only turns the background in a soft dark tone, it also renders the contents black.
@@ -80,11 +79,23 @@ With a click of the button, Hover not only turns the background in a soft dark t
 <img src="assets/dark_mode_demo.png" width="800" alt="Hover Banner"/>
 </p>
 
-### Persistent Annotation
+### 5. Search with Range
+
+Not only is the search more accurate than the default readers as it can detect phrases broken by lines and columns, it also enables you to search with a specific range.
+
+<p align="center">
+<img src="assets/search_demo.png" width="800" alt="Hover Banner"/>
+</p>
+
+### 6. Persistent Annotation
 
 Annotations you made in this reader are embedded into the PDF document, no need for any accounts and cloud to save annotations or to share them with others.
 
-### VIM Motion
+<p align="center">
+<img src="assets/annotation_demo.png" width="800" alt="Hover Banner"/>
+</p>
+
+### 7. VIM Motion
 
 Full vim motion support for reading, highlighting, and citation preview (under development).
 
@@ -92,7 +103,7 @@ Full vim motion support for reading, highlighting, and citation preview (under d
 
 ## Installation
 
-This project will be released as a browser extension for Chrome, Safari, and Firefox.
+This project will be released as a browser extension for Chrome and Safari.
 
 Latest commit is always runnable so you can clone the repo and use npm to build and load it in Chrome.
 Make sure you install the dependencies using
@@ -107,7 +118,7 @@ And then use
 npm run build:ext
 ```
 
-Open Chrome, navigate to [Chorme extension management](chrome://extensions/) and load the _dist_ folder to use the extension.
+Open Chrome, navigate to [Chorme extension management](chrome://extensions/) , turn on developer mode and load the _dist_ folder to use the extension.
 
 ---
 
@@ -125,8 +136,9 @@ And if there is any bugs or possible improvements of the codebase, feel free to 
 
 ## Road map
 
-- Improve Safari support
-- Improve performance and memory usage
+- Heuristic parsing to extract links from non-LaTeX compiled PDFs.
+- Hover for Safari
+- Improve indexing performance and memory usage
 - Theme configuration
 
 ---

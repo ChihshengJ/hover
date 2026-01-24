@@ -420,7 +420,11 @@ export class SearchIndex {
       const lines = this.#groupIntoLines(items);
 
       const columnAwareLines = lines.map((lineItems) =>
-        this.#createColumnAwareLine(lineItems, -1, columns[0]?.left ?? marginLeft),
+        this.#createColumnAwareLine(
+          lineItems,
+          -1,
+          columns[0]?.left ?? marginLeft,
+        ),
       );
 
       return {
@@ -530,7 +534,8 @@ export class SearchIndex {
     // Calculate if line is at column start (left-aligned within column)
     // Use a tolerance based on font size and a minimum threshold
     const tolerance = Math.max(2, fontSize * 0.7, columnLeft * 0.05);
-    const isAtColumnStart = (firstItem.x - columnLeft) < tolerance && (firstItem.x - columnLeft) >= 0;
+    const isAtColumnStart =
+      firstItem.x - columnLeft < tolerance && firstItem.x - columnLeft >= 0;
 
     return {
       text,
@@ -861,7 +866,8 @@ export class SearchIndex {
 
     // Need enough lines with candidate gaps
     const minGapsRequired = validLineCount * SearchIndex.GUTTER_LINE_THRESHOLD;
-    if (candidateGaps.length < minGapsRequired) return [];
+    if (candidateGaps.length === 0 || candidateGaps.length < minGapsRequired)
+      return [];
 
     // Cluster candidate gaps by X position
     const tolerance = pageWidth * SearchIndex.CLUSTER_TOLERANCE_RATIO;

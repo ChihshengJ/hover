@@ -211,7 +211,6 @@ export const COMMON_SECTION_NAMES = new Set([
   "qualitative analysis",
   "quantitative analysis",
   "mixed methods",
-  "coding",
   "themes",
   "thematic analysis",
   "content analysis",
@@ -410,5 +409,5 @@ export const COMMON_SECTION_NAMES = new Set([
  * Pattern to strip leading section numbers
  * Matches: "1", "1.", "1.1", "1.1.1", "A.", "A.1", "I.", "II.", "(1)", "(a)", etc.
  */
-export const SECTION_NUMBER_STRIP = /^(?:\(?\d+(?:\.\d+)*\)?\.?\s*|\(?[A-Z]\)?\.?\s*|\(?[IVXLCDM]+\)?\.?\s*)/i;
-
+export const SECTION_NUMBER_STRIP =
+  /^(?:\d+(?:\.\d+)*\.?\s+|\(\d+\)\s*|[A-Z]\.(?:\d+(?:\.\d+)*\.?)?\s+|\([A-Za-z]\)\s*|[IVXLCDM]+\.\s+|\([IVXLCDM]+\)\s*)/;

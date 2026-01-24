@@ -25,7 +25,6 @@
 
 /* ================================
    Spotlight (creates the "cutout" effect)
-   Uses box-shadow technique for simplicity
    ================================ */
 
 .onboarding-spotlight {
@@ -40,10 +39,10 @@
   /* Massive box-shadow creates the dark overlay with a hole */
   box-shadow:
     0 0 0 9999px rgba(0, 0, 0, 0.75),
-    0 0 40px 10px rgba(0, 0, 0, 0.5) inset;
+    0 0 20px 5px rgba(0, 0, 0, 0.3) inset;
 
   /* Blur effect on the edges */
-  filter: blur(0px);
+  filter: blur(3px);
 
   /* Smooth transitions */
   transition:
@@ -68,9 +67,9 @@
   inset: -20px;
   border-radius: inherit;
   background: transparent;
-  box-shadow: 0 0 30px 15px rgba(0, 0, 0, 0.4);
+  box-shadow: 0 0 40px 10px rgba(0, 0, 0, 0.3);
   pointer-events: none;
-  filter: blur(10px);
+  filter: blur(15px);
 }
 
 /* When no spotlight is needed (full overlay) */
@@ -88,7 +87,7 @@
   backdrop-filter: blur(4px);
   opacity: 0;
   transition: opacity 0.4s ease;
-  pointer-events: none; /* Don't block clicks when invisible */
+  pointer-events: none;
 }
 
 .onboarding-full-overlay.visible {
@@ -107,17 +106,16 @@
   min-width: 200px;
 
   /* Glassmorphic styling */
-  background: rgba(35, 35, 40, 0.92);
+  background: rgba(0, 0, 0, 0.6);
   backdrop-filter: blur(12px);
   border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 12px;
   box-shadow:
-    0 8px 32px rgba(0, 0, 0, 0.4),
-    0 0 0 1px rgba(255, 255, 255, 0.05) inset;
+    0 8px 32px rgba(0, 0, 0, 0.5),
+    1px 1px 10px 1px rgba(255, 255, 255, 0.08) inset;
 
   padding: 20px 24px;
 
-  /* Font styling */
   font-family:
     "DM Sans",
     -apple-system,
@@ -125,7 +123,6 @@
     sans-serif;
   color: #ffffff;
 
-  /* Animation */
   opacity: 0;
   transform: translateY(10px) scale(0.95);
   transition:
@@ -183,18 +180,18 @@
   padding: 10px 20px;
   border: none;
   border-radius: 8px;
-  background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+  background: var(--color-accent);
   color: #ffffff;
   font-family: inherit;
   font-size: 14px;
   font-weight: 600;
   cursor: pointer;
   transition: all 0.2s ease;
-  box-shadow: 0 2px 8px rgba(59, 130, 246, 0.3);
+  box-shadow: 0 2px 10px rgba(59, 130, 246, 0.2);
 }
 
 .onboarding-btn-primary:hover {
-  background: linear-gradient(135deg, #60a5fa 0%, #3b82f6 100%);
+  background: var(--color-accent-hover);
   box-shadow: 0 4px 12px rgba(59, 130, 246, 0.4);
   transform: translateY(-1px);
 }
@@ -214,7 +211,7 @@
   z-index: calc(var(--z-modal, 9999) + 2);
 
   padding: 8px 16px;
-  border: 1px solid rgba(255, 255, 255, 0.2);
+  border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 20px;
   background: rgba(0, 0, 0, 0.5);
   backdrop-filter: blur(8px);

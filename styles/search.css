@@ -379,6 +379,41 @@
   pointer-events: none;
 }
 
+/* Dropdown option hover and selection states */
+.search-dropdown-option {
+  padding: 8px 12px;
+  cursor: pointer;
+  transition: background-color 0.15s ease;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.search-dropdown-option:hover {
+  background-color: rgba(0, 0, 0, 0.05);
+}
+
+.search-dropdown-option.selected {
+  background-color: rgba(59, 130, 246, 0.15);
+  outline: none;
+}
+
+.search-dropdown-option.selected:hover {
+  background-color: rgba(59, 130, 246, 0.2);
+}
+
+/* Ensure dropdown has proper scrolling for keyboard navigation */
+.search-dropdown {
+  max-height: 200px;
+  overflow-y: auto;
+  scroll-behavior: smooth;
+}
+
+/* Stronger focus ring for search results */
+.search-focus-outline {
+  transition: opacity 0.15s ease;
+}
+
 /* Night mode indexing styles */
 .night-mode .search-indexing-indicator {
   background: rgba(59, 130, 246, 0.2);

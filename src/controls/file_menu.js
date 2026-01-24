@@ -892,7 +892,8 @@ export class FileMenu {
           <div class="metadata-row">
             <span class="metadata-label">Donate</span>
             <span class="metadata-value">
-              I developed this app on my own, so if it makes your PDF reading experience better, please consider donating through the link below. It means a ton to this project and to me! Thank you!
+              This app is my first solo project, so if it makes your PDF reading experience better, please consider donating through the link below. It means a ton to this project and to me! Thank you!
+              <br></br>
               <a href="https://www.buymeacoffee.com/chihshengj" target="_blank"><img src="https://www.buymeacoffee.com/assets/img/custom_images/orange_img.png" alt="Buy Me A Coffee" style="width: 120px !important;box-shadow: 0px 3px 2px 0px rgba(190, 190, 190, 0.5) !important;-webkit-box-shadow: 0px 3px 2px 0px rgba(190, 190, 190, 0.5) !important;" ></a>
             </span>
           </div>

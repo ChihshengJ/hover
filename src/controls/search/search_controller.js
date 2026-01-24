@@ -41,6 +41,14 @@ export class SearchController {
   /** @type {Object|null} */
   #indexingSubscriber = null;
 
+  /**
+   * Navigation lock: when true, scroll-based range updates are ignored.
+   * Set when user navigates through results (focusNext/focusPrev).
+   * Released when user explicitly changes query or manually changes range.
+   * @type {boolean}
+   */
+  #isNavigating = false;
+
   constructor(wm) {
     this.#wm = wm;
     this.#setupIndexingListeners();
@@ -181,6 +189,7 @@ export class SearchController {
     this.#focusIndex = -1;
     this.#currentQuery = "";
     this.#range = { from: 1, to: null };
+    this.#isNavigating = false;
   }
 
   // =========================================
@@ -193,6 +202,9 @@ export class SearchController {
    */
   onQueryChange(query) {
     this.#currentQuery = query;
+
+    // User explicitly changed query - release navigation lock
+    this.#isNavigating = false;
 
     if (!query.trim()) {
       this.#results = [];
@@ -210,9 +222,28 @@ export class SearchController {
    * Called when search range changes
    * @param {number} from - Start page (1-based)
    * @param {number} to - End page (1-based)
+   * @param {boolean} [isScrollUpdate=false] - Whether this is from scroll-based current page update
    */
-  onRangeChange(from, to) {
-    this.#range = { from, to: to || this.totalPages };
+  onRangeChange(from, to, isScrollUpdate = false) {
+    // If navigating through results and this is a scroll-based update,
+    // ignore it completely to preserve navigation state
+    if (this.#isNavigating && isScrollUpdate) {
+      return;
+    }
+
+    // User explicitly changed range - release navigation lock
+    if (!isScrollUpdate) {
+      this.#isNavigating = false;
+    }
+
+    const newRange = { from, to: to || this.totalPages };
+
+    // Check if range actually changed
+    if (this.#range.from === newRange.from && this.#range.to === newRange.to) {
+      return;
+    }
+
+    this.#range = newRange;
 
     // Re-run search if there's a query
     if (this.#currentQuery.trim()) {
@@ -242,6 +273,7 @@ export class SearchController {
     const total = this.#results.length;
     this.#searchBar?.updateResultCount(total > 0 ? 1 : 0, total);
 
+    // Reset focus index when search is performed
     this.#focusIndex = -1;
   }
 
@@ -255,6 +287,9 @@ export class SearchController {
   focusNext() {
     if (this.#results.length === 0) return;
 
+    // Enter navigation mode - scroll-based range updates will be ignored
+    this.#isNavigating = true;
+
     this.#focusIndex = (this.#focusIndex + 1) % this.#results.length;
     this.#focusCurrentResult();
   }
@@ -264,6 +299,9 @@ export class SearchController {
    */
   focusPrev() {
     if (this.#results.length === 0) return;
+
+    // Enter navigation mode - scroll-based range updates will be ignored
+    this.#isNavigating = true;
 
     this.#focusIndex =
       (this.#focusIndex - 1 + this.#results.length) % this.#results.length;

@@ -103,7 +103,6 @@ export class OnboardingWalkthrough {
     /** @type {MutationObserver|null} */
     this.#mutationObserver = null;
 
-
     // Bound methods for event listeners
     this.#boundHandlers = {
       onResize: this.#handleResize.bind(this),
@@ -347,7 +346,7 @@ export class OnboardingWalkthrough {
           position: "left",
         },
         waitFor: "ballDraggedVertically",
-        autoAdvanceDelay: 8000,
+        autoAdvanceDelay: 10000,
         onEnter: () => this.#onBallVerticalDragEnter(),
         onExit: () => this.#onBallVerticalDragExit(),
       },
@@ -358,7 +357,7 @@ export class OnboardingWalkthrough {
         type: "highlight",
         spotlight: null,
         tooltip: {
-          text: "Move your mouse to the arrow at the bottom while dragging",
+          text: "Drag the ball to the bottom arrow",
           subtext:
             "These two arrows help you jump to the top and bottom quickly",
           position: "left",
@@ -391,9 +390,9 @@ export class OnboardingWalkthrough {
         spotlight: null,
         noOverlay: true,
         tooltip: {
-          text: "Paper Outline",
+          text: "Hover over the sections and click arrows to pin expansions",
           subtext:
-            "Hover over titles to expand them. Try clicking an arrow to pin a branch.",
+            "This is the outline of the paper, you can also use it for quick navigation",
           position: "right",
         },
         waitFor: "outlinePinClicked",
@@ -490,7 +489,7 @@ export class OnboardingWalkthrough {
         noOverlay: true,
         tooltip: {
           text: this.#isMac() ? "Press âŒ˜F" : "Press Ctrl+F",
-          subtext: "This opens the search bar",
+          subtext: "This opens the search bar, try to type some words in it",
           position: "bottom",
         },
         waitFor: "searchOpened",
@@ -522,9 +521,8 @@ export class OnboardingWalkthrough {
         spotlight: null,
         noOverlay: true,
         tooltip: {
-          text: "Press ESC or the close button on the left to quit search mode",
-          subtext:
-            "Thanks for staying with me til the end. This is the last step of the tutorial.",
+          text: "Press ESC to quit search mode",
+          subtext: "This is the last step of the tutorial.",
           position: "top",
         },
         waitFor: "searchClosed",
@@ -537,9 +535,9 @@ export class OnboardingWalkthrough {
         id: "finale",
         type: "message",
         spotlight: null,
-        noOverlay: false, // Overlay returns
+        noOverlay: false,
         tooltip: {
-          text: "Thanks for choosing Hover",
+          text: "Thank you for choosing Hover",
           subtext: "Hope it helps you enjoy reading papers more.",
           position: "center",
           showNextButton: true,
@@ -723,8 +721,7 @@ export class OnboardingWalkthrough {
       this.autoAdvanceTimer = null;
     }
 
-    // Hide tooltip during step transition to prevent wrong-position flash
-    this.tooltip.classList.remove("visible");
+    // this.tooltip.classList.remove("visible");
 
     // Update index
     this.currentStepIndex = index;
@@ -845,8 +842,9 @@ export class OnboardingWalkthrough {
     this.fullOverlay.classList.remove("visible");
     this.#updateSpotlight(config);
     this.spotlight.classList.add("visible");
-    this.overlayContainer.style.pointerEvents = "none";
     this.spotlight.style.pointerEvents = "none";
+    // Allow clicks to pass through to elements below the spotlight
+    this.overlayContainer.style.pointerEvents = "none";
   }
 
   /**
@@ -1430,7 +1428,7 @@ export class OnboardingWalkthrough {
   #onProgressBarEnter() {
     const progressBar = this.wm.progressBar?.container;
     if (progressBar) {
-      const config = this.#getSpotlightFromElement(progressBar, 4);
+      const config = this.#getSpotlightFromElement(progressBar, 8);
       this.steps[1].spotlight = config;
       this.#showSpotlightOverlay(config);
       this.#updateTooltip(this.steps[1].tooltip, config);
@@ -1485,7 +1483,7 @@ export class OnboardingWalkthrough {
       block: "center",
       behavior: "instant",
     });
-    step.spotlight = this.#getSpotlightFromElement(link, 3);
+    step.spotlight = this.#getSpotlightFromElement(link, 4);
     if (step.spotlight) {
       this.#showSpotlightOverlay(step.spotlight);
       this.#updateTooltip(step.tooltip, step.spotlight);
@@ -1497,7 +1495,8 @@ export class OnboardingWalkthrough {
 
   // --- Step 5: Citation Reference Tab ---
   #onCitationReferenceEnter() {
-    // Expand spotlight to include citation popup
+    this.overlayContainer.style.pointerEvents = "none";
+
     setTimeout(() => {
       const popup = document.querySelector(".citation-popup");
       if (popup) {
@@ -1514,7 +1513,8 @@ export class OnboardingWalkthrough {
 
   // --- Step 6: Citation Abstract Tab ---
   #onCitationAbstractEnter() {
-    // Keep spotlight on citation popup, it should have resized for abstract
+    this.overlayContainer.style.pointerEvents = "none";
+
     setTimeout(() => {
       const popup = document.querySelector(".citation-popup");
       if (popup) {
@@ -1523,7 +1523,7 @@ export class OnboardingWalkthrough {
         this.#showSpotlightOverlay(config);
         this.#updateTooltip(this.steps[6].tooltip, config);
       }
-    }, 300);
+    }, 500);
   }
   #onCitationAbstractExit() {
     // Hide citation popup
@@ -1759,15 +1759,19 @@ export class OnboardingWalkthrough {
         const rect = rangeSection.getBoundingClientRect();
         const baseTooltipConfig = {
           x: rect.left,
-          y: rect.top,
+          y: rect.top - 20,
           width: rect.width,
           height: rect.height,
         };
         this.#positionTooltip("top", baseTooltipConfig, 0, -10);
         this.tooltip.classList.add("visible");
 
-        const fromInput = rangeSection.querySelector(".search-range-field:first-child .search-range-input");
-        const toInput = rangeSection.querySelector(".search-range-field:last-child .search-range-input");
+        const fromInput = rangeSection.querySelector(
+          ".search-range-field:first-child .search-range-input",
+        );
+        const toInput = rangeSection.querySelector(
+          ".search-range-field:last-child .search-range-input",
+        );
 
         const shiftTooltip = () => {
           this.#positionTooltip("top", baseTooltipConfig, -300, -10);

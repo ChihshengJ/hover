@@ -220,6 +220,40 @@ export class SearchHighlightLayer {
   }
 
   /**
+   * Force render all matches on a specific page
+   * @param {number} pageNumber - 1-based page number
+   */
+  #forceRenderPage(pageNumber) {
+    if (this.#renderedPages.has(pageNumber)) return;
+    if (!this.#matchesByPage.has(pageNumber)) return;
+
+    this.#batchReadLayouts(new Set([pageNumber]));
+    const layout = this.#pageLayoutCache.get(pageNumber);
+    if (!layout) return;
+
+    const scale = this.#pane.scale;
+    const pageMatches = this.#matchesByPage.get(pageNumber) || [];
+    const fragment = document.createDocumentFragment();
+
+    for (const match of pageMatches) {
+      // Skip if already rendered
+      if (this.#highlightGroups.has(match.id)) continue;
+
+      const group = this.#createMatchGroup(match, layout, scale);
+      if (group) {
+        fragment.appendChild(group);
+        this.#highlightGroups.set(match.id, group);
+      }
+    }
+
+    if (fragment.childNodes.length > 0) {
+      this.#svg.appendChild(fragment);
+    }
+
+    this.#renderedPages.add(pageNumber);
+  }
+
+  /**
    * Create SVG group for a single match (no DOM operations)
    * @param {Object} match - SearchMatch object
    * @param {{top: number, left: number}} layout - Page layout info
@@ -302,7 +336,7 @@ export class SearchHighlightLayer {
     outline.setAttribute("ry", 4);
     outline.setAttribute("fill", "none");
     outline.setAttribute("stroke", "#2563eb");
-    outline.setAttribute("stroke-width", "1");
+    outline.setAttribute("stroke-width", "2");
     outline.setAttribute("opacity", "0");
 
     return outline;
@@ -327,19 +361,13 @@ export class SearchHighlightLayer {
 
     // Add focus to new
     if (matchId) {
-      // Ensure the match's page is rendered
+      // Find the match to get its page number
       const match = this.#matches.find((m) => m.id === matchId);
-      if (match && !this.#renderedPages.has(match.pageNumber)) {
-        // Force render this page
-        this.#batchReadLayouts(new Set([match.pageNumber]));
-        const layout = this.#pageLayoutCache.get(match.pageNumber);
-        if (layout) {
-          const group = this.#createMatchGroup(match, layout, this.#pane.scale);
-          if (group) {
-            this.#svg.appendChild(group);
-            this.#highlightGroups.set(match.id, group);
-            this.#renderedPages.add(match.pageNumber);
-          }
+      if (match) {
+        // FIX: Force render ALL matches on this page, not just the focused one
+        // This ensures all highlights are visible when scrolling to a new page
+        if (!this.#renderedPages.has(match.pageNumber)) {
+          this.#forceRenderPage(match.pageNumber);
         }
       }
 

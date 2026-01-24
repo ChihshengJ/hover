@@ -73,10 +73,10 @@ export class SearchIndex {
   static BATCH_SIZE = 6; // Process 4 pages concurrently
 
   // Column detection constants
-  static MIN_LINES_FOR_COLUMN_DETECTION = 10; // Need enough lines to detect pattern
-  static GUTTER_LINE_THRESHOLD = 0.25; // Gap must appear on 25%+ of lines
-  static CLUSTER_TOLERANCE_RATIO = 0.04; // 3% of page width for clustering
-  static FULL_WIDTH_THRESHOLD = 0.65; // Item spanning >70% of page = full-width
+  static MIN_LINES_FOR_COLUMN_DETECTION = 10;
+  static GUTTER_LINE_THRESHOLD = 0.25;
+  static CLUSTER_TOLERANCE_RATIO = 0.02;
+  static FULL_WIDTH_THRESHOLD = 0.7;
 
   constructor(doc) {
     this.#doc = doc;
@@ -222,9 +222,23 @@ export class SearchIndex {
   }
 
   /**
+   * Get page dimensions
+   * @param {number} pageNumber - 1-based page number
+   * @returns {{width: number, height: number}|null}
+   */
+  getPageDimensions(pageNumber) {
+    const pageIndex = this.#pageIndices[pageNumber - 1];
+    if (!pageIndex) return null;
+    return {
+      width: pageIndex.pageWidth,
+      height: pageIndex.pageHeight,
+    };
+  }
+
+  /**
    * Get ordered lines for a page with font information
    * Lines are returned in reading order (respecting multi-column layouts)
-   * 
+   *
    * @typedef {Object} OrderedLine
    * @property {string} text - Combined text of the line
    * @property {number} x - Left X position of first item
@@ -233,7 +247,7 @@ export class SearchIndex {
    * @property {number} fontSize - Dominant font size in line
    * @property {string|null} fontName - Dominant font name in line
    * @property {TextItem[]} items - Original text items in this line
-   * 
+   *
    * @param {number} pageNumber - 1-based page number
    * @returns {OrderedLine[]|null}
    */
@@ -250,7 +264,7 @@ export class SearchIndex {
     const gutters = this.#detectColumnGutters(items, pageWidth);
 
     let orderedItems;
-    
+
     if (gutters.length === 0) {
       // Single column - simple top-to-bottom, left-to-right
       orderedItems = [...items].sort((a, b) => {
@@ -260,14 +274,28 @@ export class SearchIndex {
       });
     } else {
       // Multi-column - need to respect column order
-      const marginLeft = Math.max(0, Math.min(...items.map(i => i.x)) - 5);
-      const marginRight = Math.max(0, pageWidth - Math.max(...items.map(i => i.x + i.width)) - 5);
-      const columns = this.#buildColumnBoundaries(gutters, pageWidth, marginLeft, marginRight);
-      const segments = this.#segmentPageByLayout(items, columns, pageWidth, marginLeft, marginRight);
-      
+      const marginLeft = Math.max(0, Math.min(...items.map((i) => i.x)) - 5);
+      const marginRight = Math.max(
+        0,
+        pageWidth - Math.max(...items.map((i) => i.x + i.width)) - 5,
+      );
+      const columns = this.#buildColumnBoundaries(
+        gutters,
+        pageWidth,
+        marginLeft,
+        marginRight,
+      );
+      const segments = this.#segmentPageByLayout(
+        items,
+        columns,
+        pageWidth,
+        marginLeft,
+        marginRight,
+      );
+
       orderedItems = [];
       for (const segment of segments) {
-        if (segment.type === 'full-width') {
+        if (segment.type === "full-width") {
           orderedItems.push(...segment.items);
         } else {
           // Process columns left to right
@@ -282,20 +310,21 @@ export class SearchIndex {
     const lines = this.#groupIntoLines(orderedItems);
 
     // Convert to OrderedLine format
-    return lines.map(lineItems => {
+    return lines.map((lineItems) => {
       // Combine text
-      const text = lineItems.map(item => item.str).join(' ');
-      
+      const text = lineItems.map((item) => item.str).join(" ");
+
       // Find dominant font size (max in line, as headings are larger)
-      const fontSize = Math.max(...lineItems.map(item => item.height));
-      
+      const fontSize = Math.max(...lineItems.map((item) => item.height));
+
       // Find most common font name in line
-      const fontNames = lineItems.map(item => item.fontName).filter(Boolean);
-      const fontName = fontNames.length > 0 ? this.#getMostCommon(fontNames) : null;
-      
+      const fontNames = lineItems.map((item) => item.fontName).filter(Boolean);
+      const fontName =
+        fontNames.length > 0 ? this.#getMostCommon(fontNames) : null;
+
       // Get first item's position
       const firstItem = lineItems[0];
-      
+
       return {
         text,
         x: firstItem.x,
@@ -306,6 +335,214 @@ export class SearchIndex {
         items: lineItems,
       };
     });
+  }
+
+  /**
+   * Get column-aware lines for a page with full layout information.
+   * Unlike getOrderedLines(), this method:
+   * - Preserves column separation (lines from different columns are NOT merged)
+   * - Exposes detected column boundaries
+   * - Includes columnIndex and isAtColumnStart for each line
+   * - Groups lines within segments (full-width vs multi-column regions)
+   *
+   * @typedef {Object} ColumnAwareLine
+   * @property {string} text - Combined text of the line
+   * @property {number} x - Left X position of first item
+   * @property {number} y - Y position (top-left origin)
+   * @property {number} originalY - Original Y in PDF coords (baseline, from bottom)
+   * @property {number} fontSize - Dominant font size in line
+   * @property {string|null} fontName - Dominant font name in line
+   * @property {number} columnIndex - -1 for full-width, 0 for col1, 1 for col2, etc.
+   * @property {boolean} isAtColumnStart - Whether line is left-aligned within its column
+   * @property {TextItem[]} items - Original text items in this line
+   *
+   * @typedef {Object} ColumnAwareSegment
+   * @property {'full-width'|'columns'} type - Segment type
+   * @property {number} yStart - Top Y position of segment
+   * @property {number} yEnd - Bottom Y position of segment
+   * @property {ColumnAwareLine[]} lines - Lines in this segment (in reading order)
+   *
+   * @typedef {Object} ColumnAwarePageData
+   * @property {number} pageNumber - 1-based page number
+   * @property {number} pageWidth - Page width in PDF units
+   * @property {number} pageHeight - Page height in PDF units
+   * @property {ColumnBoundary[]} columns - Detected column boundaries
+   * @property {number} marginLeft - Detected left margin
+   * @property {number} marginRight - Detected right margin
+   * @property {ColumnAwareSegment[]} segments - Page segments in reading order
+   *
+   * @param {number} pageNumber - 1-based page number
+   * @returns {ColumnAwarePageData|null}
+   */
+  getColumnAwareLines(pageNumber) {
+    const pageIndex = this.#pageIndices[pageNumber - 1];
+    if (!pageIndex) return null;
+
+    const items = pageIndex.textItems;
+    const pageWidth = pageIndex.pageWidth;
+    const pageHeight = pageIndex.pageHeight;
+
+    if (!items || items.length === 0) {
+      return {
+        pageNumber,
+        pageWidth,
+        pageHeight,
+        columns: [{ left: 0, right: pageWidth }],
+        marginLeft: 0,
+        marginRight: 0,
+        segments: [],
+      };
+    }
+
+    const arxivIdx = items.findIndex((item) => item.str.startsWith("arXiv:"));
+    items.splice(arxivIdx, 1);
+
+    // Calculate margins from item positions
+    const marginLeft = Math.max(0, Math.min(...items.map((i) => i.x)) - 5);
+    const marginRight = Math.max(
+      0,
+      pageWidth - Math.max(...items.map((i) => i.x + i.width)) - 5,
+    );
+
+    // Detect column gutters
+    const gutters = this.#detectColumnGutters(items, pageWidth);
+
+    // Build column boundaries
+    const columns = this.#buildColumnBoundaries(
+      gutters,
+      pageWidth,
+      marginLeft,
+      marginRight,
+    );
+
+    // If single column, return simplified structure
+    if (columns.length <= 1) {
+      const lines = this.#groupIntoLines(items);
+
+      const columnAwareLines = lines.map((lineItems) =>
+        this.#createColumnAwareLine(lineItems, -1, columns[0]?.left ?? marginLeft),
+      );
+
+      return {
+        pageNumber,
+        pageWidth,
+        pageHeight,
+        columns,
+        marginLeft,
+        marginRight,
+        segments: [
+          {
+            type: "full-width",
+            yStart: Math.min(...items.map((i) => i.y)),
+            yEnd: Math.max(...items.map((i) => i.y + i.height)),
+            lines: columnAwareLines,
+          },
+        ],
+      };
+    }
+
+    // Multi-column: segment the page by layout type
+    const rawSegments = this.#segmentPageByLayout(
+      items,
+      columns,
+      pageWidth,
+      marginLeft,
+      marginRight,
+    );
+
+    // Convert raw segments to column-aware segments with proper line grouping
+    const segments = rawSegments.map((segment) => {
+      if (segment.type === "full-width") {
+        const lines = this.#groupIntoLines(segment.items);
+        const columnAwareLines = lines.map((lineItems) =>
+          this.#createColumnAwareLine(lineItems, -1, marginLeft),
+        );
+
+        return {
+          type: "full-width",
+          yStart: segment.yStart,
+          yEnd: segment.yEnd,
+          lines: columnAwareLines,
+        };
+      } else {
+        // Multi-column segment: group lines WITHIN each column separately
+        const allLines = [];
+
+        for (let colIdx = 0; colIdx < segment.columns.length; colIdx++) {
+          const columnItems = segment.columns[colIdx];
+          if (columnItems.length === 0) continue;
+
+          const columnBoundary = columns[colIdx];
+          const lines = this.#groupIntoLines(columnItems);
+
+          for (const lineItems of lines) {
+            const columnAwareLine = this.#createColumnAwareLine(
+              lineItems,
+              colIdx,
+              columnBoundary.left,
+            );
+            allLines.push(columnAwareLine);
+          }
+        }
+
+        return {
+          type: "columns",
+          yStart: segment.yStart,
+          yEnd: segment.yEnd,
+          lines: allLines,
+        };
+      }
+    });
+
+    return {
+      pageNumber,
+      pageWidth,
+      pageHeight,
+      columns,
+      marginLeft,
+      marginRight,
+      segments,
+    };
+  }
+
+  /**
+   * Create a ColumnAwareLine from a group of text items
+   * @param {TextItem[]} lineItems - Items in this line
+   * @param {number} columnIndex - -1 for full-width, 0+ for column index
+   * @param {number} columnLeft - Left boundary of the column (for isAtColumnStart calculation)
+   * @returns {ColumnAwareLine}
+   */
+  #createColumnAwareLine(lineItems, columnIndex, columnLeft) {
+    // Combine text
+    const text = lineItems.map((item) => item.str).join(" ");
+
+    // Find dominant font size (max in line, as headings are larger)
+    const fontSize = Math.max(...lineItems.map((item) => item.height));
+
+    // Find most common font name in line
+    const fontNames = lineItems.map((item) => item.fontName).filter(Boolean);
+    const fontName =
+      fontNames.length > 0 ? this.#getMostCommon(fontNames) : null;
+
+    // Get first item's position
+    const firstItem = lineItems[0];
+
+    // Calculate if line is at column start (left-aligned within column)
+    // Use a tolerance based on font size and a minimum threshold
+    const tolerance = Math.max(2, fontSize * 0.7, columnLeft * 0.05);
+    const isAtColumnStart = (firstItem.x - columnLeft) < tolerance && (firstItem.x - columnLeft) >= 0;
+
+    return {
+      text,
+      x: firstItem.x,
+      y: firstItem.y,
+      originalY: firstItem.originalY,
+      fontSize,
+      fontName,
+      columnIndex,
+      isAtColumnStart,
+      items: lineItems,
+    };
   }
 
   /**
@@ -360,7 +597,7 @@ export class SearchIndex {
           gaps.push({
             x: current.x + current.width + gapWidth / 2,
             width: gapWidth,
-            between: `"${current.str.slice(-10)}" â†’ "${next.str.slice(0, 10)}"`,
+            between: `"${current.str.slice(-10)}" Ã¢â€ â€™ "${next.str.slice(0, 10)}"`,
           });
         }
       }
@@ -622,10 +859,9 @@ export class SearchIndex {
       }
     }
 
-
     // Need enough lines with candidate gaps
     const minGapsRequired = validLineCount * SearchIndex.GUTTER_LINE_THRESHOLD;
-    if (candidateGaps.length === 0 || candidateGaps.length < minGapsRequired) return [];
+    if (candidateGaps.length < minGapsRequired) return [];
 
     // Cluster candidate gaps by X position
     const tolerance = pageWidth * SearchIndex.CLUSTER_TOLERANCE_RATIO;

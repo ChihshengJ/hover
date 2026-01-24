@@ -25,9 +25,9 @@ Hover solves this problem by searching the nearest reference based on the coordi
 Just hover your mouse on the citation link, the content of the citation would appear right at the spot.
 You can even directly open up the URL in the citation or check out the abstract of the paper extracted from Google Scholar.
 
-| Actual reference                      | Google Scholar Abstract               |
-| ------------------------------------- | ------------------------------------- |
-| ![cat](assets/citation_preview_1.png) | ![dog](assets/citation_preview_2.png) |
+| Actual reference                                | Google Scholar Abstract                         |
+| ----------------------------------------------- | ----------------------------------------------- |
+| ![cite_preview1](assets/citation_preview_1.png) | ![cite_preview2](assets/citation_preview_2.png) |
 
 ### 2. Innovative Navigation System
 

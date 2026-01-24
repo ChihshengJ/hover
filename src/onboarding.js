@@ -488,7 +488,7 @@ export class OnboardingWalkthrough {
         spotlight: null,
         noOverlay: true,
         tooltip: {
-          text: this.#isMac() ? "Press âŒ˜F" : "Press Ctrl+F",
+          text: this.#isMac() ? "Press ⌘F" : "Press Ctrl+F",
           subtext: "This opens the search bar, try to type some words in it",
           position: "bottom",
         },

@@ -11,6 +11,7 @@
  * @property {number} pageIndex - 0-based page index
  * @property {number} left - X position in PDF coordinates
  * @property {number} top - Y position in PDF coordinates
+ * @property {number} columnIndex - Column index: -1 for full-width, 0 for left column, 1 for right, etc.
  * @property {OutlineItem[]} children - Child items
  */
 
@@ -27,7 +28,11 @@ import { COMMON_SECTION_NAMES, SECTION_NUMBER_STRIP } from "./lexicon.js";
 
 export async function buildOutline(pdfDoc, searchIndex, allNamedDests) {
   // Try native PDF outline first
-  const nativeOutline = await extractPdfOutline(pdfDoc, allNamedDests);
+  const nativeOutline = await extractPdfOutline(
+    pdfDoc,
+    searchIndex,
+    allNamedDests,
+  );
 
   if (nativeOutline && nativeOutline.length > 0) {
     // Handle single-root case (e.g., document title as root)
@@ -38,6 +43,11 @@ export async function buildOutline(pdfDoc, searchIndex, allNamedDests) {
         "[Outline] Single root detected, promoting children to top level",
       );
       return nativeOutline[0].children;
+    } else if (nativeOutline.length === 1) {
+      console.log(
+        "[Outline] No PDF native outline unusable, building heuristic outline...",
+      );
+      return buildHeuristicOutline(searchIndex);
     }
     return nativeOutline;
   }
@@ -54,44 +64,111 @@ export async function buildOutline(pdfDoc, searchIndex, allNamedDests) {
 /**
  * Extract outline from PDF metadata
  * @param {import('pdfjs-dist').PDFDocumentProxy} pdfDoc
+ * @param {import('./controls/search/search_index.js').SearchIndex} searchIndex
  * @param {Object} allNamedDests
  * @returns {Promise<OutlineItem[]>}
  */
-async function extractPdfOutline(pdfDoc, allNamedDests) {
+async function extractPdfOutline(pdfDoc, searchIndex, allNamedDests) {
   const outline = await pdfDoc.getOutline();
   if (!outline || outline.length === 0) {
     return [];
   }
 
-  return processOutlineItems(outline, pdfDoc, allNamedDests);
+  return processOutlineItems(outline, pdfDoc, searchIndex, allNamedDests);
 }
 
 /**
  * Recursively process PDF outline items
  * @param {Array} items - PDF.js outline items
  * @param {import('pdfjs-dist').PDFDocumentProxy} pdfDoc
+ * @param {import('./controls/search/search_index.js').SearchIndex} searchIndex
  * @param {Object} allNamedDests
  * @returns {Promise<OutlineItem[]>}
  */
-async function processOutlineItems(items, pdfDoc, allNamedDests) {
+async function processOutlineItems(items, pdfDoc, searchIndex, allNamedDests) {
   const result = [];
 
   for (const item of items) {
     const dest = await resolveDestination(item.dest, pdfDoc, allNamedDests);
+
+    // Estimate column index from left coordinate using searchIndex column data
+    const columnIndex = estimateColumnFromPosition(
+      dest?.pageIndex ?? 0,
+      dest?.left ?? 0,
+      searchIndex,
+    );
+
     const outlineItem = {
       id: crypto.randomUUID(),
       title: item.title,
       pageIndex: dest?.pageIndex ?? 0,
       left: dest?.left ?? 0,
       top: dest?.top ?? 0,
+      columnIndex: columnIndex,
       children: item.items
-        ? await processOutlineItems(item.items, pdfDoc, allNamedDests)
+        ? await processOutlineItems(
+          item.items,
+          pdfDoc,
+          searchIndex,
+          allNamedDests,
+        )
         : [],
     };
     result.push(outlineItem);
   }
 
   return result;
+}
+
+/**
+ * Estimate which column a position belongs to using searchIndex column data
+ *
+ * @param {number} pageIndex - 0-based page index
+ * @param {number} leftX - X position in PDF coordinates
+ * @param {import('./controls/search/search_index.js').SearchIndex} searchIndex
+ * @returns {number} Column index: -1 for full-width/unknown, 0 for left, 1 for right, etc.
+ */
+function estimateColumnFromPosition(pageIndex, leftX, searchIndex) {
+  if (!searchIndex?.isBuilt) return -1;
+
+  // Get column data for this page (1-based page number)
+  const columnData = searchIndex.getColumnAwareLines?.(pageIndex + 1);
+  if (!columnData || !columnData.columns || columnData.columns.length <= 1) {
+    // Single column or no column data - treat as full-width
+    return -1;
+  }
+
+  const columns = columnData.columns;
+
+  // Find which column this X position falls into
+  for (let i = 0; i < columns.length; i++) {
+    const col = columns[i];
+    // Allow some tolerance at column boundaries
+    const tolerance = 5;
+    if (leftX >= col.left - tolerance && leftX <= col.right + tolerance) {
+      return i;
+    }
+  }
+
+  // Position doesn't fall clearly into any column
+  // Check if it's in the gap between columns (likely full-width content)
+  if (columns.length >= 2) {
+    const gap_start = columns[0].right;
+    const gap_end = columns[1].left;
+    if (leftX > gap_start && leftX < gap_end) {
+      return -1; // In the gutter, treat as full-width
+    }
+  }
+
+  // Fallback: estimate based on page width ratio
+  const pageWidth = columnData.pageWidth;
+  if (pageWidth > 0) {
+    const ratio = leftX / pageWidth;
+    if (ratio < 0.45) return 0;
+    if (ratio > 0.55) return 1;
+  }
+
+  return -1;
 }
 
 /**
@@ -162,14 +239,14 @@ function buildHeuristicOutline(searchIndex) {
   const candidates = collectHeadingCandidates(searchIndex);
 
   console.log(`[Outline] Found ${candidates.length} heading candidates`);
-  if (candidates.length > 0) {
-    // Log first few for debugging
-    for (const c of candidates) {
-      console.log(
-        `[Outline]   - "${c.title.substring(0, 50)}" (page ${c.pageNumber}, x=${c.x.toFixed(1)}, numbered=${c.isNumbered})`,
-      );
-    }
-  }
+  // if (candidates.length > 0) {
+  //   // Log first few for debugging
+  //   for (const c of candidates) {
+  //     console.log(
+  //       `[Outline]   - "${c.title.substring(0, 50)}" (page ${c.pageNumber}, x=${c.x.toFixed(1)}, numbered=${c.isNumbered})`,
+  //     );
+  //   }
+  // }
 
   if (candidates.length === 0) {
     console.log("[Outline] No heading candidates found");
@@ -185,7 +262,7 @@ function buildHeuristicOutline(searchIndex) {
   console.log(
     `[Outline] Heuristic outline built with ${outline.length} top-level items`,
   );
-  return outline;
+  return purgeReferenceChildren(outline);
 }
 
 /**
@@ -213,17 +290,17 @@ function buildHeuristicOutline(searchIndex) {
 function collectHeadingCandidates(searchIndex) {
   const candidates = [];
   const numPages = searchIndex.getPageCount?.() || 60;
-  
+
   // First pass: collect all lines and determine body text font size
   const allFontSizes = [];
   const allFontNames = [];
   const pageData = new Map(); // pageNum -> ColumnAwarePageData
-  
+
   for (let pageNum = 1; pageNum <= numPages; pageNum++) {
     // Use the new column-aware API
     const columnData = searchIndex.getColumnAwareLines?.(pageNum);
     if (!columnData || columnData.segments.length === 0) continue;
-    
+
     // Collect all lines from all segments
     const allLines = [];
     for (const segment of columnData.segments) {
@@ -233,22 +310,28 @@ function collectHeadingCandidates(searchIndex) {
         allLines.push(line);
       }
     }
-    
+
     if (allLines.length === 0) continue;
-    
+
     // Debug: log dimensions for first page
-    if (pageNum === 1) {
-      console.log(`[Outline] Page 1: width=${columnData.pageWidth.toFixed(1)}, ` +
+    if (pageNum === 2) {
+      console.log(
+        `[Outline] Page 2: width=${columnData.pageWidth.toFixed(1)}, ` +
         `columns=${columnData.columns.length}, ` +
-        `margins=[${columnData.marginLeft.toFixed(1)}, ${columnData.marginRight.toFixed(1)}]`);
+        `margins=[${columnData.marginLeft.toFixed(1)}, ${columnData.marginRight.toFixed(1)}]`,
+      );
       if (columnData.columns.length > 1) {
-        console.log(`[Outline] Column boundaries:`, 
-          columnData.columns.map(c => `[${c.left.toFixed(1)}-${c.right.toFixed(1)}]`).join(', '));
+        console.log(
+          `[Outline] Column boundaries:`,
+          columnData.columns
+            .map((c) => `[${c.left.toFixed(1)}-${c.right.toFixed(1)}]`)
+            .join(", "),
+        );
       }
     }
-    
+
     pageData.set(pageNum, { columnData, allLines });
-    
+
     for (const line of allLines) {
       if (line.fontSize > 0) {
         allFontSizes.push(line.fontSize);
@@ -258,31 +341,36 @@ function collectHeadingCandidates(searchIndex) {
       }
     }
   }
-  
+
   if (allFontSizes.length === 0) {
     return [];
   }
-  
+
   // Determine body text characteristics (most common)
   const bodyFontSize = findMostCommonFontSize(allFontSizes);
   const bodyFontName = findMostCommonFontName(allFontNames);
-  
-  console.log(`[Outline] Body text: fontSize=${bodyFontSize.toFixed(1)}, fontName=${bodyFontName}`);
-  
+
+  console.log(
+    `[Outline] Body text: fontSize=${bodyFontSize.toFixed(1)}, fontName=${bodyFontName}`,
+  );
+
   // Second pass: identify heading candidates with stricter criteria
   for (const [pageNum, data] of pageData) {
     const { columnData, allLines } = data;
-    
+
     // For page 1: find where content actually starts
     // Skip title/author block by either finding "Abstract" or using top 30% threshold
     let skipThresholdY = 0;
     if (pageNum === 1) {
       const pageHeight = columnData.pageHeight;
-      const abstractLine = allLines.find(line => 
-        isCommonSectionName(line.text) && 
-        /^(?:\d+\.?\s+)?abstract/i.test(line.text.replace(SECTION_NUMBER_STRIP, '').trim())
+      const abstractLine = allLines.find(
+        (line) =>
+          isCommonSectionName(line.text) &&
+          /^(?:\d+\.?\s+)?abstract/i.test(
+            line.text.replace(SECTION_NUMBER_STRIP, "").trim(),
+          ),
       );
-      
+
       if (abstractLine) {
         // Start from the abstract line (allow it through)
         skipThresholdY = abstractLine.y - 1;
@@ -291,26 +379,26 @@ function collectHeadingCandidates(searchIndex) {
         skipThresholdY = pageHeight * 0.3;
       }
     }
-    
+
     for (const line of allLines) {
       // Skip lines above the threshold on page 1 (title, authors, affiliations)
       if (pageNum === 1 && line.y < skipThresholdY) {
         continue;
       }
-      
+
       const candidate = analyzeLineAsHeading(
-        line, 
-        pageNum, 
+        line,
+        pageNum,
         bodyFontSize,
         bodyFontName,
-        columnData
+        columnData,
       );
       if (candidate) {
         candidates.push(candidate);
       }
     }
   }
-  
+
   return candidates;
 }
 
@@ -428,6 +516,7 @@ function isFullWidthInColumn(line, columns) {
  */
 function isCommonSectionName(text) {
   if (!text || text.length < 2) return false;
+  if (!/^[A-Z]/.test(text)) return false;
 
   // Strip leading section number and normalize
   const stripped = text.replace(SECTION_NUMBER_STRIP, "").trim().toLowerCase();
@@ -446,7 +535,7 @@ function isCommonSectionName(text) {
       checkText.length >= name.length &&
       checkText.startsWith(name) &&
       (checkText.length === name.length ||
-        /^[\s:.\-—–]/.test(checkText[name.length]))
+        /^[\s:.\-â€”â€“]/.test(checkText[name.length]))
     ) {
       return true;
     }
@@ -499,11 +588,13 @@ function analyzeLineAsHeading(
   const fontName = line.fontName || null;
 
   const isLargerFont = fontSize > bodyFontSize * 1.05; // 3% larger than body
+  const isSmallerFont = fontSize < bodyFontSize * 0.96; // 4& smaller than body
   const isItalic = isItalicFont(fontName);
   const isBold = isBoldFont(fontName);
   const isDifferentFont = fontName && bodyFontName && fontName !== bodyFontName;
 
-  const hasFontDifferentiation = isLargerFont || isItalic || isBold || isDifferentFont;
+  const hasFontDifferentiation =
+    isLargerFont || isItalic || isBold || isDifferentFont;
   const isAtColumnStart = line.isAtColumnStart === true;
   const isFullWidth = isFullWidthInColumn(line, columnData.columns);
 
@@ -514,19 +605,12 @@ function analyzeLineAsHeading(
       return null;
     }
 
-    if (!hasFontDifferentiation) {
-      // No font differentiation - could be a list item or table entry
-      // Allow only if it's a very clear section pattern (single digit with period and space)
-      const isClearSectionPattern = /[^\d\.*]+\s+[A-Z]/.test(text);
-      if (!isClearSectionPattern) {
-        return null;
-      }
+    const isClearSectionPattern = /^[\d\.*]+\s+[A-Z]/.test(text);
+    if (!isClearSectionPattern) {
+      return null;
     }
 
     if (isFullWidth) return null;
-    console.log(text);
-
-    if (!isLargerFont && !hasFontDifferentiation) return null;
   }
 
   // For non-numbered headings: require larger font AND relatively short text
@@ -535,9 +619,14 @@ function analyzeLineAsHeading(
 
   // Title case check for non-numbered
   const isTitleCaseHeading =
-    !isNumbered && isLargerFont && isTitleCase(text) && isAtColumnStart;
+    !isNumbered &&
+    // isDifferentFont &&
+    !isSmallerFont &&
+    isTitleCase(line.items[0].str) &&
+    isAtColumnStart;
 
-  const isCommonSectionHeading = isCommonSectionName(text) && hasFontDifferentiation;
+  const isCommonSectionHeading =
+    isCommonSectionName(text) && hasFontDifferentiation;
 
   const isCandidate =
     isNumbered ||
@@ -545,14 +634,20 @@ function analyzeLineAsHeading(
     isTitleCaseHeading ||
     isCommonSectionHeading;
 
+  console.log({ text, fontSize, fontName, isNumbered, isNonNumberedHeading, isTitleCaseHeading, isCommonSectionHeading });
+
   if (!isCandidate) {
     return null;
   }
 
-  // Extract clean title (remove number prefix for display)
-  const title = isNumbered
-    ? text.replace(SECTION_NUMBER_EXTRACT, "").trim() || text
-    : text;
+  let title = "";
+  if (!isNumbered && isTitleCaseHeading) {
+    title = line.items[0].str;
+  } else if (isNumbered) {
+    title = text.replace(SECTION_NUMBER_EXTRACT, "").trim() || text;
+  } else {
+    title = text;
+  }
 
   // Skip if title is too short after cleanup
   if (title.length < 2) {
@@ -566,7 +661,7 @@ function analyzeLineAsHeading(
     pageIndex: pageNum - 1,
     x: line.x || 0,
     y: line.y || 0,
-    top: line.originalY || line.y || 0,
+    top: line.originalY + fontSize || line.y || 0,
     fontSize: fontSize,
     fontName: fontName,
     numberPrefix: numberPrefix,
@@ -619,7 +714,7 @@ function isTitleCase(text) {
 
   // Check if most words start with uppercase
   const upperWords = words.filter((w) => w.length > 0 && /^[A-Z]/.test(w));
-  return upperWords.length >= words.length * 0.6;
+  return upperWords.length >= words.length * 0.8;
 }
 
 /**
@@ -681,95 +776,357 @@ function assignLevelsByFontSize(candidates) {
 
 /**
  * Build tree structure from flat leveled candidates
- * Handles multi-column layouts by processing columns left-to-right, top-to-bottom
+ * Candidates are sorted in reading order: page #’ column #’ top position
  * @param {Array<HeadingCandidate & {level: number}>} candidates
  * @returns {OutlineItem[]}
  */
 function buildOutlineTree(candidates) {
   if (candidates.length === 0) return [];
 
-  // Group candidates by page to determine column thresholds per page
-  const candidatesByPage = new Map();
-  for (const candidate of candidates) {
-    if (!candidatesByPage.has(candidate.pageIndex)) {
-      candidatesByPage.set(candidate.pageIndex, []);
-    }
-    candidatesByPage.get(candidate.pageIndex).push(candidate);
-  }
-
-  // Determine column threshold for each page by finding the largest x-gap
-  const pageColumnThresholds = new Map();
-  for (const [pageIndex, pageCandidates] of candidatesByPage) {
-    const xPositions = pageCandidates.map(c => c.x).sort((a, b) => a - b);
-
-    if (xPositions.length >= 2) {
-      // Find the largest gap in x positions - that's likely the column gutter
-      let maxGap = 0;
-      let threshold = null;
-
-      for (let i = 0; i < xPositions.length - 1; i++) {
-        const gap = xPositions[i + 1] - xPositions[i];
-        if (gap > maxGap) {
-          maxGap = gap;
-          threshold = (xPositions[i] + xPositions[i + 1]) / 2;
-        }
-      }
-
-      // Only use threshold if gap is significant (>100pt suggests column gutter)
-      // Typical column gutters are 20-40pt, but heading x-positions can vary more
-      if (maxGap > 100) {
-        pageColumnThresholds.set(pageIndex, threshold);
-      }
-    }
-  }
-
-  // Sort candidates by: page → column → vertical position
-  const sortedCandidates = [...candidates].sort((a, b) => {
-    // 1. Sort by page
+  const sorted = [...candidates].sort((a, b) => {
+    // First: sort by page
     if (a.pageIndex !== b.pageIndex) {
       return a.pageIndex - b.pageIndex;
     }
 
-    // 2. Sort by column (if multi-column detected for this page)
-    const threshold = pageColumnThresholds.get(a.pageIndex);
-    if (threshold !== undefined) {
-      const aColumn = a.x < threshold ? 0 : 1;
-      const bColumn = b.x < threshold ? 0 : 1;
+    // Second: sort by column index
+    // Treat full-width (-1) as coming before column content at same position
+    // or use a normalized column index where -1 maps based on y position
+    const colA = a.columnIndex === -1 ? -1 : a.columnIndex;
+    const colB = b.columnIndex === -1 ? -1 : b.columnIndex;
 
-      if (aColumn !== bColumn) {
-        return aColumn - bColumn;
+    if (colA !== colB) {
+      // Full-width (-1) items should be ordered by their y position relative to column items
+      // If one is full-width and one is in a column, full-width comes first if it's above
+      if (colA === -1 && colB !== -1) {
+        // a is full-width: if a is above b, a comes first; otherwise sort by y
+        return a.y - b.y < 0 ? -1 : 1;
       }
+      if (colB === -1 && colA !== -1) {
+        // b is full-width: if b is above a, b comes first; otherwise sort by y
+        return b.y - a.y < 0 ? 1 : -1;
+      }
+      // Both are in columns: lower column index first
+      return colA - colB;
     }
 
-    // 3. Sort by vertical position (y is from top, so lower y = higher on page)
+    // Third: sort by y position (top of page = smaller y)
     return a.y - b.y;
   });
 
-  // Build tree structure from sorted candidates
   const root = { children: [] };
   const stack = [{ node: root, level: 0 }];
 
-  for (const candidate of sortedCandidates) {
+  for (const candidate of sorted) {
     const item = {
       id: crypto.randomUUID(),
       title: candidate.title,
       pageIndex: candidate.pageIndex,
       left: candidate.x,
       top: candidate.top,
+      columnIndex: candidate.columnIndex ?? -1,
       children: [],
     };
 
-    // Find parent: pop stack until we find a node with lower level
-    while (stack.length > 1 && stack[stack.length - 1].level >= candidate.level) {
+    while (
+      stack.length > 1 &&
+      stack[stack.length - 1].level >= candidate.level
+    ) {
       stack.pop();
     }
 
-    // Add as child of current stack top
     stack[stack.length - 1].node.children.push(item);
-
-    // Push this item onto stack
     stack.push({ node: item, level: candidate.level });
   }
 
   return root.children;
+}
+
+/**
+ * @param {OutlineItem[]} outline - The outline tree
+ * @returns {OutlineItem[]} - Modified outline with reference children purged
+ */
+function purgeReferenceChildren(outline) {
+  const REFERENCE_PATTERN = /^(?:\d+\.?\s+)?(?:references?|bibliography|works cited|citations?)$/i;
+  
+  function processNode(node) {
+    // Check if this node is a references section
+    const titleToCheck = node.title.replace(SECTION_NUMBER_STRIP, '').trim();
+    if (REFERENCE_PATTERN.test(titleToCheck)) {
+      node.children = [];
+      return;
+    }
+    
+    // Recursively process children
+    for (const child of node.children) {
+      processNode(child);
+    }
+  }
+  
+  for (const item of outline) {
+    processNode(item);
+  }
+  
+  return outline;
+}
+
+// ============================================
+// Document Metadata Detection (Title & Abstract)
+// ============================================
+
+/**
+ * @typedef {Object} DetectedMetadata
+ * @property {string|null} title - Detected document title
+ * @property {Object|null} abstractInfo - Abstract section info
+ * @property {number} abstractInfo.pageIndex - 0-based page index
+ * @property {number} abstractInfo.top - Y position in PDF coordinates
+ * @property {number} abstractInfo.left - X position in PDF coordinates
+ * @property {number} abstractInfo.columnIndex - Column index
+ */
+
+/**
+ * Detect document title and abstract from first 2 pages
+ * Uses font size analysis to identify the title (largest text near top of page 1)
+ * and locates the abstract section.
+ *
+ * @param {import('./controls/search/search_index.js').SearchIndex} searchIndex
+ * @returns {DetectedMetadata}
+ */
+export function detectDocumentMetadata(searchIndex) {
+  if (!searchIndex?.isBuilt) {
+    console.warn("[Metadata] Search index not built, cannot detect metadata");
+    return { title: null, abstractInfo: null };
+  }
+
+  const result = { title: null, abstractInfo: null };
+
+  // Collect lines from first 2 pages
+  const pagesToScan = Math.min(2, searchIndex.getPageCount?.() || 2);
+  const allLines = [];
+  const allFontSizes = [];
+
+  for (let pageNum = 1; pageNum <= pagesToScan; pageNum++) {
+    const columnData = searchIndex.getColumnAwareLines?.(pageNum);
+    if (!columnData || columnData.segments.length === 0) continue;
+
+    for (const segment of columnData.segments) {
+      for (const line of segment.lines) {
+        if (!line.text || line.text.trim().length < 2) continue;
+        // Skip arXiv identifiers
+        if (line.text.startsWith("arXiv:")) continue;
+
+        allLines.push({
+          ...line,
+          pageNum,
+          pageHeight: columnData.pageHeight,
+        });
+
+        if (line.fontSize > 0) {
+          allFontSizes.push(line.fontSize);
+        }
+      }
+    }
+  }
+
+  if (allLines.length === 0) {
+    return result;
+  }
+
+  // Find body text font size for comparison
+  const bodyFontSize = findMostCommonFontSize(allFontSizes);
+
+  // Detect title from page 1
+  result.title = detectTitle(allLines, bodyFontSize);
+
+  // Detect abstract
+  result.abstractInfo = detectAbstract(allLines, bodyFontSize);
+
+  console.log(
+    `[Metadata] Detected title: "${result.title?.substring(0, 50)}${result.title?.length > 50 ? "..." : ""}"`,
+  );
+  console.log(
+    `[Metadata] Abstract found: ${result.abstractInfo ? `page ${result.abstractInfo.pageIndex + 1}` : "no"}`,
+  );
+
+  return result;
+}
+
+/**
+ * Detect document title from the first page
+ * Title is typically: largest font, near top, possibly bold, not a section header
+ *
+ * @param {Array} allLines - Lines from first 2 pages
+ * @param {number} bodyFontSize - Body text font size for comparison
+ * @returns {string|null}
+ */
+function detectTitle(allLines, bodyFontSize) {
+  // Filter to page 1 only, top portion
+  const page1Lines = allLines.filter((line) => line.pageNum === 1);
+  if (page1Lines.length === 0) return null;
+
+  const pageHeight = page1Lines[0]?.pageHeight || 792;
+
+  // Look at top 40% of page 1 for title candidates
+  const topThreshold = pageHeight * 0.4;
+  const titleCandidates = page1Lines.filter((line) => {
+    // y is distance from top in the line data
+    return line.y < topThreshold;
+  });
+
+  if (titleCandidates.length === 0) return null;
+
+  // Find lines with font size significantly larger than body text
+  const largeFontThreshold = bodyFontSize * 1.2; // At least 20% larger
+  const largeFontLines = titleCandidates.filter(
+    (line) => line.fontSize >= largeFontThreshold,
+  );
+
+  if (largeFontLines.length === 0) {
+    // No obviously large text - try finding the largest text in top area
+    const sortedBySize = [...titleCandidates].sort(
+      (a, b) => (b.fontSize || 0) - (a.fontSize || 0),
+    );
+    if (sortedBySize.length > 0 && sortedBySize[0].fontSize > bodyFontSize) {
+      return cleanTitleText(sortedBySize[0].text);
+    }
+    return null;
+  }
+
+  // Sort by position (top to bottom) then by font size (largest first)
+  largeFontLines.sort((a, b) => {
+    // Primary: position (earlier/higher on page first)
+    const positionDiff = a.y - b.y;
+    if (Math.abs(positionDiff) > 5) return positionDiff;
+    // Secondary: larger font first
+    return (b.fontSize || 0) - (a.fontSize || 0);
+  });
+
+  // Find the largest font size among candidates
+  const maxFontSize = Math.max(...largeFontLines.map((l) => l.fontSize || 0));
+
+  // Collect all lines with the max font size (title may span multiple lines)
+  const titleLines = [];
+  let foundTitleBlock = false;
+
+  for (const line of largeFontLines) {
+    // Check if this line has the max font size (with some tolerance)
+    const isMaxFont = Math.abs(line.fontSize - maxFontSize) < 0.5;
+
+    if (isMaxFont) {
+      // Skip if this looks like a section number only
+      if (/^\d+\.?\s*$/.test(line.text.trim())) continue;
+
+      // Skip common non-title patterns
+      const lowerText = line.text.toLowerCase().trim();
+      if (
+        lowerText === "abstract" ||
+        lowerText === "introduction" ||
+        lowerText.startsWith("chapter ")
+      ) {
+        continue;
+      }
+
+      titleLines.push(line);
+      foundTitleBlock = true;
+    } else if (foundTitleBlock) {
+      // We've moved past the title block
+      break;
+    }
+  }
+
+  if (titleLines.length === 0) return null;
+
+  // Sort title lines by position and combine
+  titleLines.sort((a, b) => a.y - b.y);
+
+  // Combine lines, being smart about line breaks
+  let title = "";
+  for (let i = 0; i < titleLines.length; i++) {
+    const line = titleLines[i];
+    const text = line.text.trim();
+
+    if (i === 0) {
+      title = text;
+    } else {
+      // Check if previous line ended with hyphen (word continuation)
+      if (title.endsWith("-")) {
+        title = title.slice(0, -1) + text;
+      } else {
+        title += " " + text;
+      }
+    }
+  }
+
+  return cleanTitleText(title);
+}
+
+/**
+ * Clean up detected title text
+ * @param {string} text
+ * @returns {string}
+ */
+function cleanTitleText(text) {
+  if (!text) return null;
+
+  let cleaned = text.trim();
+
+  // Remove trailing asterisks (footnote markers)
+  cleaned = cleaned.replace(/\*+$/, "").trim();
+
+  // Remove common prefixes
+  cleaned = cleaned.replace(/^(title:\s*)/i, "").trim();
+
+  // Skip if too short or looks like noise
+  if (cleaned.length < 5) return null;
+
+  // Skip if it's all numbers/symbols
+  if (!/[a-zA-Z]{3,}/.test(cleaned)) return null;
+
+  return cleaned;
+}
+
+/**
+ * Detect abstract section
+ *
+ * @param {Array} allLines - Lines from first 2 pages
+ * @param {number} bodyFontSize - Body text font size for comparison
+ * @returns {Object|null} - {pageIndex, top, left, columnIndex} or null
+ */
+function detectAbstract(allLines, bodyFontSize) {
+  // Look for "Abstract" heading
+  for (const line of allLines) {
+    const text = line.text?.trim() || "";
+
+    // Check for abstract heading patterns
+    // Could be: "Abstract", "ABSTRACT", "1. Abstract", "Abstract:", etc.
+    const stripped = text.replace(SECTION_NUMBER_STRIP, "").trim();
+    const lowerStripped = stripped.toLowerCase();
+
+    if (
+      lowerStripped === "abstract" ||
+      lowerStripped === "abstract:" ||
+      lowerStripped === "abstract." ||
+      /^abstract\s*[-–—]\s*/i.test(stripped)
+    ) {
+      // Check if it has some font differentiation (bold, larger, etc.)
+      const isLarger = line.fontSize > bodyFontSize * 1.05;
+      const fontName = line.fontName || "";
+      const isBoldFont =
+        fontName.toLowerCase().includes("bold") ||
+        fontName.toLowerCase().includes("black") ||
+        /cmbx/.test(fontName.toLowerCase());
+
+      // Accept if it has font differentiation OR is clearly labeled
+      if (isLarger || isBoldFont || lowerStripped === "abstract") {
+        return {
+          pageIndex: line.pageNum - 1,
+          top: line.originalY || line.y || 0,
+          left: line.x || 0,
+          columnIndex: line.columnIndex ?? -1,
+        };
+      }
+    }
+  }
+
+  return null;
 }

@@ -73,10 +73,16 @@ export class SearchIndex {
   static BATCH_SIZE = 6; // Process 4 pages concurrently
 
   // Column detection constants
-  static MIN_LINES_FOR_COLUMN_DETECTION = 10;
-  static GUTTER_LINE_THRESHOLD = 0.25;
-  static CLUSTER_TOLERANCE_RATIO = 0.02;
+  static MIN_LINES_FOR_COLUMN_DETECTION = 8;
+  static GUTTER_LINE_THRESHOLD = 0.2;
+  static CLUSTER_TOLERANCE_RATIO = 0.008;
   static FULL_WIDTH_THRESHOLD = 0.7;
+
+  // Table rejection constants
+  static MAX_COLUMN_COUNT = 3; // Academic papers rarely exceed 3 columns
+  static MIN_COLUMN_WIDTH_RATIO = 0.15; // Each column must be at least 25% of content width
+  static MAX_COLUMN_WIDTH_RATIO = 0.70; // Each column must be at most 70% of content width
+  static MIN_VERTICAL_COVERAGE = 0.2; // Gutter must span at least 35% of page height
 
   constructor(doc) {
     this.#doc = doc;
@@ -259,9 +265,10 @@ export class SearchIndex {
     if (!items || items.length === 0) return [];
 
     const pageWidth = pageIndex.pageWidth;
+    const pageHeight = pageIndex.pageHeight;
 
     // Detect column gutters for proper reading order
-    const gutters = this.#detectColumnGutters(items, pageWidth);
+    const gutters = this.#detectColumnGutters(items, pageWidth, pageHeight);
 
     let orderedItems;
 
@@ -404,8 +411,8 @@ export class SearchIndex {
       pageWidth - Math.max(...items.map((i) => i.x + i.width)) - 5,
     );
 
-    // Detect column gutters
-    const gutters = this.#detectColumnGutters(items, pageWidth);
+    // Detect column gutters (pass pageHeight for vertical coverage validation)
+    const gutters = this.#detectColumnGutters(items, pageWidth, pageHeight);
 
     // Build column boundaries
     const columns = this.#buildColumnBoundaries(
@@ -533,7 +540,7 @@ export class SearchIndex {
 
     // Calculate if line is at column start (left-aligned within column)
     // Use a tolerance based on font size and a minimum threshold
-    const tolerance = Math.max(2, fontSize * 0.7, columnLeft * 0.05);
+    const tolerance = Math.max(5, fontSize * 0.6, columnLeft * 0.05);
     const isAtColumnStart =
       firstItem.x - columnLeft < tolerance && firstItem.x - columnLeft >= 0;
 
@@ -582,6 +589,7 @@ export class SearchIndex {
 
     const items = pageIndex.textItems;
     const pageWidth = pageIndex.pageWidth;
+    const pageHeight = pageIndex.pageHeight;
 
     const lines = this.#groupIntoLines(items);
     const lineGapInfo = [];
@@ -602,7 +610,7 @@ export class SearchIndex {
           gaps.push({
             x: current.x + current.width + gapWidth / 2,
             width: gapWidth,
-            between: `"${current.str.slice(-10)}" Ã¢â€ â€™ "${next.str.slice(0, 10)}"`,
+            between: `"${current.str.slice(-10)}" - "${next.str.slice(0, 10)}"`,
           });
         }
       }
@@ -624,19 +632,24 @@ export class SearchIndex {
       }
     }
 
-    const gutters = this.#detectColumnGutters(items, pageWidth);
+    const gutters = this.#detectColumnGutters(items, pageWidth, pageHeight);
 
     return {
       pageNumber,
       pageWidth,
+      pageHeight,
       totalLines: lines.length,
       linesWithGaps: lineGapInfo.length,
       guttersDetected: gutters,
-      lineGapInfo: lineGapInfo.slice(0, 20), // First 20 lines for brevity
+      lineGapInfo: lineGapInfo.slice(0, 20),
       thresholds: {
         minLines: SearchIndex.MIN_LINES_FOR_COLUMN_DETECTION,
         gutterLineThreshold: SearchIndex.GUTTER_LINE_THRESHOLD,
         clusterTolerance: pageWidth * SearchIndex.CLUSTER_TOLERANCE_RATIO,
+        minVerticalCoverage: SearchIndex.MIN_VERTICAL_COVERAGE,
+        maxColumnCount: SearchIndex.MAX_COLUMN_COUNT,
+        minColumnWidthRatio: SearchIndex.MIN_COLUMN_WIDTH_RATIO,
+        maxColumnWidthRatio: SearchIndex.MAX_COLUMN_WIDTH_RATIO,
       },
     };
   }
@@ -787,24 +800,41 @@ export class SearchIndex {
    * 2. For each line, find all gaps between items
    * 3. Identify the largest gap on each line (potential column gutter)
    * 4. Cluster these large gaps by X position
-   * 5. Consistent clusters = column boundaries
+   * 5. Validate clusters by vertical coverage (reject table-only gutters)
+   * 6. Validate resulting column widths (reject narrow table columns)
    *
    * @param {TextItem[]} items - Text items on the page
    * @param {number} pageWidth - Page width in PDF units
+   * @param {number} [pageHeight] - Page height in PDF units (for vertical coverage check)
    * @returns {number[]} Array of X positions marking gutter centers
    */
-  #detectColumnGutters(items, pageWidth) {
+  #detectColumnGutters(items, pageWidth, pageHeight = null) {
     if (items.length === 0) return [];
 
     // Group items into lines
     const lines = this.#groupIntoLines(items);
     if (lines.length < SearchIndex.MIN_LINES_FOR_COLUMN_DETECTION) return [];
 
-    // Collect the largest gap from each line
+    // Estimate page height from items if not provided
+    if (!pageHeight) {
+      const minY = Math.min(...items.map((i) => i.y));
+      const maxY = Math.max(...items.map((i) => i.y + i.height));
+      pageHeight = maxY - minY + 100; // Add some padding
+    }
+
+    // Estimate margins from item positions (needed for column width validation)
+    const marginLeft = Math.max(0, Math.min(...items.map((i) => i.x)) - 5);
+    const marginRight = Math.max(
+      0,
+      pageWidth - Math.max(...items.map((i) => i.x + i.width)) - 5,
+    );
+
+    // Collect the largest gap from each line, tracking Y position
     const candidateGaps = [];
     let validLineCount = 0;
 
-    for (const line of lines) {
+    for (let i = lines.length - 1; i >= 0; i--) {
+      const line = lines[i];
       if (line.length < 2) continue;
       validLineCount++;
 
@@ -816,14 +846,15 @@ export class SearchIndex {
       const lastItem = sortedLine[sortedLine.length - 1];
       const lineEnd = lastItem.x + lastItem.width;
       const lineWidth = lineEnd - lineStart;
+      const lineY = sortedLine[0].y; // Track Y position of this line
 
       if (lineWidth <= 0) continue;
 
       // Find all gaps on this line
       const gaps = [];
-      for (let i = 0; i < sortedLine.length - 1; i++) {
-        const current = sortedLine[i];
-        const next = sortedLine[i + 1];
+      for (let j = 0; j < sortedLine.length - 1; j++) {
+        const current = sortedLine[j];
+        const next = sortedLine[j + 1];
         const gapStart = current.x + current.width;
         const gapEnd = next.x;
         const gapWidth = gapEnd - gapStart;
@@ -854,13 +885,16 @@ export class SearchIndex {
         sortedGapWidths[Math.floor(sortedGapWidths.length / 2)];
 
       // Only consider as column gutter candidate if:
-      // - It's significantly larger than median word spacing (1.8x+)
+      // - It's significantly larger than median word spacing (1.2x+)
       // - OR it's a significant portion of line width (3%+)
-      const isSignificantlyLarger = largestGap.width > medianGapWidth * 1.8;
+      const isSignificantlyLarger = largestGap.width > medianGapWidth * 1.2;
       const isSignificantPortion = largestGap.width > lineWidth * 0.03;
 
       if (isSignificantlyLarger || isSignificantPortion) {
-        candidateGaps.push(largestGap);
+        candidateGaps.push({
+          ...largestGap,
+          lineY, // Track which line this gap came from
+        });
       }
     }
 
@@ -884,7 +918,6 @@ export class SearchIndex {
       if (Math.abs(gap.x - clusterAvgX) <= tolerance) {
         currentCluster.push(gap);
       } else {
-        // Save cluster if it has enough members
         if (currentCluster.length >= minGapsRequired) {
           clusters.push(currentCluster);
         }
@@ -896,17 +929,70 @@ export class SearchIndex {
       clusters.push(currentCluster);
     }
 
-    // Convert clusters to gutter X positions
-    const gutters = clusters.map((cluster) => {
-      // Use average X of all gaps in cluster
+    // Filter clusters by vertical coverage
+    // True column gutters span most of the page; table gutters only span the table region
+    const validClusters = clusters.filter((cluster) => {
+      const yValues = cluster.map((g) => g.lineY);
+      const minY = Math.min(...yValues);
+      const maxY = Math.max(...yValues);
+      const coverage = (maxY - minY) / pageHeight;
+
+      if (coverage < SearchIndex.MIN_VERTICAL_COVERAGE) {
+        console.log(
+          `[Columns] Rejected gutter at x≈${(cluster.reduce((s, g) => s + g.x, 0) / cluster.length).toFixed(0)}: ` +
+            `vertical coverage ${(coverage * 100).toFixed(1)}% < ${SearchIndex.MIN_VERTICAL_COVERAGE * 100}% threshold`,
+        );
+        return false;
+      }
+      return true;
+    });
+
+    // Convert valid clusters to gutter X positions
+    let gutters = validClusters.map((cluster) => {
       return cluster.reduce((sum, g) => sum + g.x, 0) / cluster.length;
     });
 
     // Filter out gutters too close to edges (likely margins, not columns)
     const minEdgeDistance = pageWidth * 0.1; // Must be 10% from edge
-    return gutters.filter(
+    gutters = gutters.filter(
       (x) => x > minEdgeDistance && x < pageWidth - minEdgeDistance,
     );
+
+    // Validate column count - academic papers rarely exceed 3 columns
+    if (gutters.length >= SearchIndex.MAX_COLUMN_COUNT) {
+      console.log(
+        `[Columns] Rejected: ${gutters.length + 1} columns detected (>${SearchIndex.MAX_COLUMN_COUNT}, likely table)`,
+      );
+      return [];
+    }
+
+    // Validate column width ratios
+    if (gutters.length > 0) {
+      const contentWidth = pageWidth - marginLeft - marginRight;
+      const sortedGutters = [...gutters].sort((a, b) => a - b);
+      const boundaries = [marginLeft, ...sortedGutters, pageWidth - marginRight];
+
+      for (let i = 0; i < boundaries.length - 1; i++) {
+        const colWidth = boundaries[i + 1] - boundaries[i];
+        const ratio = colWidth / contentWidth;
+
+        if (ratio < SearchIndex.MIN_COLUMN_WIDTH_RATIO) {
+          console.log(
+            `[Columns] Rejected: column ${i + 1} too narrow (${(ratio * 100).toFixed(1)}% < ${SearchIndex.MIN_COLUMN_WIDTH_RATIO * 100}% min)`,
+          );
+          return [];
+        }
+
+        if (ratio > SearchIndex.MAX_COLUMN_WIDTH_RATIO) {
+          console.log(
+            `[Columns] Rejected: column ${i + 1} too wide (${(ratio * 100).toFixed(1)}% > ${SearchIndex.MAX_COLUMN_WIDTH_RATIO * 100}% max)`,
+          );
+          return [];
+        }
+      }
+    }
+
+    return gutters;
   }
 
   /**
@@ -1094,6 +1180,7 @@ export class SearchIndex {
     if (items.length === 0) return { fullText: "", charMap: [] };
 
     const pageWidth = viewport.width;
+    const pageHeight = viewport.height;
 
     // Pre-compute item index map for O(1) lookups
     const itemIndexMap = new Map(items.map((item, idx) => [item, idx]));
@@ -1105,8 +1192,8 @@ export class SearchIndex {
       pageWidth - Math.max(...items.map((i) => i.x + i.width)) - 5,
     );
 
-    // Detect column gutters
-    const gutters = this.#detectColumnGutters(items, pageWidth);
+    // Detect column gutters (pass pageHeight for vertical coverage validation)
+    const gutters = this.#detectColumnGutters(items, pageWidth, pageHeight);
 
     // If no columns detected, use simple single-column logic
     if (gutters.length === 0) {

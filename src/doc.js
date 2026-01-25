@@ -4,7 +4,7 @@
 
 import { pdfjsLib } from "./pdfjs-init.js";
 import { SearchIndex } from "./controls/search/search_index.js";
-import { buildOutline } from "./outline_builder.js";
+import { buildOutline, detectDocumentMetadata } from "./outline_builder.js";
 
 const AnnotationEditorType = {
   DISABLE: -1,
@@ -71,6 +71,9 @@ export class PDFDocumentModel {
 
     /** @type {SearchIndex|null} */
     this.searchIndex = null;
+
+    /** @type {{title: string|null, abstractInfo: Object|null}} */
+    this.detectedMetadata = { title: null, abstractInfo: null };
   }
 
   /**
@@ -190,6 +193,9 @@ export class PDFDocumentModel {
     this.searchIndex = new SearchIndex(this);
     await this.#buildSearchIndexAsync();
 
+    // Detect title and abstract from document content
+    this.detectedMetadata = detectDocumentMetadata(this.searchIndex);
+
     reportProgress(95, 100, "building outline");
     await this.#buildOutline();
 
@@ -273,6 +279,30 @@ export class PDFDocumentModel {
 
   get numPages() {
     return this.pdfDoc?.numPages || 0;
+  }
+
+  /**
+   * Get document title with fallback to detected title
+   * Priority: 1) PDF metadata title, 2) Detected title from content
+   * @returns {Promise<string|null>}
+   */
+  async getDocumentTitle() {
+    // Try PDF metadata first
+    if (this.pdfDoc) {
+      try {
+        const metadata = await this.pdfDoc.getMetadata();
+        const metadataTitle = metadata?.info?.Title?.trim();
+        const detectedTitle = this.detectedMetadata?.title;
+        const useDetected =
+          detectedTitle && detectedTitle?.length >= metadataTitle?.length;
+        return useDetected ? detectedTitle : metadataTitle;
+      } catch (error) {
+        console.warn("[Doc] Error getting PDF metadata:", error);
+      }
+    }
+
+    // Fall back to detected title
+    return this.detectedMetadata?.title || null;
   }
 
   subscribe(pane) {
@@ -681,8 +711,90 @@ export class PDFDocumentModel {
     this.outline = await buildOutline(
       this.pdfDoc,
       this.searchIndex,
-      this.allNamedDests
+      this.allNamedDests,
     );
+
+    // Inject abstract into outline if detected but not present
+    this.#injectAbstractIntoOutline();
+  }
+
+  /**
+   * Inject abstract section into outline if it was detected but not included
+   * in the native outline. Inserts it at the appropriate position.
+   */
+  #injectAbstractIntoOutline() {
+    const abstractInfo = this.detectedMetadata?.abstractInfo;
+    if (!abstractInfo) return;
+
+    // Check if abstract already exists in outline
+    const hasAbstract = this.#outlineContainsAbstract(this.outline);
+    if (hasAbstract) {
+      console.log("[Outline] Abstract already in outline, skipping injection");
+      return;
+    }
+
+    // Create abstract outline item
+    const abstractItem = {
+      id: crypto.randomUUID(),
+      title: "Abstract",
+      pageIndex: abstractInfo.pageIndex,
+      left: abstractInfo.left,
+      top: abstractInfo.top,
+      columnIndex: abstractInfo.columnIndex,
+      children: [],
+    };
+
+    // Find insertion point: after any item on earlier pages or with higher Y on same page
+    let insertIndex = 0;
+    for (let i = 0; i < this.outline.length; i++) {
+      const item = this.outline[i];
+
+      // If outline item is on a later page, insert before it
+      if (item.pageIndex > abstractInfo.pageIndex) {
+        break;
+      }
+
+      // If on same page, compare positions
+      if (item.pageIndex === abstractInfo.pageIndex) {
+        // In PDF coords, higher Y = higher on page
+        // Abstract should come after items with higher Y
+        if (item.top <= abstractInfo.top) {
+          break;
+        }
+      }
+
+      insertIndex = i + 1;
+    }
+
+    // Insert abstract at calculated position
+    this.outline.splice(insertIndex, 0, abstractItem);
+    console.log(`[Outline] Injected Abstract at position ${insertIndex}`);
+  }
+
+  /**
+   * Check if outline contains an abstract section
+   * @param {Array} items - Outline items to search
+   * @returns {boolean}
+   */
+  #outlineContainsAbstract(items) {
+    for (const item of items) {
+      const title = item.title?.toLowerCase().trim() || "";
+      // Check for "Abstract" or numbered versions like "1. Abstract"
+      if (
+        title === "abstract" ||
+        /^\d+\.?\s*abstract$/i.test(item.title?.trim() || "")
+      ) {
+        return true;
+      }
+      // Check children recursively
+      if (
+        item.children?.length > 0 &&
+        this.#outlineContainsAbstract(item.children)
+      ) {
+        return true;
+      }
+    }
+    return false;
   }
 
   // ============================================
@@ -1177,8 +1289,8 @@ export class PDFDocumentModel {
       const end = Math.min(str.length, idx + 150);
       const context = str
         .substring(start, end)
-        .replace(/[\x00-\x1f]/g, "Â·") // Replace control chars for display
-        .replace(/\n/g, "â†µ");
+        .replace(/[\x00-\x1f]/g, "Ã‚Â·") // Replace control chars for display
+        .replace(/\n/g, "Ã¢â€ Âµ");
 
       console.log(
         `[PDF Debug ${label}] /Annots occurrence #${count} at byte ${idx}:`,

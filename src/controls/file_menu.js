@@ -63,7 +63,7 @@ export class FileMenu {
           <rect x="6" y="14" width="12" height="8"/>
         </svg>
         <span>Print</span>
-        <span class="shortcut">⌘P</span>
+        <span class="shortcut">âŒ˜P</span>
       </button>
       <button class="file-menu-item" data-action="save">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
@@ -72,7 +72,7 @@ export class FileMenu {
           <line x1="12" y1="15" x2="12" y2="3"/>
         </svg>
         <span>Save PDF</span>
-        <span class="shortcut">⌘S</span>
+        <span class="shortcut">âŒ˜S</span>
       </button>
       <div class="file-menu-divider"></div>
       <button class="file-menu-item" data-action="cite">
@@ -412,16 +412,15 @@ export class FileMenu {
   }
 
   async #showCitation() {
-    const pdfDoc = this.wm.document.pdfDoc;
-    if (!pdfDoc) {
+    const docModel = this.wm.document;
+    if (!docModel?.pdfDoc) {
       this.#showToast("No document loaded");
       return;
     }
 
     try {
-      const metadata = await pdfDoc.getMetadata();
-      const info = metadata.info || {};
-      const title = info.Title?.trim();
+      // Use document model's method which falls back to detected title
+      const title = await docModel.getDocumentTitle();
 
       if (!title) {
         this.#showToast("Cannot determine document title for citation");
@@ -645,13 +644,13 @@ export class FileMenu {
       <div class="file-menu-modal citation-modal">
         <div class="file-menu-modal-header">
           <h2>Cite This Document</h2>
-          <button class="file-menu-modal-close">✕</button>
+          <button class="file-menu-modal-close">×</button>
         </div>
         <div class="file-menu-modal-content">
           <div class="citation-search-info">
             <span class="citation-query-text" title="${this.#escapeHtml(query)}">${this.#escapeHtml(this.#truncateText(query, 50))}</span>
             <a href="https://scholar.google.com/scholar?q=${encodeURIComponent(query)}" target="_blank" class="citation-scholar-link">
-              Open in Scholar →
+              Open in Google Scholar ->’
             </a>
           </div>
           <div class="citation-formats">
@@ -789,7 +788,7 @@ export class FileMenu {
       <div class="file-menu-modal">
         <div class="file-menu-modal-header">
           <h2>Document Information</h2>
-          <button class="file-menu-modal-close">✕</button>
+          <button class="file-menu-modal-close">×</button>
         </div>
         <div class="file-menu-modal-content">
           <div class="metadata-row">
@@ -872,7 +871,7 @@ export class FileMenu {
       <div class="file-menu-modal">
         <div class="file-menu-modal-header">
           <h2>About</h2>
-          <button class="file-menu-modal-close">✕</button>
+          <button class="file-menu-modal-close">×</button>
         </div>
         <div class="file-menu-modal-content">
           <div class="metadata-row">

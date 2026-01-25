@@ -3,9 +3,10 @@
  * @property {string} id
  * @property {string} title
  * @property {'section'|'figure'|'table'|'annotation'} type
- * @property {number} pageIndex
- * @property {number} left
- * @property {number} top
+ * @property {number} pageIndex - 0-based page index
+ * @property {number} left - X position in PDF coordinates
+ * @property {number} top - Y position in PDF coordinates (origin bottom-left, higher = higher on page)
+ * @property {number} columnIndex - Column index: -1 for full-width, 0 for col1, 1 for col2, etc.
  * @property {TreeNode[]} children
  * @property {boolean} expanded
  * @property {string} [annotationType] - 'highlight' or 'underline'
@@ -36,8 +37,11 @@ export class NavigationTree {
     /** @type {TreeNode[]} */
     this.tree = [];
 
-    /** @type {TreeNode[]} Flattened sections for annotation placement */
+    /** @type {TreeNode[]} Flattened sections for annotation placement (sorted by reading order) */
     this.flatSections = [];
+
+    /** @type {Array<{width: number, height: number}>} Cached page dimensions */
+    this.pageDimensions = [];
 
     this.isVisible = false;
     this.treeBuilt = false;
@@ -85,6 +89,10 @@ export class NavigationTree {
 
   async initialize() {
     if (this.treeBuilt) return;
+    
+    // Cache page dimensions for coordinate conversion
+    await this.#cachePageDimensions();
+    
     const docOutline = this.doc.outline;
 
     if (docOutline && docOutline.length > 0) {
@@ -96,6 +104,49 @@ export class NavigationTree {
       this.#insertFiguresIntoTree(figureTableItems);
     }
     this.treeBuilt = true;
+  }
+  
+  /**
+   * Cache page dimensions from the document model
+   */
+  async #cachePageDimensions() {
+    // Use cached dimensions from PDFDocumentModel if available
+    if (this.doc.pageDimensions && this.doc.pageDimensions.length > 0) {
+      this.pageDimensions = this.doc.pageDimensions;
+      return;
+    }
+    
+    // Fallback: compute dimensions ourselves
+    const pdfDoc = this.doc.pdfDoc;
+    if (!pdfDoc) return;
+    
+    this.pageDimensions = [];
+    for (let i = 1; i <= pdfDoc.numPages; i++) {
+      const page = await pdfDoc.getPage(i);
+      const viewport = page.getViewport({ scale: 1 });
+      this.pageDimensions.push({
+        width: viewport.width,
+        height: viewport.height,
+      });
+    }
+  }
+  
+  /**
+   * Get page height for a given page index
+   * @param {number} pageIndex - 0-based page index
+   * @returns {number} Page height in PDF units (default 792 for letter size)
+   */
+  #getPageHeight(pageIndex) {
+    return this.pageDimensions[pageIndex]?.height ?? 792;
+  }
+  
+  /**
+   * Get page width for a given page index
+   * @param {number} pageIndex - 0-based page index
+   * @returns {number} Page width in PDF units (default 612 for letter size)
+   */
+  #getPageWidth(pageIndex) {
+    return this.pageDimensions[pageIndex]?.width ?? 612;
   }
 
   refreshAnnotations() {
@@ -117,9 +168,7 @@ export class NavigationTree {
     this.#calculateAnnotationDots(this.tree);
   }
 
-  // ═══════════════════════════════════════════════════════════════
   // DOM Creation
-  // ═══════════════════════════════════════════════════════════════
 
   #createElements() {
     // Backdrop
@@ -148,12 +197,11 @@ export class NavigationTree {
     document.addEventListener("keydown", this.escapeHandler);
   }
 
-  // ═══════════════════════════════════════════════════════════════
   // Tree Building
-  // ═══════════════════════════════════════════════════════════════
   
   /**
    * Transform doc.outline nodes to TreeNode format
+   * Preserves columnIndex from outline_builder for column-aware placement
    * @param {Array} outlineItems - Items from doc.outline
    * @returns {TreeNode[]}
    */
@@ -164,7 +212,8 @@ export class NavigationTree {
       type: 'section',
       pageIndex: item.pageIndex,
       left: item.left,
-      top: item.top,
+      top: item.top,  // PDF coordinates (origin bottom-left)
+      columnIndex: item.columnIndex ?? -1,  // Preserve column info, default to full-width
       children: item.children.length > 0 
         ? this.#convertOutlineToTreeNodes(item.children) 
         : [],
@@ -238,6 +287,13 @@ export class NavigationTree {
     return cache;
   }
 
+  /**
+   * Flatten section nodes and sort by reading order
+   * Reading order: page → column → vertical position (higher Y = earlier in PDF coords)
+   * @param {TreeNode[]} items
+   * @param {TreeNode[]} result
+   * @returns {TreeNode[]}
+   */
   #flattenSections(items, result = []) {
     for (const item of items) {
       if (item.type === "section") {
@@ -247,6 +303,40 @@ export class NavigationTree {
         }
       }
     }
+    
+    // Sort by reading order: page → column → Y (descending for PDF coords)
+    result.sort((a, b) => {
+      // Different pages: earlier page first
+      if (a.pageIndex !== b.pageIndex) return a.pageIndex - b.pageIndex;
+      
+      const colA = a.columnIndex ?? -1;
+      const colB = b.columnIndex ?? -1;
+      
+      // Handle full-width vs column items on same page
+      if (colA === -1 && colB === -1) {
+        // Both full-width: higher Y (top of page in PDF coords) comes first
+        return b.top - a.top;
+      }
+      
+      if (colA === -1) {
+        // a is full-width, b is in a column
+        // Full-width comes before column content if it's above (higher Y)
+        // Use a slight bias toward full-width being "earlier" when close
+        return b.top > a.top ? 1 : -1;
+      }
+      
+      if (colB === -1) {
+        // b is full-width, a is in a column
+        return a.top > b.top ? -1 : 1;
+      }
+      
+      // Both in columns: lower column index first (left column before right)
+      if (colA !== colB) return colA - colB;
+      
+      // Same column: higher Y (top of page) comes first in reading order
+      return b.top - a.top;
+    });
+    
     return result;
   }
 
@@ -286,6 +376,9 @@ export class NavigationTree {
           ? "table"
           : "figure";
 
+        // Estimate column from left position
+        const columnIndex = this.#estimateColumnFromLeft(position.left, position.pageIndex);
+
         items.push({
           id: crypto.randomUUID(),
           title: linkText.trim(),
@@ -293,6 +386,7 @@ export class NavigationTree {
           pageIndex: position.pageIndex,
           left: position.left,
           top: position.top,
+          columnIndex: columnIndex,
           children: [],
           expanded: false,
         });
@@ -301,9 +395,18 @@ export class NavigationTree {
       page.cleanup();
     }
 
+    // Sort by reading order: page → column → Y
     items.sort((a, b) => {
       if (a.pageIndex !== b.pageIndex) return a.pageIndex - b.pageIndex;
-      return b.top - a.top;
+      
+      const colA = a.columnIndex ?? -1;
+      const colB = b.columnIndex ?? -1;
+      
+      if (colA !== colB && colA !== -1 && colB !== -1) {
+        return colA - colB;  // Earlier column first
+      }
+      
+      return b.top - a.top;  // Higher Y (top of page) first
     });
 
     return items;
@@ -358,7 +461,8 @@ export class NavigationTree {
     }
 
     for (const fig of figureItems) {
-      const section = this.#findContainingSection(fig.pageIndex, fig.top);
+      // Use the columnIndex already computed during extraction
+      const section = this.#findContainingSection(fig.pageIndex, fig.top, fig.columnIndex);
       if (section) {
         section.children.push(fig);
       } else {
@@ -367,36 +471,116 @@ export class NavigationTree {
     }
   }
 
-  #findContainingSection(pageIndex, top) {
+  /**
+   * Find the section that contains the given position using column-aware reading order
+   * 
+   * Reading order in multi-column documents:
+   * - Page N before Page N+1
+   * - Column 0 (left) before Column 1 (right) on same page
+   * - Higher Y (top) before lower Y within same column
+   * - Full-width content (-1) ordered by Y position relative to column content
+   * 
+   * @param {number} pageIndex - 0-based page index
+   * @param {number} pdfY - Y position in PDF coordinates (higher = higher on page)
+   * @param {number} columnIndex - Column index: -1 for full-width, 0+ for columns
+   * @returns {TreeNode|null} The section that precedes this position in reading order
+   */
+  #findContainingSection(pageIndex, pdfY, columnIndex = -1) {
     const sections = this.flatSections;
     if (sections.length === 0) return null;
 
-    let lo = 0;
-    let hi = sections.length - 1;
-    let result = -1;
+    let bestMatch = null;
 
-    while (lo <= hi) {
-      const mid = (lo + hi) >>> 1;
-      const section = sections[mid];
-
-      const sectionBefore =
-        section.pageIndex < pageIndex ||
-        (section.pageIndex === pageIndex && section.top >= top);
-
-      if (sectionBefore) {
-        result = mid;
-        lo = mid + 1;
+    // Linear scan through sorted sections to find the last section
+    // that comes "before" the target position in reading order
+    for (const section of sections) {
+      if (this.#isSectionBefore(section, pageIndex, pdfY, columnIndex)) {
+        bestMatch = section;
       } else {
-        hi = mid - 1;
+        // Sections are sorted in reading order, so once we pass the target, stop
+        break;
       }
     }
 
-    return result >= 0 ? sections[result] : null;
+    return bestMatch;
   }
 
-  // ═══════════════════════════════════════════════════════════════
+  /**
+   * Determine if a section comes before a given position in reading order
+   * 
+   * @param {TreeNode} section - The section to check
+   * @param {number} targetPageIndex - Target page index
+   * @param {number} targetPdfY - Target Y in PDF coordinates
+   * @param {number} targetColumn - Target column index (-1 for full-width)
+   * @returns {boolean} True if section comes before the target in reading order
+   */
+  #isSectionBefore(section, targetPageIndex, targetPdfY, targetColumn) {
+    // Different page - simple comparison
+    if (section.pageIndex < targetPageIndex) return true;
+    if (section.pageIndex > targetPageIndex) return false;
+
+    // Same page - need column-aware comparison
+    const sectionCol = section.columnIndex ?? -1;
+    
+    // Both full-width: compare Y (higher Y = earlier in reading order for PDF coords)
+    if (sectionCol === -1 && targetColumn === -1) {
+      return section.top >= targetPdfY;
+    }
+    
+    // Section is full-width, target is in a column
+    if (sectionCol === -1) {
+      // Full-width section is "before" if it's above the target position
+      // (or at same level - full-width typically precedes column content)
+      return section.top >= targetPdfY;
+    }
+    
+    // Target is full-width, section is in a column
+    if (targetColumn === -1) {
+      // Section in column is "before" full-width target only if section is above
+      return section.top > targetPdfY;
+    }
+
+    // Both in columns
+    if (sectionCol < targetColumn) return true;  // Earlier column = before
+    if (sectionCol > targetColumn) return false; // Later column = after
+
+    // Same column: section is before if it has higher or equal Y (higher = earlier in PDF coords)
+    return section.top >= targetPdfY;
+  }
+  
+  /**
+   * Estimate which column a position belongs to based on X coordinate
+   * 
+   * @param {number} leftX - X position in PDF coordinates
+   * @param {number} pageIndex - 0-based page index
+   * @returns {number} Column index: -1 for ambiguous/full-width, 0 for left, 1 for right
+   */
+  #estimateColumnFromLeft(leftX, pageIndex) {
+    const pageWidth = this.#getPageWidth(pageIndex);
+    const leftRatio = leftX / pageWidth;
+    
+    // Heuristic thresholds for two-column layout
+    // Left margin to ~45% = column 0
+    // ~55% to right margin = column 1
+    // Middle zone (45-55%) = ambiguous, treat as full-width
+    if (leftRatio < 0.45) return 0;
+    if (leftRatio > 0.55) return 1;
+    return -1;  // Ambiguous, treat as full-width
+  }
+  
+  /**
+   * Estimate column from a ratio (0-1) left position
+   * 
+   * @param {number} leftRatio - Left position as ratio (0 = left edge, 1 = right edge)
+   * @returns {number} Column index: -1 for ambiguous/full-width, 0 for left, 1 for right
+   */
+  #estimateColumnFromLeftRatio(leftRatio) {
+    if (leftRatio < 0.495) return 0;
+    if (leftRatio > 0.505) return 1;
+    return -1;
+  }
+
   // Annotation Integration
-  // ═══════════════════════════════════════════════════════════════
 
   #clearAnnotationsFromTree(nodes) {
     for (let i = nodes.length - 1; i >= 0; i--) {
@@ -413,21 +597,49 @@ export class NavigationTree {
     }
   }
 
+  /**
+   * Sort annotations by reading order: page → column → vertical position
+   * @param {Array} annotations
+   * @returns {Array} Sorted annotations
+   */
   #sortAnnotationsByPosition(annotations) {
     return [...annotations].sort((a, b) => {
-      const aPage = a.pageRanges[0]?.pageNumber ?? 0;
-      const bPage = b.pageRanges[0]?.pageNumber ?? 0;
+      const aPage = a.pageRanges[0]?.pageNumber ?? 1;
+      const bPage = b.pageRanges[0]?.pageNumber ?? 1;
       if (aPage !== bPage) return aPage - bPage;
 
-      const aTop = a.pageRanges[0]?.rects[0]?.topRatio ?? 0;
-      const bTop = b.pageRanges[0]?.rects[0]?.topRatio ?? 0;
-      return aTop - bTop;
+      // Get positions
+      const aLeftRatio = a.pageRanges[0]?.rects[0]?.leftRatio ?? 0;
+      const bLeftRatio = b.pageRanges[0]?.rects[0]?.leftRatio ?? 0;
+      const aTopRatio = a.pageRanges[0]?.rects[0]?.topRatio ?? 0;
+      const bTopRatio = b.pageRanges[0]?.rects[0]?.topRatio ?? 0;
+      
+      // Estimate columns
+      const aCol = this.#estimateColumnFromLeftRatio(aLeftRatio);
+      const bCol = this.#estimateColumnFromLeftRatio(bLeftRatio);
+      
+      // Sort by column first (left column before right)
+      if (aCol !== bCol && aCol !== -1 && bCol !== -1) {
+        return aCol - bCol;
+      }
+      
+      // Then by vertical position (smaller topRatio = higher on page = earlier)
+      return aTopRatio - bTopRatio;
     });
   }
 
+  /**
+   * Create a TreeNode for an annotation
+   * Converts annotation's ratio-based coordinates to PDF coordinates for proper placement
+   * 
+   * @param {Object} annotation - The annotation object
+   * @param {number} counter - Annotation counter for display
+   * @returns {TreeNode}
+   */
   #createAnnotationNode(annotation, counter) {
     const firstPage = annotation.pageRanges[0];
     const lastPage = annotation.pageRanges[annotation.pageRanges.length - 1];
+    const pageIndex = (firstPage?.pageNumber ?? 1) - 1;
 
     let pageRange = null;
     if (firstPage?.pageNumber !== lastPage?.pageNumber) {
@@ -435,9 +647,23 @@ export class NavigationTree {
     }
 
     const typeName =
-      annotation.type === "highlight" ? "Hightlight" : "Underline";
+      annotation.type === "highlight" ? "Highlight" : "Underline";
 
-    const title = annotation.comment ? `Cmt: ${annotation.comment}` : `${typeName} ${counter} `;
+    const title = annotation.comment ? `Cmt: ${annotation.comment}` : `${typeName} ${counter}`;
+
+    // Convert topRatio to PDF Y coordinate
+    // topRatio: 0 = top of page, 1 = bottom of page
+    // PDF Y: 0 = bottom of page, pageHeight = top of page
+    const topRatio = firstPage?.rects[0]?.topRatio ?? 0;
+    const pageHeight = this.#getPageHeight(pageIndex);
+    const pdfY = pageHeight * (1 - topRatio);  // Convert to PDF coords
+    
+    // Estimate column from left position
+    const leftRatio = firstPage?.rects[0]?.leftRatio ?? 0;
+    const columnIndex = this.#estimateColumnFromLeftRatio(leftRatio);
+    
+    // Store original topRatio for navigation (used in #navigateTo)
+    const originalTopRatio = topRatio;
 
     return {
       id: crypto.randomUUID(),
@@ -446,25 +672,37 @@ export class NavigationTree {
       annotationType: annotation.type,
       color: annotation.color,
       annotationId: annotation.id,
-      pageIndex: (firstPage?.pageNumber ?? 1) - 1,
-      left: 0,
-      top: firstPage?.rects[0]?.topRatio ?? 0,
+      pageIndex: pageIndex,
+      left: leftRatio * this.#getPageWidth(pageIndex),  // Convert to PDF X coordinate
+      top: pdfY,  // Now in PDF coordinates
+      columnIndex: columnIndex,  // Column-aware placement
+      originalTopRatio: originalTopRatio,  // Keep for navigation
       children: [],
       expanded: false,
+      pageRange: pageRange,
     };
   }
 
+  /**
+   * Insert an annotation node into the appropriate section of the tree
+   * Uses column-aware placement to correctly handle multi-column documents
+   * 
+   * @param {TreeNode} annotationNode - The annotation node to insert
+   */
   #insertAnnotationIntoTree(annotationNode) {
     const section = this.#findContainingSection(
       annotationNode.pageIndex,
-      1 - annotationNode.top,
+      annotationNode.top,  // Now in PDF coordinates
+      annotationNode.columnIndex
     );
 
     if (section) {
       section.children.push(annotationNode);
     } else if (this.tree.length > 0) {
+      // Fallback: add to last section
       this.tree[this.tree.length - 1].children.push(annotationNode);
     } else {
+      // No sections at all: add to root
       this.tree.push(annotationNode);
     }
   }
@@ -573,7 +811,7 @@ export class NavigationTree {
     const icon = document.createElement("span");
     icon.className = "nav-tree-icon";
     if (node.type === "annotation") {
-      icon.innerHTML = node.annotationType === "highlight" ? "■" : "▬";
+      icon.innerHTML = node.annotationType === "highlight" ? "◼" : "-";
       icon.style.color = this.#getAnnotationColor(node.color);
     } else {
       icon.innerHTML =
@@ -825,9 +1063,10 @@ export class NavigationTree {
   #navigateTo(node) {
     if (node.type === "annotation" && node.annotationId) {
       this.pane.annotationManager?.selectAnnotation?.(node.annotationId);
-      const top = window.innerHeight * (1-node.top);
-      this.pane.scrollToPoint(node.pageIndex, 0, top);
+      // Use PDF coordinates for scrolling (node.top is now in PDF coords)
+      this.pane.scrollToPoint(node.pageIndex, node.left, node.top);
     } else {
+      // Sections and figures already use PDF coordinates
       this.pane.scrollToPoint(node.pageIndex, node.left, node.top);
     }
  
@@ -963,9 +1202,7 @@ export class NavigationTree {
     return null;
   }
 
-  // ═══════════════════════════════════════════════════════════════
   // Show / Hide
-  // ═══════════════════════════════════════════════════════════════
 
   async show(ballRightX, onClose = null) {
     if (this.isVisible) return;
@@ -1091,6 +1328,7 @@ export class NavigationTree {
     this.container?.remove();
     this.tree = [];
     this.flatSections = [];
+    this.pageDimensions = [];
     this.treeBuilt = false;
     this.pinnedPath = [];
   }

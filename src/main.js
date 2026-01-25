@@ -156,8 +156,12 @@ async function loadPdf(isFirstLaunch = false) {
         loadingOverlay.setProgress(0.9, "Initializing viewer...");
         await wm.initialize();
         const fileMenu = new FileMenu(wm);
+        
+        // Use detected title, fallback to filename
+        const detectedTitle = await pdfmodel.getDocumentTitle();
         const fileName = localPdf.name.replace(/\.pdf$/i, "");
-        document.title = fileName + " - Hover PDF";
+        document.title = (detectedTitle || fileName) + " - Hover PDF";
+        
         PDFDocumentModel.clearLocalPdf();
         await loadingOverlay.hide();
         return;
@@ -172,8 +176,12 @@ async function loadPdf(isFirstLaunch = false) {
       loadingOverlay.setProgress(0.9, "Initializing viewer...");
       await wm.initialize();
       const fileMenu = new FileMenu(wm);
+      
+      // Use detected title, fallback to filename
+      const detectedTitle = await pdfmodel.getDocumentTitle();
       const fileName = backgroundPdf.name.replace(/\.pdf$/i, "");
-      document.title = fileName + " - Hover PDF";
+      document.title = (detectedTitle || fileName) + " - Hover PDF";
+      
       await loadingOverlay.hide();
       return;
     }
@@ -185,9 +193,10 @@ async function loadPdf(isFirstLaunch = false) {
     await wm.initialize();
     const fileMenu = new FileMenu(wm);
 
-    const metadata = await pdfDoc.getMetadata();
-    if (metadata.info.Title) {
-      document.title = metadata.info.Title + " - Hover PDF";
+    // Get document title (PDF metadata or detected from content)
+    const documentTitle = await pdfmodel.getDocumentTitle();
+    if (documentTitle) {
+      document.title = documentTitle + " - Hover PDF";
     }
 
     await loadingOverlay.hide();

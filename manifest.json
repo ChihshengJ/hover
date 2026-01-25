@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Hover PDF Viewer",
-  "version": "1.0.0",
+  "version": "0.1.0",
   "description": "Enhanced PDF viewer with citation previews",
   "permissions": [
     "declarativeNetRequest",

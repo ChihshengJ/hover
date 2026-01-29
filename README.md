@@ -6,12 +6,14 @@
 
 Hover is a minimalist PDF reader browser extension designed for people who spend way too much time reading academic papers in the browser.
 
-It intentionally keeps only the most essential features, but aims to make the actual experience of reading papers smoother, faster, and more immersive by introducing a carefully designed UI system for desktop reading based on a single ball-shaped controller.
+It intentionally keeps only the most essential features, but aims to make the actual experience of reading papers smoother, faster, and more immersive
+by introducing a **carefully designed UI system** for desktop reading based on a single ball-shaped controller.
 Every action and command revolves around the single controller, and everything irrelevant to reading fades into the background.
 
 **Currently the main functionalities only works on LaTeX compiled PDF documents. But heuristic parsing will be supported later for all kinds of papers.**
 
-The project is based on [PDF.js](https://github.com/mozilla/pdf.js), which means that you can also directly access the texts as HTML elements, if you're interested in taking advantage of this feature, feel free to fork this project!
+The project is built with Vanilla JS and is dependent on [PDF.js](https://github.com/mozilla/pdf.js), which means that you can also directly access the texts as HTML elements,
+if you're interested in taking advantage of this feature, feel free to fork this project!
 
 ---
 
@@ -31,7 +33,11 @@ You can even directly open up the URL in the citation or check out the abstract 
 
 ### 2. Innovative Navigation System
 
-PDF readers are boring as hell.
+<br>
+<p align="center">
+    PDF readers are boring as hell.
+</p>
+<br>
 
 Hover introduces a compact yet beautifully designed navigation system that works just like magic.
 It all starts with a ball:
@@ -40,7 +46,7 @@ It all starts with a ball:
 <img src="assets/ball_demo.png" width="120" alt="Hover Banner"/>
 </p>
 
-- **Left-click**: open the full mini toolbar which includes **dark mode**, **split window**, **hand tool/cursor**, **horizontal spread**, and **zoom in/out**.
+- **Left-click**: open the full mini toolbar which includes **dark mode**, **split window**, **spread mode**, **fit screen**, and **zoom in/out**.
 
 <p align="center">
 <img src="assets/ball_expand.gif" width="90" alt="Hover Banner"/>
@@ -57,7 +63,7 @@ It all starts with a ball:
 <img src="assets/tree_demo.gif" width="800" alt="Hover Banner"/>
 </p>
 
-The functionalities are kept at their minimum, but your interaction with the document is more fluid and intuitive than ever.
+Everything you need for focused reading stays right under your finger.
 
 ### 3. Split Window Mode
 
@@ -89,15 +95,23 @@ Not only is the search more accurate than the default readers as it can detect p
 
 ### 6. Persistent Annotation
 
-Annotations you made in this reader are embedded into the PDF document, no need for any accounts and cloud to save annotations or to share them with others.
+Annotations you made in this reader are embedded into the PDF document, no need for any accounts or the cloud to save annotations or to share them with others.
 
 <p align="center">
 <img src="assets/annotation_demo.png" width="800" alt="Hover Banner"/>
 </p>
 
-### 7. VIM Motion
+### 7. Direct Bibtex Access
 
-Full vim motion support for reading, highlighting, and citation preview (under development).
+Get bibtex and citations in other formats with just one click of a button.
+
+<p align="center">
+<img src="assets/cite_demo.png" width="800" alt="Hover Banner"/>
+</p>
+
+### 8. VIM Motion
+
+Full vim motion support for reading, highlighting, and citation preview (under development, currently only support HJKL).
 
 ---
 
@@ -118,7 +132,7 @@ And then use
 npm run build:ext
 ```
 
-Open Chrome, navigate to [Chorme extension management](chrome://extensions/) , turn on developer mode and load the _dist_ folder to use the extension.
+Open Chrome, navigate to [Chrome extension management](chrome://extensions/), turn on developer mode and load the _dist_ folder to use the extension.
 
 ---
 
@@ -130,14 +144,14 @@ If you love using Hover like I do, please consider support me here:
 
 Every donation means a ton to me and to this project!
 
-And if there is any bugs or possible improvements of the codebase, feel free to open an issue.
+And if there are any bugs or possible improvements of the codebase, feel free to open an issue.
 
 ---
 
 ## Road map
 
 - Heuristic parsing to extract links from non-LaTeX compiled PDFs.
-- Hover for Safari
+- **Hover for Safari**
 - Improve indexing performance and memory usage
 - Theme configuration
 

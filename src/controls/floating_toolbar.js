@@ -137,13 +137,13 @@ export class FloatingToolbar {
     svgFilter.style.height = "0";
     svgFilter.innerHTML = `
       <defs>
-        <filter id="goo" x="-75%" y="-75%" width="200%" height="200%">
-          <feGaussianBlur in="SourceGraphic" stdDeviation="15" result="blur" />
+        <filter id="goo" x="-50%" y="-50%" width="150%" height="150%">
+          <feGaussianBlur in="SourceGraphic" stdDeviation="12" result="blur" />
           <feColorMatrix in="blur" mode="matrix" 
             values="1 0 0 0 0  
                     0 1 0 0 0  
                     0 0 1 0 0  
-                    0 0 0 20 -8" result="goo" />
+                    0 0 0 25 -10" result="goo" />
           <feGaussianBlur in="goo" stdDeviation="8" result="softGlow"/>
           <feComposite in="goo" in2="softGlow" operator="over"/>
         </filter>
@@ -832,14 +832,16 @@ export class FloatingToolbar {
         b.classList.remove("night-mode");
         b.firstElementChild.classList.remove("night-mode");
       }
-      btn.firstElementChild.innerHTML = '<img src="/assets/moon.svg" width="18" />';
+      btn.firstElementChild.innerHTML =
+        '<img src="/assets/moon.svg" width="18" />';
     } else {
       this.ball.classList.add("night-mode");
       for (const b of btns) {
         b.classList.add("night-mode");
         b.firstElementChild.classList.add("night-mode");
       }
-      btn.firstElementChild.innerHTML = '<img src="/assets/sun.svg" width="20" />';
+      btn.firstElementChild.innerHTML =
+        '<img src="/assets/sun.svg" width="20" />';
       pageInfo.classList.add("night-mode");
     }
 

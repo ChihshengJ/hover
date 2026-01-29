@@ -184,10 +184,8 @@ export class PageView {
 
   #setupAnnotationLayerEvents() {
     if (this._delegatedListenersAttached) return;
-
     const citationPopup = getSharedPopup();
 
-    // Use capture phase (true) for mouseenter/mouseleave to work with delegation
     this.annotationLayer.addEventListener(
       "mouseenter",
       (e) => {
@@ -232,15 +230,13 @@ export class PageView {
 
       anchor.dataset.dest = `${result.left},${result.pageIndex},${result.top}`;
 
-      if (dest.split(".")[0] === "cite") {
-        await citationPopup.show(
-          anchor,
-          this.#findCiteText.bind(this),
-          result.left,
-          result.pageIndex,
-          result.top,
-        );
-      }
+      await citationPopup.show(
+        anchor,
+        this.#findCiteText.bind(this),
+        result.left,
+        result.pageIndex,
+        result.top,
+      );
     }, 200);
   }
 
@@ -339,7 +335,7 @@ export class PageView {
       let currentLineTop = firstPos.top;
       let firstLineLeft = firstPos.left;
       let baselineLineHeight = null;
-      let continuationLineLeft = null;
+      let currCiteLeft = null;
       let lineCount = 0;
 
       for (let i = startIndex; i < items.length; i++) {
@@ -374,16 +370,16 @@ export class PageView {
           }
           // Check indentation
           if (lineCount === 1) {
-            continuationLineLeft = pos.left;
-          } else if (continuationLineLeft !== null) {
-            const hasHangingIndent = continuationLineLeft > firstLineLeft + 6;
+            currCiteLeft = pos.left;
+          } else if (currCiteLeft !== null) {
+            const hasHangingIndent = currCiteLeft > firstLineLeft + 6;
             if (hasHangingIndent) {
-              if (pos.left < continuationLineLeft - 10) {
+              if (pos.left < currCiteLeft - 8) {
                 break;
               }
             } else {
-              const minLeft = Math.min(firstLineLeft, continuationLineLeft);
-              if (pos.left < minLeft - 10) {
+              const minLeft = Math.min(firstLineLeft, currCiteLeft);
+              if (pos.left < minLeft - 8) {
                 break;
               }
             }

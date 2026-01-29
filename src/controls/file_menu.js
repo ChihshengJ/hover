@@ -1,9 +1,9 @@
 /**
  * @typedef {import('./window_manager.js').SplitWindowManager} SplitWindowManager;
- * @typedef {import('../onboarding.js').OnboardingWalkThrough} OnboardingWalkThrough;
+ * @typedef {import('../settings/onboarding.js').OnboardingWalkThrough} OnboardingWalkThrough;
  */
 
-import { OnboardingWalkthrough } from "../onboarding.js";
+import { OnboardingWalkthrough } from "../settings/onboarding.js";
 
 export class FileMenu {
   /**
@@ -47,32 +47,29 @@ export class FileMenu {
     this.menuList.className = "file-menu-list";
     this.menuList.innerHTML = `
       <button class="file-menu-item" data-action="import">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
-          <polyline points="7 8 12 3 17 8"/>
-          <line x1="12" y1="3" x2="12" y2="15"/>
+        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-upload" viewBox="0 0 16 16">
+          <path d="M.5 9.9a.5.5 0 0 1 .5.5v2.5a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-2.5a.5.5 0 0 1 1 0v2.5a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2v-2.5a.5.5 0 0 1 .5-.5"/>
+          <path d="M7.646 1.146a.5.5 0 0 1 .708 0l3 3a.5.5 0 0 1-.708.708L8.5 2.707V11.5a.5.5 0 0 1-1 0V2.707L5.354 4.854a.5.5 0 1 1-.708-.708z"/>
         </svg>
         <span>Import</span>
       </button>
       <input type="file" id="file-import" accept="application/pdf" hidden>
       <div class="file-menu-divider"></div>
       <button class="file-menu-item" data-action="print">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-          <path d="M6 9V2h12v7"/>
-          <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/>
-          <rect x="6" y="14" width="12" height="8"/>
+        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-printer" viewBox="0 0 16 16">
+          <path d="M2.5 8a.5.5 0 1 0 0-1 .5.5 0 0 0 0 1"/>
+          <path d="M5 1a2 2 0 0 0-2 2v2H2a2 2 0 0 0-2 2v3a2 2 0 0 0 2 2h1v1a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2v-1h1a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-1V3a2 2 0 0 0-2-2zM4 3a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2H4zm1 5a2 2 0 0 0-2 2v1H2a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h12a1 1 0 0 1 1 1v3a1 1 0 0 1-1 1h-1v-1a2 2 0 0 0-2-2zm7 2v3a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1v-3a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1"/>
         </svg>
         <span>Print</span>
-        <span class="shortcut">âŒ˜P</span>
+        <span class="shortcut">⌘P</span>
       </button>
       <button class="file-menu-item" data-action="save">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
-          <polyline points="7 10 12 15 17 10"/>
-          <line x1="12" y1="15" x2="12" y2="3"/>
+        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-download" viewBox="0 0 16 16">
+          <path d="M.5 9.9a.5.5 0 0 1 .5.5v2.5a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-2.5a.5.5 0 0 1 1 0v2.5a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2v-2.5a.5.5 0 0 1 .5-.5"/>
+          <path d="M7.646 11.854a.5.5 0 0 0 .708 0l3-3a.5.5 0 0 0-.708-.708L8.5 10.293V1.5a.5.5 0 0 0-1 0v8.793L5.354 8.146a.5.5 0 1 0-.708.708z"/>
         </svg>
         <span>Save PDF</span>
-        <span class="shortcut">âŒ˜S</span>
+        <span class="shortcut">⌘S</span>
       </button>
       <div class="file-menu-divider"></div>
       <button class="file-menu-item" data-action="cite">
@@ -84,21 +81,21 @@ export class FileMenu {
       </button>
       <button class="file-menu-item" data-action="metadata">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-          <circle cx="12" cy="12" r="10"/>
-          <line x1="12" y1="18" x2="12" y2="12"/>
-          <line x1="12" y1="7" x2="12" y2="9"/>
         </svg>
         <span>Document Info</span>
       </button>
       <div class="file-menu-divider"></div>
       <button class="file-menu-item" data-action="tutorial">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-          <circle cx="12" cy="12" r="10"/>
-          <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/>
-          <line x1="12" y1="16" x2="12" y2="18"/>
+        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-question-circle" viewBox="0 0 16 16">
+          <path d="M8 15A7 7 0 1 1 8 1a7 7 0 0 1 0 14m0 1A8 8 0 1 0 8 0a8 8 0 0 0 0 16"/>
+          <path d="M5.255 5.786a.237.237 0 0 0 .241.247h.825c.138 0 .248-.113.266-.25.09-.656.54-1.134 1.342-1.134.686 0 1.314.343 1.314 1.168 0 .635-.374.927-.965 1.371-.673.489-1.206 1.06-1.168 1.987l.003.217a.25.25 0 0 0 .25.246h.811a.25.25 0 0 0 .25-.25v-.105c0-.718.273-.927 1.01-1.486.609-.463 1.244-.977 1.244-2.056 0-1.511-1.276-2.241-2.673-2.241-1.267 0-2.655.59-2.75 2.286m1.557 5.763c0 .533.425.927 1.01.927.609 0 1.028-.394 1.028-.927 0-.552-.42-.94-1.029-.94-.584 0-1.009.388-1.009.94"/>
         </svg>
         <span>Tutorial</span>
       </button>
+      <button class="file-menu-item" data-action="wallpaper">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+        </svg>
+        <span>Wallpaper</span>
       <div class="file-menu-divider"></div>
       <button class="file-menu-item" data-action="about">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
@@ -286,6 +283,9 @@ export class FileMenu {
       case "tutorial":
         this.#startTutorial();
         break;
+      case "wallpaper":
+        this.#showWallPaperSetting();
+        break;
       case "about":
         this.#showAbout();
         break;
@@ -440,6 +440,44 @@ export class FileMenu {
       console.error("Citation fetch error:", error);
       this.#showToast(error.message || "Error fetching citation");
     }
+  }
+
+  #showWallPaperSetting() {
+    const existing = document.querySelector(".file-menu-modal-overlay");
+    if (existing) existing.remove();
+
+    const overlay = document.createElement("div");
+    overlay.className = "file-menu-modal-overlay";
+    overlay.innerHTML = `
+      <div class="file-menu-modal">
+        <div class="file-menu-modal-header">
+          <h2>Current</h2>
+          <button class="file-menu-modal-close">×</button>
+
+
+        </div>
+      </div>
+    `;
+
+    document.body.appendChild(overlay);
+
+    // Animate in
+    requestAnimationFrame(() => {
+      overlay.classList.add("visible");
+    });
+
+    // Close handlers
+    const close = () => {
+      overlay.classList.remove("visible");
+      setTimeout(() => overlay.remove(), 300);
+    };
+
+    overlay
+      .querySelector(".file-menu-modal-close")
+      .addEventListener("click", close);
+    overlay.addEventListener("click", (e) => {
+      if (e.target === overlay) close();
+    });
   }
 
   /**

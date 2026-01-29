@@ -2,7 +2,7 @@ import { PDFDocumentModel } from "./doc.js";
 import { SplitWindowManager } from "./window_manager.js";
 import { FileMenu } from "./controls/file_menu.js";
 import { LoadingOverlay } from "./controls/loading_overlay.js";
-import { OnboardingWalkthrough } from "./onboarding.js";
+import { OnboardingWalkthrough } from "./settings/onboarding.js";
 
 import "../styles/_variables.css";
 import "../styles/viewer.css";
@@ -156,12 +156,12 @@ async function loadPdf(isFirstLaunch = false) {
         loadingOverlay.setProgress(0.9, "Initializing viewer...");
         await wm.initialize();
         const fileMenu = new FileMenu(wm);
-        
+
         // Use detected title, fallback to filename
         const detectedTitle = await pdfmodel.getDocumentTitle();
         const fileName = localPdf.name.replace(/\.pdf$/i, "");
         document.title = (detectedTitle || fileName) + " - Hover PDF";
-        
+
         PDFDocumentModel.clearLocalPdf();
         await loadingOverlay.hide();
         return;
@@ -176,12 +176,12 @@ async function loadPdf(isFirstLaunch = false) {
       loadingOverlay.setProgress(0.9, "Initializing viewer...");
       await wm.initialize();
       const fileMenu = new FileMenu(wm);
-      
+
       // Use detected title, fallback to filename
       const detectedTitle = await pdfmodel.getDocumentTitle();
       const fileName = backgroundPdf.name.replace(/\.pdf$/i, "");
       document.title = (detectedTitle || fileName) + " - Hover PDF";
-      
+
       await loadingOverlay.hide();
       return;
     }
@@ -213,6 +213,13 @@ async function loadPdf(isFirstLaunch = false) {
   }
 }
 
+function loadWallPaper() {
+  const wallPaperPath = "assets/wallpapers/Texture_Carpet.jpg";
+  document.body.style.background =
+    `url(${wallPaperPath})`;
+  document.body.style.backgroundSize = "cover";
+}
+
 async function main() {
   const isFirstLaunch = await OnboardingWalkthrough.isFirstLaunch();
 
@@ -227,6 +234,7 @@ async function main() {
     PDFDocumentModel.clearLocalPdf();
   }
 
+  loadWallPaper();
   // Load with first-launch flag
   await loadPdf(isFirstLaunch);
 }

@@ -10,7 +10,7 @@
  * @property {TreeNode[]} children
  * @property {boolean} expanded
  * @property {string} [annotationType] - 'highlight' or 'underline'
- * @property {string} [color] - annotation color
+ * @property {string} [color] - annotation coloroutline_builder
  * @property {string} [annotationId] - reference to actual annotation
  * @property {string} [pageRange] - e.g., "pp. 3-5" for cross-page
  * @property {{color: string}[]} [annotationDots] - dots to show on section

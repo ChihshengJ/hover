@@ -4,7 +4,10 @@
 
 import { pdfjsLib } from "./pdfjs-init.js";
 import { SearchIndex } from "./controls/search/search_index.js";
-import { buildOutline, detectDocumentMetadata } from "./outline_builder.js";
+import {
+  buildOutline,
+  detectDocumentMetadata,
+} from "./data/outline_builder.js";
 
 const AnnotationEditorType = {
   DISABLE: -1,

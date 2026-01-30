@@ -254,17 +254,17 @@ export class SearchController {
   /**
    * Perform the actual search
    */
-  #performSearch() {
+  async #performSearch() {
     if (!this.#searchIndex?.isBuilt) {
       console.warn("Search index not ready");
       return;
     }
 
     const query = this.#currentQuery.trim();
-    if (!query) return;
+    if (!query || query.length < 2) return;
 
     const { from, to } = this.#range;
-    this.#results = this.#searchIndex.search(query, from, to);
+    this.#results = await this.#searchIndex.search(query, from, to);
 
     // Update highlight layer
     this.#highlightLayer?.render(this.#results);

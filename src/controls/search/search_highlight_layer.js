@@ -164,6 +164,8 @@ export class SearchHighlightLayer {
     this.clear();
     this.#matches = matches;
 
+    if (!Array.isArray(matches)) return;
+
     // Group matches by page for efficient lookup
     this.#matchesByPage.clear();
     for (const match of matches) {

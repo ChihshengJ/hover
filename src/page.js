@@ -1,10 +1,14 @@
-import { pdfjsLib } from "./pdfjs-init.js";
+/**
+ * PageView - Refactored for @embedpdf/engines (PDFium)
+ *
+ * Handles rendering of individual PDF pages using PDFium's native rendering.
+ */
+
 import { CitationPopup } from "./controls/citation_popup.js";
 
 /**
- * @typedef {import('./controls/citation_popup.js').CitationPopup} CitationPopup;
- * @typedef {import('./doc.js').PDFDocumentModel} PDFDocumentModel;
- * @typedef {import('./viewpane.js').ViewerPane} ViewerPane;
+ * @typedef {import('./doc.js').PDFDocumentModel} PDFDocumentModel
+ * @typedef {import('./viewpane.js').ViewerPane} ViewerPane
  */
 
 let sharedPopup = null;
@@ -17,15 +21,13 @@ function getSharedPopup() {
 
 export class PageView {
   /**
-   * @param {ViewerPane} pane;
-   * @param {number} pageNumber;
-   * @param {HTMLElement} wrapper;
+   * @param {ViewerPane} pane
+   * @param {number} pageNumber
+   * @param {HTMLCanvasElement} canvas
    */
   constructor(pane, pageNumber, canvas) {
     this.pane = pane;
     this.doc = this.pane.document;
-    this.pdfDoc = this.doc.pdfDoc;
-    this.allNamedDests = this.doc.allNamedDests;
     this.pageNumber = pageNumber;
 
     this.canvas = canvas;
@@ -33,11 +35,9 @@ export class PageView {
     this.textLayer = this.#initLayer("text");
     this.annotationLayer = this.#initLayer("annotation");
 
-    // Don't create endOfContent until first render
     this.endOfContent = null;
-
     this.page = null;
-    this.textContent = null;
+    this.textSlices = null;
     this.annotations = null;
     this.renderTask = null;
     this.scale = 1;
@@ -46,8 +46,14 @@ export class PageView {
     this._delegatedListenersAttached = false;
   }
 
-  async #ensurePageLoaded() {
-    if (!this.page) this.page = await this.pdfDoc.getPage(this.pageNumber);
+  /**
+   * Get the page object from the document
+   * @returns {import('@embedpdf/engines').PdfPageObject|null}
+   */
+  #getPage() {
+    if (!this.page) {
+      this.page = this.doc.getPage(this.pageNumber);
+    }
     return this.page;
   }
 
@@ -71,82 +77,402 @@ export class PageView {
 
   async render(requestedScale) {
     this.cancel();
-    this.scale = requestedScale || this.pendingRenderScale;
-    const page = await this.#ensurePageLoaded();
+    this.scale = requestedScale || this.pendingRenderScale || 1;
+
+    const page = this.#getPage();
+    if (!page) {
+      console.error(`[PageView] Page ${this.pageNumber} not found`);
+      return;
+    }
+
+    const { native, pdfDoc } = this.doc;
+    if (!native || !pdfDoc) {
+      console.error(`[PageView] Engine not initialized`);
+      return;
+    }
 
     const canvasWidth = this.canvas.width;
     const canvasHeight = this.canvas.height;
 
-    const baseViewport = page.getViewport({ scale: 1 });
-    const scaleX = canvasWidth / baseViewport.width;
-    const scaleY = canvasHeight / baseViewport.height;
+    const pageWidth = page.size.width;
+    const pageHeight = page.size.height;
 
+    // Calculate render scale to fit canvas
+    const scaleX = canvasWidth / pageWidth;
+    const scaleY = canvasHeight / pageHeight;
     const renderScale = Math.min(scaleX, scaleY);
-    const viewport = page.getViewport({ scale: renderScale });
-
-    if (!this.textContent) {
-      [this.textContent, this.annotations] = await Promise.all([
-        page.getTextContent(),
-        page.getAnnotations({ intent: "display" }),
-      ]);
-    }
-
-    const ctx = this.canvas.getContext("2d", { alpha: false });
-    ctx.clearRect(0, 0, canvasWidth, canvasHeight);
-
-    const renderContext = {
-      canvasContext: ctx,
-      viewport: viewport,
-      // Disable native annotation rendering for customized rendering
-      annotationMode: pdfjsLib.AnnotationMode?.DISABLE ?? 0,
-    };
-
-    this.renderTask = page.render(renderContext);
 
     try {
-      await this.renderTask.promise;
+      // Load text slices and annotations in parallel if not cached
+      if (!this.annotations) {
+        this.annotations = await native
+          .getPageAnnotations(pdfDoc, page)
+          .toPromise();
+      }
+      if (!this.textSlices) {
+        if (this.doc.lowLevelHandle) {
+          try {
+            this.textSlices = this.doc.extractPageText(page.index)?.textSlices;
+          } catch (err) {
+            console.warn(
+              `[PageRender] Low-level extraction failed for page ${page.index}, falling back:`,
+              err.message,
+            );
+            this.textSlices = null;
+          }
+        }
+        if (!this.textSlices) {
+          this.textSlices = await native
+            .getPageTextRects(pdfDoc, page)
+            .toPromise();
+        }
+      }
 
+      const pageData = await native
+        .renderPageRaw(pdfDoc, page, {
+          scaleFactor: renderScale,
+          withAnnotations: false,
+        })
+        .toPromise();
+
+      const imageData = new ImageData(
+        pageData.data,
+        pageData.width,
+        pageData.height,
+      );
+
+      // Draw to canvas
+      const ctx = this.canvas.getContext("2d", { alpha: false });
+      ctx.clearRect(0, 0, canvasWidth, canvasHeight);
+
+      // Center the rendered image if it doesn't fill the canvas exactly
+      const offsetX = Math.floor((canvasWidth - imageData.width) / 2);
+      const offsetY = Math.floor((canvasHeight - imageData.height) / 2);
+
+      ctx.putImageData(imageData, offsetX, offsetY);
+
+      // Get CSS dimensions for text layer
       const cssWidth = parseFloat(this.canvas.style.width);
       const cssHeight = parseFloat(this.canvas.style.height);
-      const textViewport = page.getViewport({
-        scale: cssWidth / baseViewport.width,
-      });
 
+      // Calculate text layer scale
+      const textScale = cssWidth / pageWidth;
+
+      // Clear and rebuild text layer
       if (this.pane.textSelectionManager) {
         this.pane.textSelectionManager.unregister(this.textLayer);
       }
 
       this.textLayer.innerHTML = "";
-      this.#renderAnnotations(page, textViewport);
-      this.textLayer.style.setProperty("--total-scale-factor", `${this.scale}`);
 
-      const textLayerInstance = new pdfjsLib.TextLayer({
-        textContentSource: this.textContent,
-        container: this.textLayer,
-        viewport: textViewport,
-      });
-      await textLayerInstance.render();
+      // Render annotations first (below text)
+      this.#renderAnnotations(page, textScale, cssWidth, cssHeight);
+
+      // Render text layer
+      this.#renderTextLayer(page, textScale, cssWidth, cssHeight);
+
+      this.textLayer.style.setProperty("--total-scale-factor", `${this.scale}`);
 
       this.#ensureEndOfContent();
 
       this.textLayer.style.width = `${cssWidth}px`;
       this.textLayer.style.height = `${cssHeight}px`;
+
       this.canvas.dataset.rendered = "true";
     } catch (err) {
       if (err?.name !== "RenderingCancelledException") {
-        console.error("Render error:", err);
+        console.error(
+          `[PageView] Render error on page ${this.pageNumber}:`,
+          err,
+        );
       }
     } finally {
       this.renderTask = null;
     }
-    this.canvas.dataset.rendered = "true";
+  }
+
+  /**
+   * Sanitize text content from PDFium
+   * Handles encoding issues, ligatures, and invalid characters
+   * @param {string} text - Raw text from PDFium
+   * @returns {string} - Sanitized text safe for display
+   */
+  #sanitizeText(text) {
+    if (!text) return "";
+
+    let result = "";
+
+    for (let i = 0; i < text.length; i++) {
+      const code = text.charCodeAt(i);
+      const char = text[i];
+
+      // Skip null characters
+      if (code === 0) continue;
+
+      // Skip control characters (except common whitespace)
+      if (code < 32 && code !== 9 && code !== 10 && code !== 13) continue;
+
+      // Skip delete character
+      if (code === 127) continue;
+
+      // Skip Private Use Area characters (often misused font-specific glyphs)
+      // PUA: U+E000 to U+F8FF
+      if (code >= 0xe000 && code <= 0xf8ff) continue;
+
+      // Skip Specials block (replacement chars, etc.)
+      // U+FFF0 to U+FFFF
+      if (code >= 0xfff0 && code <= 0xffff) continue;
+
+      // Handle common ligatures - PDFium may return these as single codepoints
+      // fi ligature (U+FB01) -> "fi"
+      if (code === 0xfb01) {
+        result += "fi";
+        continue;
+      }
+      // fl ligature (U+FB02) -> "fl"
+      if (code === 0xfb02) {
+        result += "fl";
+        continue;
+      }
+      // ff ligature (U+FB00) -> "ff"
+      if (code === 0xfb00) {
+        result += "ff";
+        continue;
+      }
+      // ffi ligature (U+FB03) -> "ffi"
+      if (code === 0xfb03) {
+        result += "ffi";
+        continue;
+      }
+      // ffl ligature (U+FB04) -> "ffl"
+      if (code === 0xfb04) {
+        result += "ffl";
+        continue;
+      }
+
+      // Skip high surrogates without proper pair (broken UTF-16)
+      if (code >= 0xd800 && code <= 0xdbff) {
+        const nextCode = i + 1 < text.length ? text.charCodeAt(i + 1) : 0;
+        // Check if next char is a valid low surrogate
+        if (nextCode >= 0xdc00 && nextCode <= 0xdfff) {
+          // Valid surrogate pair - include both
+          result += char + text[i + 1];
+          i++; // Skip the low surrogate
+          continue;
+        } else {
+          // Invalid/orphan high surrogate - skip
+          continue;
+        }
+      }
+
+      // Skip orphan low surrogates
+      if (code >= 0xdc00 && code <= 0xdfff) continue;
+
+      // Skip CJK characters that appear unexpectedly (likely encoding errors)
+      // CJK Unified Ideographs: U+4E00 to U+9FFF
+      // NOTE: Remove/adjust this check if your PDF legitimately contains CJK text
+      if (code >= 0x4e00 && code <= 0x9fff) {
+        // Check context - if surrounded by non-CJK, likely encoding error
+        const prevCode = i > 0 ? text.charCodeAt(i - 1) : 0;
+        const nextCode = i + 1 < text.length ? text.charCodeAt(i + 1) : 0;
+        const prevIsCJK = prevCode >= 0x4e00 && prevCode <= 0x9fff;
+        const nextIsCJK = nextCode >= 0x4e00 && nextCode <= 0x9fff;
+        // Allow if part of a CJK sequence (2+ in a row)
+        if (!prevIsCJK && !nextIsCJK) {
+          continue; // Isolated CJK char - likely encoding error
+        }
+      }
+
+      result += char;
+    }
+
+    return result;
+  }
+
+  /**
+   * Check if text content appears to be valid/meaningful
+   * @param {string} text - Text to check
+   * @returns {boolean}
+   */
+  #isValidTextContent(text) {
+    if (!text || text.length === 0) return false;
+
+    // Check if text is just whitespace
+    if (/^\s*$/.test(text)) return false;
+
+    return true;
+  }
+
+  /**
+   * Render text layer from PDFium text rects
+   *
+   * Key insight: font.size from PDFium is in PDF user space units (points).
+   * However, the rect represents the actual bounding box of the rendered text.
+   * Using rect.size.height * scale gives us the correct visual height in CSS pixels.
+   *
+   * @param {import('@embedpdf/engines').PdfPageObject} page
+   * @param {number} scale - CSS pixels per PDF unit
+   * @param {number} cssWidth
+   * @param {number} cssHeight
+   */
+  #renderTextLayer(page, scale, cssWidth, cssHeight) {
+    if (!this.textSlices || this.textSlices.length === 0) return;
+
+    const pageHeight = page.size.height;
+
+    for (const slice of this.textSlices) {
+      // Sanitize the text content
+      const rawContent = slice.content || "";
+      const content = this.#sanitizeText(rawContent);
+
+      // Skip empty or invalid content
+      if (!content || !this.#isValidTextContent(content)) {
+        continue;
+      }
+
+      const span = document.createElement("span");
+      span.textContent = content;
+
+      // Get rect info (already in page coordinates, origin at top-left from getPageTextRects)
+      const rectX = slice.rect.origin.x;
+      const rectY = slice.rect.origin.y;
+      const rectWidth = slice.rect.size.width;
+      const rectHeight = slice.rect.size.height;
+
+      // Convert to CSS coordinates
+      const x = rectX * scale;
+      const y = rectY * scale;
+
+      // Calculate visual dimensions in CSS pixels
+      const visualWidth = rectWidth * scale;
+      const visualHeight = rectHeight * scale;
+
+      let fontSize = visualHeight * 0.9;
+
+      // Sanity check: skip if dimensions are unreasonable
+      // (catches figure text with wrong transformation matrices)
+      if (
+        fontSize > 50 ||
+        fontSize < 3 ||
+        visualWidth <= 0 ||
+        visualHeight <= 0
+      ) {
+        continue;
+      }
+
+      const fontFamily =
+        slice.font?.family || slice.font?.famliy || "sans-serif";
+      const cleanFontFamily =
+        fontFamily.replace(/['"]/g, "").trim() || "sans-serif";
+
+      span.style.cssText = `
+        position: absolute;
+        left: ${x.toFixed(2)}px;
+        top: ${y.toFixed(2)}px;
+        font-size: ${fontSize.toFixed(2)}px;
+        font-family: "${cleanFontFamily}", sans-serif;
+        line-height: 1;
+        transform-origin: 0% 0%;
+        white-space: pre;
+        pointer-events: all;
+        color: transparent;
+      `;
+
+      // Add to DOM first so we can measure
+      this.textLayer.appendChild(span);
+
+      // Calculate horizontal scaling to fit text in its box
+      // This compensates for font metric differences between PDF fonts and system fonts
+      const measuredWidth = span.offsetWidth;
+      if (measuredWidth > 0 && visualWidth > 0) {
+        const scaleX = visualWidth / measuredWidth;
+        // Only apply if within reasonable range (0.5x to 2x)
+        if (scaleX >= 0.5 && scaleX <= 2.0) {
+          span.style.transform = `scaleX(${scaleX.toFixed(4)})`;
+        } else if (scaleX > 0.1 && scaleX < 0.5) {
+          // Text might be condensed - still apply but log
+          span.style.transform = `scaleX(${scaleX.toFixed(4)})`;
+        } else if (scaleX > 2.0 && scaleX < 5.0) {
+          // Text might be expanded - still apply
+          span.style.transform = `scaleX(${scaleX.toFixed(4)})`;
+        }
+        // If scaleX is very extreme (< 0.1 or > 5), the text might be garbage
+      }
+    }
+  }
+
+  /**
+   * Render annotation layer (links)
+   * @param {import('@embedpdf/engines').PdfPageObject} page
+   * @param {number} scale
+   * @param {number} cssWidth
+   * @param {number} cssHeight
+   */
+  #renderAnnotations(page, scale, cssWidth, cssHeight) {
+    this.annotationLayer.innerHTML = "";
+    this.#setupAnnotationLayerEvents();
+
+    if (!this.annotations || this.annotations.length === 0) return;
+
+    const pageHeight = page.size.height;
+
+    for (const annot of this.annotations) {
+      // Only render Link annotations in the annotation layer
+      if (!annot.target) continue;
+      if (annot.target.type !== "destination" && annot.target.type !== "action")
+        continue;
+
+      const rect = annot.rect;
+      if (!rect) continue;
+
+      // Convert to CSS coordinates
+      const left = rect.origin.x * scale;
+      const top = rect.origin.y * scale;
+      const width = rect.size.width * scale;
+      const height = rect.size.height * scale;
+
+      const anchor = document.createElement("a");
+      anchor.style.cssText = `
+        position: absolute;
+        left: ${left}px;
+        top: ${top}px;
+        width: ${width}px;
+        height: ${height}px;
+        pointer-events: auto;
+        background-color: transparent;
+      `;
+
+      // Handle different link types
+      if (annot.target.type === "action" && annot.target.action?.uri) {
+        // External URL
+        anchor.href = annot.target.action.uri;
+        anchor.target = "_blank";
+        anchor.rel = "noopener noreferrer";
+      } else if (annot.target.type === "destination") {
+        const dest = annot.target.destination;
+        // Internal destination
+        anchor.href = typeof dest === "string" ? dest : "#";
+        anchor.dataset.dest = "";
+
+        // Store destination info if available
+        if (dest && typeof dest === "object") {
+          anchor.dataset.destPageIndex = dest.pageIndex?.toString() || "";
+          // dest.view contains [left, top, zoom] or similar
+          if (Array.isArray(dest.view)) {
+            anchor.dataset.destLeft = dest.view[0]?.toString() || "0";
+            anchor.dataset.destTop = dest.view[1]?.toString() || "0";
+          }
+        }
+      } else {
+        continue;
+      }
+
+      this.annotationLayer.appendChild(anchor);
+    }
   }
 
   cancel() {
-    if (this.renderTask) {
-      this.renderTask.cancel();
-      this.renderTask = null;
-    }
+    this.renderTask = null;
   }
 
   release() {
@@ -158,14 +484,13 @@ export class PageView {
     this.annotationLayer.innerHTML = "";
     const ctx = this.canvas.getContext("2d");
     ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
-    if (this.page) {
-      this.page.cleanup();
-      this.page = null;
-    }
-    this.textContent = null;
+
+    this.page = null;
+    this.textSlices = null;
     this.annotations = null;
     this.endOfContent = null;
     this.canvas.dataset.rendered = "false";
+
     if (this._showTimer) {
       clearTimeout(this._showTimer);
       this._showTimer = null;
@@ -222,10 +547,10 @@ export class PageView {
     citationPopup.onAnchorEnter();
 
     const dest = anchor.getAttribute("href");
-    if (!dest || dest.startsWith("http")) return; // External link
+    if (!dest || dest.startsWith("http")) return;
 
     this._showTimer = setTimeout(async () => {
-      const result = await this.#resolveDestToPosition(dest);
+      const result = await this.#resolveDestToPosition(anchor, dest);
       if (!result) return;
 
       anchor.dataset.dest = `${result.left},${result.pageIndex},${result.top}`;
@@ -255,36 +580,63 @@ export class PageView {
 
   async #handleAnchorClick(anchor) {
     const destStr = anchor.dataset.dest;
-    if (!destStr) return;
+    if (!destStr) {
+      const pageIndex = parseInt(anchor.dataset.destPageIndex, 10);
+      const left = parseFloat(anchor.dataset.destLeft) || 0;
+      const top = parseFloat(anchor.dataset.destTop) || 0;
+
+      if (!isNaN(pageIndex)) {
+        await this.pane.scrollToPoint(pageIndex, left, top);
+      }
+      return;
+    }
 
     const [left, page, top] = destStr.split(",").map(parseFloat);
     const pageIndex = Math.floor(page);
     await this.pane.scrollToPoint(pageIndex, left, top);
   }
 
+  async #resolveDestToPosition(anchor, dest) {
+    if (anchor.dataset.destPageIndex) {
+      const pageIndex = parseInt(anchor.dataset.destPageIndex, 10);
+      if (!isNaN(pageIndex)) {
+        return {
+          pageIndex,
+          left: parseFloat(anchor.dataset.destLeft) || 0,
+          top: parseFloat(anchor.dataset.destTop) || 0,
+        };
+      }
+    }
+
+    const resolved = this.doc.resolveDestination(dest);
+    if (resolved) {
+      return resolved;
+    }
+
+    return null;
+  }
+
   async #findCiteText(left, pageIndex, top) {
     const pageNumber = pageIndex + 1;
 
-    console.log(`try to find ${pageIndex + 1}, left ${left}, top ${top}`);
+    console.log(
+      `[PageView] Finding citation at page ${pageNumber}, left ${left}, top ${top}`,
+    );
 
-    // Step 1: Try reference index first (if available)
     if (this.doc.hasReferenceIndex()) {
       const bounds = this.doc.findBoundingReferenceAnchors(
         pageNumber,
         left,
         top,
       );
-      console.log(bounds);
 
-      // If we have a high-confidence match with cached text, use it directly
       if (bounds.current?.confidence > 0.85 && bounds.current.cachedText) {
         console.log(
-          `[Citation] Using cached reference text (confidence: ${bounds.current.confidence.toFixed(2)})`,
+          `[PageView] Using cached reference text (confidence: ${bounds.current.confidence.toFixed(2)})`,
         );
         return bounds.current.cachedText;
       }
 
-      // Otherwise, use hybrid approach with guardrails
       const heuristicText = await this.#heuristicFindCiteText(
         left,
         pageIndex,
@@ -292,7 +644,6 @@ export class PageView {
         bounds,
       );
 
-      // Cross-validate if we have index data
       if (bounds.current?.cachedText && heuristicText) {
         const similarity = this.#textSimilarity(
           heuristicText,
@@ -300,7 +651,7 @@ export class PageView {
         );
         if (similarity < 0.7) {
           console.log(
-            `[Citation] Heuristic diverged (similarity: ${similarity.toFixed(2)}), using index version`,
+            `[PageView] Heuristic diverged (similarity: ${similarity.toFixed(2)}), using index version`,
           );
           return bounds.current.cachedText;
         }
@@ -310,22 +661,14 @@ export class PageView {
         return heuristicText;
       }
 
-      // Fallback to cached text if heuristic failed
       if (bounds.current?.cachedText) {
         return bounds.current.cachedText;
       }
     }
 
-    // Fallback to pure heuristic (no reference index available)
     return await this.#heuristicFindCiteText(left, pageIndex, top, null);
   }
 
-  /**
-   * Calculate text similarity (simple Jaccard-like comparison)
-   * @param {string} text1
-   * @param {string} text2
-   * @returns {number} Similarity score 0-1
-   */
   #textSimilarity(text1, text2) {
     if (!text1 || !text2) return 0;
 
@@ -335,7 +678,6 @@ export class PageView {
 
     if (n1 === n2) return 1;
 
-    // Word-based Jaccard similarity
     const words1 = new Set(n1.split(" ").filter((w) => w.length > 2));
     const words2 = new Set(n2.split(" ").filter((w) => w.length > 2));
 
@@ -350,52 +692,33 @@ export class PageView {
     return union > 0 ? intersection / union : 0;
   }
 
-  /**
-   * Heuristic citation text extraction with optional guardrails
-   * @param {number} left - X position in PDF coordinates
-   * @param {number} pageIndex - 0-based page index
-   * @param {number} top - Y position in PDF coordinates
-   * @param {Object|null} bounds - Bounding anchors from reference index
-   * @returns {Promise<string|null>}
-   */
   async #heuristicFindCiteText(left, pageIndex, top, bounds) {
-    const page = await this.pdfDoc.getPage(pageIndex + 1);
+    const { native, pdfDoc } = this.doc;
+    if (!native || !pdfDoc) return null;
 
-    // Use scale=1 viewport for PDF coordinate space (scale-independent)
-    const baseViewport = page.getViewport({ scale: 1, dontFlip: true });
-    const texts = await page.getTextContent();
-
-    const { width: pageWidth, height: pageHeight } = baseViewport;
-    const transform = [1, 0, 0, -1, 0, pageHeight];
-
-    // Work entirely in PDF coordinates (scale=1)
-    // Target coordinates are already in PDF space
-    const targetX = left;
-    const targetY = top;
-
-    let startIndex = -1;
-    let minDistance = pageWidth; // Use page width as max reasonable distance
+    const page = this.doc.getPage(pageIndex + 1);
+    if (!page) return null;
 
     try {
-      // Find the closest span to the target position (in PDF coordinates)
-      for (let i = 0; i < texts.items.length; i++) {
-        const geom = texts.items[i];
-        const tx = pdfjsLib.Util.transform(transform, geom.transform);
-        const angle = Math.atan2(tx[1], tx[0]);
-        const fontHeight = Math.hypot(tx[2], tx[3]);
-        const fontAscent = fontHeight * 0.8;
+      const textSlices = await native
+        .getPageTextRects(pdfDoc, page)
+        .toPromise();
+      if (!textSlices || textSlices.length === 0) return null;
 
-        let spanX, spanY;
-        if (angle === 0) {
-          spanX = tx[4];
-          spanY = tx[5] - fontAscent;
-        } else {
-          spanX = tx[4] + fontAscent * Math.sin(angle);
-          spanY = tx[5] - fontAscent * Math.cos(angle);
-        }
+      const pageHeight = page.size.height;
 
-        // Distance calculation in PDF coordinate space (scale-independent)
-        const dist = Math.hypot(spanX - targetX, spanY - targetY);
+      const targetX = left;
+      const targetY = top;
+
+      let startIndex = -1;
+      let minDistance = page.size.width;
+
+      for (let i = 0; i < textSlices.length; i++) {
+        const slice = textSlices[i];
+        const sliceX = slice.rect.origin.x;
+        const sliceY = slice.rect.origin.y;
+
+        const dist = Math.hypot(sliceX - targetX, sliceY - targetY);
 
         if (dist < minDistance) {
           startIndex = i;
@@ -404,54 +727,33 @@ export class PageView {
       }
 
       if (startIndex === -1) {
-        throw new Error("Failed to locate the coordinates of the reference.");
+        return null;
       }
 
-      // Collect reference text with smart boundary detection
-      const items = texts.items;
       const reference = [];
-
-      // Reference number patterns: [1], (1), 1., 1), [12], etc.
       const refNumberPattern = /^\s*[\[\(]?\d{1,3}[\]\)\.\,]?\s+\S/;
 
-      // Get guardrails from reference index bounds
       const stopBeforeY = bounds?.next?.startCoord?.y;
       const formatHint = bounds?.current?.formatHint;
 
-      // Helper to get span position in PDF coords
-      const getSpanPosition = (span) => {
-        const tx = pdfjsLib.Util.transform(transform, span.transform);
-        const fontHeight = Math.hypot(tx[2], tx[3]);
-        return {
-          x: tx[4],
-          y: tx[5] - fontHeight * 0.8,
-          fontHeight,
-        };
-      };
-
-      // Track line structure for boundary detection
-      const firstPos = getSpanPosition(items[startIndex]);
-      let currentLineY = firstPos.y;
-      let firstLineX = firstPos.x;
+      const firstSlice = textSlices[startIndex];
+      let currentLineY = firstSlice.rect.origin.y;
+      let firstLineX = firstSlice.rect.origin.x;
       let baselineLineHeight = null;
       let currCiteX = null;
       let lineCount = 0;
 
-      for (let i = startIndex; i < items.length; i++) {
-        const span = items[i];
-        const pos = getSpanPosition(span);
-        const text = span.str;
+      for (let i = startIndex; i < textSlices.length; i++) {
+        const slice = textSlices[i];
+        const text = this.#sanitizeText(slice.content || "");
+        const sliceY = slice.rect.origin.y;
+        const sliceX = slice.rect.origin.x;
 
-        // Guardrail: Don't cross into next reference
-        if (stopBeforeY !== undefined && pos.y < stopBeforeY) {
-          console.log(
-            `[Citation] Stopped at guardrail: next reference boundary`,
-          );
+        if (stopBeforeY !== undefined && sliceY < stopBeforeY) {
           break;
         }
 
-        // Check line break via vertical movement
-        const verticalGap = Math.abs(pos.y - currentLineY);
+        const verticalGap = Math.abs(sliceY - currentLineY);
         const isNewLine = verticalGap > 3;
 
         if (isNewLine) {
@@ -460,22 +762,19 @@ export class PageView {
             baselineLineHeight = verticalGap;
           }
 
-          // Check large vertical gap indicates new block/paragraph
           if (baselineLineHeight && verticalGap > baselineLineHeight * 1.8) {
             break;
           }
 
-          // Check reference number at start of new line
           let lineStartText = text;
-          if (i + 1 < items.length) {
-            const nextPos = getSpanPosition(items[i + 1]);
-            // If next span is on same line, include it for pattern matching
-            if (Math.abs(nextPos.y - pos.y) < 3) {
-              lineStartText = text + items[i + 1].str;
+          if (i + 1 < textSlices.length) {
+            const nextSlice = textSlices[i + 1];
+            if (Math.abs(nextSlice.rect.origin.y - sliceY) < 3) {
+              lineStartText =
+                text + this.#sanitizeText(nextSlice.content || "");
             }
           }
 
-          // Use format hint for smarter boundary detection
           if (
             formatHint === "numbered-bracket" &&
             /^\s*\[\d+\]/.test(lineStartText)
@@ -490,28 +789,26 @@ export class PageView {
             break;
           }
 
-          // Check indentation
           if (lineCount === 1) {
-            currCiteX = pos.x;
+            currCiteX = sliceX;
           } else if (currCiteX !== null) {
             const hasHangingIndent = currCiteX > firstLineX + 6;
             if (hasHangingIndent) {
-              if (pos.x < currCiteX - 8) {
+              if (sliceX < currCiteX - 8) {
                 break;
               }
             } else {
               const minX = Math.min(firstLineX, currCiteX);
-              if (pos.x < minX - 8) {
+              if (sliceX < minX - 8) {
                 break;
               }
             }
           }
-          currentLineY = pos.y;
+          currentLineY = sliceY;
         }
 
         reference.push(text);
 
-        // Check standalone period often ends a reference
         if (text.trim() === ".") {
           break;
         }
@@ -519,7 +816,7 @@ export class PageView {
 
       return reference.join("");
     } catch (err) {
-      console.error("Failed to find closest span", err);
+      console.error("[PageView] Failed to find citation text:", err);
       return null;
     }
   }
@@ -538,63 +835,5 @@ export class PageView {
     }
     layer.innerHTML = "";
     return layer;
-  }
-
-  #renderAnnotations(page, viewport) {
-    this.annotationLayer.innerHTML = "";
-
-    this.#setupAnnotationLayerEvents();
-
-    for (const a of this.annotations) {
-      if (a.subtype !== "Link") continue;
-
-      const rect = pdfjsLib.Util.normalizeRect(a.rect);
-      const viewportForRects = page.getViewport({
-        scale: this.scale,
-        dontFlip: true,
-      });
-      const [x1, y1, x2, y2] =
-        viewportForRects.convertToViewportRectangle(rect);
-      const left = Math.min(x1, x2);
-      const bottom = Math.min(y1, y2);
-      const width = Math.abs(x1 - x2);
-      const height = Math.abs(y1 - y2);
-      const top = viewport.height - bottom - height;
-
-      const anchor = document.createElement("a");
-      anchor.style.cssText = `
-        position: absolute;
-        left: ${left}px;
-        top: ${top}px;
-        width: ${width}px;
-        height: ${height}px;
-        pointer-events: auto;
-        background-color: transparent;
-      `;
-
-      if (a.url) {
-        anchor.href = a.url;
-        anchor.target = "_blank";
-        anchor.rel = "noopener noreferrer";
-      } else if (a.dest) {
-        anchor.href = a.dest;
-        anchor.dataset.dest = "";
-      } else {
-        continue;
-      }
-
-      this.annotationLayer.appendChild(anchor);
-    }
-  }
-
-  async #resolveDestToPosition(dest) {
-    const explicitDest = this.allNamedDests[dest];
-    if (Array.isArray(explicitDest)) {
-      const [ref, kind, left, top, zoom] = explicitDest;
-      const pageIndex = await this.pdfDoc.getPageIndex(ref);
-
-      return { pageIndex, left: left ?? 0, top: top ?? 0, zoom };
-    }
-    return null;
   }
 }

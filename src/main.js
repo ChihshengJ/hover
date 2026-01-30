@@ -1,3 +1,7 @@
+/**
+ * Main entry point - Refactored for @embedpdf/engines (PDFium)
+ */
+
 import { PDFDocumentModel } from "./doc.js";
 import { SplitWindowManager } from "./window_manager.js";
 import { FileMenu } from "./controls/file_menu.js";
@@ -53,13 +57,26 @@ function getPdfUrl(forceDefault = false) {
  */
 function getStatusMessage(phase) {
   const messages = {
+    // Engine initialization phases
+    "loading-wasm": "Loading PDF engine...",
+    "downloading-wasm": "Downloading PDF engine...",
+    "parsing-wasm": "Parsing PDF engine...",
+    "initializing-pdfium": "Initializing PDFium...",
+    "creating-engine": "Creating engine...",
+    ready: "Engine ready",
+    "initializing engine": "Initializing PDF engine...",
+
+    // Document loading phases
     downloading: "Downloading document...",
+    downloaded: "Document downloaded",
     parsing: "Parsing PDF...",
     processing: "Processing document...",
     caching: "Caching pages...",
+    "loading bookmarks": "Loading bookmarks...",
     "loading annotations": "Loading annotations...",
     "building outline": "Building outline...",
     "initializing search": "Initializing search...",
+    "indexing references": "Indexing references...",
     complete: "Complete",
   };
   return messages[phase] || "Loading...";
@@ -70,7 +87,6 @@ function getStatusMessage(phase) {
  * @returns {Promise<{data: ArrayBuffer, name: string} | null>}
  */
 async function getLocalPdfFromBackground() {
-  // Only try if we're in extension context
   if (typeof chrome === "undefined" || !chrome.runtime?.sendMessage) {
     return null;
   }
@@ -84,7 +100,6 @@ async function getLocalPdfFromBackground() {
 
       if (response?.success && response?.data?.data) {
         try {
-          // Convert base64 back to ArrayBuffer
           const binary = atob(response.data.data);
           const bytes = new Uint8Array(binary.length);
           for (let i = 0; i < binary.length; i++) {
@@ -115,7 +130,6 @@ async function loadPdf(isFirstLaunch = false) {
 
   try {
     const pdfmodel = new PDFDocumentModel();
-    const wm = new SplitWindowManager(el.wd, pdfmodel);
 
     // Progress callback for loading updates
     const onProgress = ({ loaded, total, percent, phase }) => {
@@ -128,10 +142,11 @@ async function loadPdf(isFirstLaunch = false) {
 
     if (isFirstLaunch) {
       // For first launch, always load the default paper
-      // (ignore any local uploads or URL params)
       const url = OnboardingWalkthrough.getDefaultPaperUrl();
-      const pdfDoc = await pdfmodel.load(url, onProgress);
+      await pdfmodel.load(url, onProgress);
       loadingOverlay.setProgress(0.95, "Initializing viewer...");
+
+      const wm = new SplitWindowManager(el.wd, pdfmodel);
       await wm.initialize();
       const fileMenu = new FileMenu(wm);
 
@@ -154,10 +169,11 @@ async function loadPdf(isFirstLaunch = false) {
         loadingOverlay.setProgress(0.1, "Loading local file...");
         await pdfmodel.load(localPdf.data, onProgress);
         loadingOverlay.setProgress(0.9, "Initializing viewer...");
+
+        const wm = new SplitWindowManager(el.wd, pdfmodel);
         await wm.initialize();
         const fileMenu = new FileMenu(wm);
 
-        // Use detected title, fallback to filename
         const detectedTitle = await pdfmodel.getDocumentTitle();
         const fileName = localPdf.name.replace(/\.pdf$/i, "");
         document.title = (detectedTitle || fileName) + " - Hover PDF";
@@ -174,10 +190,11 @@ async function loadPdf(isFirstLaunch = false) {
       loadingOverlay.setProgress(0.1, "Loading local file...");
       await pdfmodel.load(backgroundPdf.data, onProgress);
       loadingOverlay.setProgress(0.9, "Initializing viewer...");
+
+      const wm = new SplitWindowManager(el.wd, pdfmodel);
       await wm.initialize();
       const fileMenu = new FileMenu(wm);
 
-      // Use detected title, fallback to filename
       const detectedTitle = await pdfmodel.getDocumentTitle();
       const fileName = backgroundPdf.name.replace(/\.pdf$/i, "");
       document.title = (detectedTitle || fileName) + " - Hover PDF";
@@ -188,12 +205,13 @@ async function loadPdf(isFirstLaunch = false) {
 
     // Fall back to URL-based loading
     const url = getPdfUrl();
-    const pdfDoc = await pdfmodel.load(url, onProgress);
+    await pdfmodel.load(url, onProgress);
     loadingOverlay.setProgress(0.95, "Initializing viewer...");
+
+    const wm = new SplitWindowManager(el.wd, pdfmodel);
     await wm.initialize();
     const fileMenu = new FileMenu(wm);
 
-    // Get document title (PDF metadata or detected from content)
     const documentTitle = await pdfmodel.getDocumentTitle();
     if (documentTitle) {
       document.title = documentTitle + " - Hover PDF";
@@ -208,6 +226,9 @@ async function loadPdf(isFirstLaunch = false) {
       <div style="color: red; text-align: center; padding: 50px;">
         <h2>Failed to load PDF</h2>
         <p>${error.message}</p>
+        <p style="font-size: 12px; color: #666; margin-top: 20px;">
+          If this is a CORS error, try using the extension popup to upload the file directly.
+        </p>
       </div>
     `;
   }
@@ -215,8 +236,7 @@ async function loadPdf(isFirstLaunch = false) {
 
 function loadWallPaper() {
   const wallPaperPath = "assets/wallpapers/Texture_Carpet.jpg";
-  document.body.style.background =
-    `url(${wallPaperPath})`;
+  document.body.style.background = `url(${wallPaperPath})`;
   document.body.style.backgroundSize = "cover";
 }
 
@@ -224,18 +244,14 @@ async function main() {
   const isFirstLaunch = await OnboardingWalkthrough.isFirstLaunch();
 
   if (isFirstLaunch) {
-    // Save the user's intended URL before we override it
     const intendedUrl = getIntendedPdfUrl();
     if (intendedUrl) {
       OnboardingWalkthrough.saveIntendedUrl(intendedUrl);
     }
-
-    // Also clear any local PDF data to avoid confusion
     PDFDocumentModel.clearLocalPdf();
   }
 
-  loadWallPaper();
-  // Load with first-launch flag
+  // loadWallPaper();
   await loadPdf(isFirstLaunch);
 }
 

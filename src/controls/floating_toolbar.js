@@ -857,7 +857,7 @@ export class FloatingToolbar {
 
   updatePageNumber() {
     const currentPage = this.pane.getCurrentPage();
-    const totalPages = this.pane.document.pdfDoc?.numPages || "?";
+    const totalPages = this.pane.pages.length || "?";
 
     this.ball.querySelector(".page-current").textContent = currentPage;
     this.ball.querySelector(".page-total").textContent = totalPages;

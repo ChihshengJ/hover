@@ -1,5 +1,6 @@
 /**
  * ReferenceBuilder - Extracts and indexes references from academic PDFs
+ * Refactored for @embedpdf/engines (PDFium)
  *
  * Provides:
  * 1. Reference section detection (start/end boundaries)
@@ -70,9 +71,9 @@ export async function buildReferenceIndex(searchIndex) {
     sectionEnd: null,
   };
 
-  if (!searchIndex?.isBuilt) {
+  if (!searchIndex) {
     console.warn(
-      "[References] Search index not built, cannot extract references",
+      "[References] Search index not available, cannot extract references",
     );
     return emptyResult;
   }
@@ -96,7 +97,6 @@ export async function buildReferenceIndex(searchIndex) {
     // Phase 3: Extract reference anchors
     const anchors = extractReferenceAnchors(section, format, searchIndex);
     console.log(`[References] Extracted ${anchors.length} reference anchors`);
-    // console.log(anchors);
 
     // Phase 4: Cache text for high-confidence entries
     for (const anchor of anchors) {
@@ -107,7 +107,6 @@ export async function buildReferenceIndex(searchIndex) {
         anchor.authors = parsed.authors;
         anchor.year = parsed.year;
       }
-      // console.log(anchor);
     }
 
     return {
@@ -423,7 +422,6 @@ function detectReferenceFormat(lines) {
 function detectHangingIndent(lines) {
   if (lines.length < 4) return false;
 
-  console.log(lines);
   // Get typical column start position
   const columnStarts = lines.filter((l) => l.isAtColumnStart).map((l) => l.x);
 
@@ -437,7 +435,6 @@ function detectHangingIndent(lines) {
 
   while (i < lines.length - 1) {
     const line = lines[i];
-    // const isAtMargin = Math.abs(line.x - marginX) < 5;
 
     if (line.isAtColumnStart) {
       // Check if next lines are indented
@@ -524,7 +521,6 @@ function extractNumberedReferences(lines, format) {
         id: `ref-${refIndex}`,
         index: refIndex,
         pageNumber: line.pageNumber,
-        // startCoord: { x: line.x, y: line.originalY || line.y },
         startCoord: { x: line.x, y: line.y },
         endCoord: null,
         confidence: 0.7, // Base confidence for numbered
@@ -560,17 +556,10 @@ function extractAuthorYearReferences(lines) {
   let currentAnchor = null;
   let currentLines = [];
 
-  // Get margin position for column start detection
-  // const marginXValues = lines.filter((l) => l.isAtColumnStart).map((l) => l.x);
-  // const marginX = marginXValues.length > 0 ? Math.min(...marginXValues) : 0;
-  // const tolerance = 5;
-
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
-    // const isAtMargin = Math.abs(line.x - marginX) < tolerance;
     const startsWithAuthor = AUTHOR_YEAR_START_PATTERN.test(line.text);
     const previousEndsWithPeriod = i > 0 && /\.\s*$/.test(lines[i - 1].text);
-    console.log(line);
 
     // New reference starts when: at margin AND (starts with author pattern OR previous ended with period)
     const isNewEntry =
@@ -610,7 +599,6 @@ function extractAuthorYearReferences(lines) {
         id: `ref-${parsed.authors?.split(/[,\s]/)[0]?.toLowerCase() || "unknown"}-${parsed.year || 0}`,
         index: null,
         pageNumber: line.pageNumber,
-        // startCoord: { x: line.x, y: line.originalY || line.y },
         startCoord: { x: line.x, y: line.y },
         endCoord: null,
         confidence: 0.5,
@@ -642,9 +630,6 @@ function extractHangingIndentReferences(lines) {
   let currentAnchor = null;
   let currentLines = [];
 
-  // const marginXValues = lines.filter((l) => l.isAtColumnStart).map((l) => l.x);
-  // const marginX = marginXValues.length > 0 ? Math.min(...marginXValues) : 0;
-  // const tolerance = 5;
   let refIndex = 0;
 
   for (let i = 0; i < lines.length; i++) {
@@ -664,7 +649,6 @@ function extractHangingIndentReferences(lines) {
         index: refIndex,
         pageNumber: line.pageNumber,
         startCoord: { x: line.x, y: line.originalY || line.y },
-        // startCoord: { x: line.x, y: line.y },
         endCoord: null,
         confidence: 0.55,
         formatHint: "hanging-indent",
@@ -899,12 +883,10 @@ function parseAuthorYear(text) {
   }
 
   // Extract author - try different patterns
-  // Pattern 1: "Smith, J." at start
   const lastFirstMatch = text.match(LAST_NAME_PATTERNS.lastFirst);
   if (lastFirstMatch) {
     authors = lastFirstMatch[1];
   } else {
-    // Pattern 2: First capitalized word(s) before year or comma
     const simpleMatch = text.match(
       /^([A-Z][a-zÀ-ÿ]+(?:[-'][A-Z][a-zÀ-ÿ]+)?(?:\s*,?\s*(?:and|&)\s*[A-Z][a-zÀ-ÿ]+)*)/,
     );
@@ -918,9 +900,9 @@ function parseAuthorYear(text) {
 
 /**
  * Match a citation to a reference using year + author + initials
- * @param {string} citationAuthor - Author from citation (e.g., "Smith")
- * @param {string} citationYear - Year from citation (e.g., "2020")
- * @param {ReferenceAnchor[]} anchors - Reference anchors to search
+ * @param {string} citationAuthor
+ * @param {string} citationYear
+ * @param {ReferenceAnchor[]} anchors
  * @returns {ReferenceAnchor|null}
  */
 export function matchCitationToReference(
@@ -954,7 +936,6 @@ export function matchCitationToReference(
 
     if (authorMatches.length === 1) return authorMatches[0];
     if (authorMatches.length > 1) {
-      // Try exact match
       const exact = authorMatches.find((a) =>
         a.authors?.toLowerCase().startsWith(authorLower),
       );
@@ -962,12 +943,11 @@ export function matchCitationToReference(
     }
   }
 
-  // Return first year match if no author match
   return yearMatches[0];
 }
 
 // ============================================
-// Inline Citation Detection (for fallback linking)
+// Inline Citation Detection
 // ============================================
 
 /**
@@ -977,7 +957,7 @@ export function matchCitationToReference(
  * @returns {InlineCitation[]}
  */
 export function findInlineCitations(searchIndex, referenceIndex) {
-  if (!searchIndex?.isBuilt) return [];
+  if (!searchIndex) return [];
 
   const citations = [];
   const docInfo = getDocInfo(searchIndex);
@@ -1120,8 +1100,8 @@ function parseNumericCitation(str) {
 /**
  * Estimate rectangle for a text match within a line
  * @param {Object} line
- * @param {number} matchStart - Character index where match starts
- * @param {number} matchLength - Length of match
+ * @param {number} matchStart
+ * @param {number} matchLength
  * @returns {{x: number, y: number, width: number, height: number}}
  */
 function estimateRectFromMatch(line, matchStart, matchLength) {
@@ -1135,7 +1115,6 @@ function estimateRectFromMatch(line, matchStart, matchLength) {
       const itemEnd = charCount + item.str.length;
 
       if (charCount <= matchStart && itemEnd >= matchStart) {
-        // Match starts in this item
         const offsetRatio = (matchStart - charCount) / item.str.length;
         startX = item.x + item.width * offsetRatio;
       }
@@ -1144,14 +1123,13 @@ function estimateRectFromMatch(line, matchStart, matchLength) {
         charCount <= matchStart + matchLength &&
         itemEnd >= matchStart + matchLength
       ) {
-        // Match ends in this item
         const offsetRatio =
           (matchStart + matchLength - charCount) / item.str.length;
         endX = item.x + item.width * offsetRatio;
         break;
       }
 
-      charCount = itemEnd + 1; // +1 for space between items
+      charCount = itemEnd + 1;
     }
 
     return {
@@ -1182,7 +1160,7 @@ function estimateRectFromMatch(line, matchStart, matchLength) {
  * @returns {Array<{type: string, text: string, pageNumber: number, rect: Object, target: string}>}
  */
 export function findCrossReferences(searchIndex) {
-  if (!searchIndex?.isBuilt) return [];
+  if (!searchIndex) return [];
 
   const crossRefs = [];
   const docInfo = getDocInfo(searchIndex);
@@ -1195,12 +1173,11 @@ export function findCrossReferences(searchIndex) {
 
     for (const line of allLines) {
       for (const [type, pattern] of Object.entries(CROSS_REFERENCE_PATTERNS)) {
-        // Create new regex instance to reset lastIndex
         const regex = new RegExp(pattern.source, pattern.flags);
         let match;
 
         while ((match = regex.exec(line.text)) !== null) {
-          const target = match[1] || match[2]; // Some patterns have target in group 2
+          const target = match[1] || match[2];
           const rect = estimateRectFromMatch(
             line,
             match.index,
@@ -1250,36 +1227,23 @@ function isBoldFont(fontName) {
 
 /**
  * Find reference anchor by coordinate (for hybrid lookup)
- * Handles multi-column layouts by considering both X and Y coordinates.
- *
  * @param {ReferenceAnchor[]} anchors
  * @param {number} pageNumber - 1-based page number
  * @param {number} x - X coordinate in PDF space
- * @param {number} y - Y coordinate in PDF space (origin at bottom-left, Y increases upward)
+ * @param {number} y - Y coordinate in PDF space
  * @returns {{current: ReferenceAnchor|null, next: ReferenceAnchor|null}}
- *
- * - `current`: The reference that contains or is closest to the target point
- * - `next`: The reference after `current` in reading order (used as extraction guardrail)
  */
 export function findBoundingAnchors(anchors, pageNumber, x, y) {
-  // Filter to this page only
   const pageAnchors = anchors.filter((a) => a.pageNumber === pageNumber);
 
   if (pageAnchors.length === 0) {
     return { current: null, next: null };
   }
 
-  // Step 1: Detect column boundaries from anchor X positions
-  // Group anchors by approximate X position to identify columns
   const columnGroups = detectColumns(pageAnchors);
-
-  // Step 2: Determine which column the target point is in
   const targetColumn = findTargetColumn(columnGroups, x);
-
-  // Step 3: Sort anchors in reading order (column by column, top to bottom within each)
   const sortedAnchors = sortInReadingOrder(pageAnchors, columnGroups);
 
-  // Step 4: Find the closest anchor to the target point
   let current = null;
   let currentIndex = -1;
   let bestScore = Infinity;
@@ -1301,7 +1265,6 @@ export function findBoundingAnchors(anchors, pageNumber, x, y) {
     }
   }
 
-  // Step 5: Get the next anchor in reading order (guardrail for extraction)
   const next =
     currentIndex >= 0 && currentIndex < sortedAnchors.length - 1
       ? sortedAnchors[currentIndex + 1]
@@ -1318,19 +1281,14 @@ export function findBoundingAnchors(anchors, pageNumber, x, y) {
 function detectColumns(anchors) {
   if (anchors.length === 0) return [];
 
-  // Get all X positions
   const xPositions = anchors.map((a) => a.startCoord.x).sort((a, b) => a - b);
-
-  // Find gaps that might indicate column boundaries
-  // Use clustering: if gap > threshold, it's a new column
-  const threshold = 50; // Minimum gap between columns
+  const threshold = 50;
   const columns = [];
   let currentGroup = { xValues: [xPositions[0]], anchors: [] };
 
   for (let i = 1; i < xPositions.length; i++) {
     const gap = xPositions[i] - xPositions[i - 1];
     if (gap > threshold) {
-      // New column detected
       columns.push(currentGroup);
       currentGroup = { xValues: [xPositions[i]], anchors: [] };
     } else {
@@ -1339,10 +1297,9 @@ function detectColumns(anchors) {
   }
   columns.push(currentGroup);
 
-  // Calculate column boundaries and assign anchors
   return columns.map((col) => {
     const left = Math.min(...col.xValues) - 10;
-    const right = Math.max(...col.xValues) + 200; // Extend right to cover text width
+    const right = Math.max(...col.xValues) + 200;
     const columnAnchors = anchors.filter(
       (a) => a.startCoord.x >= left && a.startCoord.x <= right,
     );
@@ -1354,7 +1311,7 @@ function detectColumns(anchors) {
  * Find which column contains the target X coordinate
  * @param {Array<{left: number, right: number}>} columnGroups
  * @param {number} x
- * @returns {number} Column index, or -1 if not in any column
+ * @returns {number}
  */
 function findTargetColumn(columnGroups, x) {
   for (let i = 0; i < columnGroups.length; i++) {
@@ -1364,7 +1321,6 @@ function findTargetColumn(columnGroups, x) {
     }
   }
 
-  // If not in any column, find closest
   let minDist = Infinity;
   let closest = 0;
   for (let i = 0; i < columnGroups.length; i++) {
@@ -1380,14 +1336,12 @@ function findTargetColumn(columnGroups, x) {
 }
 
 /**
- * Sort anchors in reading order: column by column (left to right),
- * top to bottom within each column (high Y to low Y in PDF coords)
+ * Sort anchors in reading order
  * @param {ReferenceAnchor[]} anchors
  * @param {Array<{left: number, right: number, anchors: ReferenceAnchor[]}>} columnGroups
  * @returns {ReferenceAnchor[]}
  */
 function sortInReadingOrder(anchors, columnGroups) {
-  // Assign column index to each anchor
   const withColumn = anchors.map((anchor) => {
     let colIndex = 0;
     for (let i = 0; i < columnGroups.length; i++) {
@@ -1400,12 +1354,11 @@ function sortInReadingOrder(anchors, columnGroups) {
     return { anchor, colIndex };
   });
 
-  // Sort by column index first, then by Y descending (top to bottom)
   withColumn.sort((a, b) => {
     if (a.colIndex !== b.colIndex) {
-      return a.colIndex - b.colIndex; // Lower column index first
+      return a.colIndex - b.colIndex;
     }
-    return b.anchor.startCoord.y - a.anchor.startCoord.y; // Higher Y first (top of page)
+    return b.anchor.startCoord.y - a.anchor.startCoord.y;
   });
 
   return withColumn.map((item) => item.anchor);
@@ -1413,12 +1366,10 @@ function sortInReadingOrder(anchors, columnGroups) {
 
 /**
  * Calculate proximity score for an anchor relative to target point
- * Lower score = better match
- *
  * @param {ReferenceAnchor} anchor
  * @param {number} targetX
  * @param {number} targetY
- * @param {number} targetColumn - Column index of target point
+ * @param {number} targetColumn
  * @param {Array<{left: number, right: number}>} columnGroups
  * @returns {number}
  */
@@ -1433,7 +1384,6 @@ function calculateProximityScore(
   const anchorStartY = anchor.startCoord.y;
   const anchorEndY = anchor.endCoord?.y ?? anchorStartY - 50;
 
-  // Determine anchor's column
   let anchorColumn = 0;
   for (let i = 0; i < columnGroups.length; i++) {
     const col = columnGroups[i];
@@ -1443,29 +1393,21 @@ function calculateProximityScore(
     }
   }
 
-  // Heavily penalize wrong column
   const columnPenalty = anchorColumn !== targetColumn ? 10000 : 0;
-
-  // Check if target Y is within anchor's vertical range
-  // In PDF coords: startY >= endY (start is at top, end is at bottom)
   const withinYRange = targetY <= anchorStartY && targetY >= anchorEndY;
 
   if (withinYRange && columnPenalty === 0) {
-    // Perfect match - target is within this anchor's bounds
-    // Use X distance as tie-breaker
     return Math.abs(targetX - anchorX);
   }
 
-  // Calculate distance to anchor's start point
   const xDist = Math.abs(targetX - anchorX);
   const yDist = Math.abs(targetY - anchorStartY);
 
-  // Euclidean distance + column penalty
   return Math.sqrt(xDist * xDist + yDist * yDist) + columnPenalty;
 }
 
 /**
- * Find reference by numeric index (for direct lookup from numeric citations)
+ * Find reference by numeric index
  * @param {ReferenceAnchor[]} anchors
  * @param {number} index
  * @returns {ReferenceAnchor|null}

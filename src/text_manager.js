@@ -1,5 +1,13 @@
+/**
+ * TextSelectionManager - Handles text selection across PDF pages
+ *
+ * This module operates on DOM elements and requires minimal changes
+ * for the PDFium migration since it doesn't directly interact with
+ * the PDF library.
+ */
+
 export class TextSelectionManager {
-  /** @type {Map<HTMLElement, {endOfContent: HTMLElement, pageView: PageView}>} */
+  /** @type {Map<HTMLElement, {endOfContent: HTMLElement, pageView: import('./page.js').PageView}>} */
   #textLayers = new Map();
 
   /** @type {AbortController|null} */
@@ -15,14 +23,15 @@ export class TextSelectionManager {
   #isFirefox = null;
 
   /**
-   * @param {ViewerPane} pane - The pane this manager belongs to
+   * @param {import('./viewpane.js').ViewerPane} pane - The pane this manager belongs to
    */
   constructor(pane) {
     this.pane = pane;
   }
 
   /**
-   * @param {PageView} pageView - The PageView instance
+   * Register a text layer for selection management
+   * @param {import('./page.js').PageView} pageView - The PageView instance
    * @param {HTMLElement} textLayerDiv - The text layer element
    * @param {HTMLElement} endOfContent - The endOfContent element for selection stability
    */
@@ -62,6 +71,7 @@ export class TextSelectionManager {
   }
 
   /**
+   * Unregister a text layer
    * @param {HTMLElement} textLayerDiv - The text layer element to unregister
    */
   unregister(textLayerDiv) {
@@ -82,6 +92,7 @@ export class TextSelectionManager {
   }
 
   /**
+   * Normalize selected text (remove null chars, normalize whitespace, handle hyphenation)
    * @param {string} text
    * @returns {string}
    */
@@ -94,7 +105,8 @@ export class TextSelectionManager {
   }
 
   /**
-   * @param {{endOfContent: HTMLElement}} entry
+   * Reset a text layer's selection state
+   * @param {{endOfContent: HTMLElement, pageView: import('./page.js').PageView}} entry
    * @param {HTMLElement} textLayerDiv
    */
   #reset(entry, textLayerDiv) {
@@ -166,8 +178,7 @@ export class TextSelectionManager {
       return;
     }
 
-    // Find which text layers are involved in the current selection.
-    // Firefox can create multiple ranges when selecting across pages.
+    // Find which text layers are involved in the current selection
     const activeTextLayers = new Set();
     for (let i = 0; i < selection.rangeCount; i++) {
       const range = selection.getRangeAt(i);
@@ -203,12 +214,9 @@ export class TextSelectionManager {
     }
     if (this.#isFirefox) return;
 
-    // Chrome/Safari: Reposition endOfContent to limit selection jumps.
-    // When hovering over empty space, selection can jump wildly. By moving
-    // endOfContent next to the anchor point, we limit jumps to single spans.
+    // Chrome/Safari: Reposition endOfContent to limit selection jumps
     const range = selection.getRangeAt(0);
 
-    // Determine if user is modifying the start or end of selection
     const modifyStart =
       this.#prevRange &&
       (range.compareBoundaryPoints(Range.END_TO_END, this.#prevRange) === 0 ||
@@ -240,8 +248,6 @@ export class TextSelectionManager {
       }
     }
 
-    // Find the text layer containing the anchor and reposition its endOfContent
-    // const parentTextLayer = anchor.parentElement?.closest(".textLayer");
     const entry = this.#textLayers.get(parentTextLayer);
 
     if (entry) {
@@ -260,7 +266,8 @@ export class TextSelectionManager {
   }
 
   /**
-   * @returns {Array<{pageNumber: number, text: string, rects: Array<{left: number, top: number, width: number, height: number}>}>}
+   * Get the current selection with page information and rectangles
+   * @returns {Array<{pageNumber: number, text: string, rects: Array<{left: number, top: number, width: number, height: number}>, scale: number}>}
    */
   getSelection() {
     const selection = document.getSelection();
@@ -284,7 +291,6 @@ export class TextSelectionManager {
         // Filter rects that overlap with this text layer, then clip to layer bounds
         let rects = clientRects
           .filter((rect) => {
-            // Only include rects that overlap with this text layer
             const overlaps =
               rect.bottom > layerRect.top &&
               rect.top < layerRect.bottom &&
@@ -296,7 +302,7 @@ export class TextSelectionManager {
             return true;
           })
           .map((rect) => {
-            // Clip rect to text layer bounds before converting to relative coordinates
+            // Clip rect to text layer bounds
             const clippedLeft = Math.max(rect.left, layerRect.left);
             const clippedTop = Math.max(rect.top, layerRect.top);
             const clippedRight = Math.min(rect.right, layerRect.right);
@@ -313,7 +319,7 @@ export class TextSelectionManager {
             const isExist = rect.width > 0 && rect.height > 0;
             // Get rid of the selection on the entire page
             const isWholePage = rect.left * rect.top === 0;
-            // Get rid of the Arxiv banner and page numbers (numbers are heuristically selected)
+            // Get rid of the Arxiv banner and page numbers
             const isNearEdge =
               rect.top < layerRect.height * 0.07 ||
               rect.top > layerRect.height * 0.92 ||
@@ -321,6 +327,7 @@ export class TextSelectionManager {
             if (isExist && !isWholePage && !isNearEdge) return true;
             return false;
           });
+
         rects = this.#mergeRects(rects);
 
         if (rects.length > 0) {
@@ -337,6 +344,11 @@ export class TextSelectionManager {
     return results;
   }
 
+  /**
+   * Merge adjacent rectangles on the same line
+   * @param {Array<{left: number, top: number, width: number, height: number}>} rects
+   * @returns {Array<{left: number, top: number, width: number, height: number}>}
+   */
   #mergeRects(rects) {
     if (rects.length === 0) return [];
 
@@ -381,14 +393,14 @@ export class TextSelectionManager {
   }
 
   /**
-   * Clear the current selection.
+   * Clear the current selection
    */
   clearSelection() {
     document.getSelection()?.removeAllRanges();
   }
 
   /**
-   * Check if there's an active text selection.
+   * Check if there's an active text selection
    * @returns {boolean}
    */
   hasSelection() {
@@ -397,7 +409,7 @@ export class TextSelectionManager {
   }
 
   /**
-   * Clean up all listeners and state.
+   * Clean up all listeners and state
    */
   destroy() {
     this.#abortController?.abort();

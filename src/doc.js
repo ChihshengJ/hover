@@ -1,8 +1,14 @@
 /**
- * @typedef {import('pdfjs-dist').PDFDocumentProxy} PDFDocumentProxy;
+ * PDFDocumentModel - Refactored for @embedpdf/engines (PDFium)
+ * 
+ * MODIFIED: All PDFs now load via ArrayBuffer to enable low-level text extraction
+ *
+ * @typedef {import('@embedpdf/engines/pdfium').PdfEngine} PdfEngine
+ * @typedef {import('@embedpdf/engines/pdfium').PdfiumNative} PdfiumNative
+ * @typedef {import('@embedpdf/engines').PdfDocumentObject} PdfDocumentObject
  */
 
-import { pdfjsLib } from "./pdfjs-init.js";
+import { initPdfiumEngine } from "./pdfium-init.js";
 import { SearchIndex } from "./controls/search/search_index.js";
 import {
   buildOutline,
@@ -14,19 +20,9 @@ import {
   findReferenceByIndex,
   matchCitationToReference,
 } from "./data/reference_builder.js";
+import { PdfiumDocumentFactory } from "./data/text_extractor.js";
 
-const AnnotationEditorType = {
-  DISABLE: -1,
-  NONE: 0,
-  FREETEXT: 3,
-  HIGHLIGHT: 9,
-  STAMP: 13,
-  INK: 15,
-};
-
-const AnnotationEditorPrefix = "pdfjs_internal_editor_";
-
-// Color name to RGB (0-255 range) mapping for PDF.js annotationStorage
+// Color name to RGB (0-255 range) mapping
 const COLOR_TO_RGB = {
   yellow: [255, 179, 0],
   red: [229, 57, 53],
@@ -65,9 +61,21 @@ function rgbToColorName(rgb) {
 
 export class PDFDocumentModel {
   constructor() {
+    /** @type {PdfEngine|null} */
+    this.engine = null;
+
+    /** @type {PdfiumNative|null} */
+    this.native = null;
+
+    /** @type {PdfDocumentObject|null} */
     this.pdfDoc = null;
-    this.allNamedDests = null;
+
+    /** @type {Map<string, any>} Named destinations mapped by name */
+    this.allNamedDests = new Map();
+
+    /** @type {Array<{width: number, height: number}>} */
     this.pageDimensions = [];
+
     this.highlights = new Map();
     this.subscribers = new Set();
 
@@ -86,6 +94,16 @@ export class PDFDocumentModel {
 
     /** @type {{title: string|null, abstractInfo: Object|null}} */
     this.detectedMetadata = { title: null, abstractInfo: null };
+
+    // NEW: Store raw PDF data and low-level access
+    /** @type {Uint8Array|null} */
+    this.pdfData = null;
+
+    /** @type {import('./pdfium-text-extractor.js').PdfiumDocumentHandle|null} */
+    this.lowLevelHandle = null;
+
+    /** @type {import('./pdfium-text-extractor.js').PdfiumTextExtractor|null} */
+    this.textExtractor = null;
   }
 
   /**
@@ -107,7 +125,6 @@ export class PDFDocumentModel {
     if (!base64) return null;
 
     try {
-      // Convert base64 back to ArrayBuffer
       const binary = atob(base64);
       const bytes = new Uint8Array(binary.length);
       for (let i = 0; i < binary.length; i++) {
@@ -130,9 +147,11 @@ export class PDFDocumentModel {
 
   /**
    * Load PDF from URL or ArrayBuffer
+   * MODIFIED: Always converts to ArrayBuffer for low-level access
+   * 
    * @param {string|ArrayBuffer} source - URL or ArrayBuffer of PDF data
    * @param {LoadProgressCallback} [onProgress] - Optional progress callback
-   * @returns {Promise<PDFDocumentProxy>}
+   * @returns {Promise<PdfDocumentObject>}
    */
   async load(source, onProgress) {
     const reportProgress = (loaded, total, phase) => {
@@ -142,81 +161,158 @@ export class PDFDocumentModel {
       }
     };
 
-    if (source instanceof ArrayBuffer) {
-      // ArrayBuffer loading - no progress available during PDF.js parsing
-      reportProgress(0, 100, "parsing");
-      this.pdfDoc = await pdfjsLib.getDocument({ data: source, verbosity: 0 })
-        .promise;
-      reportProgress(50, 100, "parsing");
-    } else {
-      try {
-        // URL-based loading - progress available during download
-        const loadingTask = pdfjsLib.getDocument({ url: source, verbosity: 0 });
+    reportProgress(0, 100, "initializing engine");
+    const { engine, native, pdfiumModule } = await initPdfiumEngine((p) => {
+      reportProgress(p.percent * 0.2, 100, p.phase);
+    });
 
-        // Set up progress callback for download phase
-        loadingTask.onProgress = (progressData) => {
-          if (progressData.total > 0) {
-            // We have a known total - report actual progress
-            reportProgress(
-              progressData.loaded,
-              progressData.total,
-              "downloading",
-            );
-          } else {
-            // Unknown total - report loaded bytes, use -1 for indeterminate
-            reportProgress(progressData.loaded, -1, "downloading");
-          }
-        };
+    this.engine = engine;
+    this.native = native;
 
-        this.pdfDoc = await loadingTask.promise;
-      } catch (error) {
-        // Check if it's a CORS or network error
-        if (this.#isCorsOrNetworkError(error)) {
-          console.log(
-            "CORS error detected, falling back to background fetch...",
-          );
-          reportProgress(0, -1, "downloading");
-          const arrayBuffer = await this.#fetchViaBackground(
-            source,
-            reportProgress,
-          );
-          reportProgress(50, 100, "parsing");
-          this.pdfDoc = await pdfjsLib.getDocument({
-            data: arrayBuffer,
-            verbosity: 0,
-          }).promise;
-        } else {
-          throw error;
-        }
+    try {
+      let arrayBuffer;
+
+      if (source instanceof ArrayBuffer) {
+        arrayBuffer = source;
+        reportProgress(25, 100, "parsing");
+      } else {
+        // URL-based loading - fetch as ArrayBuffer first
+        reportProgress(20, -1, "downloading");
+        arrayBuffer = await this.#fetchPdfAsArrayBuffer(source, reportProgress);
+        reportProgress(45, 100, "downloaded");
       }
+
+      // Store the raw PDF data for low-level access
+      this.pdfData = new Uint8Array(arrayBuffer);
+
+      // Load document via buffer (not URL)
+      reportProgress(50, 100, "parsing");
+      this.pdfDoc = await this.engine
+        .openDocumentBuffer({
+          id: `doc-${Date.now()}`,
+          content: this.pdfData,
+        })
+        .toPromise();
+
+      // Set up low-level access for text extraction
+      reportProgress(55, 100, "setting up text extraction");
+      this.#setupLowLevelAccess(pdfiumModule);
+
+      // Post-download processing phases
+      reportProgress(58, 100, "processing");
+      await this.#cachePageDimensions();
+
+      reportProgress(60, 100, "loading bookmarks");
+      await this.#loadBookmarksAndDestinations();
+
+      reportProgress(70, 100, "loading annotations");
+      await this.loadAnnotations();
+
+      reportProgress(80, 100, "initializing search");
+      this.searchIndex = new SearchIndex(this);
+      // Pass the low-level handle to SearchIndex
+      if (this.lowLevelHandle) {
+        this.searchIndex.setLowLevelHandle(this.lowLevelHandle);
+      }
+      await this.#buildSearchIndexAsync();
+
+      // Detect title and abstract from document content
+      this.detectedMetadata = detectDocumentMetadata(this.searchIndex);
+
+      reportProgress(85, 100, "indexing references");
+      this.referenceIndex = await buildReferenceIndex(this.searchIndex);
+
+      reportProgress(90, 100, "building outline");
+      await this.#buildOutline();
+
+      reportProgress(100, 100, "complete");
+
+      return this.pdfDoc;
+    } catch (error) {
+      console.error("Error loading PDF:", error);
+      throw error;
+    }
+  }
+
+  /**
+   * Fetch PDF from URL as ArrayBuffer
+   * Handles CORS by falling back to background script
+   * 
+   * @param {string} url
+   * @param {Function} [reportProgress]
+   * @returns {Promise<ArrayBuffer>}
+   */
+  async #fetchPdfAsArrayBuffer(url, reportProgress) {
+    // Try direct fetch first
+    try {
+      const response = await fetch(url);
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`);
+      }
+      
+      const contentLength = response.headers.get('content-length');
+      const total = contentLength ? parseInt(contentLength, 10) : -1;
+      
+      if (total > 0 && response.body) {
+        // Stream with progress
+        const reader = response.body.getReader();
+        const chunks = [];
+        let loaded = 0;
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          
+          chunks.push(value);
+          loaded += value.length;
+          
+          if (reportProgress) {
+            // Scale progress between 20-45%
+            const scaledPercent = 20 + Math.round((loaded / total) * 25);
+            reportProgress(scaledPercent, 100, "downloading");
+          }
+        }
+
+        // Combine chunks into single ArrayBuffer
+        const combined = new Uint8Array(loaded);
+        let offset = 0;
+        for (const chunk of chunks) {
+          combined.set(chunk, offset);
+          offset += chunk.length;
+        }
+        return combined.buffer;
+      } else {
+        // No content-length, just get arrayBuffer directly
+        return await response.arrayBuffer();
+      }
+    } catch (error) {
+      // Check if it's a CORS or network error
+      if (this.#isCorsOrNetworkError(error)) {
+        console.log("CORS error detected, falling back to background fetch...");
+        return await this.#fetchViaBackground(url, reportProgress);
+      }
+      throw error;
+    }
+  }
+
+  /**
+   * Set up low-level PDFium access for text extraction
+   * @param {import('@embedpdf/pdfium').WrappedPdfiumModule} pdfiumModule
+   */
+  #setupLowLevelAccess(pdfiumModule) {
+    if (!this.pdfData || !pdfiumModule) {
+      console.warn("[Doc] Cannot set up low-level access: missing pdfData or pdfiumModule");
+      return;
     }
 
-    // Post-download processing phases
-    reportProgress(60, 100, "processing");
-    this.allNamedDests = await this.pdfDoc.getDestinations();
-
-    reportProgress(70, 100, "caching");
-    await this.#cachePageDimensions();
-
-    reportProgress(80, 100, "loading annotations");
-    await this.loadAnnotations(this.pdfDoc);
-
-    reportProgress(85, 100, "initializing search");
-    this.searchIndex = new SearchIndex(this);
-    await this.#buildSearchIndexAsync();
-
-    // Detect title and abstract from document content
-    this.detectedMetadata = detectDocumentMetadata(this.searchIndex);
-
-    reportProgress(90, 100, "indexing references");
-    this.referenceIndex = await buildReferenceIndex(this.searchIndex);
-
-    reportProgress(95, 100, "building outline");
-    await this.#buildOutline();
-
-    reportProgress(100, 100, "complete");
-
-    return this.pdfDoc;
+    try {
+      const factory = new PdfiumDocumentFactory(pdfiumModule);
+      this.lowLevelHandle = factory.loadFromBuffer(this.pdfData);
+      this.textExtractor = this.lowLevelHandle.extractor;
+      console.log("[Doc] Low-level PDFium access set up successfully");
+    } catch (error) {
+      console.error("[Doc] Error setting up low-level access:", error);
+    }
   }
 
   /**
@@ -231,16 +327,14 @@ export class PDFDocumentModel {
       message.includes("cross-origin") ||
       message.includes("network") ||
       message.includes("failed to fetch") ||
-      message.includes("load pdf") ||
-      error.name === "MissingPDFException" ||
-      error.name === "UnexpectedResponseException"
+      message.includes("load pdf")
     );
   }
 
   /**
    * Fetch PDF via background script to bypass CORS
    * @param {string} url
-   * @param {Function} [reportProgress] - Optional progress reporter
+   * @param {Function} [reportProgress]
    * @returns {Promise<ArrayBuffer>}
    */
   async #fetchViaBackground(url, reportProgress) {
@@ -264,11 +358,7 @@ export class PDFDocumentModel {
           if (response?.data) {
             const arrayBuffer = new Uint8Array(response.data).buffer;
             if (reportProgress) {
-              reportProgress(
-                response.data.length,
-                response.data.length,
-                "downloading",
-              );
+              reportProgress(45, 100, "downloaded");
             }
             resolve(arrayBuffer);
           } else {
@@ -280,44 +370,130 @@ export class PDFDocumentModel {
   }
 
   async #cachePageDimensions() {
-    const numPages = this.pdfDoc.numPages;
     this.pageDimensions = [];
-    for (let i = 1; i <= numPages; i++) {
-      const page = await this.pdfDoc.getPage(i);
-      const viewport = page.getViewport({ scale: 1 });
+
+    if (!this.pdfDoc?.pages) return;
+
+    for (const page of this.pdfDoc.pages) {
       this.pageDimensions.push({
-        width: viewport.width,
-        height: viewport.height,
+        width: page.size.width,
+        height: page.size.height,
       });
     }
   }
 
+  /**
+   * Load bookmarks and build named destinations map
+   * PDFium provides bookmarks which contain destination information
+   */
+  async #loadBookmarksAndDestinations() {
+    this.allNamedDests = new Map();
+
+    if (!this.pdfDoc || !this.native) return;
+
+    try {
+      const bookmarks = await this.native.getBookmarks(this.pdfDoc).toPromise();
+
+      // Process bookmarks recursively to extract destinations
+      const processBookmarks = async (items, prefix = "") => {
+        if (!items || !Array.isArray(items)) return;
+
+        for (let i = 0; i < items.length; i++) {
+          const bookmark = items[i];
+
+          if (bookmark.target.type === "action") {
+            // Store the destination with a generated name
+            const destName = bookmark.title || `${prefix}bookmark_${i}`;
+            this.allNamedDests.set(destName, {
+              pageIndex: bookmark.target.action.destination.pageIndex ?? 0,
+              left: bookmark.target.action.destination.view[0] ?? 0,
+              top: bookmark.target.action.destination.view[1] ?? 0,
+              zoom: bookmark.target.action.destination.zoom.mode ?? null,
+            });
+          }
+
+          // Process children recursively
+          if (bookmark.children && bookmark.children.length > 0) {
+            await processBookmarks(bookmark.children, `${prefix}${i}_`);
+          }
+        }
+      };
+
+      await processBookmarks(bookmarks.bookmarks);
+
+      console.log(
+        `[Doc] Loaded ${this.allNamedDests.size} named destinations from bookmarks`,
+      );
+    } catch (error) {
+      console.warn("[Doc] Error loading bookmarks:", error);
+    }
+  }
+
   get numPages() {
-    return this.pdfDoc?.numPages || 0;
+    return this.pdfDoc?.pages?.length || 0;
+  }
+
+  /**
+   * Get a page object by 1-based page number
+   * @param {number} pageNumber - 1-based page number
+   * @returns {import('@embedpdf/engines').PdfPageObject|null}
+   */
+  getPage(pageNumber) {
+    if (!this.pdfDoc?.pages) return null;
+    return this.pdfDoc.pages[pageNumber - 1] || null;
+  }
+
+  /**
+   * Get page dimensions
+   * @param {number} pageNumber - 1-based page number
+   * @returns {{width: number, height: number}|null}
+   */
+  getPageDimensions(pageNumber) {
+    return this.pageDimensions[pageNumber - 1] || null;
   }
 
   /**
    * Get document title with fallback to detected title
-   * Priority: 1) PDF metadata title, 2) Detected title from content
    * @returns {Promise<string|null>}
    */
   async getDocumentTitle() {
-    // Try PDF metadata first
-    if (this.pdfDoc) {
+    if (this.pdfDoc && this.native) {
       try {
-        const metadata = await this.pdfDoc.getMetadata();
-        const metadataTitle = metadata?.info?.Title?.trim();
+        const metadata = await this.native.getMetadata(this.pdfDoc).toPromise();
+        const metadataTitle = metadata?.title?.trim();
         const detectedTitle = this.detectedMetadata?.title;
         const useDetected =
-          detectedTitle && detectedTitle?.length >= metadataTitle?.length;
+          detectedTitle &&
+          detectedTitle?.length >= (metadataTitle?.length || 0);
         return useDetected ? detectedTitle : metadataTitle;
       } catch (error) {
         console.warn("[Doc] Error getting PDF metadata:", error);
       }
     }
 
-    // Fall back to detected title
     return this.detectedMetadata?.title || null;
+  }
+
+  /**
+   * Resolve a named destination to page coordinates
+   * @param {string} destName - Destination name
+   * @returns {{pageIndex: number, left: number, top: number, zoom: number|null}|null}
+   */
+  resolveDestination(destName) {
+    return this.allNamedDests.get(destName) || null;
+  }
+
+  /**
+   * Extract text from a page using low-level API
+   * @param {number} pageIndex - 0-based page index
+   * @returns {import('./pdfium-text-extractor.js').PageTextResult|null}
+   */
+  extractPageText(pageIndex) {
+    if (!this.lowLevelHandle) {
+      console.warn("[Doc] Low-level handle not available for text extraction");
+      return null;
+    }
+    return this.lowLevelHandle.extractPageText(pageIndex);
   }
 
   subscribe(pane) {
@@ -352,9 +528,9 @@ export class PDFDocumentModel {
   addAnnotation(annotationData) {
     const annotation = {
       id: this.#generateAnnotationId(),
-      type: annotationData.type, // 'highlight' or 'underscore'
-      color: annotationData.color, // 'yellow', 'red', 'blue', 'green'
-      pageRanges: annotationData.pageRanges, // [{pageNumber, rects, text}]
+      type: annotationData.type,
+      color: annotationData.color,
+      pageRanges: annotationData.pageRanges,
       comment: annotationData.comment || null,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
@@ -362,7 +538,6 @@ export class PDFDocumentModel {
 
     this.annotations.set(annotation.id, annotation);
 
-    // Index by page
     for (const pageRange of annotation.pageRanges) {
       if (!this.annotationsByPage.has(pageRange.pageNumber)) {
         this.annotationsByPage.set(pageRange.pageNumber, new Set());
@@ -370,7 +545,6 @@ export class PDFDocumentModel {
       this.annotationsByPage.get(pageRange.pageNumber).add(annotation.id);
     }
 
-    // Notify subscribers
     this.notify("annotation-added", { annotation });
 
     return annotation;
@@ -380,19 +554,17 @@ export class PDFDocumentModel {
    * Update an existing annotation
    * @param {string} id
    * @param {Object} updates
-   * @returns {Object|null} The updated annotation
+   * @returns {Object|null}
    */
   updateAnnotation(id, updates) {
     const annotation = this.annotations.get(id);
     if (!annotation) return null;
 
-    // Apply updates
     if (updates.color !== undefined) annotation.color = updates.color;
     if (updates.type !== undefined) annotation.type = updates.type;
     if (updates.comment !== undefined) annotation.comment = updates.comment;
     annotation.updatedAt = new Date().toISOString();
 
-    // Notify subscribers
     this.notify("annotation-updated", { annotation });
 
     return annotation;
@@ -401,13 +573,12 @@ export class PDFDocumentModel {
   /**
    * Delete an annotation
    * @param {string} id
-   * @returns {boolean} Success
+   * @returns {boolean}
    */
   deleteAnnotation(id) {
     const annotation = this.annotations.get(id);
     if (!annotation) return false;
 
-    // Remove from page index
     for (const pageRange of annotation.pageRanges) {
       const pageAnnotations = this.annotationsByPage.get(pageRange.pageNumber);
       if (pageAnnotations) {
@@ -416,27 +587,15 @@ export class PDFDocumentModel {
     }
 
     this.annotations.delete(id);
-
-    // Notify subscribers
     this.notify("annotation-deleted", { annotationId: id });
 
     return true;
   }
 
-  /**
-   * Get a single annotation by ID
-   * @param {string} id
-   * @returns {Object|null}
-   */
   getAnnotation(id) {
     return this.annotations.get(id) || null;
   }
 
-  /**
-   * Get all annotations for a specific page
-   * @param {number} pageNumber
-   * @returns {Array<Object>}
-   */
   getAnnotationsForPage(pageNumber) {
     const annotationIds = this.annotationsByPage.get(pageNumber);
     if (!annotationIds) return [];
@@ -446,19 +605,10 @@ export class PDFDocumentModel {
       .filter(Boolean);
   }
 
-  /**
-   * Get all annotations
-   * @returns {Array<Object>}
-   */
   getAllAnnotations() {
     return Array.from(this.annotations.values());
   }
 
-  /**
-   * Delete only the comment from an annotation (keep the highlight/underscore)
-   * @param {string} id
-   * @returns {boolean}
-   */
   deleteAnnotationComment(id) {
     const annotation = this.annotations.get(id);
     if (!annotation) return false;
@@ -466,28 +616,15 @@ export class PDFDocumentModel {
     annotation.comment = null;
     annotation.updatedAt = new Date().toISOString();
 
-    // Notify subscribers
     this.notify("annotation-updated", { annotation });
 
     return true;
   }
 
-  // ============================================
-  // Annotation I/O
-  // ============================================
-
-  /**
-   * Export annotations for saving
-   * @returns {Array<Object>}
-   */
   exportAnnotations() {
     return Array.from(this.annotations.values());
   }
 
-  /**
-   * Import annotations (e.g., from saved file)
-   * @param {Array<Object>} annotations
-   */
   importAnnotations(annotations) {
     for (const annotation of annotations) {
       this.annotations.set(annotation.id, annotation);
@@ -504,138 +641,123 @@ export class PDFDocumentModel {
   }
 
   /**
-   * Load existing annotations from the PDF document
-   * Parses Highlight annotations and their associated Popup comments
-   * @param {PDFDocumentProxy} pdfDoc
+   * Load existing annotations from the PDF document using PDFium
    */
-  async loadAnnotations(pdfDoc) {
+  async loadAnnotations() {
+    if (!this.pdfDoc || !this.native) return;
+
     const importedAnnotations = [];
 
-    for (let pageNum = 1; pageNum <= pdfDoc.numPages; pageNum++) {
-      const page = await pdfDoc.getPage(pageNum);
-      const annotations = await page.getAnnotations({ intent: "display" });
-      const viewport = page.getViewport({ scale: 1 });
-      const pageHeight = viewport.height;
-      const pageWidth = viewport.width;
+    for (let pageNum = 1; pageNum <= this.numPages; pageNum++) {
+      const page = this.getPage(pageNum);
+      if (!page) continue;
 
-      for (const annot of annotations) {
-        // Currently supporting Highlight annotations
-        // Extensible: add more annotation types here (Underline, StrikeOut, etc.)
-        if (annot.subtype === "Highlight") {
-          // Debug: Log what we're getting from PDF.js
-          console.log(
-            `[DEBUG] Found Highlight annotation on page ${pageNum}:`,
-            {
-              id: annot.id,
-              popupRef: annot.popupRef,
-              rect: annot.rect,
-              hasQuadPoints: !!annot.quadPoints,
-            },
-          );
+      try {
+        const annotations = await this.native.getPageAnnotations(
+          this.pdfDoc,
+          page,
+        ).toPromise();
+        const { width: pageWidth, height: pageHeight } = page.size;
 
-          const converted = this.#convertHighlightAnnotation(
-            annot,
-            pageNum,
-            pageWidth,
-            pageHeight,
-          );
-          if (converted) {
-            importedAnnotations.push(converted);
+        for (const annot of annotations) {
+          // Currently supporting Highlight annotations
+          if (annot.subtype === "Highlight" || annot.type === 9) {
+            // 9 is HIGHLIGHT type
+            const converted = this.#convertPdfiumHighlightAnnotation(
+              annot,
+              pageNum,
+              pageWidth,
+              pageHeight,
+            );
 
-            // Track original PDF annotation info for removal during save
-            this.importedPdfAnnotations.set(converted.id, {
-              pageNumber: pageNum,
-              pdfAnnotationId: annot.id || null,
-              pdfPopupRef: annot.popupRef || null,
-              annotationType: annot.subtype,
-            });
+            if (converted) {
+              importedAnnotations.push(converted);
 
-            console.log(`[DEBUG] Tracking for removal:`, {
-              ourId: converted.id,
-              pdfId: annot.id,
-              popupRef: annot.popupRef,
-            });
+              this.importedPdfAnnotations.set(converted.id, {
+                pageNumber: pageNum,
+                pdfiumAnnotationId: annot.id || null,
+                annotationType: "Highlight",
+              });
+            }
           }
         }
-        // TODO: Future annotation types can be added here
-        // else if (annot.subtype === "Underline") { ... }
-        // else if (annot.subtype === "StrikeOut") { ... }
+      } catch (error) {
+        console.warn(
+          `[Doc] Error loading annotations for page ${pageNum}:`,
+          error,
+        );
       }
     }
 
     if (importedAnnotations.length > 0) {
-      console.log(`Loaded ${importedAnnotations.length} annotations from PDF`);
       console.log(
-        `Tracked ${this.importedPdfAnnotations.size} original PDF annotations for removal`,
+        `[Doc] Loaded ${importedAnnotations.length} annotations from PDF`,
       );
       this.importAnnotations(importedAnnotations);
     }
   }
 
   /**
-   * Convert a PDF Highlight annotation to our internal format
-   * @param {Object} annot - PDF.js annotation object
+   * Convert a PDFium Highlight annotation to our internal format
+   * @param {Object} annot - PDFium annotation object
    * @param {number} pageNum - 1-based page number
    * @param {number} pageWidth - Page width in PDF units
    * @param {number} pageHeight - Page height in PDF units
-   * @returns {Object|null} Our internal annotation format
+   * @returns {Object|null}
    */
-  #convertHighlightAnnotation(annot, pageNum, pageWidth, pageHeight) {
-    // quadPoints: array of 8 values per quad [tL.x, tL.y, tR.x, tR.y, bL.x, bL.y, bR.x, bR.y]
-    // PDF coordinate system: origin at bottom-left, Y increases upward
-    const quadPoints = annot.quadPoints;
-    if (!quadPoints || quadPoints.length < 8) {
-      // Fall back to rect if no quadPoints
-      return this.#convertRectAnnotation(annot, pageNum, pageWidth, pageHeight);
-    }
-
+  #convertPdfiumHighlightAnnotation(annot, pageNum, pageWidth, pageHeight) {
     const rects = [];
 
-    // Process each quad (8 values per quad)
-    for (let i = 0; i < quadPoints.length; i += 8) {
-      const quad = quadPoints.slice(i, i + 8);
-      if (quad.length < 8) break;
+    // PDFium may provide quadPoints or rect
+    if (annot.quadPoints && annot.quadPoints.length >= 8) {
+      // Process each quad (8 values per quad)
+      for (let i = 0; i < annot.quadPoints.length; i += 8) {
+        const quad = annot.quadPoints.slice(i, i + 8);
+        if (quad.length < 8) break;
 
-      // Extract coordinates from quad
-      // [tL.x, tL.y, tR.x, tR.y, bL.x, bL.y, bR.x, bR.y]
-      const tLx = quad[0],
-        tLy = quad[1];
-      const tRx = quad[2],
-        tRy = quad[3];
-      const bLx = quad[4],
-        bLy = quad[5];
-      const bRx = quad[6],
-        bRy = quad[7];
+        // Extract coordinates from quad
+        const tLx = quad[0],
+          tLy = quad[1];
+        const tRx = quad[2],
+          tRy = quad[3];
+        const bLx = quad[4],
+          bLy = quad[5];
+        const bRx = quad[6],
+          bRy = quad[7];
 
-      // Calculate bounding box
-      const minX = Math.min(tLx, tRx, bLx, bRx);
-      const maxX = Math.max(tLx, tRx, bLx, bRx);
-      const minY = Math.min(tLy, tRy, bLy, bRy); // Bottom in PDF coords
-      const maxY = Math.max(tLy, tRy, bLy, bRy); // Top in PDF coords
+        const minX = Math.min(tLx, tRx, bLx, bRx);
+        const maxX = Math.max(tLx, tRx, bLx, bRx);
+        const minY = Math.min(tLy, tRy, bLy, bRy);
+        const maxY = Math.max(tLy, tRy, bLy, bRy);
 
-      // Convert to our ratio format (top-left origin)
-      // Our topRatio=0 means page top, which is maxY in PDF coords
-      const leftRatio = minX / pageWidth;
-      const topRatio = 1 - maxY / pageHeight;
-      const widthRatio = (maxX - minX) / pageWidth;
-      const heightRatio = (maxY - minY) / pageHeight;
+        // Convert to our ratio format (top-left origin)
+        rects.push({
+          leftRatio: minX / pageWidth,
+          topRatio: 1 - maxY / pageHeight,
+          widthRatio: (maxX - minX) / pageWidth,
+          heightRatio: (maxY - minY) / pageHeight,
+        });
+      }
+    } else if (annot.rect) {
+      // Fallback to rect
+      const rect = annot.rect;
+      const minX = Math.min(rect[0], rect[2]);
+      const maxX = Math.max(rect[0], rect[2]);
+      const minY = Math.min(rect[1], rect[3]);
+      const maxY = Math.max(rect[1], rect[3]);
 
       rects.push({
-        leftRatio,
-        topRatio,
-        widthRatio,
-        heightRatio,
+        leftRatio: minX / pageWidth,
+        topRatio: 1 - maxY / pageHeight,
+        widthRatio: (maxX - minX) / pageWidth,
+        heightRatio: (maxY - minY) / pageHeight,
       });
     }
 
     if (rects.length === 0) return null;
 
-    // Determine color from annotation
     const color = rgbToColorName(annot.color);
-
-    // Get comment from the Contents field (standard PDF annotation comment)
-    // This is where Popup/anchored notes store their text
-    const comment = annot.contentsObj?.str || annot.contents || null;
+    const comment = annot.contents || null;
 
     return {
       id: `imported-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
@@ -645,70 +767,13 @@ export class PDFDocumentModel {
         {
           pageNumber: pageNum,
           rects,
-          text: "", // Text extraction would require more work
-        },
-      ],
-      comment: comment && comment.trim() ? comment.trim() : null,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-      // Store original PDF annotation references for deletion on save
-      pdfAnnotationId: annot.id || null,
-      pdfPopupRef: annot.popupRef || null,
-    };
-  }
-
-  /**
-   * Convert a PDF annotation using just its rect (fallback)
-   * @param {Object} annot - PDF.js annotation object
-   * @param {number} pageNum - 1-based page number
-   * @param {number} pageWidth - Page width in PDF units
-   * @param {number} pageHeight - Page height in PDF units
-   * @returns {Object|null} Our internal annotation format
-   */
-  #convertRectAnnotation(annot, pageNum, pageWidth, pageHeight) {
-    const rect = annot.rect;
-    if (!rect || rect.length < 4) return null;
-
-    // rect: [x1, y1, x2, y2] in PDF coords
-    const minX = Math.min(rect[0], rect[2]);
-    const maxX = Math.max(rect[0], rect[2]);
-    const minY = Math.min(rect[1], rect[3]);
-    const maxY = Math.max(rect[1], rect[3]);
-
-    const leftRatio = minX / pageWidth;
-    const topRatio = 1 - maxY / pageHeight;
-    const widthRatio = (maxX - minX) / pageWidth;
-    const heightRatio = (maxY - minY) / pageHeight;
-
-    const color = rgbToColorName(annot.color);
-
-    // Get comment from the Contents field
-    const comment = annot.contentsObj?.str || annot.contents || null;
-
-    return {
-      id: `imported-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-      type: "highlight",
-      color,
-      pageRanges: [
-        {
-          pageNumber: pageNum,
-          rects: [
-            {
-              leftRatio,
-              topRatio,
-              widthRatio,
-              heightRatio,
-            },
-          ],
           text: "",
         },
       ],
       comment: comment && comment.trim() ? comment.trim() : null,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
-      // Store original PDF annotation references for deletion on save
-      pdfAnnotationId: annot.id || null,
-      pdfPopupRef: annot.popupRef || null,
+      pdfiumAnnotationId: annot.id || null,
     };
   }
 
@@ -725,30 +790,24 @@ export class PDFDocumentModel {
   async #buildOutline() {
     this.outline = await buildOutline(
       this.pdfDoc,
+      this.native,
       this.searchIndex,
       this.allNamedDests,
     );
 
-    // Inject abstract into outline if detected but not present
     this.#injectAbstractIntoOutline();
   }
 
-  /**
-   * Inject abstract section into outline if it was detected but not included
-   * in the native outline. Inserts it at the appropriate position.
-   */
   #injectAbstractIntoOutline() {
     const abstractInfo = this.detectedMetadata?.abstractInfo;
     if (!abstractInfo) return;
 
-    // Check if abstract already exists in outline
     const hasAbstract = this.#outlineContainsAbstract(this.outline);
     if (hasAbstract) {
       console.log("[Outline] Abstract already in outline, skipping injection");
       return;
     }
 
-    // Create abstract outline item
     const abstractItem = {
       id: crypto.randomUUID(),
       title: "Abstract",
@@ -759,20 +818,15 @@ export class PDFDocumentModel {
       children: [],
     };
 
-    // Find insertion point: after any item on earlier pages or with higher Y on same page
     let insertIndex = 0;
     for (let i = 0; i < this.outline.length; i++) {
       const item = this.outline[i];
 
-      // If outline item is on a later page, insert before it
       if (item.pageIndex > abstractInfo.pageIndex) {
         break;
       }
 
-      // If on same page, compare positions
       if (item.pageIndex === abstractInfo.pageIndex) {
-        // In PDF coords, higher Y = higher on page
-        // Abstract should come after items with higher Y
         if (item.top <= abstractInfo.top) {
           break;
         }
@@ -781,27 +835,19 @@ export class PDFDocumentModel {
       insertIndex = i + 1;
     }
 
-    // Insert abstract at calculated position
     this.outline.splice(insertIndex, 0, abstractItem);
     console.log(`[Outline] Injected Abstract at position ${insertIndex}`);
   }
 
-  /**
-   * Check if outline contains an abstract section
-   * @param {Array} items - Outline items to search
-   * @returns {boolean}
-   */
   #outlineContainsAbstract(items) {
     for (const item of items) {
       const title = item.title?.toLowerCase().trim() || "";
-      // Check for "Abstract" or numbered versions like "1. Abstract"
       if (
         title === "abstract" ||
         /^\d+\.?\s*abstract$/i.test(item.title?.trim() || "")
       ) {
         return true;
       }
-      // Check children recursively
       if (
         item.children?.length > 0 &&
         this.#outlineContainsAbstract(item.children)
@@ -823,7 +869,6 @@ export class PDFDocumentModel {
       console.log("[Search] Building search index...");
       const startTime = performance.now();
 
-      // Emit start event
       this.notify("search-index-start", { totalPages: this.numPages });
 
       await this.searchIndex.build((completedPages, totalPages, percent) => {
@@ -854,69 +899,36 @@ export class PDFDocumentModel {
   // Reference Index Methods
   // ============================================
 
-  /**
-   * Get reference anchors for a specific page
-   * @param {number} pageNumber - 1-based page number
-   * @returns {import('./data/reference_builder.js').ReferenceAnchor[]}
-   */
   getReferenceAnchors(pageNumber) {
     if (!this.referenceIndex?.anchors) return [];
-    return this.referenceIndex.anchors.filter(a => a.pageNumber === pageNumber);
+    return this.referenceIndex.anchors.filter(
+      (a) => a.pageNumber === pageNumber,
+    );
   }
 
-  /**
-   * Get all reference anchors
-   * @returns {import('./data/reference_builder.js').ReferenceAnchor[]}
-   */
   getAllReferenceAnchors() {
     return this.referenceIndex?.anchors || [];
   }
 
-  /**
-   * Find reference by numeric index (for direct lookup from [1], [2] citations)
-   * @param {number} index - Reference number
-   * @returns {import('./data/reference_builder.js').ReferenceAnchor|null}
-   */
   getReferenceByIndex(index) {
     if (!this.referenceIndex?.anchors) return null;
     return findReferenceByIndex(this.referenceIndex.anchors, index);
   }
 
-  /**
-   * Find bounding reference anchors for a coordinate (for hybrid lookup)
-   * @param {number} pageNumber - 1-based page number
-   * @param {number} x - X coordinate in PDF space
-   * @param {number} y - Y coordinate in PDF space (from bottom)
-   * @returns {{current: import('./data/reference_builder.js').ReferenceAnchor|null, next: import('./data/reference_builder.js').ReferenceAnchor|null}}
-   */
   findBoundingReferenceAnchors(pageNumber, x, y) {
     if (!this.referenceIndex?.anchors) return { current: null, next: null };
     return findBoundingAnchors(this.referenceIndex.anchors, pageNumber, x, y);
   }
 
-  /**
-   * Match author-year citation to reference
-   * @param {string} author - Author name from citation
-   * @param {string} year - Year from citation
-   * @returns {import('./data/reference_builder.js').ReferenceAnchor|null}
-   */
   matchCitationToReference(author, year) {
     if (!this.referenceIndex?.anchors) return null;
     return matchCitationToReference(author, year, this.referenceIndex.anchors);
   }
 
-  /**
-   * Check if reference index is available and has entries
-   * @returns {boolean}
-   */
   hasReferenceIndex() {
     return this.referenceIndex?.anchors?.length > 0;
   }
 
-  /**
-   * Get reference section bounds (for skipping in other operations)
-   * @returns {{startPage: number, endPage: number}|null}
-   */
   getReferenceSectionBounds() {
     if (!this.referenceIndex?.sectionStart) return null;
     return {
@@ -926,520 +938,100 @@ export class PDFDocumentModel {
   }
 
   // ============================================
-  // PDF.js Native Annotation Save/Export Methods
+  // PDF Save/Export Methods
   // ============================================
 
   /**
-   * Convert our color name to RGB array (0-1 range)
-   * @param {string} colorName - 'yellow', 'red', 'blue', 'green'
-   * @returns {number[]} RGB array [r, g, b] with values 0-1
+   * Convert our color name to RGB array (0-255 range)
+   * @param {string} colorName
+   * @returns {number[]}
    */
   #colorNameToRgb(colorName) {
     return COLOR_TO_RGB[colorName] || COLOR_TO_RGB.yellow;
   }
 
   /**
-   * Get page dimensions for coordinate conversion
-   * @param {number} pageNumber - 1-based page number
-   * @returns {Promise<{pageWidth: number, pageHeight: number}>}
-   */
-  async #getPageInfo(pageNumber) {
-    const page = await this.pdfDoc.getPage(pageNumber);
-    const viewport = page.getViewport({ scale: 1 });
-
-    return {
-      pageWidth: viewport.width,
-      pageHeight: viewport.height,
-    };
-  }
-
-  /**
-   * Convert our rect format to PDF.js QuadPoints
-   * Our format: { leftRatio, topRatio, widthRatio, heightRatio } (top-origin, 0-1 ratios)
-   * PDF format: [tL.x, tL.y, tR.x, tR.y, bL.x, bL.y, bR.x, bR.y] (bottom-origin, absolute coords)
-   *
-   * @param {Object} rect - Our internal rect format
-   * @param {Object} pageInfo - Page dimensions
-   * @returns {number[]} 8 values for one quad in PDF.js order
-   */
-  #rectToQuadPoints(rect, pageInfo) {
-    const { pageWidth, pageHeight } = pageInfo;
-    const { leftRatio, topRatio, widthRatio, heightRatio } = rect;
-
-    // Convert ratios to absolute PDF coordinates
-    // X: straightforward scaling (0 = left edge)
-    const x1 = leftRatio * pageWidth;
-    const x2 = (leftRatio + widthRatio) * pageWidth;
-
-    // Y: flip from top-origin to bottom-origin
-    // Our topRatio=0 means top of page = PDF's Y = pageHeight
-    // Our topRatio=1 means bottom of page = PDF's Y = 0
-    const y1 = (1 - topRatio) * pageHeight;
-    const y2 = (1 - topRatio - heightRatio) * pageHeight;
-
-    // PDF.js QuadPoints order: topLeft, topRight, bottomLeft, bottomRight
-    return [
-      x1,
-      y1, // top-left
-      x2,
-      y1, // top-right
-      x1,
-      y2, // bottom-left
-      x2,
-      y2, // bottom-right
-    ];
-  }
-
-  /**
-   * Convert our rect to an outline path for the appearance stream
-   * @param {Object} rect - Our internal rect format
-   * @param {Object} pageInfo - Page dimensions
-   * @returns {number[]} Outline as [x1, y1, x2, y2, x3, y3, x4, y4]
-   */
-  #rectToOutline(rect, pageInfo) {
-    const { pageWidth, pageHeight } = pageInfo;
-    const { leftRatio, topRatio, widthRatio, heightRatio } = rect;
-
-    const x1 = leftRatio * pageWidth;
-    const x2 = (leftRatio + widthRatio) * pageWidth;
-    const y1 = (1 - topRatio) * pageHeight;
-    const y2 = (1 - topRatio - heightRatio) * pageHeight;
-
-    // Path order: top-left, top-right, bottom-right, bottom-left
-    return [x1, y1, x2, y1, x2, y2, x1, y2];
-  }
-
-  /**
-   * Calculate bounding rect from all rects
-   * @param {Array} rects - Array of our internal rect format
-   * @param {Object} pageInfo - Page dimensions
-   * @returns {number[]} [minX, minY, maxX, maxY]
-   */
-  #calculateBoundingRect(rects, pageInfo) {
-    let minX = Infinity,
-      minY = Infinity;
-    let maxX = -Infinity,
-      maxY = -Infinity;
-
-    for (const rect of rects) {
-      const quadPoints = this.#rectToQuadPoints(rect, pageInfo);
-
-      minX = Math.min(minX, quadPoints[0], quadPoints[4]);
-      maxX = Math.max(maxX, quadPoints[2], quadPoints[6]);
-      minY = Math.min(minY, quadPoints[5], quadPoints[7]); // bottom Y values
-      maxY = Math.max(maxY, quadPoints[1], quadPoints[3]); // top Y values
-    }
-
-    return [minX, minY, maxX, maxY];
-  }
-
-  /**
-   * Convert one of our annotations to PDF.js HIGHLIGHT format for a specific page
-   * Works for both 'highlight' and 'underscore' annotation types
-   * If the annotation has a comment, it includes popup information for anchored notes
-   * @param {Object} annotation - Our internal annotation
-   * @param {Object} pageRange - The pageRange object for this page
-   * @param {boolean} isFirstPage - Whether this is the first page of the annotation (for popup)
-   * @returns {Promise<Object>} PDF.js serialized annotation format
-   */
-  async #annotationToHighlightFormat(
-    annotation,
-    pageRange,
-    isFirstPage = false,
-  ) {
-    const pageInfo = await this.#getPageInfo(pageRange.pageNumber);
-    const { pageWidth, pageHeight } = pageInfo;
-
-    const quadPoints = [];
-    const outlines = [];
-
-    for (const rect of pageRange.rects) {
-      const quad = this.#rectToQuadPoints(rect, pageInfo);
-      quadPoints.push(...quad);
-
-      const outline = this.#rectToOutline(rect, pageInfo);
-      outlines.push(outline);
-    }
-
-    const rect = this.#calculateBoundingRect(pageRange.rects, pageInfo);
-    const color = this.#colorNameToRgb(annotation.color);
-
-    // Both 'highlight' and 'underscore' use HIGHLIGHT annotationType
-    // PDF.js doesn't have a separate UNDERLINE editor type
-    const highlightData = {
-      annotationType: AnnotationEditorType.HIGHLIGHT,
-      color,
-      opacity: 1,
-      thickness: 12,
-      quadPoints,
-      outlines,
-      rect,
-      pageIndex: pageRange.pageNumber - 1,
-      rotation: 0,
-      structTreeParentId: null,
-      id: null,
-    };
-
-    // If this annotation has a comment and this is the first page,
-    // add popup information for anchored note support
-    if (annotation.comment && isFirstPage) {
-      // Calculate popup rect - positioned at right margin near the highlight
-      const firstRect = pageRange.rects[0];
-      const topY = (1 - firstRect.topRatio) * pageHeight;
-
-      // Popup dimensions (standard sticky note size)
-      const popupWidth = 200;
-      const popupHeight = 100;
-      const rightMargin = 10;
-
-      const popupX1 = pageWidth - popupWidth - rightMargin;
-      const popupX2 = pageWidth - rightMargin;
-      const popupY1 = topY - popupHeight;
-      const popupY2 = topY;
-
-      highlightData.popup = {
-        contents: annotation.comment,
-        rect: [popupX1, popupY1, popupX2, popupY2],
-      };
-    }
-
-    return highlightData;
-  }
-
-  /**
    * Save PDF with annotations embedded
-   * Serializes highlights and underlines as PDF annotations
-   * Comments are saved as anchored notes (popup annotations) linked to their parent highlight
-   * Original imported annotations are removed through post-processing
-   * @returns {Promise<Uint8Array>} PDF data with annotations
+   * @returns {Promise<Uint8Array>}
    */
   async saveWithAnnotations() {
-    if (!this.pdfDoc) {
+    if (!this.pdfDoc || !this.engine || !this.native) {
       throw new Error("No PDF document loaded");
     }
 
     const allAnnotations = this.getAllAnnotations();
 
-    // If no annotations and nothing to remove, return original
     if (allAnnotations.length === 0 && this.importedPdfAnnotations.size === 0) {
-      return await this.pdfDoc.getData();
+      return await this.engine.saveAsCopy(this.pdfDoc).toPromise();
     }
 
-    const annotationStorage = this.pdfDoc.annotationStorage;
-
-    if (!annotationStorage) {
-      console.warn(
-        "annotationStorage not available, falling back to original PDF",
-      );
-      return await this.pdfDoc.getData();
-    }
-
-    // Add our annotations to the storage
-    // Note: We don't try to mark imported annotations as deleted here
-    // because PDF.js doesn't support deletion of existing non-widget annotations
-    // through annotationStorage. We'll handle removal via post-processing.
-
-    let editorIndex = 0;
-
+    // Add our annotations to the PDF
     for (const annotation of allAnnotations) {
-      // Process each page range for highlight/underscore annotations
       for (let i = 0; i < annotation.pageRanges.length; i++) {
         const pageRange = annotation.pageRanges[i];
-        const isFirstPage = i === 0;
+        const page = this.getPage(pageRange.pageNumber);
+        if (!page) continue;
 
-        // Both 'highlight' and 'underscore' types serialize as HIGHLIGHT
-        // Comments are included as popup annotations on the first page
-        const highlightData = await this.#annotationToHighlightFormat(
-          annotation,
-          pageRange,
-          isFirstPage,
-        );
+        const { width: pageWidth, height: pageHeight } = page.size;
+        const color = this.#colorNameToRgb(annotation.color);
 
-        const highlightKey = `${AnnotationEditorPrefix}${editorIndex++}`;
-        annotationStorage.setValue(highlightKey, highlightData);
+        // Convert our rects to PDFium format
+        const rects = pageRange.rects.map((rect) => {
+          const x = rect.leftRatio * pageWidth;
+          const y = (1 - rect.topRatio - rect.heightRatio) * pageHeight;
+          const w = rect.widthRatio * pageWidth;
+          const h = rect.heightRatio * pageHeight;
+          return { x, y, width: w, height: h };
+        });
+
+        try {
+          await this.native.createPageAnnotation(this.pdfDoc, page, {
+            type: "highlight",
+            color,
+            opacity: 1,
+            rects,
+            contents: i === 0 ? annotation.comment : null,
+          }).toPromise();
+        } catch (error) {
+          console.warn(`[Doc] Error creating annotation:`, error);
+        }
       }
     }
 
     try {
-      // Get PDF with new annotations added
-      let data = await this.pdfDoc.saveDocument();
-
-      // Post-process to remove original imported annotations
-      if (this.importedPdfAnnotations.size > 0) {
-        console.log(
-          `\n[PDF Save] Post-processing PDF to remove ${this.importedPdfAnnotations.size} original annotations`,
-        );
-
-        // Log what we're trying to remove
-        console.log("[PDF Save] Annotations to remove:");
-        for (const [annotId, info] of this.importedPdfAnnotations) {
-          console.log(
-            `  - ID: ${annotId}, PDF ref: ${info.pdfAnnotationId}, popup: ${info.pdfPopupRef}, page: ${info.pageNumber}`,
-          );
-        }
-
-        data = this.#removeImportedAnnotationsFromPdf(data);
-      }
-
-      return data;
+      return await this.engine.saveAsCopy(this.pdfDoc).toPromise();
     } catch (error) {
       console.error("Error saving document with annotations:", error);
-      return await this.pdfDoc.getData();
+      throw error;
     }
   }
 
-  /**
-   * Post-process PDF bytes to remove imported annotation references
-   * This is necessary because PDF.js doesn't support deleting existing annotations
-   * through its public API for non-widget annotation types.
-   *
-   * @param {Uint8Array} pdfData - The PDF bytes from saveDocument()
-   * @returns {Uint8Array} - Modified PDF bytes with original annotations removed
-   */
-  #removeImportedAnnotationsFromPdf(pdfData) {
-    // Collect all refs to remove, grouped by page for debugging
-    const refsToRemove = new Map(); // pageNumber -> Set of refs
-
-    for (const [annotId, info] of this.importedPdfAnnotations) {
-      const pageRefs = refsToRemove.get(info.pageNumber) || new Set();
-
-      if (info.pdfAnnotationId) {
-        pageRefs.add(info.pdfAnnotationId);
-      }
-      if (info.pdfPopupRef) {
-        pageRefs.add(info.pdfPopupRef);
-      }
-
-      refsToRemove.set(info.pageNumber, pageRefs);
-    }
-
-    const allRefs = new Set();
-    for (const refs of refsToRemove.values()) {
-      for (const ref of refs) {
-        allRefs.add(ref);
-      }
-    }
-
-    if (allRefs.size === 0) {
-      console.log("[PDF Cleanup] No annotation refs to remove");
-      return pdfData;
-    }
-
-    console.log(
-      `[PDF Cleanup] Attempting to remove ${allRefs.size} annotation refs:`,
-      Array.from(allRefs),
-    );
-
-    // Normalize all refs to multiple possible formats for matching
-    const refPatterns = [];
-    for (const ref of allRefs) {
-      const parsed = this.#parseRef(ref);
-      if (parsed) {
-        // PDF standard format: "5 0 R"
-        refPatterns.push(`${parsed.objNum} ${parsed.genNum} R`);
-        // Sometimes with different spacing
-        refPatterns.push(`${parsed.objNum}  ${parsed.genNum}  R`);
-        // Compact format that might appear: "5 0R" (unlikely but possible)
-        refPatterns.push(`${parsed.objNum} ${parsed.genNum}R`);
-      }
-    }
-
-    console.log("[PDF Cleanup] Looking for ref patterns:", refPatterns);
-
-    // Convert PDF bytes to string for manipulation
-    // Using latin1 (ISO-8859-1) to preserve binary data integrity
-    let str = "";
-    for (let i = 0; i < pdfData.length; i++) {
-      str += String.fromCharCode(pdfData[i]);
-    }
-
-    let modified = false;
-    let annotsFound = 0;
-    let refsRemoved = 0;
-
-    // Find ALL /Annots arrays in the document (including incremental updates)
-    // Pattern: /Annots [ref1 ref2 ref3...]
-    // Also handles /Annots[...] without space
-    const annotsPattern = /(\/Annots\s*)\[([^\]]*)\]/g;
-
-    str = str.replace(annotsPattern, (match, prefix, arrayContent) => {
-      annotsFound++;
-      let newContent = arrayContent;
-      let thisMatchModified = false;
-
-      // Try to remove each ref pattern
-      for (const refToRemove of refPatterns) {
-        // Escape special regex chars in the ref (the space is the main concern)
-        const escapedRef = refToRemove.replace(/([.*+?^${}()|[\]\\])/g, "\\$1");
-
-        // Match the ref with flexible whitespace, ensuring it's a complete ref
-        // (not part of a larger number)
-        const refPattern = new RegExp(
-          `(^|\\s)(${escapedRef})(?=\\s|$|\\])`,
-          "g",
-        );
-
-        const before = newContent;
-        newContent = newContent.replace(refPattern, "$1"); // Keep leading whitespace
-
-        if (before !== newContent) {
-          thisMatchModified = true;
-          refsRemoved++;
-          console.log(
-            `[PDF Cleanup] Removed ref '${refToRemove}' from /Annots array #${annotsFound}`,
-          );
-        }
-      }
-
-      if (thisMatchModified) {
-        modified = true;
-        // Clean up extra whitespace but preserve at least one space between refs
-        newContent = newContent.replace(/\s+/g, " ").trim();
-        console.log(
-          `[PDF Cleanup] /Annots array #${annotsFound} after cleanup: [${newContent.substring(0, 100)}${newContent.length > 100 ? "..." : ""}]`,
-        );
-      }
-
-      return `${prefix}[${newContent}]`;
-    });
-
-    console.log(
-      `[PDF Cleanup] Found ${annotsFound} /Annots arrays, removed ${refsRemoved} refs`,
-    );
-
-    if (!modified) {
-      console.log("[PDF Cleanup] No refs were found/removed. This could mean:");
-      console.log("  1. The ref format in the PDF differs from expected");
-      console.log("  2. The annotations use indirect /Annots references");
-      console.log("  3. The PDF uses object streams (compressed)");
-
-      // Debug: Search for any occurrence of our ref patterns
-      for (const pattern of refPatterns.slice(0, 3)) {
-        // Check first few
-        const idx = str.indexOf(pattern);
-        if (idx !== -1) {
-          const context = str.substring(
-            Math.max(0, idx - 50),
-            Math.min(str.length, idx + 50),
-          );
-          console.log(
-            `[PDF Cleanup] Found '${pattern}' at position ${idx}, context: ...${context}...`,
-          );
-        }
-      }
-
-      return pdfData;
-    }
-
-    console.log(
-      "[PDF Cleanup] Successfully modified PDF to remove original annotation refs",
-    );
-
-    // Convert back to bytes, preserving binary data
-    const result = new Uint8Array(str.length);
-    for (let i = 0; i < str.length; i++) {
-      result[i] = str.charCodeAt(i) & 0xff;
-    }
-
-    // Verify the modification by searching for the removed refs in the result
-    const resultStr = String.fromCharCode.apply(
-      null,
-      result.slice(0, Math.min(result.length, 100000)),
-    );
-    for (const pattern of refPatterns.slice(0, 3)) {
-      if (resultStr.includes(pattern)) {
-        console.warn(
-          `[PDF Cleanup] Warning: '${pattern}' may still be in PDF (found in first 100KB)`,
-        );
-      }
-    }
-
-    return result;
-  }
-
-  /**
-   * Debug helper: dump info about /Annots arrays in PDF
-   * Call this before and after save to compare
-   */
-  #debugAnnotsArrays(pdfData, label = "") {
-    let str = "";
-    for (let i = 0; i < pdfData.length; i++) {
-      str += String.fromCharCode(pdfData[i]);
-    }
-
-    console.log(`\n[PDF Debug ${label}] Searching for /Annots arrays...`);
-
-    // Find all /Annots occurrences
-    let idx = 0;
-    let count = 0;
-    while ((idx = str.indexOf("/Annots", idx)) !== -1) {
-      count++;
-      // Get context around this occurrence
-      const start = Math.max(0, idx - 20);
-      const end = Math.min(str.length, idx + 150);
-      const context = str
-        .substring(start, end)
-        .replace(/[\x00-\x1f]/g, "Ãƒâ€šÃ‚Â·") // Replace control chars for display
-        .replace(/\n/g, "ÃƒÂ¢Ã¢â‚¬Â Ã‚Âµ");
-
-      console.log(
-        `[PDF Debug ${label}] /Annots occurrence #${count} at byte ${idx}:`,
-      );
-      console.log(`  Context: ...${context}...`);
-
-      idx++;
-    }
-
-    console.log(`[PDF Debug ${label}] Total /Annots occurrences: ${count}`);
-  }
-
-  /**
-   * Parse a PDF reference string like "20R", "20 0 R", or just "20" into components
-   * PDF.js returns annotation IDs in formats like "5R" for object reference 5 0 R
-   * @param {string} refStr - Reference string
-   * @returns {{objNum: number, genNum: number} | null}
-   */
-  #parseRef(refStr) {
-    if (!refStr) return null;
-
-    const strVal = String(refStr).trim();
-
-    // Handle "20R" format (PDF.js internal - most common for annotation IDs)
-    const simpleMatch = strVal.match(/^(\d+)R$/i);
-    if (simpleMatch) {
-      return { objNum: parseInt(simpleMatch[1], 10), genNum: 0 };
-    }
-
-    // Handle "20 0 R" format (PDF standard)
-    const fullMatch = strVal.match(/^(\d+)\s+(\d+)\s*R$/i);
-    if (fullMatch) {
-      return {
-        objNum: parseInt(fullMatch[1], 10),
-        genNum: parseInt(fullMatch[2], 10),
-      };
-    }
-
-    // Handle pure number (just object number, assume gen 0)
-    const numMatch = strVal.match(/^(\d+)$/);
-    if (numMatch) {
-      return { objNum: parseInt(numMatch[1], 10), genNum: 0 };
-    }
-
-    // Handle "annot_5R" format (prefixed)
-    const prefixedMatch = strVal.match(/(\d+)R$/i);
-    if (prefixedMatch) {
-      return { objNum: parseInt(prefixedMatch[1], 10), genNum: 0 };
-    }
-
-    console.warn(`[PDF Cleanup] Could not parse ref format: '${refStr}'`);
-    return null;
-  }
-
-  /**
-   * Check if there are any annotations to save
-   * @returns {boolean}
-   */
   hasAnnotations() {
     return this.annotations.size > 0;
+  }
+
+  /**
+   * Close the document and cleanup resources
+   */
+  async close() {
+    // Close low-level handle first
+    if (this.lowLevelHandle) {
+      this.lowLevelHandle.close();
+      this.lowLevelHandle = null;
+      this.textExtractor = null;
+    }
+
+    if (this.pdfDoc && this.engine) {
+      try {
+        await this.engine.closeDocument(this.pdfDoc).toPromise();
+      } catch (error) {
+        console.warn("[Doc] Error closing document:", error);
+      }
+    }
+
+    this.pdfDoc = null;
+    this.pdfData = null;
+    this.searchIndex?.destroy();
+    this.searchIndex = null;
   }
 }

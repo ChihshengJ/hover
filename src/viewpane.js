@@ -393,15 +393,16 @@ export class ViewerPane {
   }
 
   async scrollToPoint(pageIndex, left, top) {
-    const page = await this.document.pdfDoc.getPage(pageIndex + 1);
-    const viewport = page.getViewport({ scale: this.scale });
-    const [, y] = viewport.convertToViewportPoint(left, top);
+    const page = this.document.getPage(pageIndex + 1);
+    if (!page) return;
+
+    const pageHeight = page.size.height;
+    const viewportY = (pageHeight - top) * this.scale;
 
     const wrapper = this.pages[pageIndex]?.wrapper;
     if (!wrapper) return;
 
-    const targetTop = wrapper.offsetTop + Math.max(0, y);
-
+    const targetTop = wrapper.offsetTop + Math.max(0, viewportY);
     this.scroller.scrollTo({ top: targetTop, behavior: "instant" });
   }
 

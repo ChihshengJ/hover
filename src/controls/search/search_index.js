@@ -73,15 +73,15 @@ export class SearchIndex {
   static BATCH_SIZE = 6; // Process 4 pages concurrently
 
   // Column detection constants
-  static MIN_LINES_FOR_COLUMN_DETECTION = 8;
-  static GUTTER_LINE_THRESHOLD = 0.2;
+  static MIN_LINES_FOR_COLUMN_DETECTION = 5;
+  static GUTTER_LINE_THRESHOLD = 0.1;
   static CLUSTER_TOLERANCE_RATIO = 0.008;
   static FULL_WIDTH_THRESHOLD = 0.7;
 
   // Table rejection constants
   static MAX_COLUMN_COUNT = 3; // Academic papers rarely exceed 3 columns
   static MIN_COLUMN_WIDTH_RATIO = 0.15; // Each column must be at least 25% of content width
-  static MAX_COLUMN_WIDTH_RATIO = 0.70; // Each column must be at most 70% of content width
+  static MAX_COLUMN_WIDTH_RATIO = 0.7; // Each column must be at most 70% of content width
   static MIN_VERTICAL_COVERAGE = 0.2; // Gutter must span at least 35% of page height
 
   constructor(doc) {
@@ -405,10 +405,10 @@ export class SearchIndex {
     items.splice(arxivIdx, 1);
 
     // Calculate margins from item positions
-    const marginLeft = Math.max(0, Math.min(...items.map((i) => i.x)) - 5);
+    const marginLeft = Math.max(0, Math.min(...items.map((i) => i.x)));
     const marginRight = Math.max(
       0,
-      pageWidth - Math.max(...items.map((i) => i.x + i.width)) - 5,
+      pageWidth - Math.max(...items.map((i) => i.x + i.width)),
     );
 
     // Detect column gutters (pass pageHeight for vertical coverage validation)
@@ -421,6 +421,8 @@ export class SearchIndex {
       marginLeft,
       marginRight,
     );
+
+    console.log(pageNumber, columns);
 
     // If single column, return simplified structure
     if (columns.length <= 1) {
@@ -485,6 +487,9 @@ export class SearchIndex {
 
           const columnBoundary = columns[colIdx];
           const lines = this.#groupIntoLines(columnItems);
+          if (pageNumber === 10) {
+            console.log(columnBoundary);
+          }
 
           for (const lineItems of lines) {
             const columnAwareLine = this.#createColumnAwareLine(
@@ -540,7 +545,7 @@ export class SearchIndex {
 
     // Calculate if line is at column start (left-aligned within column)
     // Use a tolerance based on font size and a minimum threshold
-    const tolerance = Math.max(5, fontSize * 0.6, columnLeft * 0.05);
+    const tolerance = Math.max(5, fontSize * 0.6);
     const isAtColumnStart =
       firstItem.x - columnLeft < tolerance && firstItem.x - columnLeft >= 0;
 
@@ -940,7 +945,7 @@ export class SearchIndex {
       if (coverage < SearchIndex.MIN_VERTICAL_COVERAGE) {
         console.log(
           `[Columns] Rejected gutter at x≈${(cluster.reduce((s, g) => s + g.x, 0) / cluster.length).toFixed(0)}: ` +
-            `vertical coverage ${(coverage * 100).toFixed(1)}% < ${SearchIndex.MIN_VERTICAL_COVERAGE * 100}% threshold`,
+          `vertical coverage ${(coverage * 100).toFixed(1)}% < ${SearchIndex.MIN_VERTICAL_COVERAGE * 100}% threshold`,
         );
         return false;
       }
@@ -970,7 +975,11 @@ export class SearchIndex {
     if (gutters.length > 0) {
       const contentWidth = pageWidth - marginLeft - marginRight;
       const sortedGutters = [...gutters].sort((a, b) => a - b);
-      const boundaries = [marginLeft, ...sortedGutters, pageWidth - marginRight];
+      const boundaries = [
+        marginLeft,
+        ...sortedGutters,
+        pageWidth - marginRight,
+      ];
 
       for (let i = 0; i < boundaries.length - 1; i++) {
         const colWidth = boundaries[i + 1] - boundaries[i];

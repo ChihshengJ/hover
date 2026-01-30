@@ -8,6 +8,12 @@ import {
   buildOutline,
   detectDocumentMetadata,
 } from "./data/outline_builder.js";
+import {
+  buildReferenceIndex,
+  findBoundingAnchors,
+  findReferenceByIndex,
+  matchCitationToReference,
+} from "./data/reference_builder.js";
 
 const AnnotationEditorType = {
   DISABLE: -1,
@@ -74,6 +80,9 @@ export class PDFDocumentModel {
 
     /** @type {SearchIndex|null} */
     this.searchIndex = null;
+
+    /** @type {import('./data/reference_builder.js').ReferenceIndex|null} */
+    this.referenceIndex = null;
 
     /** @type {{title: string|null, abstractInfo: Object|null}} */
     this.detectedMetadata = { title: null, abstractInfo: null };
@@ -198,6 +207,9 @@ export class PDFDocumentModel {
 
     // Detect title and abstract from document content
     this.detectedMetadata = detectDocumentMetadata(this.searchIndex);
+
+    reportProgress(90, 100, "indexing references");
+    this.referenceIndex = await buildReferenceIndex(this.searchIndex);
 
     reportProgress(95, 100, "building outline");
     await this.#buildOutline();
@@ -839,6 +851,81 @@ export class PDFDocumentModel {
   }
 
   // ============================================
+  // Reference Index Methods
+  // ============================================
+
+  /**
+   * Get reference anchors for a specific page
+   * @param {number} pageNumber - 1-based page number
+   * @returns {import('./data/reference_builder.js').ReferenceAnchor[]}
+   */
+  getReferenceAnchors(pageNumber) {
+    if (!this.referenceIndex?.anchors) return [];
+    return this.referenceIndex.anchors.filter(a => a.pageNumber === pageNumber);
+  }
+
+  /**
+   * Get all reference anchors
+   * @returns {import('./data/reference_builder.js').ReferenceAnchor[]}
+   */
+  getAllReferenceAnchors() {
+    return this.referenceIndex?.anchors || [];
+  }
+
+  /**
+   * Find reference by numeric index (for direct lookup from [1], [2] citations)
+   * @param {number} index - Reference number
+   * @returns {import('./data/reference_builder.js').ReferenceAnchor|null}
+   */
+  getReferenceByIndex(index) {
+    if (!this.referenceIndex?.anchors) return null;
+    return findReferenceByIndex(this.referenceIndex.anchors, index);
+  }
+
+  /**
+   * Find bounding reference anchors for a coordinate (for hybrid lookup)
+   * @param {number} pageNumber - 1-based page number
+   * @param {number} x - X coordinate in PDF space
+   * @param {number} y - Y coordinate in PDF space (from bottom)
+   * @returns {{current: import('./data/reference_builder.js').ReferenceAnchor|null, next: import('./data/reference_builder.js').ReferenceAnchor|null}}
+   */
+  findBoundingReferenceAnchors(pageNumber, x, y) {
+    if (!this.referenceIndex?.anchors) return { current: null, next: null };
+    return findBoundingAnchors(this.referenceIndex.anchors, pageNumber, x, y);
+  }
+
+  /**
+   * Match author-year citation to reference
+   * @param {string} author - Author name from citation
+   * @param {string} year - Year from citation
+   * @returns {import('./data/reference_builder.js').ReferenceAnchor|null}
+   */
+  matchCitationToReference(author, year) {
+    if (!this.referenceIndex?.anchors) return null;
+    return matchCitationToReference(author, year, this.referenceIndex.anchors);
+  }
+
+  /**
+   * Check if reference index is available and has entries
+   * @returns {boolean}
+   */
+  hasReferenceIndex() {
+    return this.referenceIndex?.anchors?.length > 0;
+  }
+
+  /**
+   * Get reference section bounds (for skipping in other operations)
+   * @returns {{startPage: number, endPage: number}|null}
+   */
+  getReferenceSectionBounds() {
+    if (!this.referenceIndex?.sectionStart) return null;
+    return {
+      startPage: this.referenceIndex.sectionStart.pageNumber,
+      endPage: this.referenceIndex.sectionEnd?.pageNumber || this.numPages,
+    };
+  }
+
+  // ============================================
   // PDF.js Native Annotation Save/Export Methods
   // ============================================
 
@@ -1292,8 +1379,8 @@ export class PDFDocumentModel {
       const end = Math.min(str.length, idx + 150);
       const context = str
         .substring(start, end)
-        .replace(/[\x00-\x1f]/g, "Ã‚Â·") // Replace control chars for display
-        .replace(/\n/g, "Ã¢â€ Âµ");
+        .replace(/[\x00-\x1f]/g, "Ãƒâ€šÃ‚Â·") // Replace control chars for display
+        .replace(/\n/g, "ÃƒÂ¢Ã¢â‚¬Â Ã‚Âµ");
 
       console.log(
         `[PDF Debug ${label}] /Annots occurrence #${count} at byte ${idx}:`,

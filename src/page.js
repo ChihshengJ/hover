@@ -263,30 +263,121 @@ export class PageView {
   }
 
   async #findCiteText(left, pageIndex, top) {
-    const page = await this.pdfDoc.getPage(pageIndex + 1);
-    const viewport = page.getViewport({ scale: this.scale, dontFlip: true });
-    const texts = await page.getTextContent();
-    const canvas = document.querySelector(
-      `[data-page-number="${pageIndex + 1}"]`,
-    );
-    const { pageWidth, pageHeight, pageX, pageY } = viewport.rawDims;
-    const transform = [1, 0, 0, -1, -pageX, pageY + pageHeight];
+    const pageNumber = pageIndex + 1;
 
-    // Convert target PDF coordinates to viewport coordinates at current scale
-    const [targetX, targetY] = viewport.convertToViewportPoint(left, top);
-    const targetLeft = targetX + 10;
-    const targetTop = canvas.offsetTop + Math.max(0, viewport.height - targetY);
-    const getPosition = (span) => {
-      const pos = pdfjsLib.Util.transform(viewport.transform, span.transform);
-      return { left: pos[4], top: pos[5] };
-    };
+    console.log(`try to find ${pageIndex + 1}, left ${left}, top ${top}`);
+
+    // Step 1: Try reference index first (if available)
+    if (this.doc.hasReferenceIndex()) {
+      const bounds = this.doc.findBoundingReferenceAnchors(
+        pageNumber,
+        left,
+        top,
+      );
+      console.log(bounds);
+
+      // If we have a high-confidence match with cached text, use it directly
+      if (bounds.current?.confidence > 0.85 && bounds.current.cachedText) {
+        console.log(
+          `[Citation] Using cached reference text (confidence: ${bounds.current.confidence.toFixed(2)})`,
+        );
+        return bounds.current.cachedText;
+      }
+
+      // Otherwise, use hybrid approach with guardrails
+      const heuristicText = await this.#heuristicFindCiteText(
+        left,
+        pageIndex,
+        top,
+        bounds,
+      );
+
+      // Cross-validate if we have index data
+      if (bounds.current?.cachedText && heuristicText) {
+        const similarity = this.#textSimilarity(
+          heuristicText,
+          bounds.current.cachedText,
+        );
+        if (similarity < 0.7) {
+          console.log(
+            `[Citation] Heuristic diverged (similarity: ${similarity.toFixed(2)}), using index version`,
+          );
+          return bounds.current.cachedText;
+        }
+      }
+
+      if (heuristicText) {
+        return heuristicText;
+      }
+
+      // Fallback to cached text if heuristic failed
+      if (bounds.current?.cachedText) {
+        return bounds.current.cachedText;
+      }
+    }
+
+    // Fallback to pure heuristic (no reference index available)
+    return await this.#heuristicFindCiteText(left, pageIndex, top, null);
+  }
+
+  /**
+   * Calculate text similarity (simple Jaccard-like comparison)
+   * @param {string} text1
+   * @param {string} text2
+   * @returns {number} Similarity score 0-1
+   */
+  #textSimilarity(text1, text2) {
+    if (!text1 || !text2) return 0;
+
+    const normalize = (t) => t.toLowerCase().replace(/\s+/g, " ").trim();
+    const n1 = normalize(text1);
+    const n2 = normalize(text2);
+
+    if (n1 === n2) return 1;
+
+    // Word-based Jaccard similarity
+    const words1 = new Set(n1.split(" ").filter((w) => w.length > 2));
+    const words2 = new Set(n2.split(" ").filter((w) => w.length > 2));
+
+    if (words1.size === 0 || words2.size === 0) return 0;
+
+    let intersection = 0;
+    for (const word of words1) {
+      if (words2.has(word)) intersection++;
+    }
+
+    const union = words1.size + words2.size - intersection;
+    return union > 0 ? intersection / union : 0;
+  }
+
+  /**
+   * Heuristic citation text extraction with optional guardrails
+   * @param {number} left - X position in PDF coordinates
+   * @param {number} pageIndex - 0-based page index
+   * @param {number} top - Y position in PDF coordinates
+   * @param {Object|null} bounds - Bounding anchors from reference index
+   * @returns {Promise<string|null>}
+   */
+  async #heuristicFindCiteText(left, pageIndex, top, bounds) {
+    const page = await this.pdfDoc.getPage(pageIndex + 1);
+
+    // Use scale=1 viewport for PDF coordinate space (scale-independent)
+    const baseViewport = page.getViewport({ scale: 1, dontFlip: true });
+    const texts = await page.getTextContent();
+
+    const { width: pageWidth, height: pageHeight } = baseViewport;
+    const transform = [1, 0, 0, -1, 0, pageHeight];
+
+    // Work entirely in PDF coordinates (scale=1)
+    // Target coordinates are already in PDF space
+    const targetX = left;
+    const targetY = top;
 
     let startIndex = -1;
-    // 500 is only an estimate for the largest scale of the system
-    let minDistance = 500;
+    let minDistance = pageWidth; // Use page width as max reasonable distance
 
     try {
-      // Find the closest span to the target position
+      // Find the closest span to the target position (in PDF coordinates)
       for (let i = 0; i < texts.items.length; i++) {
         const geom = texts.items[i];
         const tx = pdfjsLib.Util.transform(transform, geom.transform);
@@ -294,25 +385,19 @@ export class PageView {
         const fontHeight = Math.hypot(tx[2], tx[3]);
         const fontAscent = fontHeight * 0.8;
 
-        let l, t;
+        let spanX, spanY;
         if (angle === 0) {
-          l = tx[4];
-          t = tx[5] - fontAscent;
+          spanX = tx[4];
+          spanY = tx[5] - fontAscent;
         } else {
-          l = tx[4] + fontAscent * Math.sin(angle);
-          t = tx[5] - fontAscent * Math.cos(angle);
+          spanX = tx[4] + fontAscent * Math.sin(angle);
+          spanY = tx[5] - fontAscent * Math.cos(angle);
         }
 
-        const [x, y] = viewport.convertToViewportPoint(l, t);
-        const spanLeft = x;
-        const spanTop = canvas.offsetTop + Math.max(0, y);
+        // Distance calculation in PDF coordinate space (scale-independent)
+        const dist = Math.hypot(spanX - targetX, spanY - targetY);
 
-        const dist = Math.max(
-          Math.abs(spanLeft - targetLeft),
-          Math.abs(spanTop - targetTop),
-        );
-
-        if (dist <= minDistance) {
+        if (dist < minDistance) {
           startIndex = i;
           minDistance = dist;
         }
@@ -327,24 +412,46 @@ export class PageView {
       const reference = [];
 
       // Reference number patterns: [1], (1), 1., 1), [12], etc.
-      // at start of text, with leading whitespace
       const refNumberPattern = /^\s*[\[\(]?\d{1,3}[\]\)\.\,]?\s+\S/;
 
+      // Get guardrails from reference index bounds
+      const stopBeforeY = bounds?.next?.startCoord?.y;
+      const formatHint = bounds?.current?.formatHint;
+
+      // Helper to get span position in PDF coords
+      const getSpanPosition = (span) => {
+        const tx = pdfjsLib.Util.transform(transform, span.transform);
+        const fontHeight = Math.hypot(tx[2], tx[3]);
+        return {
+          x: tx[4],
+          y: tx[5] - fontHeight * 0.8,
+          fontHeight,
+        };
+      };
+
       // Track line structure for boundary detection
-      const firstPos = getPosition(items[startIndex]);
-      let currentLineTop = firstPos.top;
-      let firstLineLeft = firstPos.left;
+      const firstPos = getSpanPosition(items[startIndex]);
+      let currentLineY = firstPos.y;
+      let firstLineX = firstPos.x;
       let baselineLineHeight = null;
-      let currCiteLeft = null;
+      let currCiteX = null;
       let lineCount = 0;
 
       for (let i = startIndex; i < items.length; i++) {
         const span = items[i];
-        const pos = getPosition(span);
+        const pos = getSpanPosition(span);
         const text = span.str;
 
+        // Guardrail: Don't cross into next reference
+        if (stopBeforeY !== undefined && pos.y < stopBeforeY) {
+          console.log(
+            `[Citation] Stopped at guardrail: next reference boundary`,
+          );
+          break;
+        }
+
         // Check line break via vertical movement
-        const verticalGap = Math.abs(pos.top - currentLineTop);
+        const verticalGap = Math.abs(pos.y - currentLineY);
         const isNewLine = verticalGap > 3;
 
         if (isNewLine) {
@@ -352,41 +459,58 @@ export class PageView {
           if (baselineLineHeight === null) {
             baselineLineHeight = verticalGap;
           }
+
           // Check large vertical gap indicates new block/paragraph
           if (baselineLineHeight && verticalGap > baselineLineHeight * 1.8) {
             break;
           }
+
           // Check reference number at start of new line
           let lineStartText = text;
           if (i + 1 < items.length) {
-            const nextPos = getPosition(items[i + 1]);
+            const nextPos = getSpanPosition(items[i + 1]);
             // If next span is on same line, include it for pattern matching
-            if (Math.abs(nextPos.top - pos.top) < 3) {
+            if (Math.abs(nextPos.y - pos.y) < 3) {
               lineStartText = text + items[i + 1].str;
             }
           }
-          if (refNumberPattern.test(lineStartText)) {
+
+          // Use format hint for smarter boundary detection
+          if (
+            formatHint === "numbered-bracket" &&
+            /^\s*\[\d+\]/.test(lineStartText)
+          ) {
+            break;
+          } else if (
+            formatHint === "numbered-dot" &&
+            /^\s*\d+\./.test(lineStartText)
+          ) {
+            break;
+          } else if (refNumberPattern.test(lineStartText)) {
             break;
           }
+
           // Check indentation
           if (lineCount === 1) {
-            currCiteLeft = pos.left;
-          } else if (currCiteLeft !== null) {
-            const hasHangingIndent = currCiteLeft > firstLineLeft + 6;
+            currCiteX = pos.x;
+          } else if (currCiteX !== null) {
+            const hasHangingIndent = currCiteX > firstLineX + 6;
             if (hasHangingIndent) {
-              if (pos.left < currCiteLeft - 8) {
+              if (pos.x < currCiteX - 8) {
                 break;
               }
             } else {
-              const minLeft = Math.min(firstLineLeft, currCiteLeft);
-              if (pos.left < minLeft - 8) {
+              const minX = Math.min(firstLineX, currCiteX);
+              if (pos.x < minX - 8) {
                 break;
               }
             }
           }
-          currentLineTop = pos.top;
+          currentLineY = pos.y;
         }
+
         reference.push(text);
+
         // Check standalone period often ends a reference
         if (text.trim() === ".") {
           break;

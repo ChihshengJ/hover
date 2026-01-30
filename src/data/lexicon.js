@@ -430,7 +430,7 @@ export const REFERENCE_SECTION_PATTERN =
  * These sections typically follow references in academic papers
  */
 export const POST_REFERENCE_SECTION_PATTERN =
-  /^(?:appendix|appendices|supplementary|supplemental|acknowledgements?|acknowledgments?|author\s+contributions?|conflicts?\s+of\s+interest|competing\s+interests?|data\s+availability|code\s+availability|funding|author\s+information|additional\s+information|extended\s+data|supporting\s+information)$/i;
+  /^(?:appendix|appendices|supplementary|supplemental|acknowledgements?|acknowledgments?|author\s+contributions?|conflicts?\s+of\s+interest|competing\s+interests?|data\s+availability|code\s+availability|contents|funding|author\s+information|additional\s+information|extended\s+data|supporting\s+information)/i;
 
 // ============================================
 // Reference Format Detection
@@ -562,4 +562,36 @@ export const LAST_NAME_PATTERNS = {
  */
 export const INITIALS_PATTERN = /\b([A-Z])\.?\s*/g;
 
-// ===
+// ============================================
+// Reference Entry Boundary Detection
+// ============================================
+
+/**
+ * Minimum character length for a valid reference
+ */
+export const MIN_REFERENCE_LENGTH = 30;
+
+/**
+ * Maximum character length for a valid reference
+ */
+export const MAX_REFERENCE_LENGTH = 2000;
+
+/**
+ * Common reference ending patterns
+ */
+export const REFERENCE_ENDING_PATTERNS = {
+  // DOI at end
+  doi: /doi[:\s]+\S+\.?\s*$/i,
+
+  // URL at end
+  url: /https?:\/\/\S+\.?\s*$/i,
+
+  // Page numbers at end: pp. 1-20, p. 5, 123-456
+  pages: /(?:pp?\.\s*)?\d+\s*[-–—]\s*\d+\.?\s*$/,
+
+  // Year in parentheses at end (some formats)
+  yearEnd: /\(\d{4}[a-z]?\)\.?\s*$/,
+
+  // Volume/issue at end: 15(3), Vol. 5
+  volumeIssue: /\d+\s*\(\d+\)\.?\s*$/,
+};

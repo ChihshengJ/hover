@@ -341,11 +341,11 @@ export function getDocInfo(searchIndex) {
     `[Outline] Body text: fontSize=${bodyFontSize.toFixed(1)}, fontName=${bodyFontName}`,
   );
 
-  return  {
+  return {
     fontSize: bodyFontSize,
     fontName: bodyFontName,
-    pageData: pageData
-  }
+    pageData: pageData,
+  };
 }
 
 /**
@@ -864,26 +864,27 @@ function buildOutlineTree(candidates) {
  * @returns {OutlineItem[]} - Modified outline with reference children purged
  */
 function purgeReferenceChildren(outline) {
-  const REFERENCE_PATTERN = /^(?:\d+\.?\s+)?(?:references?|bibliography|works cited|citations?)$/i;
-  
+  const REFERENCE_PATTERN =
+    /^(?:\d+\.?\s+)?(?:references?|bibliography|works cited|citations?)$/i;
+
   function processNode(node) {
     // Check if this node is a references section
-    const titleToCheck = node.title.replace(SECTION_NUMBER_STRIP, '').trim();
+    const titleToCheck = node.title.replace(SECTION_NUMBER_STRIP, "").trim();
     if (REFERENCE_PATTERN.test(titleToCheck)) {
       node.children = [];
       return;
     }
-    
+
     // Recursively process children
     for (const child of node.children) {
       processNode(child);
     }
   }
-  
+
   for (const item of outline) {
     processNode(item);
   }
-  
+
   return outline;
 }
 

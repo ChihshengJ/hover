@@ -96,6 +96,7 @@ export async function buildReferenceIndex(searchIndex) {
     // Phase 3: Extract reference anchors
     const anchors = extractReferenceAnchors(section, format, searchIndex);
     console.log(`[References] Extracted ${anchors.length} reference anchors`);
+    // console.log(anchors);
 
     // Phase 4: Cache text for high-confidence entries
     for (const anchor of anchors) {
@@ -106,6 +107,7 @@ export async function buildReferenceIndex(searchIndex) {
         anchor.authors = parsed.authors;
         anchor.year = parsed.year;
       }
+      // console.log(anchor);
     }
 
     return {
@@ -164,16 +166,21 @@ function findReferenceSection(searchIndex) {
 
     for (let i = 0; i < allLines.length; i++) {
       const line = allLines[i];
-      const strippedText = line.text.replace(SECTION_NUMBER_STRIP, "").trim();
+      const strippedText = line.text
+        .replace(SECTION_NUMBER_STRIP, "")
+        .replace(/\s+/g, "")
+        .trim()
+        .toLowerCase();
 
       if (REFERENCE_SECTION_PATTERN.test(strippedText)) {
         // Check for font differentiation (heading-like)
         const isLarger = line.fontSize > bodyFontSize * 1.05;
         const isBold = isBoldFont(line.fontName);
         const isAtColumnStart = line.isAtColumnStart === true;
+        const isAllCapital = line.text === line.text.toUpperCase();
 
         // Prefer last occurrence (some papers mention "References" in intro)
-        if (isLarger || isBold || isAtColumnStart) {
+        if (isLarger || isBold || isAtColumnStart || isAllCapital) {
           referenceStart = {
             pageNumber: pageNum,
             lineIndex: i,
@@ -237,14 +244,19 @@ function findReferenceSectionEnd(pageData, start, bodyFontSize) {
 
     for (let i = startIdx; i < allLines.length; i++) {
       const line = allLines[i];
-      const strippedText = line.text.replace(SECTION_NUMBER_STRIP, "").trim();
+      const strippedText = line.text
+        .replace(SECTION_NUMBER_STRIP, "")
+        .replace(/\s+/g, "")
+        .trim()
+        .toLowerCase();
 
       // Check for post-reference section heading
       if (POST_REFERENCE_SECTION_PATTERN.test(strippedText)) {
         const isLarger = line.fontSize > bodyFontSize * 1.05;
         const isBold = isBoldFont(line.fontName);
+        const isAllCapital = line.text === line.text.toUpperCase();
 
-        if (isLarger || isBold) {
+        if (isLarger || isBold || isAllCapital) {
           return {
             pageNumber: pageNum,
             lineIndex: i - 1,
@@ -382,7 +394,7 @@ function detectReferenceFormat(lines) {
     (a, b) => b[1] - a[1],
   )[0];
 
-  if (bestNumbered && bestNumbered[1] >= sampleLines.length * 0.3) {
+  if (bestNumbered && bestNumbered[1] >= sampleLines.length * 0.2) {
     return bestNumbered[0];
   }
 
@@ -391,7 +403,7 @@ function detectReferenceFormat(lines) {
     AUTHOR_YEAR_START_PATTERN.test(l.text),
   ).length;
 
-  if (authorYearCount >= sampleLines.length * 0.3) {
+  if (authorYearCount >= sampleLines.length * 0.2) {
     return "author-year";
   }
 
@@ -411,6 +423,7 @@ function detectReferenceFormat(lines) {
 function detectHangingIndent(lines) {
   if (lines.length < 4) return false;
 
+  console.log(lines);
   // Get typical column start position
   const columnStarts = lines.filter((l) => l.isAtColumnStart).map((l) => l.x);
 
@@ -424,16 +437,16 @@ function detectHangingIndent(lines) {
 
   while (i < lines.length - 1) {
     const line = lines[i];
-    const isAtMargin = Math.abs(line.x - marginX) < 5;
+    // const isAtMargin = Math.abs(line.x - marginX) < 5;
 
-    if (isAtMargin) {
-      // Check if next line(s) are indented
+    if (line.isAtColumnStart) {
+      // Check if next lines are indented
       let j = i + 1;
       while (
         j < lines.length &&
-        Math.abs(lines[j].y - lines[j - 1].y) < lines[j - 1].fontSize * 2
+        Math.abs(lines[j].y - lines[j - 1].y) < lines[j - 1].fontSize * 2.2
       ) {
-        if (lines[j].x > marginX + 10) {
+        if (lines[j].x > marginX + lines[j].fontSize) {
           hangingPatterns++;
           break;
         }
@@ -511,7 +524,8 @@ function extractNumberedReferences(lines, format) {
         id: `ref-${refIndex}`,
         index: refIndex,
         pageNumber: line.pageNumber,
-        startCoord: { x: line.x, y: line.originalY || line.y },
+        // startCoord: { x: line.x, y: line.originalY || line.y },
+        startCoord: { x: line.x, y: line.y },
         endCoord: null,
         confidence: 0.7, // Base confidence for numbered
         formatHint: format,
@@ -547,19 +561,20 @@ function extractAuthorYearReferences(lines) {
   let currentLines = [];
 
   // Get margin position for column start detection
-  const marginXValues = lines.filter((l) => l.isAtColumnStart).map((l) => l.x);
-  const marginX = marginXValues.length > 0 ? Math.min(...marginXValues) : 0;
-  const tolerance = 5;
+  // const marginXValues = lines.filter((l) => l.isAtColumnStart).map((l) => l.x);
+  // const marginX = marginXValues.length > 0 ? Math.min(...marginXValues) : 0;
+  // const tolerance = 5;
 
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
-    const isAtMargin = Math.abs(line.x - marginX) < tolerance;
+    // const isAtMargin = Math.abs(line.x - marginX) < tolerance;
     const startsWithAuthor = AUTHOR_YEAR_START_PATTERN.test(line.text);
     const previousEndsWithPeriod = i > 0 && /\.\s*$/.test(lines[i - 1].text);
+    console.log(line);
 
     // New reference starts when: at margin AND (starts with author pattern OR previous ended with period)
     const isNewEntry =
-      isAtMargin &&
+      line.isAtColumnStart &&
       (startsWithAuthor ||
         (previousEndsWithPeriod && /^[A-Z]/.test(line.text)));
 
@@ -595,7 +610,8 @@ function extractAuthorYearReferences(lines) {
         id: `ref-${parsed.authors?.split(/[,\s]/)[0]?.toLowerCase() || "unknown"}-${parsed.year || 0}`,
         index: null,
         pageNumber: line.pageNumber,
-        startCoord: { x: line.x, y: line.originalY || line.y },
+        // startCoord: { x: line.x, y: line.originalY || line.y },
+        startCoord: { x: line.x, y: line.y },
         endCoord: null,
         confidence: 0.5,
         formatHint: "author-year",
@@ -626,16 +642,15 @@ function extractHangingIndentReferences(lines) {
   let currentAnchor = null;
   let currentLines = [];
 
-  const marginXValues = lines.filter((l) => l.isAtColumnStart).map((l) => l.x);
-  const marginX = marginXValues.length > 0 ? Math.min(...marginXValues) : 0;
-  const tolerance = 5;
+  // const marginXValues = lines.filter((l) => l.isAtColumnStart).map((l) => l.x);
+  // const marginX = marginXValues.length > 0 ? Math.min(...marginXValues) : 0;
+  // const tolerance = 5;
   let refIndex = 0;
 
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
-    const isAtMargin = Math.abs(line.x - marginX) < tolerance;
 
-    if (isAtMargin) {
+    if (line.isAtColumnStart) {
       // Save previous
       if (currentAnchor && currentLines.length > 0) {
         finalizeAnchor(currentAnchor, currentLines, "hanging-indent");
@@ -649,6 +664,7 @@ function extractHangingIndentReferences(lines) {
         index: refIndex,
         pageNumber: line.pageNumber,
         startCoord: { x: line.x, y: line.originalY || line.y },
+        // startCoord: { x: line.x, y: line.y },
         endCoord: null,
         confidence: 0.55,
         formatHint: "hanging-indent",
@@ -1234,70 +1250,218 @@ function isBoldFont(fontName) {
 
 /**
  * Find reference anchor by coordinate (for hybrid lookup)
+ * Handles multi-column layouts by considering both X and Y coordinates.
+ *
  * @param {ReferenceAnchor[]} anchors
- * @param {number} pageNumber
- * @param {number} x
- * @param {number} y - Y in PDF coordinates (from bottom)
+ * @param {number} pageNumber - 1-based page number
+ * @param {number} x - X coordinate in PDF space
+ * @param {number} y - Y coordinate in PDF space (origin at bottom-left, Y increases upward)
  * @returns {{current: ReferenceAnchor|null, next: ReferenceAnchor|null}}
+ *
+ * - `current`: The reference that contains or is closest to the target point
+ * - `next`: The reference after `current` in reading order (used as extraction guardrail)
  */
 export function findBoundingAnchors(anchors, pageNumber, x, y) {
-  // Filter to relevant page and nearby pages
-  const relevantAnchors = anchors.filter(
-    (a) =>
-      a.pageNumber === pageNumber ||
-      a.pageNumber === pageNumber + 1 ||
-      a.pageNumber === pageNumber - 1,
-  );
+  // Filter to this page only
+  const pageAnchors = anchors.filter((a) => a.pageNumber === pageNumber);
 
-  if (relevantAnchors.length === 0) {
+  if (pageAnchors.length === 0) {
     return { current: null, next: null };
   }
 
-  // Sort by page then by Y (descending, since PDF Y goes up)
-  relevantAnchors.sort((a, b) => {
-    if (a.pageNumber !== b.pageNumber) return a.pageNumber - b.pageNumber;
-    return b.startCoord.y - a.startCoord.y; // Higher Y first (top of page in PDF coords)
+  // Step 1: Detect column boundaries from anchor X positions
+  // Group anchors by approximate X position to identify columns
+  const columnGroups = detectColumns(pageAnchors);
+
+  // Step 2: Determine which column the target point is in
+  const targetColumn = findTargetColumn(columnGroups, x);
+
+  // Step 3: Sort anchors in reading order (column by column, top to bottom within each)
+  const sortedAnchors = sortInReadingOrder(pageAnchors, columnGroups);
+
+  // Step 4: Find the closest anchor to the target point
+  let current = null;
+  let currentIndex = -1;
+  let bestScore = Infinity;
+
+  for (let i = 0; i < sortedAnchors.length; i++) {
+    const anchor = sortedAnchors[i];
+    const score = calculateProximityScore(
+      anchor,
+      x,
+      y,
+      targetColumn,
+      columnGroups,
+    );
+
+    if (score < bestScore) {
+      bestScore = score;
+      current = anchor;
+      currentIndex = i;
+    }
+  }
+
+  // Step 5: Get the next anchor in reading order (guardrail for extraction)
+  const next =
+    currentIndex >= 0 && currentIndex < sortedAnchors.length - 1
+      ? sortedAnchors[currentIndex + 1]
+      : null;
+
+  return { current, next };
+}
+
+/**
+ * Detect column structure from anchor X positions
+ * @param {ReferenceAnchor[]} anchors
+ * @returns {Array<{left: number, right: number, anchors: ReferenceAnchor[]}>}
+ */
+function detectColumns(anchors) {
+  if (anchors.length === 0) return [];
+
+  // Get all X positions
+  const xPositions = anchors.map((a) => a.startCoord.x).sort((a, b) => a - b);
+
+  // Find gaps that might indicate column boundaries
+  // Use clustering: if gap > threshold, it's a new column
+  const threshold = 50; // Minimum gap between columns
+  const columns = [];
+  let currentGroup = { xValues: [xPositions[0]], anchors: [] };
+
+  for (let i = 1; i < xPositions.length; i++) {
+    const gap = xPositions[i] - xPositions[i - 1];
+    if (gap > threshold) {
+      // New column detected
+      columns.push(currentGroup);
+      currentGroup = { xValues: [xPositions[i]], anchors: [] };
+    } else {
+      currentGroup.xValues.push(xPositions[i]);
+    }
+  }
+  columns.push(currentGroup);
+
+  // Calculate column boundaries and assign anchors
+  return columns.map((col) => {
+    const left = Math.min(...col.xValues) - 10;
+    const right = Math.max(...col.xValues) + 200; // Extend right to cover text width
+    const columnAnchors = anchors.filter(
+      (a) => a.startCoord.x >= left && a.startCoord.x <= right,
+    );
+    return { left, right, anchors: columnAnchors };
+  });
+}
+
+/**
+ * Find which column contains the target X coordinate
+ * @param {Array<{left: number, right: number}>} columnGroups
+ * @param {number} x
+ * @returns {number} Column index, or -1 if not in any column
+ */
+function findTargetColumn(columnGroups, x) {
+  for (let i = 0; i < columnGroups.length; i++) {
+    const col = columnGroups[i];
+    if (x >= col.left && x <= col.right) {
+      return i;
+    }
+  }
+
+  // If not in any column, find closest
+  let minDist = Infinity;
+  let closest = 0;
+  for (let i = 0; i < columnGroups.length; i++) {
+    const col = columnGroups[i];
+    const colCenter = (col.left + col.right) / 2;
+    const dist = Math.abs(x - colCenter);
+    if (dist < minDist) {
+      minDist = dist;
+      closest = i;
+    }
+  }
+  return closest;
+}
+
+/**
+ * Sort anchors in reading order: column by column (left to right),
+ * top to bottom within each column (high Y to low Y in PDF coords)
+ * @param {ReferenceAnchor[]} anchors
+ * @param {Array<{left: number, right: number, anchors: ReferenceAnchor[]}>} columnGroups
+ * @returns {ReferenceAnchor[]}
+ */
+function sortInReadingOrder(anchors, columnGroups) {
+  // Assign column index to each anchor
+  const withColumn = anchors.map((anchor) => {
+    let colIndex = 0;
+    for (let i = 0; i < columnGroups.length; i++) {
+      const col = columnGroups[i];
+      if (anchor.startCoord.x >= col.left && anchor.startCoord.x <= col.right) {
+        colIndex = i;
+        break;
+      }
+    }
+    return { anchor, colIndex };
   });
 
-  let current = null;
-  let next = null;
+  // Sort by column index first, then by Y descending (top to bottom)
+  withColumn.sort((a, b) => {
+    if (a.colIndex !== b.colIndex) {
+      return a.colIndex - b.colIndex; // Lower column index first
+    }
+    return b.anchor.startCoord.y - a.anchor.startCoord.y; // Higher Y first (top of page)
+  });
 
-  for (let i = 0; i < relevantAnchors.length; i++) {
-    const anchor = relevantAnchors[i];
+  return withColumn.map((item) => item.anchor);
+}
 
-    if (anchor.pageNumber === pageNumber) {
-      // Check if target Y falls within this anchor's range
-      if (
-        y <= anchor.startCoord.y &&
-        (!anchor.endCoord || y >= anchor.endCoord.y)
-      ) {
-        current = anchor;
-        next = relevantAnchors[i + 1] || null;
-        break;
-      }
-      // Check if we've passed this anchor (target is below it)
-      if (y > anchor.startCoord.y) {
-        next = anchor;
-        current = relevantAnchors[i - 1] || null;
-        break;
-      }
-    } else if (anchor.pageNumber > pageNumber) {
-      // We're on next page - previous anchor is current
-      current = relevantAnchors[i - 1] || null;
-      next = anchor;
+/**
+ * Calculate proximity score for an anchor relative to target point
+ * Lower score = better match
+ *
+ * @param {ReferenceAnchor} anchor
+ * @param {number} targetX
+ * @param {number} targetY
+ * @param {number} targetColumn - Column index of target point
+ * @param {Array<{left: number, right: number}>} columnGroups
+ * @returns {number}
+ */
+function calculateProximityScore(
+  anchor,
+  targetX,
+  targetY,
+  targetColumn,
+  columnGroups,
+) {
+  const anchorX = anchor.startCoord.x;
+  const anchorStartY = anchor.startCoord.y;
+  const anchorEndY = anchor.endCoord?.y ?? anchorStartY - 50;
+
+  // Determine anchor's column
+  let anchorColumn = 0;
+  for (let i = 0; i < columnGroups.length; i++) {
+    const col = columnGroups[i];
+    if (anchorX >= col.left && anchorX <= col.right) {
+      anchorColumn = i;
       break;
     }
   }
 
-  // If we went through all without finding, target might be after last anchor
-  if (!current && !next && relevantAnchors.length > 0) {
-    const last = relevantAnchors[relevantAnchors.length - 1];
-    if (last.pageNumber === pageNumber || last.pageNumber < pageNumber) {
-      current = last;
-    }
+  // Heavily penalize wrong column
+  const columnPenalty = anchorColumn !== targetColumn ? 10000 : 0;
+
+  // Check if target Y is within anchor's vertical range
+  // In PDF coords: startY >= endY (start is at top, end is at bottom)
+  const withinYRange = targetY <= anchorStartY && targetY >= anchorEndY;
+
+  if (withinYRange && columnPenalty === 0) {
+    // Perfect match - target is within this anchor's bounds
+    // Use X distance as tie-breaker
+    return Math.abs(targetX - anchorX);
   }
 
-  return { current, next };
+  // Calculate distance to anchor's start point
+  const xDist = Math.abs(targetX - anchorX);
+  const yDist = Math.abs(targetY - anchorStartY);
+
+  // Euclidean distance + column penalty
+  return Math.sqrt(xDist * xDist + yDist * yDist) + columnPenalty;
 }
 
 /**

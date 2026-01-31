@@ -363,6 +363,11 @@ export class PDFDocumentModel {
     return this.detectedMetadata?.title || null;
   }
 
+  async getMetadata() {
+    const result = await this.native.getMetadata(this.pdfDoc).toPromise();
+    return result;
+  }
+
   resolveDestination(destName) {
     return this.allNamedDests.get(destName) || null;
   }

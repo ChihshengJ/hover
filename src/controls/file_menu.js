@@ -779,24 +779,23 @@ export class FileMenu {
   }
 
   async #showMetadata() {
-    const pdfDoc = this.wm.document.pdfDoc;
+    const pdfDoc = this.wm.document;
     if (!pdfDoc) return;
 
     try {
-      const metadata = await pdfDoc.getMetadata();
-      const info = metadata.info || {};
+      const info = await pdfDoc.getMetadata();
 
       this.#showMetadataModal({
-        title: info.Title || "Untitled",
-        author: info.Author || "Unknown",
-        subject: info.Subject || "",
-        keywords: info.Keywords || "",
-        creator: info.Creator || "",
-        producer: info.Producer || "",
-        creationDate: this.#formatPDFDate(info.CreationDate),
-        modDate: this.#formatPDFDate(info.ModDate),
+        title: info.title || "Untitled",
+        author: info.author || "Unknown",
+        subject: info.subject || "",
+        keywords: info.keywords || "",
+        creator: info.creator || "",
+        producer: info.producer || "",
+        creationDate: this.#formatPDFDate(info.creationDate),
+        modDate: this.#formatPDFDate(info.modificationDate),
         pages: pdfDoc.numPages,
-        pdfVersion: metadata.metadata?.get("pdf:PDFVersion") || "Unknown",
+        custom: info.custom,
       });
     } catch (error) {
       console.error("Failed to get metadata:", error);
@@ -805,13 +804,33 @@ export class FileMenu {
 
   #formatPDFDate(dateStr) {
     if (!dateStr) return "Unknown";
-    // PDF dates are in format: D:YYYYMMDDHHmmss
-    const match = dateStr.match(
-      /D:(\d{4})(\d{2})(\d{2})(\d{2})?(\d{2})?(\d{2})?/,
-    );
-    if (!match) return dateStr;
+    let dateObj;
 
-    const [, year, month, day, hour = "00", min = "00"] = match;
+    if (dateStr instanceof Date) {
+      dateObj = dateStr;
+    } else if (typeof dateStr === 'string') {
+      const pdfMatch = dateStr.match(/D:(\d{4})(\d{2})(\d{2})(\d{2})?(\d{2})?(\d{2})?/);
+      
+      if (pdfMatch) {
+        const [, year, month, day, hour = "00", min = "00"] = pdfMatch;
+        return `${year}-${month}-${day} ${hour}:${min}`;
+      }
+      const parsed = new Date(dateStr);
+      if (!isNaN(parsed.getTime())) {
+        dateObj = parsed;
+      } else {
+        return dateStr;
+      }
+    } else {
+      return "Unknown";
+    }
+
+    const year = dateObj.getFullYear();
+    const month = String(dateObj.getMonth() + 1).padStart(2, '0');
+    const day = String(dateObj.getDate()).padStart(2, '0');
+    const hour = String(dateObj.getHours()).padStart(2, '0');
+    const min = String(dateObj.getMinutes()).padStart(2, '0');
+
     return `${year}-${month}-${day} ${hour}:${min}`;
   }
 
@@ -852,6 +871,42 @@ export class FileMenu {
             <span class="metadata-value">${data.keywords}</span>
           </div>`
         : ""
+      }
+          ${data.custom.DOI
+        ? `
+            <div class="metadata-row">
+              <span class="metadata-label">DOI</span>
+              <span class="metadata-value">${data.custom.DOI}</span>
+            </div>
+          ` 
+          : ""
+      }
+          ${data.custom.License
+        ? `
+            <div class="metadata-row">
+              <span class="metadata-label">License</span>
+              <span class="metadata-value">${data.custom.License}</span>
+            </div>
+          ` 
+          : ""
+      }
+          ${data.custom.arXivID
+        ? `
+            <div class="metadata-row">
+              <span class="metadata-label">arXiv</span>
+              <span class="metadata-value">${data.custom.arXivID}</span>
+            </div>
+          ` 
+          : ""
+      }
+          ${data.custom['PTEX.Fullbanner']
+        ? `
+            <div class="metadata-row">
+              <span class="metadata-label">PTEX</span>
+              <span class="metadata-value">${data.custom['PTEX.Fullbanner']}</span>
+            </div>
+          ` 
+          : ""
       }
           <div class="metadata-divider"></div>
           <div class="metadata-row">

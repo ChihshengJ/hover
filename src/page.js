@@ -354,7 +354,6 @@ export class PageView {
         anchor.href = typeof dest === "string" ? dest : "#";
         anchor.dataset.dest = "";
 
-        // Store destination info if available
         if (dest && typeof dest === "object") {
           anchor.dataset.destPageIndex = dest.pageIndex?.toString() || "";
           // dest.view contains [left, top, zoom] or similar
@@ -449,20 +448,19 @@ export class PageView {
     const dest = anchor.getAttribute("href");
     if (!dest || dest.startsWith("http")) return;
 
-    this._showTimer = setTimeout(async () => {
-      const result = await this.#resolveDestToPosition(anchor, dest);
-      if (!result) return;
-
-      anchor.dataset.dest = `${result.left},${result.pageIndex},${result.top}`;
-
-      await citationPopup.show(
-        anchor,
-        this.#findCiteText.bind(this),
-        result.left,
-        result.pageIndex,
-        result.top,
-      );
-    }, 200);
+    const pageHeight = this.#getPage()?.size.height;
+    
+    if (anchor.dataset.destPageIndex) {
+      this._showTimer = setTimeout(async () => {
+        await citationPopup.show(
+          anchor,
+          this.#findCiteText.bind(this),
+          parseFloat(anchor.dataset.destLeft) || 0,
+          parseInt(anchor.dataset.destPageIndex, 10),
+          pageHeight - parseFloat(anchor.dataset.destTop) || 0,
+        );
+      }, 200);
+    }
   }
 
   #handleAnchorLeave(anchor, citationPopup) {
@@ -518,9 +516,8 @@ export class PageView {
 
   async #findCiteText(left, pageIndex, top) {
     const pageNumber = pageIndex + 1;
-
     console.log(
-      `[PageView] Finding citation at page ${pageNumber}, left ${left}, top ${top}`,
+      `[PageView] Finding citation at page ${pageNumber}, (${left}, ${top})`,
     );
 
     if (this.doc.hasReferenceIndex()) {
@@ -529,71 +526,19 @@ export class PageView {
         left,
         top,
       );
-      console.log(bounds);
-
-      if (bounds.current?.confidence > 0.85 && bounds.current.cachedText) {
-        console.log(
-          `[PageView] Using cached reference text (confidence: ${bounds.current.confidence.toFixed(2)})`,
-        );
-        return bounds.current.cachedText;
-      }
-
-      const heuristicText = await this.#heuristicFindCiteText(
-        left,
-        pageIndex,
-        top,
-        bounds,
-      );
-
-      if (bounds.current?.cachedText && heuristicText) {
-        const similarity = this.#textSimilarity(
-          heuristicText,
-          bounds.current.cachedText,
-        );
-        if (similarity < 0.7) {
-          console.log(
-            `[PageView] Heuristic diverged (similarity: ${similarity.toFixed(2)}), using index version`,
-          );
-          return bounds.current.cachedText;
-        }
-      }
-
-      if (heuristicText) {
-        return heuristicText;
-      }
+      console.log(`[PageView] Bounds:`, bounds.current?.id, bounds.next?.id);
 
       if (bounds.current?.cachedText) {
+        console.log(`[PageView] Using indexed reference: ${bounds.current.id}`);
         return bounds.current.cachedText;
       }
     }
 
-    return await this.#heuristicFindCiteText(left, pageIndex, top, null);
+    console.log(`[PageView] Falling back to heuristic extraction`);
+    return await this.#heuristicFindCiteText(left, pageIndex, top);
   }
 
-  #textSimilarity(text1, text2) {
-    if (!text1 || !text2) return 0;
-
-    const normalize = (t) => t.toLowerCase().replace(/\s+/g, " ").trim();
-    const n1 = normalize(text1);
-    const n2 = normalize(text2);
-
-    if (n1 === n2) return 1;
-
-    const words1 = new Set(n1.split(" ").filter((w) => w.length > 2));
-    const words2 = new Set(n2.split(" ").filter((w) => w.length > 2));
-
-    if (words1.size === 0 || words2.size === 0) return 0;
-
-    let intersection = 0;
-    for (const word of words1) {
-      if (words2.has(word)) intersection++;
-    }
-
-    const union = words1.size + words2.size - intersection;
-    return union > 0 ? intersection / union : 0;
-  }
-
-  async #heuristicFindCiteText(left, pageIndex, top, bounds) {
+  async #heuristicFindCiteText(left, pageIndex, top) {
     const { native, pdfDoc } = this.doc;
     if (!native || !pdfDoc) return null;
 
@@ -606,42 +551,31 @@ export class PageView {
         .toPromise();
       if (!textSlices || textSlices.length === 0) return null;
 
-      const pageHeight = page.size.height;
-
-      const targetX = left;
-      const targetY = top;
-
       let startIndex = -1;
-      let minDistance = page.size.width;
+      let minDistance = Infinity;
 
       for (let i = 0; i < textSlices.length; i++) {
         const slice = textSlices[i];
-        const sliceX = slice.rect.origin.x;
-        const sliceY = slice.rect.origin.y;
-
-        const dist = Math.hypot(sliceX - targetX, sliceY - targetY);
-
+        const dist = Math.hypot(
+          slice.rect.origin.x - left,
+          slice.rect.origin.y - top,
+        );
         if (dist < minDistance) {
           startIndex = i;
           minDistance = dist;
         }
       }
 
-      if (startIndex === -1) {
-        return null;
-      }
+      if (startIndex === -1) return null;
 
       const reference = [];
       const refNumberPattern = /^\s*[\[\(]?\d{1,3}[\]\)\.\,]?\s+\S/;
 
-      const stopBeforeY = bounds?.next?.startCoord?.y;
-      const formatHint = bounds?.current?.formatHint;
-
       const firstSlice = textSlices[startIndex];
       let currentLineY = firstSlice.rect.origin.y;
       let firstLineX = firstSlice.rect.origin.x;
-      let baselineLineHeight = null;
-      let currCiteX = null;
+      let baselineGap = null;
+      let prevYDirection = null;
       let lineCount = 0;
 
       for (let i = startIndex; i < textSlices.length; i++) {
@@ -650,74 +584,49 @@ export class PageView {
         const sliceY = slice.rect.origin.y;
         const sliceX = slice.rect.origin.x;
 
-        if (stopBeforeY !== undefined && sliceY < stopBeforeY) {
-          break;
-        }
-
-        const verticalGap = Math.abs(sliceY - currentLineY);
-        const isNewLine = verticalGap > 3;
+        const yDelta = sliceY - currentLineY;
+        const absYDelta = Math.abs(yDelta);
+        const isNewLine = absYDelta > 3;
 
         if (isNewLine) {
           lineCount++;
-          if (baselineLineHeight === null) {
-            baselineLineHeight = verticalGap;
+          const yDirection = Math.sign(yDelta);
+
+          if (baselineGap === null && absYDelta < 50) {
+            baselineGap = absYDelta;
           }
 
-          if (baselineLineHeight && verticalGap > baselineLineHeight * 1.8) {
-            break;
+          const isColumnBreak =
+            prevYDirection !== null &&
+            yDirection !== prevYDirection &&
+            absYDelta > 20;
+          if (isColumnBreak) {
+            if (sliceX <= firstLineX + 5 && refNumberPattern.test(text)) break;
+          } else {
+            if (baselineGap && absYDelta > baselineGap * 1.8) break;
           }
 
           let lineStartText = text;
           if (i + 1 < textSlices.length) {
             const nextSlice = textSlices[i + 1];
             if (Math.abs(nextSlice.rect.origin.y - sliceY) < 3) {
-              lineStartText =
-                text + nextSlice.content || "";
+              lineStartText = text + (nextSlice.content || "");
             }
           }
 
-          if (
-            formatHint === "numbered-bracket" &&
-            /^\s*\[\d+\]/.test(lineStartText)
-          ) {
-            break;
-          } else if (
-            formatHint === "numbered-dot" &&
-            /^\s*\d+\./.test(lineStartText)
-          ) {
-            break;
-          } else if (refNumberPattern.test(lineStartText)) {
-            break;
-          }
+          if (refNumberPattern.test(lineStartText)) break;
+          if (sliceX < firstLineX - 8 && lineCount > 1) break;
 
-          if (lineCount === 1) {
-            currCiteX = sliceX;
-          } else if (currCiteX !== null) {
-            const hasHangingIndent = currCiteX > firstLineX + 6;
-            if (hasHangingIndent) {
-              if (sliceX < currCiteX - 8) {
-                break;
-              }
-            } else {
-              const minX = Math.min(firstLineX, currCiteX);
-              if (sliceX < minX - 8) {
-                break;
-              }
-            }
-          }
           currentLineY = sliceY;
+          if (!isColumnBreak) prevYDirection = yDirection;
         }
 
         reference.push(text);
-
-        if (text.trim() === ".") {
-          break;
-        }
       }
 
       return reference.join("");
     } catch (err) {
-      console.error("[PageView] Failed to find citation text:", err);
+      console.error("[PageView] Heuristic extraction failed:", err);
       return null;
     }
   }

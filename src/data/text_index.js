@@ -159,11 +159,6 @@ export class DocumentTextIndex {
       const marginLeft =
         lines.length > 0 ? Math.min(...lines.map((l) => l.x)) : 0;
 
-      for (const line of lines) {
-        line.isAtLineStart = true;
-        // line.x - marginLeft < Math.max(5, line.fontSize * 0.6);
-      }
-
       this.#pageData.set(pageNumber, {
         pageNumber,
         pageWidth,
@@ -189,7 +184,6 @@ export class DocumentTextIndex {
     for (const slice of slices) {
       const content = slice.content || "";
       if (!content || !content.trim()) continue;
-      if (/\p{Cc}/gu.test(content)) continue;
 
       items.push({
         str: content,
@@ -215,7 +209,7 @@ export class DocumentTextIndex {
     for (let i = 1; i < items.length; i++) {
       const item = items[i];
       if (item.str.startsWith("arXiv:")) continue;
-      const threshold = Math.max(4, currentLine[0].height * 1.2);
+      const threshold = Math.max(3, currentLine[0].height);
 
       if (Math.abs(item.y - currentY) <= threshold) {
         currentLine.push(item);
@@ -235,9 +229,9 @@ export class DocumentTextIndex {
     const first = items[0];
     const text = items.map((it) => it.str).join("");
     const fontStyle = this.#extractFontStyle(items);
-    const fontSize = this.#findMedian(items.map(i => i.fontSize));
+    const fontSize = this.#findMedian(items.map((i) => i.fontSize));
 
-    const lineHeight = this.#findMedian(items.map(i => i.height));
+    const lineHeight = this.#findMedian(items.map((i) => i.height));
 
     const lineItems = items.map((it) => ({
       str: it.str,

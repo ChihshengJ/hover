@@ -1,43 +1,30 @@
 /**
- * ReferenceBuilder - Extracts and indexes references from academic PDFs
- * Refactored for @embedpdf/engines (PDFium)
- *
- * Provides:
- * 1. Reference section detection (start/end boundaries)
- * 2. Reference format detection (numbered, author-year, etc.)
- * 3. Individual reference anchor extraction with coordinates
- * 4. Inline citation pattern detection for fallback linking
+ * ReferenceBuilder - Reference extraction and citation detection for academic PDFs
+ * Refactored for DocumentTextIndex (PDFium-based)
  *
  * @typedef {Object} ReferenceAnchor
- * @property {string} id - Unique identifier (e.g., 'ref-1', 'ref-smith-2020')
- * @property {number|null} index - Numeric index if numbered format
- * @property {number} pageNumber - 1-based page number
- * @property {{x: number, y: number}} startCoord - Start position in PDF coordinates
- * @property {{x: number, y: number}} endCoord - End position in PDF coordinates
- * @property {number} confidence - 0-1 confidence score
- * @property {string} formatHint - 'numbered-bracket'|'numbered-dot'|'hanging-indent'|'author-year'|'unknown'
- * @property {string|null} cachedText - Pre-extracted text for high-confidence entries
- * @property {string|null} authors - Parsed author string (best-effort)
- * @property {string|null} year - Parsed year (best-effort)
- * @property {Array<{pageNumber: number, rects: Array<{x: number, y: number, width: number, height: number}>}>} pageRanges
+ * @property {string} id
+ * @property {number|null} index
+ * @property {number} pageNumber
+ * @property {{x: number, y: number}} startCoord
+ * @property {{x: number, y: number}} endCoord
+ * @property {number} confidence
+ * @property {string} formatHint
+ * @property {string|null} cachedText
+ * @property {string|null} authors
+ * @property {string|null} year
+ * @property {Array<{pageNumber: number, rects: Array}>} pageRanges
  *
  * @typedef {Object} ReferenceIndex
- * @property {ReferenceAnchor[]} anchors - All extracted reference anchors
- * @property {string} format - Detected format type
- * @property {number} sectionConfidence - Overall confidence in section detection
- * @property {{pageNumber: number, lineIndex: number, y: number}|null} sectionStart
- * @property {{pageNumber: number, lineIndex: number, y: number}|null} sectionEnd
- *
- * @typedef {Object} InlineCitation
- * @property {string} type - 'numeric'|'author-year'
- * @property {string} text - The citation text as it appears
- * @property {number} pageNumber - 1-based page number
- * @property {{x: number, y: number, width: number, height: number}} rect - Position
- * @property {number[]|null} refIndices - Referenced indices (for numeric)
- * @property {{author: string, year: string}[]|null} refKeys - Author-year keys
+ * @property {ReferenceAnchor[]} anchors
+ * @property {string} format
+ * @property {number} sectionConfidence
+ * @property {Object|null} sectionStart
+ * @property {Object|null} sectionEnd
  */
 
 import { getDocInfo } from "./outline_builder.js";
+import { FontStyle } from "./text_index.js";
 import {
   REFERENCE_SECTION_PATTERN,
   POST_REFERENCE_SECTION_PATTERN,
@@ -53,56 +40,31 @@ import {
   SECTION_NUMBER_STRIP,
 } from "./lexicon.js";
 
-// ============================================
-// Main Entry Point
-// ============================================
+const EMPTY_RESULT = {
+  anchors: [],
+  format: "unknown",
+  sectionConfidence: 0,
+  sectionStart: null,
+  sectionEnd: null,
+};
 
-/**
- * Build complete reference index from search index
- * @param {import('./controls/search/search_index.js').SearchIndex} searchIndex
- * @returns {Promise<ReferenceIndex>}
- */
-export async function buildReferenceIndex(searchIndex) {
-  const emptyResult = {
-    anchors: [],
-    format: "unknown",
-    sectionConfidence: 0,
-    sectionStart: null,
-    sectionEnd: null,
-  };
-
-  if (!searchIndex) {
-    console.warn(
-      "[References] Search index not available, cannot extract references",
-    );
-    return emptyResult;
-  }
+export async function buildReferenceIndex(textIndex) {
+  if (!textIndex) return EMPTY_RESULT;
 
   try {
-    // Phase 1: Find reference section boundaries
-    const section = findReferenceSection(searchIndex);
-    if (!section) {
-      console.log("[References] No reference section found");
-      return emptyResult;
-    }
+    const section = findReferenceSection(textIndex);
+    if (!section) return EMPTY_RESULT;
 
-    console.log(
-      `[References] Found section: pages ${section.startPage}-${section.endPage}, confidence=${section.confidence.toFixed(2)}`,
-    );
-
-    // Phase 2: Detect format from first few entries
+    console.log(`[Reference] Reference section: Page ${section.startPage} - ${section.endPage}`);
     const format = detectReferenceFormat(section.lines);
-    console.log(`[References] Detected format: ${format}`);
+    console.log(`[Reference] Reference format detected: ${format}`);
+    const anchors = extractReferenceAnchors(section, format);
+    console.log(`[Reference] Extracted ${anchors.length} anchors`);
+    console.log(anchors);
 
-    // Phase 3: Extract reference anchors
-    const anchors = extractReferenceAnchors(section, format, searchIndex);
-    console.log(`[References] Extracted ${anchors.length} reference anchors`);
-
-    // Phase 4: Cache text for high-confidence entries
     for (const anchor of anchors) {
       if (anchor.confidence > 0.8) {
         anchor.cachedText = extractTextForAnchor(anchor, section);
-        // Parse author/year for matching
         const parsed = parseAuthorYear(anchor.cachedText);
         anchor.authors = parsed.authors;
         anchor.year = parsed.year;
@@ -125,46 +87,25 @@ export async function buildReferenceIndex(searchIndex) {
       },
     };
   } catch (error) {
-    console.error("[References] Error building reference index:", error);
-    return emptyResult;
+    console.error("[References] Error building index:", error);
+    return EMPTY_RESULT;
   }
 }
 
-// ============================================
-// Reference Section Detection
-// ============================================
-
-/**
- * Find the reference section boundaries in the document
- * @param {import('./controls/search/search_index.js').SearchIndex} searchIndex
- * @returns {{
- *   startPage: number,
- *   endPage: number,
- *   startLineIndex: number,
- *   endLineIndex: number,
- *   startY: number,
- *   endY: number,
- *   lines: Array,
- *   confidence: number
- * }|null}
- */
-function findReferenceSection(searchIndex) {
-  const docInfo = getDocInfo(searchIndex);
-  if (!docInfo || !docInfo.pageData) return null;
+function findReferenceSection(textIndex) {
+  const docInfo = getDocInfo(textIndex);
+  if (!docInfo?.pageData) return null;
 
   const { pageData, fontSize: bodyFontSize } = docInfo;
-
   let referenceStart = null;
 
-  // First pass: find reference section heading
-  // Start from page 3+ (references are never on first pages)
   for (const [pageNum, data] of pageData) {
     if (pageNum <= 2) continue;
 
-    const { allLines } = data;
+    const { lines } = data;
 
-    for (let i = 0; i < allLines.length; i++) {
-      const line = allLines[i];
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
       const strippedText = line.text
         .replace(SECTION_NUMBER_STRIP, "")
         .replace(/\s+/g, "")
@@ -172,20 +113,19 @@ function findReferenceSection(searchIndex) {
         .toLowerCase();
 
       if (REFERENCE_SECTION_PATTERN.test(strippedText)) {
-        // Check for font differentiation (heading-like)
         const isLarger = line.fontSize > bodyFontSize * 1.05;
-        const isBold = isBoldFont(line.fontName);
-        const isAtColumnStart = line.isAtColumnStart === true;
+        const isBold =
+          line.fontStyle === FontStyle.BOLD ||
+          line.fontStyle === FontStyle.BOLD_ITALIC;
         const isAllCapital = line.text === line.text.toUpperCase();
 
-        // Prefer last occurrence (some papers mention "References" in intro)
-        if (isLarger || isBold || isAtColumnStart || isAllCapital) {
+        if (isLarger || isBold || isAllCapital) {
           referenceStart = {
             pageNumber: pageNum,
             lineIndex: i,
             y: line.y,
             originalY: line.originalY,
-            line: line,
+            line,
           };
         }
       }
@@ -194,17 +134,12 @@ function findReferenceSection(searchIndex) {
 
   if (!referenceStart) return null;
 
-  // Second pass: find end of reference section
   const referenceEnd = findReferenceSectionEnd(
     pageData,
     referenceStart,
     bodyFontSize,
   );
-
-  // Collect all lines in the reference section
   const lines = collectSectionLines(pageData, referenceStart, referenceEnd);
-
-  // Calculate confidence
   const confidence = calculateSectionConfidence(
     referenceStart,
     referenceEnd,
@@ -223,55 +158,44 @@ function findReferenceSection(searchIndex) {
   };
 }
 
-/**
- * Find where the reference section ends
- * @param {Map} pageData
- * @param {Object} start
- * @param {number} bodyFontSize
- * @returns {Object}
- */
 function findReferenceSectionEnd(pageData, start, bodyFontSize) {
   let lastValidLine = null;
-
   const pageNumbers = Array.from(pageData.keys()).sort((a, b) => a - b);
 
   for (const pageNum of pageNumbers) {
     if (pageNum < start.pageNumber) continue;
 
-    const { allLines } = pageData.get(pageNum);
+    const { lines } = pageData.get(pageNum);
     const startIdx = pageNum === start.pageNumber ? start.lineIndex + 1 : 0;
 
-    for (let i = startIdx; i < allLines.length; i++) {
-      const line = allLines[i];
+    for (let i = startIdx; i < lines.length; i++) {
+      const line = lines[i];
       const strippedText = line.text
         .replace(SECTION_NUMBER_STRIP, "")
         .replace(/\s+/g, "")
         .trim()
         .toLowerCase();
 
-      // Check for post-reference section heading
-      if (POST_REFERENCE_SECTION_PATTERN.test(strippedText)) {
-        const isLarger = line.fontSize > bodyFontSize * 1.05;
-        const isBold = isBoldFont(line.fontName);
-        const isAllCapital = line.text === line.text.toUpperCase();
+      const isLarger = line.fontSize > bodyFontSize * 1.1;
+      const isBold =
+        line.fontStyle === FontStyle.BOLD ||
+        line.fontStyle === FontStyle.BOLD_ITALIC;
+      const isAllCapital = line.text === line.text.toUpperCase();
 
-        if (isLarger || isBold || isAllCapital) {
-          return {
-            pageNumber: pageNum,
-            lineIndex: i - 1,
-            y: lastValidLine?.y || line.y,
-          };
-        }
+      if (isLarger || isBold || isAllCapital) {
+        return {
+          pageNumber: pageNum,
+          lineIndex: i - 1,
+          y: lastValidLine?.y || line.y,
+        };
       }
 
-      // Track last valid line (non-empty)
       if (line.text.trim().length > 0) {
         lastValidLine = { pageNumber: pageNum, lineIndex: i, y: line.y };
       }
     }
   }
 
-  // No post-section found - use end of document
   return (
     lastValidLine || {
       pageNumber: start.pageNumber,
@@ -281,13 +205,6 @@ function findReferenceSectionEnd(pageData, start, bodyFontSize) {
   );
 }
 
-/**
- * Collect all lines within the reference section
- * @param {Map} pageData
- * @param {Object} start
- * @param {Object} end
- * @returns {Array}
- */
 function collectSectionLines(pageData, start, end) {
   const lines = [];
   const pageNumbers = Array.from(pageData.keys()).sort((a, b) => a - b);
@@ -295,27 +212,22 @@ function collectSectionLines(pageData, start, end) {
   for (const pageNum of pageNumbers) {
     if (pageNum < start.pageNumber || pageNum > end.pageNumber) continue;
 
-    const { allLines, columnData } = pageData.get(pageNum);
+    const data = pageData.get(pageNum);
+    const { lines: pageLines, pageWidth, pageHeight } = data;
 
     let startIdx = 0;
-    let endIdx = allLines.length - 1;
+    let endIdx = pageLines.length - 1;
 
-    if (pageNum === start.pageNumber) {
-      startIdx = start.lineIndex + 1; // Skip the heading itself
-    }
-    if (pageNum === end.pageNumber) {
-      endIdx = end.lineIndex;
-    }
+    if (pageNum === start.pageNumber) startIdx = start.lineIndex + 1;
+    if (pageNum === end.pageNumber) endIdx = end.lineIndex;
 
-    for (let i = startIdx; i <= endIdx && i < allLines.length; i++) {
-      const line = allLines[i];
+    for (let i = startIdx; i <= endIdx && i < pageLines.length; i++) {
       lines.push({
-        ...line,
+        ...pageLines[i],
         pageNumber: pageNum,
         lineIndex: i,
-        pageWidth: columnData.pageWidth,
-        pageHeight: columnData.pageHeight,
-        columns: columnData.columns,
+        pageWidth,
+        pageHeight,
       });
     }
   }
@@ -323,30 +235,18 @@ function collectSectionLines(pageData, start, end) {
   return lines;
 }
 
-/**
- * Calculate confidence score for the detected section
- * @param {Object} start
- * @param {Object} end
- * @param {Array} lines
- * @returns {number}
- */
 function calculateSectionConfidence(start, end, lines) {
   let confidence = 0.5;
 
-  // Has reasonable number of lines
   if (lines.length >= 5 && lines.length <= 500) {
     confidence += 0.2;
   } else if (lines.length < 5) {
     confidence -= 0.2;
   }
 
-  // Section spans reasonable amount of document
   const pageSpan = end.pageNumber - start.pageNumber + 1;
-  if (pageSpan >= 1 && pageSpan <= 10) {
-    confidence += 0.1;
-  }
+  if (pageSpan >= 1 && pageSpan <= 10) confidence += 0.1;
 
-  // Check for reference-like content patterns
   const hasNumberedRefs = lines.some((l) =>
     Object.values(REFERENCE_FORMAT_PATTERNS).some((p) => p.test(l.text)),
   );
@@ -359,85 +259,49 @@ function calculateSectionConfidence(start, end, lines) {
   return Math.max(0, Math.min(1, confidence));
 }
 
-// ============================================
-// Reference Format Detection
-// ============================================
-
-/**
- * Detect the format used in the reference section
- * @param {Array} lines - Lines from the reference section
- * @returns {string} Format identifier
- */
 function detectReferenceFormat(lines) {
   if (lines.length === 0) return "unknown";
 
-  // Sample first 20 non-empty lines for format detection
   const sampleLines = lines
     .filter((l) => l.text.trim().length > 10)
     .slice(0, 20);
-
   if (sampleLines.length === 0) return "unknown";
 
-  // Count matches for each numbered format
   const formatCounts = {};
-  for (const [formatName, pattern] of Object.entries(
-    REFERENCE_FORMAT_PATTERNS,
-  )) {
-    formatCounts[formatName] = sampleLines.filter((l) =>
-      pattern.test(l.text),
-    ).length;
+  for (const [name, pattern] of Object.entries(REFERENCE_FORMAT_PATTERNS)) {
+    formatCounts[name] = sampleLines.filter((l) => pattern.test(l.text)).length;
   }
 
-  // Find best numbered format
   const bestNumbered = Object.entries(formatCounts).sort(
     (a, b) => b[1] - a[1],
   )[0];
-
   if (bestNumbered && bestNumbered[1] >= sampleLines.length * 0.2) {
     return bestNumbered[0];
   }
 
-  // Check for author-year format
   const authorYearCount = sampleLines.filter((l) =>
     AUTHOR_YEAR_START_PATTERN.test(l.text),
   ).length;
+  if (authorYearCount >= sampleLines.length * 0.2) return "author-year";
 
-  if (authorYearCount >= sampleLines.length * 0.2) {
-    return "author-year";
-  }
-
-  // Check for hanging indent
-  if (detectHangingIndent(sampleLines)) {
-    return "hanging-indent";
-  }
+  if (detectHangingIndent(sampleLines)) return "hanging-indent";
 
   return "unknown";
 }
 
-/**
- * Detect hanging indent format (first line at margin, continuation indented)
- * @param {Array} lines
- * @returns {boolean}
- */
 function detectHangingIndent(lines) {
   if (lines.length < 4) return false;
 
-  // Get typical column start position
-  const columnStarts = lines.filter((l) => l.isAtColumnStart).map((l) => l.x);
+  const marginX = Math.min(
+    ...lines.filter((l) => l.isAtLineStart).map((l) => l.x),
+  );
+  if (!isFinite(marginX)) return false;
 
-  if (columnStarts.length === 0) return false;
-
-  const marginX = Math.min(...columnStarts);
-
-  // Look for pattern: margin line followed by indented lines
   let hangingPatterns = 0;
   let i = 0;
 
   while (i < lines.length - 1) {
-    const line = lines[i];
-
-    if (line.isAtColumnStart) {
-      // Check if next lines are indented
+    if (lines[i].isAtLineStart) {
       let j = i + 1;
       while (
         j < lines.length &&
@@ -456,20 +320,8 @@ function detectHangingIndent(lines) {
   return hangingPatterns >= 3;
 }
 
-// ============================================
-// Reference Anchor Extraction
-// ============================================
-
-/**
- * Extract individual reference anchors from section
- * @param {Object} section - Reference section data
- * @param {string} format - Detected format
- * @param {import('./controls/search/search_index.js').SearchIndex} searchIndex
- * @returns {ReferenceAnchor[]}
- */
-function extractReferenceAnchors(section, format, searchIndex) {
+function extractReferenceAnchors(section, format) {
   const { lines } = section;
-
   if (lines.length === 0) return [];
 
   switch (format) {
@@ -478,24 +330,15 @@ function extractReferenceAnchors(section, format, searchIndex) {
     case "numbered-dot":
     case "numbered-plain":
       return extractNumberedReferences(lines, format);
-
     case "author-year":
       return extractAuthorYearReferences(lines);
-
     case "hanging-indent":
       return extractHangingIndentReferences(lines);
-
     default:
       return extractFallbackReferences(lines);
   }
 }
 
-/**
- * Extract references with numbered format
- * @param {Array} lines
- * @param {string} format
- * @returns {ReferenceAnchor[]}
- */
 function extractNumberedReferences(lines, format) {
   const pattern = REFERENCE_FORMAT_PATTERNS[format];
   if (!pattern) return [];
@@ -504,18 +347,15 @@ function extractNumberedReferences(lines, format) {
   let currentAnchor = null;
   let currentLines = [];
 
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i];
+  for (const line of lines) {
     const match = line.text.match(pattern);
 
     if (match) {
-      // Save previous anchor
       if (currentAnchor && currentLines.length > 0) {
         finalizeAnchor(currentAnchor, currentLines, format);
         anchors.push(currentAnchor);
       }
 
-      // Start new anchor
       const refIndex = parseInt(match[1], 10);
       currentAnchor = {
         id: `ref-${refIndex}`,
@@ -523,7 +363,7 @@ function extractNumberedReferences(lines, format) {
         pageNumber: line.pageNumber,
         startCoord: { x: line.x, y: line.y },
         endCoord: null,
-        confidence: 0.7, // Base confidence for numbered
+        confidence: 0.7,
         formatHint: format,
         cachedText: null,
         authors: null,
@@ -532,12 +372,10 @@ function extractNumberedReferences(lines, format) {
       };
       currentLines = [line];
     } else if (currentAnchor) {
-      // Continuation of current reference
       currentLines.push(line);
     }
   }
 
-  // Don't forget last anchor
   if (currentAnchor && currentLines.length > 0) {
     finalizeAnchor(currentAnchor, currentLines, format);
     anchors.push(currentAnchor);
@@ -546,11 +384,6 @@ function extractNumberedReferences(lines, format) {
   return anchors;
 }
 
-/**
- * Extract references with author-year format
- * @param {Array} lines
- * @returns {ReferenceAnchor[]}
- */
 function extractAuthorYearReferences(lines) {
   const anchors = [];
   let currentAnchor = null;
@@ -561,26 +394,23 @@ function extractAuthorYearReferences(lines) {
     const startsWithAuthor = AUTHOR_YEAR_START_PATTERN.test(line.text);
     const previousEndsWithPeriod = i > 0 && /\.\s*$/.test(lines[i - 1].text);
 
-    // New reference starts when: at margin AND (starts with author pattern OR previous ended with period)
     const isNewEntry =
-      line.isAtColumnStart &&
+      line.isAtLineStart &&
       (startsWithAuthor ||
         (previousEndsWithPeriod && /^[A-Z]/.test(line.text)));
 
     if (isNewEntry && currentLines.length > 0) {
-      // Save previous anchor
       if (currentAnchor) {
         finalizeAnchor(currentAnchor, currentLines, "author-year");
         anchors.push(currentAnchor);
       }
 
-      // Start new anchor
       const parsed = parseAuthorYear(line.text);
       currentAnchor = {
         id: `ref-${parsed.authors?.split(/[,\s]/)[0]?.toLowerCase() || "unknown"}-${parsed.year || i}`,
         index: null,
         pageNumber: line.pageNumber,
-        startCoord: { x: line.x, y: line.originalY || line.y },
+        startCoord: { x: line.x, y: line.y },
         endCoord: null,
         confidence: startsWithAuthor ? 0.65 : 0.5,
         formatHint: "author-year",
@@ -593,7 +423,6 @@ function extractAuthorYearReferences(lines) {
     } else if (currentAnchor) {
       currentLines.push(line);
     } else {
-      // First entry
       const parsed = parseAuthorYear(line.text);
       currentAnchor = {
         id: `ref-${parsed.authors?.split(/[,\s]/)[0]?.toLowerCase() || "unknown"}-${parsed.year || 0}`,
@@ -620,23 +449,14 @@ function extractAuthorYearReferences(lines) {
   return anchors;
 }
 
-/**
- * Extract references with hanging indent format
- * @param {Array} lines
- * @returns {ReferenceAnchor[]}
- */
 function extractHangingIndentReferences(lines) {
   const anchors = [];
   let currentAnchor = null;
   let currentLines = [];
-
   let refIndex = 0;
 
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i];
-
-    if (line.isAtColumnStart) {
-      // Save previous
+  for (const line of lines) {
+    if (line.isAtLineStart) {
       if (currentAnchor && currentLines.length > 0) {
         finalizeAnchor(currentAnchor, currentLines, "hanging-indent");
         anchors.push(currentAnchor);
@@ -671,11 +491,6 @@ function extractHangingIndentReferences(lines) {
   return anchors;
 }
 
-/**
- * Fallback extraction - split by blank lines or large gaps
- * @param {Array} lines
- * @returns {ReferenceAnchor[]}
- */
 function extractFallbackReferences(lines) {
   const anchors = [];
   let currentLines = [];
@@ -685,7 +500,6 @@ function extractFallbackReferences(lines) {
     const line = lines[i];
     const prevLine = lines[i - 1];
 
-    // Check for gap between lines
     const hasGap =
       prevLine &&
       (line.pageNumber !== prevLine.pageNumber ||
@@ -693,8 +507,7 @@ function extractFallbackReferences(lines) {
 
     if (hasGap && currentLines.length > 0) {
       refIndex++;
-      const anchor = createBasicAnchor(currentLines, refIndex);
-      anchors.push(anchor);
+      anchors.push(createBasicAnchor(currentLines, refIndex));
       currentLines = [line];
     } else {
       currentLines.push(line);
@@ -709,12 +522,6 @@ function extractFallbackReferences(lines) {
   return anchors;
 }
 
-/**
- * Create a basic anchor from lines (for fallback)
- * @param {Array} lines
- * @param {number} index
- * @returns {ReferenceAnchor}
- */
 function createBasicAnchor(lines, index) {
   const firstLine = lines[0];
   const lastLine = lines[lines.length - 1];
@@ -723,7 +530,7 @@ function createBasicAnchor(lines, index) {
 
   return {
     id: `ref-${index}`,
-    index: index,
+    index,
     pageNumber: firstLine.pageNumber,
     startCoord: { x: firstLine.x, y: firstLine.originalY || firstLine.y },
     endCoord: {
@@ -741,44 +548,32 @@ function createBasicAnchor(lines, index) {
   };
 }
 
-/**
- * Finalize anchor with end coordinates and page ranges
- * @param {ReferenceAnchor} anchor
- * @param {Array} lines
- * @param {string} format
- */
 function finalizeAnchor(anchor, lines, format) {
   if (lines.length === 0) return;
 
   const lastLine = lines[lines.length - 1];
-
-  // Calculate end coordinate
   const lastItem = lastLine.items?.[lastLine.items.length - 1];
+
   anchor.endCoord = {
     x: lastItem ? lastItem.x + lastItem.width : lastLine.x + 200,
     y: lastLine.originalY || lastLine.y,
   };
 
-  // Build page ranges with rectangles
   anchor.pageRanges = buildPageRanges(lines);
 
-  // Calculate text and confidence
   const text = lines
     .map((l) => l.text)
     .join(" ")
     .trim();
   anchor.cachedText = text;
 
-  // Adjust confidence based on content
   if (
     text.length >= MIN_REFERENCE_LENGTH &&
     text.length <= MAX_REFERENCE_LENGTH
   ) {
     anchor.confidence += 0.1;
   }
-  if (YEAR_PATTERN.test(text)) {
-    anchor.confidence += 0.05;
-  }
+  if (YEAR_PATTERN.test(text)) anchor.confidence += 0.05;
   if (Object.values(REFERENCE_ENDING_PATTERNS).some((p) => p.test(text))) {
     anchor.confidence += 0.05;
   }
@@ -786,11 +581,6 @@ function finalizeAnchor(anchor, lines, format) {
   anchor.confidence = Math.min(1, anchor.confidence);
 }
 
-/**
- * Build page ranges with rectangles for an anchor
- * @param {Array} lines
- * @returns {Array}
- */
 function buildPageRanges(lines) {
   const pageRanges = new Map();
 
@@ -802,8 +592,7 @@ function buildPageRanges(lines) {
       });
     }
 
-    // Build rect from line items or line bounds
-    if (line.items && line.items.length > 0) {
+    if (line.items?.length > 0) {
       const minX = Math.min(...line.items.map((i) => i.x));
       const maxX = Math.max(...line.items.map((i) => i.x + i.width));
       const minY = Math.min(...line.items.map((i) => i.y));
@@ -819,7 +608,7 @@ function buildPageRanges(lines) {
       pageRanges.get(line.pageNumber).rects.push({
         x: line.x,
         y: line.y,
-        width: 200, // Estimate
+        width: 200,
         height: line.fontSize || 12,
       });
     }
@@ -828,26 +617,18 @@ function buildPageRanges(lines) {
   return Array.from(pageRanges.values());
 }
 
-/**
- * Extract text content for an anchor from section lines
- * @param {ReferenceAnchor} anchor
- * @param {Object} section
- * @returns {string}
- */
 function extractTextForAnchor(anchor, section) {
   if (anchor.cachedText) return anchor.cachedText;
 
   const relevantLines = section.lines.filter((line) => {
     if (line.pageNumber < anchor.pageNumber) return false;
     if (line.pageNumber > anchor.pageNumber) {
-      // Check if within bounds
       return (
         anchor.endCoord &&
         line.pageNumber === anchor.endCoord.pageNumber &&
         (line.originalY || line.y) >= anchor.endCoord.y
       );
     }
-    // Same page
     const lineY = line.originalY || line.y;
     return (
       lineY <= anchor.startCoord.y &&
@@ -861,28 +642,15 @@ function extractTextForAnchor(anchor, section) {
     .trim();
 }
 
-// ============================================
-// Author/Year Parsing
-// ============================================
-
-/**
- * Parse author and year from reference text
- * @param {string} text
- * @returns {{authors: string|null, year: string|null}}
- */
 function parseAuthorYear(text) {
   if (!text) return { authors: null, year: null };
 
   let authors = null;
   let year = null;
 
-  // Extract year
   const yearMatch = text.match(YEAR_PATTERN);
-  if (yearMatch) {
-    year = yearMatch[0];
-  }
+  if (yearMatch) year = yearMatch[0];
 
-  // Extract author - try different patterns
   const lastFirstMatch = text.match(LAST_NAME_PATTERNS.lastFirst);
   if (lastFirstMatch) {
     authors = lastFirstMatch[1];
@@ -898,13 +666,6 @@ function parseAuthorYear(text) {
   return { authors, year };
 }
 
-/**
- * Match a citation to a reference using year + author + initials
- * @param {string} citationAuthor
- * @param {string} citationYear
- * @param {ReferenceAnchor[]} anchors
- * @returns {ReferenceAnchor|null}
- */
 export function matchCitationToReference(
   citationAuthor,
   citationYear,
@@ -912,13 +673,10 @@ export function matchCitationToReference(
 ) {
   if (!citationYear) return null;
 
-  // First: filter by year (must match exactly)
   const yearMatches = anchors.filter((a) => a.year === citationYear);
-
   if (yearMatches.length === 0) return null;
   if (yearMatches.length === 1) return yearMatches[0];
 
-  // Second: filter by author last name
   if (citationAuthor) {
     const authorLower = citationAuthor
       .toLowerCase()
@@ -936,82 +694,51 @@ export function matchCitationToReference(
 
     if (authorMatches.length === 1) return authorMatches[0];
     if (authorMatches.length > 1) {
-      const exact = authorMatches.find((a) =>
-        a.authors?.toLowerCase().startsWith(authorLower),
+      return (
+        authorMatches.find((a) =>
+          a.authors?.toLowerCase().startsWith(authorLower),
+        ) || authorMatches[0]
       );
-      return exact || authorMatches[0];
     }
   }
 
   return yearMatches[0];
 }
 
-// ============================================
-// Inline Citation Detection
-// ============================================
-
-/**
- * Find all inline citations in the document (excluding reference section)
- * @param {import('./controls/search/search_index.js').SearchIndex} searchIndex
- * @param {ReferenceIndex} referenceIndex
- * @returns {InlineCitation[]}
- */
-export function findInlineCitations(searchIndex, referenceIndex) {
-  if (!searchIndex) return [];
+export function findInlineCitations(textIndex, referenceIndex) {
+  if (!textIndex) return [];
 
   const citations = [];
-  const docInfo = getDocInfo(searchIndex);
+  const docInfo = getDocInfo(textIndex);
   if (!docInfo?.pageData) return citations;
 
   const { pageData } = docInfo;
   const refStartPage = referenceIndex?.sectionStart?.pageNumber || Infinity;
 
   for (const [pageNum, data] of pageData) {
-    // Skip reference section
     if (pageNum >= refStartPage) continue;
 
-    const { allLines } = data;
-
-    for (const line of allLines) {
-      // Find numeric citations
-      const numericCitations = findNumericCitationsInLine(line, pageNum);
-      citations.push(...numericCitations);
-
-      // Find author-year citations
-      const authorYearCitations = findAuthorYearCitationsInLine(line, pageNum);
-      citations.push(...authorYearCitations);
+    for (const line of data.lines) {
+      citations.push(...findNumericCitationsInLine(line, pageNum));
+      citations.push(...findAuthorYearCitationsInLine(line, pageNum));
     }
   }
 
   return citations;
 }
 
-/**
- * Find numeric citations in a line
- * @param {Object} line
- * @param {number} pageNumber
- * @returns {InlineCitation[]}
- */
 function findNumericCitationsInLine(line, pageNumber) {
   const citations = [];
-  const text = line.text;
-
-  // Match [1], [1,2,3], [1-5]
   const bracketPattern = /\[(\d+(?:\s*[-–—,;]\s*\d+)*)\]/g;
   let match;
 
-  while ((match = bracketPattern.exec(text)) !== null) {
-    const indices = parseNumericCitation(match[1]);
-
-    // Estimate position from match index
-    const rect = estimateRectFromMatch(line, match.index, match[0].length);
-
+  while ((match = bracketPattern.exec(line.text)) !== null) {
     citations.push({
       type: "numeric",
       text: match[0],
       pageNumber,
-      rect,
-      refIndices: indices,
+      rect: estimateRectFromMatch(line, match.index, match[0].length),
+      refIndices: parseNumericCitation(match[1]),
       refKeys: null,
     });
   }
@@ -1019,46 +746,33 @@ function findNumericCitationsInLine(line, pageNumber) {
   return citations;
 }
 
-/**
- * Find author-year citations in a line
- * @param {Object} line
- * @param {number} pageNumber
- * @returns {InlineCitation[]}
- */
 function findAuthorYearCitationsInLine(line, pageNumber) {
   const citations = [];
-  const text = line.text;
 
-  // Match "Smith (2020)" style
   const authorThenYear =
     /([A-Z][a-zÀ-ÿ]+(?:\s+et\s+al\.?)?)\s*\((\d{4}[a-z]?)\)/g;
   let match;
 
-  while ((match = authorThenYear.exec(text)) !== null) {
-    const rect = estimateRectFromMatch(line, match.index, match[0].length);
-
+  while ((match = authorThenYear.exec(line.text)) !== null) {
     citations.push({
       type: "author-year",
       text: match[0],
       pageNumber,
-      rect,
+      rect: estimateRectFromMatch(line, match.index, match[0].length),
       refIndices: null,
       refKeys: [{ author: match[1], year: match[2] }],
     });
   }
 
-  // Match "(Smith, 2020)" style
   const parenStyle =
     /\(([A-Z][a-zÀ-ÿ]+(?:\s+(?:et\s+al\.?|and|&)\s+[A-Z][a-zÀ-ÿ]+)?),?\s*(\d{4}[a-z]?)\)/g;
 
-  while ((match = parenStyle.exec(text)) !== null) {
-    const rect = estimateRectFromMatch(line, match.index, match[0].length);
-
+  while ((match = parenStyle.exec(line.text)) !== null) {
     citations.push({
       type: "author-year",
       text: match[0],
       pageNumber,
-      rect,
+      rect: estimateRectFromMatch(line, match.index, match[0].length),
       refIndices: null,
       refKeys: [{ author: match[1], year: match[2] }],
     });
@@ -1067,11 +781,6 @@ function findAuthorYearCitationsInLine(line, pageNumber) {
   return citations;
 }
 
-/**
- * Parse numeric citation string like "1,2,3" or "1-5" into array of indices
- * @param {string} str
- * @returns {number[]}
- */
 function parseNumericCitation(str) {
   const indices = [];
   const parts = str.split(/[,;]/);
@@ -1083,30 +792,18 @@ function parseNumericCitation(str) {
     if (rangeMatch) {
       const start = parseInt(rangeMatch[1], 10);
       const end = parseInt(rangeMatch[2], 10);
-      for (let i = start; i <= end; i++) {
-        indices.push(i);
-      }
+      for (let i = start; i <= end; i++) indices.push(i);
     } else {
       const num = parseInt(trimmed, 10);
-      if (!isNaN(num)) {
-        indices.push(num);
-      }
+      if (!isNaN(num)) indices.push(num);
     }
   }
 
   return indices;
 }
 
-/**
- * Estimate rectangle for a text match within a line
- * @param {Object} line
- * @param {number} matchStart
- * @param {number} matchLength
- * @returns {{x: number, y: number, width: number, height: number}}
- */
 function estimateRectFromMatch(line, matchStart, matchLength) {
-  // Try to find position from line items
-  if (line.items && line.items.length > 0) {
+  if (line.items?.length > 0) {
     let charCount = 0;
     let startX = line.x;
     let endX = line.x;
@@ -1140,7 +837,6 @@ function estimateRectFromMatch(line, matchStart, matchLength) {
     };
   }
 
-  // Fallback: estimate based on character position
   const avgCharWidth = (line.fontSize || 12) * 0.5;
   return {
     x: line.x + matchStart * avgCharWidth,
@@ -1150,46 +846,26 @@ function estimateRectFromMatch(line, matchStart, matchLength) {
   };
 }
 
-// ============================================
-// Cross-Reference Detection
-// ============================================
-
-/**
- * Find figure/table/section references in document
- * @param {import('./controls/search/search_index.js').SearchIndex} searchIndex
- * @returns {Array<{type: string, text: string, pageNumber: number, rect: Object, target: string}>}
- */
-export function findCrossReferences(searchIndex) {
-  if (!searchIndex) return [];
+export function findCrossReferences(textIndex) {
+  if (!textIndex) return [];
 
   const crossRefs = [];
-  const docInfo = getDocInfo(searchIndex);
+  const docInfo = getDocInfo(textIndex);
   if (!docInfo?.pageData) return crossRefs;
 
-  const { pageData } = docInfo;
-
-  for (const [pageNum, data] of pageData) {
-    const { allLines } = data;
-
-    for (const line of allLines) {
+  for (const [pageNum, data] of docInfo.pageData) {
+    for (const line of data.lines) {
       for (const [type, pattern] of Object.entries(CROSS_REFERENCE_PATTERNS)) {
         const regex = new RegExp(pattern.source, pattern.flags);
         let match;
 
         while ((match = regex.exec(line.text)) !== null) {
-          const target = match[1] || match[2];
-          const rect = estimateRectFromMatch(
-            line,
-            match.index,
-            match[0].length,
-          );
-
           crossRefs.push({
             type,
             text: match[0],
             pageNumber: pageNum,
-            rect,
-            target,
+            rect: estimateRectFromMatch(line, match.index, match[0].length),
+            target: match[1] || match[2],
           });
         }
       }
@@ -1199,219 +875,50 @@ export function findCrossReferences(searchIndex) {
   return crossRefs;
 }
 
-// ============================================
-// Utility Functions
-// ============================================
-
-/**
- * Check if font name indicates bold style
- * @param {string|null} fontName
- * @returns {boolean}
- */
-function isBoldFont(fontName) {
-  if (!fontName) return false;
-  const lower = fontName.toLowerCase();
-  return (
-    lower.includes("bold") ||
-    lower.includes("-bd") ||
-    lower.includes("_bd") ||
-    lower.includes("-b") ||
-    lower.includes("black") ||
-    lower.includes("heavy") ||
-    lower.includes("semibold") ||
-    lower.includes("demibold") ||
-    /cmbx/.test(lower) ||
-    /cmb[^a-z]/.test(lower)
-  );
-}
-
-/**
- * Find reference anchor by coordinate (for hybrid lookup)
- * @param {ReferenceAnchor[]} anchors
- * @param {number} pageNumber - 1-based page number
- * @param {number} x - X coordinate in PDF space
- * @param {number} y - Y coordinate in PDF space
- * @returns {{current: ReferenceAnchor|null, next: ReferenceAnchor|null}}
- */
 export function findBoundingAnchors(anchors, pageNumber, x, y) {
   const pageAnchors = anchors.filter((a) => a.pageNumber === pageNumber);
+  if (pageAnchors.length === 0) return { current: null, next: null };
 
-  if (pageAnchors.length === 0) {
-    return { current: null, next: null };
-  }
-
-  const columnGroups = detectColumns(pageAnchors);
-  const targetColumn = findTargetColumn(columnGroups, x);
-  const sortedAnchors = sortInReadingOrder(pageAnchors, columnGroups);
+  const sorted = [...pageAnchors].sort(
+    (a, b) => b.startCoord.y - a.startCoord.y,
+  );
 
   let current = null;
   let currentIndex = -1;
-  let bestScore = Infinity;
+  let bestDist = Infinity;
 
-  for (let i = 0; i < sortedAnchors.length; i++) {
-    const anchor = sortedAnchors[i];
-    const score = calculateProximityScore(
-      anchor,
-      x,
-      y,
-      targetColumn,
-      columnGroups,
-    );
+  for (let i = 0; i < sorted.length; i++) {
+    const anchor = sorted[i];
+    const anchorY = anchor.startCoord.y;
+    const endY = anchor.endCoord?.y ?? anchorY - 50;
 
-    if (score < bestScore) {
-      bestScore = score;
-      current = anchor;
-      currentIndex = i;
+    if (y <= anchorY && y >= endY) {
+      const xDist = Math.abs(x - anchor.startCoord.x);
+      if (xDist < bestDist) {
+        bestDist = xDist;
+        current = anchor;
+        currentIndex = i;
+      }
+    } else {
+      const yDist = Math.abs(y - anchorY);
+      const xDist = Math.abs(x - anchor.startCoord.x);
+      const dist = Math.sqrt(xDist * xDist + yDist * yDist);
+      if (dist < bestDist) {
+        bestDist = dist;
+        current = anchor;
+        currentIndex = i;
+      }
     }
   }
 
   const next =
-    currentIndex >= 0 && currentIndex < sortedAnchors.length - 1
-      ? sortedAnchors[currentIndex + 1]
+    currentIndex >= 0 && currentIndex < sorted.length - 1
+      ? sorted[currentIndex + 1]
       : null;
 
   return { current, next };
 }
 
-/**
- * Detect column structure from anchor X positions
- * @param {ReferenceAnchor[]} anchors
- * @returns {Array<{left: number, right: number, anchors: ReferenceAnchor[]}>}
- */
-function detectColumns(anchors) {
-  if (anchors.length === 0) return [];
-
-  const xPositions = anchors.map((a) => a.startCoord.x).sort((a, b) => a - b);
-  const threshold = 50;
-  const columns = [];
-  let currentGroup = { xValues: [xPositions[0]], anchors: [] };
-
-  for (let i = 1; i < xPositions.length; i++) {
-    const gap = xPositions[i] - xPositions[i - 1];
-    if (gap > threshold) {
-      columns.push(currentGroup);
-      currentGroup = { xValues: [xPositions[i]], anchors: [] };
-    } else {
-      currentGroup.xValues.push(xPositions[i]);
-    }
-  }
-  columns.push(currentGroup);
-
-  return columns.map((col) => {
-    const left = Math.min(...col.xValues) - 10;
-    const right = Math.max(...col.xValues) + 200;
-    const columnAnchors = anchors.filter(
-      (a) => a.startCoord.x >= left && a.startCoord.x <= right,
-    );
-    return { left, right, anchors: columnAnchors };
-  });
-}
-
-/**
- * Find which column contains the target X coordinate
- * @param {Array<{left: number, right: number}>} columnGroups
- * @param {number} x
- * @returns {number}
- */
-function findTargetColumn(columnGroups, x) {
-  for (let i = 0; i < columnGroups.length; i++) {
-    const col = columnGroups[i];
-    if (x >= col.left && x <= col.right) {
-      return i;
-    }
-  }
-
-  let minDist = Infinity;
-  let closest = 0;
-  for (let i = 0; i < columnGroups.length; i++) {
-    const col = columnGroups[i];
-    const colCenter = (col.left + col.right) / 2;
-    const dist = Math.abs(x - colCenter);
-    if (dist < minDist) {
-      minDist = dist;
-      closest = i;
-    }
-  }
-  return closest;
-}
-
-/**
- * Sort anchors in reading order
- * @param {ReferenceAnchor[]} anchors
- * @param {Array<{left: number, right: number, anchors: ReferenceAnchor[]}>} columnGroups
- * @returns {ReferenceAnchor[]}
- */
-function sortInReadingOrder(anchors, columnGroups) {
-  const withColumn = anchors.map((anchor) => {
-    let colIndex = 0;
-    for (let i = 0; i < columnGroups.length; i++) {
-      const col = columnGroups[i];
-      if (anchor.startCoord.x >= col.left && anchor.startCoord.x <= col.right) {
-        colIndex = i;
-        break;
-      }
-    }
-    return { anchor, colIndex };
-  });
-
-  withColumn.sort((a, b) => {
-    if (a.colIndex !== b.colIndex) {
-      return a.colIndex - b.colIndex;
-    }
-    return b.anchor.startCoord.y - a.anchor.startCoord.y;
-  });
-
-  return withColumn.map((item) => item.anchor);
-}
-
-/**
- * Calculate proximity score for an anchor relative to target point
- * @param {ReferenceAnchor} anchor
- * @param {number} targetX
- * @param {number} targetY
- * @param {number} targetColumn
- * @param {Array<{left: number, right: number}>} columnGroups
- * @returns {number}
- */
-function calculateProximityScore(
-  anchor,
-  targetX,
-  targetY,
-  targetColumn,
-  columnGroups,
-) {
-  const anchorX = anchor.startCoord.x;
-  const anchorStartY = anchor.startCoord.y;
-  const anchorEndY = anchor.endCoord?.y ?? anchorStartY - 50;
-
-  let anchorColumn = 0;
-  for (let i = 0; i < columnGroups.length; i++) {
-    const col = columnGroups[i];
-    if (anchorX >= col.left && anchorX <= col.right) {
-      anchorColumn = i;
-      break;
-    }
-  }
-
-  const columnPenalty = anchorColumn !== targetColumn ? 10000 : 0;
-  const withinYRange = targetY <= anchorStartY && targetY >= anchorEndY;
-
-  if (withinYRange && columnPenalty === 0) {
-    return Math.abs(targetX - anchorX);
-  }
-
-  const xDist = Math.abs(targetX - anchorX);
-  const yDist = Math.abs(targetY - anchorStartY);
-
-  return Math.sqrt(xDist * xDist + yDist * yDist) + columnPenalty;
-}
-
-/**
- * Find reference by numeric index
- * @param {ReferenceAnchor[]} anchors
- * @param {number} index
- * @returns {ReferenceAnchor|null}
- */
 export function findReferenceByIndex(anchors, index) {
   return anchors.find((a) => a.index === index) || null;
 }

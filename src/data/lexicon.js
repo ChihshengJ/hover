@@ -201,7 +201,6 @@ export const COMMON_SECTION_NAMES = new Set([
   "hypothesis",
   "hypotheses",
   "data collection",
-  "sampling",
   "sample size",
   "participants",
   "subjects",

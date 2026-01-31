@@ -29,18 +29,6 @@ export class SearchController {
   /** @type {Function|null} */
   #scrollCallback = null;
 
-  /** @type {Function|null} */
-  #indexingStartHandler = null;
-
-  /** @type {Function|null} */
-  #indexingProgressHandler = null;
-
-  /** @type {Function|null} */
-  #indexingReadyHandler = null;
-
-  /** @type {Object|null} */
-  #indexingSubscriber = null;
-
   /**
    * Navigation lock: when true, scroll-based range updates are ignored.
    * Set when user navigates through results (focusNext/focusPrev).
@@ -51,7 +39,6 @@ export class SearchController {
 
   constructor(wm) {
     this.#wm = wm;
-    this.#setupIndexingListeners();
   }
 
   /** @returns {import('../../viewpane.js').ViewerPane} */
@@ -80,52 +67,6 @@ export class SearchController {
   // =========================================
 
   /**
-   * Setup listeners for search index building events
-   */
-  #setupIndexingListeners() {
-    this.#indexingStartHandler = ({ totalPages }) => {
-      this.#searchBar?.setIndexingState(true, 0);
-    };
-
-    this.#indexingProgressHandler = ({
-      completedPages,
-      totalPages,
-      percent,
-    }) => {
-      this.#searchBar?.updateIndexingProgress(percent);
-    };
-
-    this.#indexingReadyHandler = ({ elapsedMs }) => {
-      this.#searchBar?.setIndexingState(false);
-
-      // If there's a pending query, run the search now
-      if (this.#currentQuery.trim()) {
-        this.#performSearch();
-      }
-    };
-
-    // Subscribe to document events using the correct callback interface
-    const subscriber = {
-      onDocumentChange: (event, data) => {
-        switch (event) {
-          case "search-index-start":
-            this.#indexingStartHandler(data);
-            break;
-          case "search-index-progress":
-            this.#indexingProgressHandler(data);
-            break;
-          case "search-index-ready":
-            this.#indexingReadyHandler(data);
-            break;
-        }
-      },
-    };
-
-    this.#doc?.subscribe(subscriber);
-    this.#indexingSubscriber = subscriber;
-  }
-
-  /**
    * Activate search mode
    */
   async activate() {
@@ -141,17 +82,6 @@ export class SearchController {
     if (!this.#searchBar) {
       this.#searchBar = new SearchBar(this);
       this.#updateSearchBarOutline();
-    }
-
-    // Check current indexing state and update UI
-    if (this.#searchIndex?.isBuilding) {
-      this.#searchBar.setIndexingState(
-        true,
-        this.#searchIndex.buildProgress || 0,
-      );
-    } else if (!this.#searchIndex?.isBuilt) {
-      // Index not started yet - show indexing at 0%
-      this.#searchBar.setIndexingState(true, 0);
     }
 
     // Create highlight layer for active pane
@@ -252,19 +182,65 @@ export class SearchController {
   }
 
   /**
+   * Search using PDFium's native search
+   * @param {string} query - Search query
+   * @param {number} fromPage - Start page (1-based, inclusive)
+   * @param {number} toPage - End page (1-based, inclusive)
+   * @returns {Promise<SearchMatch[]>}
+   */
+  async search(query, fromPage = 1, toPage = this.#doc.numPages) {
+    if (!query.trim() || query.length < 2) return [];
+
+    const { native, pdfDoc } = this.#doc;
+    if (!native || !pdfDoc) return [];
+
+    const matches = [];
+    let matchId = 0;
+
+    for (let pageNum = fromPage; pageNum <= toPage; pageNum++) {
+      const page = pdfDoc.pages[pageNum - 1];
+      if (!page) continue;
+
+      try {
+        // Use PDFium's native search
+        const pageMatches = await native
+          .searchInPage(pdfDoc, page, query)
+          .toPromise();
+
+        for (const match of pageMatches) {
+          const rects = match.rects;
+          if (!rects || rects.length === 0) continue;
+          const pageHeight = page.size.height;
+          const convertedRects = rects.map((rect) => ({
+            x: rect.origin.x,
+            y: rect.origin.y, // Convert to top-left origin
+            width: rect.size.width,
+            height: rect.size.height,
+          }));
+
+          matches.push({
+            id: `match-${matchId++}`,
+            pageNumber: pageNum,
+            rects: convertedRects,
+          });
+        }
+      } catch (error) {
+        console.warn(`[Search] Error searching page ${pageNum}:`, error);
+      }
+    }
+
+    return matches;
+  }
+
+  /**
    * Perform the actual search
    */
   async #performSearch() {
-    if (!this.#searchIndex?.isBuilt) {
-      console.warn("Search index not ready");
-      return;
-    }
-
     const query = this.#currentQuery.trim();
     if (!query || query.length < 2) return;
 
     const { from, to } = this.#range;
-    this.#results = await this.#searchIndex.search(query, from, to);
+    this.#results = await this.search(query, from, to);
 
     // Update highlight layer
     this.#highlightLayer?.render(this.#results);
@@ -471,12 +447,6 @@ export class SearchController {
    */
   destroy() {
     this.deactivate();
-
-    // Unsubscribe from document events
-    if (this.#indexingSubscriber) {
-      this.#doc?.unsubscribe(this.#indexingSubscriber);
-      this.#indexingSubscriber = null;
-    }
 
     this.#searchBar?.destroy();
     this.#searchBar = null;

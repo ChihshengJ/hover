@@ -192,104 +192,6 @@ export class PageView {
   }
 
   /**
-   * Sanitize text content from PDFium
-   * Handles encoding issues, ligatures, and invalid characters
-   * @param {string} text - Raw text from PDFium
-   * @returns {string} - Sanitized text safe for display
-   */
-  #sanitizeText(text) {
-    if (!text) return "";
-
-    let result = "";
-
-    for (let i = 0; i < text.length; i++) {
-      const code = text.charCodeAt(i);
-      const char = text[i];
-
-      // Skip null characters
-      if (code === 0) continue;
-
-      // Skip control characters (except common whitespace)
-      if (code < 32 && code !== 9 && code !== 10 && code !== 13) continue;
-
-      // Skip delete character
-      if (code === 127) continue;
-
-      // Skip Private Use Area characters (often misused font-specific glyphs)
-      // PUA: U+E000 to U+F8FF
-      if (code >= 0xe000 && code <= 0xf8ff) continue;
-
-      // Skip Specials block (replacement chars, etc.)
-      // U+FFF0 to U+FFFF
-      if (code >= 0xfff0 && code <= 0xffff) continue;
-
-      // Handle common ligatures - PDFium may return these as single codepoints
-      // fi ligature (U+FB01) -> "fi"
-      if (code === 0xfb01) {
-        result += "fi";
-        continue;
-      }
-      // fl ligature (U+FB02) -> "fl"
-      if (code === 0xfb02) {
-        result += "fl";
-        continue;
-      }
-      // ff ligature (U+FB00) -> "ff"
-      if (code === 0xfb00) {
-        result += "ff";
-        continue;
-      }
-      // ffi ligature (U+FB03) -> "ffi"
-      if (code === 0xfb03) {
-        result += "ffi";
-        continue;
-      }
-      // ffl ligature (U+FB04) -> "ffl"
-      if (code === 0xfb04) {
-        result += "ffl";
-        continue;
-      }
-
-      // Skip high surrogates without proper pair (broken UTF-16)
-      if (code >= 0xd800 && code <= 0xdbff) {
-        const nextCode = i + 1 < text.length ? text.charCodeAt(i + 1) : 0;
-        // Check if next char is a valid low surrogate
-        if (nextCode >= 0xdc00 && nextCode <= 0xdfff) {
-          // Valid surrogate pair - include both
-          result += char + text[i + 1];
-          i++; // Skip the low surrogate
-          continue;
-        } else {
-          // Invalid/orphan high surrogate - skip
-          continue;
-        }
-      }
-
-      // Skip orphan low surrogates
-      if (code >= 0xdc00 && code <= 0xdfff) continue;
-
-      // Skip CJK characters that appear unexpectedly (likely encoding errors)
-      // CJK Unified Ideographs: U+4E00 to U+9FFF
-      // NOTE: Remove/adjust this check if your PDF legitimately contains CJK text
-      if (code >= 0x4e00 && code <= 0x9fff) {
-        // Check context - if surrounded by non-CJK, likely encoding error
-        const prevCode = i > 0 ? text.charCodeAt(i - 1) : 0;
-        const nextCode = i + 1 < text.length ? text.charCodeAt(i + 1) : 0;
-        const prevIsCJK = prevCode >= 0x4e00 && prevCode <= 0x9fff;
-        const nextIsCJK = nextCode >= 0x4e00 && nextCode <= 0x9fff;
-        // Allow if part of a CJK sequence (2+ in a row)
-        if (!prevIsCJK && !nextIsCJK) {
-          continue; // Isolated CJK char - likely encoding error
-        }
-      }
-
-      result += char;
-    }
-
-    return result;
-  }
-
-  /**
    * Check if text content appears to be valid/meaningful
    * @param {string} text - Text to check
    * @returns {boolean}
@@ -321,9 +223,7 @@ export class PageView {
     const pageHeight = page.size.height;
 
     for (const slice of this.textSlices) {
-      // Sanitize the text content
-      const rawContent = slice.content || "";
-      const content = this.#sanitizeText(rawContent);
+      const content = slice.content || "";
 
       // Skip empty or invalid content
       if (!content || !this.#isValidTextContent(content)) {
@@ -629,6 +529,7 @@ export class PageView {
         left,
         top,
       );
+      console.log(bounds);
 
       if (bounds.current?.confidence > 0.85 && bounds.current.cachedText) {
         console.log(
@@ -745,7 +646,7 @@ export class PageView {
 
       for (let i = startIndex; i < textSlices.length; i++) {
         const slice = textSlices[i];
-        const text = this.#sanitizeText(slice.content || "");
+        const text = slice.content || "";
         const sliceY = slice.rect.origin.y;
         const sliceX = slice.rect.origin.x;
 
@@ -771,7 +672,7 @@ export class PageView {
             const nextSlice = textSlices[i + 1];
             if (Math.abs(nextSlice.rect.origin.y - sliceY) < 3) {
               lineStartText =
-                text + this.#sanitizeText(nextSlice.content || "");
+                text + nextSlice.content || "";
             }
           }
 

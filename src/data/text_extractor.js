@@ -1,15 +1,15 @@
 /**
  * PDFium Low-Level Text Extractor
- * 
+ *
  * Provides proper UTF-16LE text extraction from PDFium, bypassing the buggy
  * getPageTextRects method in @embedpdf/engines.
- * 
+ *
  * Usage:
  *   import { PdfiumTextExtractor } from './pdfium-text-extractor.js';
- *   
+ *
  *   // Create extractor with your pdfium module
  *   const extractor = new PdfiumTextExtractor(pdfiumModule);
- *   
+ *
  *   // Extract text from a page
  *   const result = extractor.extractPageText(docPtr, pageIndex);
  */
@@ -23,7 +23,7 @@
  * @property {Object} [font] - Font information
  * @property {number} [font.size] - Font size
  * @property {string} [font.family] - Font family name
- * 
+ *
  * @typedef {Object} PageTextResult
  * @property {number} pageIndex - 0-based page index
  * @property {string} fullText - Complete page text
@@ -37,7 +37,7 @@ export class PdfiumTextExtractor {
   #pdfium = null;
 
   /**
-   * @param {import('@embedpdf/pdfium').WrappedPdfiumModule} pdfiumModule 
+   * @param {import('@embedpdf/pdfium').WrappedPdfiumModule} pdfiumModule
    */
   constructor(pdfiumModule) {
     this.#pdfium = pdfiumModule;
@@ -46,7 +46,7 @@ export class PdfiumTextExtractor {
   /**
    * Extract text from a page with proper UTF-16LE handling
    * Returns data in a format compatible with getPageTextRects
-   * 
+   *
    * @param {number} docPtr - Document pointer
    * @param {number} pageIndex - 0-based page index
    * @returns {PageTextResult}
@@ -70,7 +70,7 @@ export class PdfiumTextExtractor {
       if (!textPagePtr) {
         return {
           pageIndex,
-          fullText: '',
+          fullText: "",
           textSlices: [],
           pageWidth,
           pageHeight,
@@ -83,7 +83,7 @@ export class PdfiumTextExtractor {
         if (charCount <= 0) {
           return {
             pageIndex,
-            fullText: '',
+            fullText: "",
             textSlices: [],
             pageWidth,
             pageHeight,
@@ -94,7 +94,11 @@ export class PdfiumTextExtractor {
         const fullText = this.#extractTextRange(textPagePtr, 0, charCount);
 
         // Extract text slices with rectangles
-        const textSlices = this.#extractTextSlices(textPagePtr, charCount, pageHeight);
+        const textSlices = this.#extractTextSlices(
+          textPagePtr,
+          charCount,
+          pageHeight,
+        );
 
         return {
           pageIndex,
@@ -113,14 +117,14 @@ export class PdfiumTextExtractor {
 
   /**
    * Extract text from a character range with proper UTF-16LE handling
-   * 
+   *
    * @param {number} textPagePtr - Text page pointer
    * @param {number} startIndex - Starting character index
    * @param {number} count - Number of characters to extract
    * @returns {string}
    */
   #extractTextRange(textPagePtr, startIndex, count) {
-    if (count <= 0) return '';
+    if (count <= 0) return "";
 
     const pdfium = this.#pdfium;
 
@@ -133,14 +137,14 @@ export class PdfiumTextExtractor {
         textPagePtr,
         startIndex,
         count,
-        textBufferPtr
+        textBufferPtr,
       );
 
       if (extractedLength > 0) {
-        // CRITICAL: Use UTF16ToString for proper UTF-16LE → JS string conversion
+        // CRITICAL: Use UTF16ToString for proper UTF-16LE â†’ JS string conversion
         return pdfium.pdfium.UTF16ToString(textBufferPtr);
       }
-      return '';
+      return "";
     } finally {
       pdfium.pdfium.wasmExports.free(textBufferPtr);
     }
@@ -149,7 +153,7 @@ export class PdfiumTextExtractor {
   /**
    * Extract text slices with bounding rectangles
    * Output format matches getPageTextRects for compatibility
-   * 
+   *
    * @param {number} textPagePtr - Text page pointer
    * @param {number} totalChars - Total character count
    * @param {number} pageHeight - Page height for Y coordinate conversion
@@ -181,7 +185,7 @@ export class PdfiumTextExtractor {
           leftPtr,
           topPtr,
           rightPtr,
-          bottomPtr
+          bottomPtr,
         );
 
         if (!success) continue;
@@ -193,12 +197,26 @@ export class PdfiumTextExtractor {
         const bottom = pdfium.pdfium.HEAPF64[bottomPtr >> 3];
 
         // Get text within this rectangle
-        const content = this.#extractBoundedText(textPagePtr, left, top, right, bottom);
+        const content = this.#extractBoundedText(
+          textPagePtr,
+          left,
+          top,
+          right,
+          bottom,
+        );
 
         if (content && content.trim()) {
           // Convert from PDF coordinates (origin bottom-left) to top-left origin
           const height = top - bottom;
           const y = pageHeight - top;
+
+          // Extract font information using character index at position
+          const fontInfo = this.#extractFontInfo(
+            textPagePtr,
+            left,
+            top,
+            height,
+          );
 
           // Format to match getPageTextRects output structure
           textSlices.push({
@@ -208,8 +226,8 @@ export class PdfiumTextExtractor {
               size: { width: right - left, height },
             },
             font: {
-              size: height, // Approximate font size from rect height
-              family: null, // Would need additional API calls to get font info
+              size: fontInfo.size,
+              family: fontInfo.family,
             },
           });
         }
@@ -225,8 +243,76 @@ export class PdfiumTextExtractor {
   }
 
   /**
+   * Extract font information for a character at a given position
+   *
+   * @param {number} textPagePtr - Text page pointer
+   * @param {number} left - Left coordinate of the text rect
+   * @param {number} top - Top coordinate of the text rect (PDF coordinates)
+   * @param {number} rectHeight - Height of the rect (fallback for font size)
+   * @returns {{size: number, family: string|null}}
+   */
+  #extractFontInfo(textPagePtr, left, top, rectHeight) {
+    const pdfium = this.#pdfium;
+
+    // Get character index at position (with small tolerance of 2 units)
+    const charIndex = pdfium.FPDFText_GetCharIndexAtPos(
+      textPagePtr,
+      left,
+      top,
+      2,
+      2,
+    );
+
+    if (charIndex < 0) {
+      return { size: rectHeight, family: null };
+    }
+
+    // Get font size
+    const fontSize = pdfium.FPDFText_GetFontSize(textPagePtr, charIndex);
+
+    // Get font name length first (pass 0 for buffer to get required size)
+    const fontNameLength = pdfium.FPDFText_GetFontInfo(
+      textPagePtr,
+      charIndex,
+      0, // null buffer
+      0, // buffer size 0
+      0, // flags pointer (not needed for length query)
+    );
+
+    if (fontNameLength <= 0) {
+      return { size: fontSize || rectHeight, family: null };
+    }
+
+    // Allocate buffer for font name (UTF-8, +1 for null terminator)
+    const bytesCount = fontNameLength + 1;
+    const textBufferPtr = pdfium.pdfium.wasmExports.malloc(bytesCount);
+    const flagsPtr = pdfium.pdfium.wasmExports.malloc(4); // int32 for flags
+
+    try {
+      pdfium.FPDFText_GetFontInfo(
+        textPagePtr,
+        charIndex,
+        textBufferPtr,
+        bytesCount,
+        flagsPtr,
+      );
+
+      // Font name is UTF-8 encoded
+      const fontFamily = pdfium.pdfium.UTF8ToString(textBufferPtr);
+
+      return {
+        size: fontSize || rectHeight,
+        family: fontFamily || null,
+      };
+    } finally {
+      pdfium.pdfium.wasmExports.free(textBufferPtr);
+      pdfium.pdfium.wasmExports.free(flagsPtr);
+    }
+  }
+
+  /**
    * Extract text within a bounding rectangle
-   * 
+   *
    * @param {number} textPagePtr - Text page pointer
    * @param {number} left - Left bound
    * @param {number} top - Top bound (PDF coordinates)
@@ -245,10 +331,10 @@ export class PdfiumTextExtractor {
       right,
       bottom,
       0, // null buffer to get count
-      0
+      0,
     );
 
-    if (charCount <= 0) return '';
+    if (charCount <= 0) return "";
 
     // Allocate buffer (UTF-16 = 2 bytes per char)
     const bufferSize = (charCount + 1) * 2;
@@ -262,7 +348,7 @@ export class PdfiumTextExtractor {
         right,
         bottom,
         bufferPtr,
-        charCount + 1
+        charCount + 1,
       );
 
       // Convert UTF-16LE to JS string
@@ -341,7 +427,7 @@ export class PdfiumDocumentHandle {
 
 /**
  * Factory to create low-level document handles from PDF data
- * 
+ *
  * Usage:
  *   const factory = new PdfiumDocumentFactory(pdfiumModule);
  *   const handle = factory.loadFromBuffer(pdfData);
@@ -375,7 +461,7 @@ export class PdfiumDocumentFactory {
     const docPtr = pdfium.FPDF_LoadMemDocument(
       filePtr,
       pdfData.length,
-      password ? password : 0
+      password ? password : 0,
     );
 
     if (!docPtr) {

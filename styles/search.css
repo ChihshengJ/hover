@@ -329,56 +329,6 @@
   transition: opacity var(--transition-normal);
 }
 
-/* ================================
-   Indexing Indicator
-   ================================ */
-
-.search-indexing-indicator {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 2px 8px;
-  background: rgba(59, 130, 246, 0.1);
-  border-radius: 6px;
-  font-size: 11px;
-  color: #2563eb;
-  flex-shrink: 0;
-}
-
-.search-indexing-spinner {
-  animation: spin 1s linear infinite;
-  color: #2563eb;
-}
-
-@keyframes spin {
-  from {
-    transform: rotate(0deg);
-  }
-  to {
-    transform: rotate(360deg);
-  }
-}
-
-.search-indexing-text {
-  font-weight: 500;
-  white-space: nowrap;
-}
-
-/* Disabled state when indexing */
-.search-bar.indexing .search-input {
-  color: #999;
-  cursor: not-allowed;
-}
-
-.search-bar.indexing .search-input::placeholder {
-  color: #2563eb;
-}
-
-.search-bar.indexing .search-range {
-  opacity: 0.5;
-  pointer-events: none;
-}
-
 /* Dropdown option hover and selection states */
 .search-dropdown-option {
   padding: 8px 12px;
@@ -412,18 +362,4 @@
 /* Stronger focus ring for search results */
 .search-focus-outline {
   transition: opacity 0.15s ease;
-}
-
-/* Night mode indexing styles */
-.night-mode .search-indexing-indicator {
-  background: rgba(59, 130, 246, 0.2);
-  color: #60a5fa;
-}
-
-.night-mode .search-indexing-spinner {
-  color: #60a5fa;
-}
-
-.night-mode .search-bar.indexing .search-input::placeholder {
-  color: #60a5fa;
 }

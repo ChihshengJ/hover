@@ -1,6 +1,11 @@
 /**
  * Loading overlay component for PDF initial load
  * Shows a glassy loading bar at center of screen with blur backdrop
+ * 
+ * Supports multiple visual modes:
+ * - determinate: normal progress bar
+ * - indeterminate: sliding animation for unknown size
+ * - processing: shimmer effect for active parsing/processing
  */
 export class LoadingOverlay {
   constructor() {
@@ -14,9 +19,15 @@ export class LoadingOverlay {
     this.progressGlow = null;
     /** @type {HTMLElement} */
     this.percentText = null;
+    /** @type {HTMLElement} */
+    this.shimmerEffect = null;
 
     this.progress = 0;
+    this.displayedProgress = 0;
+    this.targetProgress = 0;
     this.isVisible = false;
+    this.animationFrame = null;
+    this.currentPhase = null;
     this.#createDOM();
   }
 
@@ -44,7 +55,12 @@ export class LoadingOverlay {
     this.statusText = document.createElement("div");
     this.statusText.className = "loading-status";
     this.statusText.textContent = "Loading document...";
+    // Shimmer effect for processing state
+    this.shimmerEffect = document.createElement("div");
+    this.shimmerEffect.className = "loading-bar-shimmer";
+
     track.appendChild(this.progressFill);
+    track.appendChild(this.shimmerEffect);
     track.appendChild(this.progressGlow);
     track.appendChild(this.progressIndicator);
     this.loadingBar.appendChild(track);
@@ -71,27 +87,99 @@ export class LoadingOverlay {
   }
 
   /**
-   * Update loading progress
+   * Update loading progress with smooth animation
    * @param {number} progress - Progress value 0-1
    * @param {string} [status] - Optional status message
    */
   setProgress(progress, status) {
-    this.progress = Math.max(0, Math.min(1, progress));
-    const percent = Math.round(this.progress * 100);
-
-    // Update fill width
-    this.progressFill.style.width = `${percent}%`;
-    this.progressGlow.style.width = `${percent}%`;
-
-    // Update indicator position
-    this.progressIndicator.style.left = `${percent}%`;
-
-    // Update text
-    this.percentText.textContent = `${percent}%`;
+    // Exit indeterminate mode if we were in it
+    this.overlay.classList.remove("indeterminate");
+    
+    this.targetProgress = Math.max(0, Math.min(1, progress));
+    
+    // Determine phase from status to apply appropriate styling
+    const phase = this.#determinePhase(status);
+    if (phase !== this.currentPhase) {
+      this.currentPhase = phase;
+      this.#applyPhaseStyle(phase);
+    }
 
     if (status) {
       this.statusText.textContent = status;
     }
+
+    // Start smooth animation if not already running
+    if (!this.animationFrame) {
+      this.#animateProgress();
+    }
+  }
+
+  /**
+   * Determine the loading phase from status message
+   * @param {string} status
+   * @returns {'download'|'parse'|'process'|'index'|'complete'}
+   */
+  #determinePhase(status) {
+    if (!status) return 'download';
+    const s = status.toLowerCase();
+    if (s.includes('download')) return 'download';
+    if (s.includes('pars')) return 'parse';
+    if (s.includes('index') || s.includes('search') || s.includes('reference')) return 'index';
+    if (s.includes('complete') || s.includes('ready')) return 'complete';
+    return 'process';
+  }
+
+  /**
+   * Apply visual styling based on current phase
+   * @param {'download'|'parse'|'process'|'index'|'complete'} phase
+   */
+  #applyPhaseStyle(phase) {
+    // Remove all phase classes
+    this.overlay.classList.remove('phase-download', 'phase-parse', 'phase-process', 'phase-index', 'phase-complete');
+    
+    // Add current phase class
+    this.overlay.classList.add(`phase-${phase}`);
+  }
+
+  /**
+   * Animate progress smoothly towards target
+   */
+  #animateProgress() {
+    const ease = 0.12; // Easing factor
+    const threshold = 0.001;
+
+    const diff = this.targetProgress - this.displayedProgress;
+    
+    if (Math.abs(diff) < threshold) {
+      this.displayedProgress = this.targetProgress;
+      this.#updateProgressDisplay();
+      this.animationFrame = null;
+      return;
+    }
+
+    this.displayedProgress += diff * ease;
+    this.#updateProgressDisplay();
+
+    this.animationFrame = requestAnimationFrame(() => this.#animateProgress());
+  }
+
+  /**
+   * Update the visual display of progress
+   */
+  #updateProgressDisplay() {
+    const percent = Math.round(this.displayedProgress * 100);
+    const smoothPercent = this.displayedProgress * 100;
+
+    // Update fill width
+    this.progressFill.style.width = `${smoothPercent}%`;
+    this.progressGlow.style.width = `${smoothPercent}%`;
+    this.shimmerEffect.style.width = `${smoothPercent}%`;
+
+    // Update indicator position
+    this.progressIndicator.style.left = `${smoothPercent}%`;
+
+    // Update text (use rounded for display)
+    this.percentText.textContent = `${percent}%`;
   }
 
   /**
@@ -100,10 +188,24 @@ export class LoadingOverlay {
    */
   setIndeterminate(status) {
     this.overlay.classList.add("indeterminate");
+    this.overlay.classList.remove('phase-download', 'phase-parse', 'phase-process', 'phase-index', 'phase-complete');
+    this.currentPhase = null;
     this.percentText.textContent = "";
     if (status) {
       this.statusText.textContent = status;
     }
+  }
+
+  /**
+   * Set processing state - shows shimmer effect indicating active work
+   * Use this during parsing/indexing phases for visual feedback
+   * @param {number} progress - Base progress value 0-1
+   * @param {string} [status] - Status message
+   */
+  setProcessing(progress, status) {
+    this.overlay.classList.remove("indeterminate");
+    this.overlay.classList.add("processing");
+    this.setProgress(progress, status);
   }
 
   /**
@@ -130,7 +232,8 @@ export class LoadingOverlay {
         setTimeout(() => {
           this.isVisible = false;
           document.body.classList.remove("pdf-loading");
-          this.overlay.classList.remove("dissolving", "indeterminate");
+          this.overlay.classList.remove("dissolving", "indeterminate", "processing");
+          this.overlay.classList.remove('phase-download', 'phase-parse', 'phase-process', 'phase-index', 'phase-complete');
 
           // Remove from DOM
           this.overlay.remove();
@@ -144,6 +247,10 @@ export class LoadingOverlay {
    * Destroy and cleanup
    */
   destroy() {
+    if (this.animationFrame) {
+      cancelAnimationFrame(this.animationFrame);
+      this.animationFrame = null;
+    }
     document.body.classList.remove("pdf-loading");
     this.overlay?.remove();
     this.overlay = null;

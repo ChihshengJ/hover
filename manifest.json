@@ -3,6 +3,9 @@
   "name": "Hover PDF Viewer",
   "version": "0.1.0",
   "description": "Enhanced PDF viewer with citation previews",
+  "content_security_policy": {
+    "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'"
+  },
   "permissions": [
     "declarativeNetRequest",
     "declarativeNetRequestFeedback",
@@ -44,7 +47,8 @@
         "assets/*",
         "popup.html",
         "popup.css",
-        "popup.js"
+        "popup.js",
+        "pdfium.wasm"
       ],
       "matches": [
         "<all_urls>"

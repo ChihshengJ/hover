@@ -97,33 +97,40 @@ export class PageView {
     const pageWidth = page.size.width;
     const pageHeight = page.size.height;
 
-    // Calculate render scale to fit canvas
     const scaleX = canvasWidth / pageWidth;
     const scaleY = canvasHeight / pageHeight;
     const renderScale = Math.min(scaleX, scaleY);
 
     try {
-      // Load text slices and annotations in parallel if not cached
-      if (!this.annotations) {
-        this.annotations = await native
-          .getPageAnnotations(pdfDoc, page)
-          .toPromise();
-      }
       if (!this.textSlices) {
-        if (this.doc.lowLevelHandle) {
-          try {
-            this.textSlices = this.doc.extractPageText(page.index)?.textSlices;
-          } catch (err) {
-            console.warn(
-              `[PageRender] Low-level extraction failed for page ${page.index}, falling back:`,
-              err.message,
-            );
-            this.textSlices = null;
+        this.textSlices = this.doc.textIndex?.getRawSlices(this.pageNumber);
+
+        if (!this.textSlices) {
+          if (this.doc.lowLevelHandle) {
+            try {
+              this.textSlices = this.doc.extractPageText(
+                page.index,
+              )?.textSlices;
+            } catch (err) {
+              console.warn(
+                `[PageRender] Low-level extraction failed for page ${page.index}:`,
+                err.message,
+              );
+            }
+          }
+          if (!this.textSlices) {
+            this.textSlices = await native
+              .getPageTextRects(pdfDoc, page)
+              .toPromise();
           }
         }
-        if (!this.textSlices) {
-          this.textSlices = await native
-            .getPageTextRects(pdfDoc, page)
+      }
+
+      if (!this.annotations) {
+        this.annotations = this.doc.getNativeAnnotations(this.pageNumber);
+        if (!this.annotations || this.annotations.length === 0) {
+          this.annotations = await native
+            .getPageAnnotations(pdfDoc, page)
             .toPromise();
         }
       }
@@ -141,43 +148,29 @@ export class PageView {
         pageData.height,
       );
 
-      // Draw to canvas
       const ctx = this.canvas.getContext("2d", { alpha: false });
       ctx.clearRect(0, 0, canvasWidth, canvasHeight);
 
-      // Center the rendered image if it doesn't fill the canvas exactly
       const offsetX = Math.floor((canvasWidth - imageData.width) / 2);
       const offsetY = Math.floor((canvasHeight - imageData.height) / 2);
 
       ctx.putImageData(imageData, offsetX, offsetY);
 
-      // Get CSS dimensions for text layer
       const cssWidth = parseFloat(this.canvas.style.width);
       const cssHeight = parseFloat(this.canvas.style.height);
-
-      // Calculate text layer scale
       const textScale = cssWidth / pageWidth;
 
-      // Clear and rebuild text layer
       if (this.pane.textSelectionManager) {
         this.pane.textSelectionManager.unregister(this.textLayer);
       }
 
       this.textLayer.innerHTML = "";
-
-      // Render annotations first (below text)
       this.#renderAnnotations(page, textScale, cssWidth, cssHeight);
-
-      // Render text layer
       this.#renderTextLayer(page, textScale, cssWidth, cssHeight);
-
       this.textLayer.style.setProperty("--total-scale-factor", `${this.scale}`);
-
       this.#ensureEndOfContent();
-
       this.textLayer.style.width = `${cssWidth}px`;
       this.textLayer.style.height = `${cssHeight}px`;
-
       this.canvas.dataset.rendered = "true";
     } catch (err) {
       if (err?.name !== "RenderingCancelledException") {
@@ -208,10 +201,6 @@ export class PageView {
   /**
    * Render text layer from PDFium text rects
    *
-   * Key insight: font.size from PDFium is in PDF user space units (points).
-   * However, the rect represents the actual bounding box of the rendered text.
-   * Using rect.size.height * scale gives us the correct visual height in CSS pixels.
-   *
    * @param {import('@embedpdf/engines').PdfPageObject} page
    * @param {number} scale - CSS pixels per PDF unit
    * @param {number} cssWidth
@@ -221,6 +210,8 @@ export class PageView {
     if (!this.textSlices || this.textSlices.length === 0) return;
 
     const pageHeight = page.size.height;
+    const fragment = document.createDocumentFragment();
+    const spansToMeasure = [];
 
     for (const slice of this.textSlices) {
       const content = slice.content || "";
@@ -230,23 +221,15 @@ export class PageView {
         continue;
       }
 
-      const span = document.createElement("span");
-      span.textContent = content;
-
-      // Get rect info (already in page coordinates, origin at top-left from getPageTextRects)
       const rectX = slice.rect.origin.x;
       const rectY = slice.rect.origin.y;
       const rectWidth = slice.rect.size.width;
       const rectHeight = slice.rect.size.height;
 
-      // Convert to CSS coordinates
       const x = rectX * scale;
       const y = rectY * scale;
-
-      // Calculate visual dimensions in CSS pixels
       const visualWidth = rectWidth * scale;
       const visualHeight = rectHeight * scale;
-
       let fontSize = visualHeight * 0.9;
 
       // Sanity check: skip if dimensions are unreasonable
@@ -254,6 +237,7 @@ export class PageView {
       if (
         fontSize > 50 ||
         fontSize < 3 ||
+        rectHeight > 30 ||
         visualWidth <= 0 ||
         visualHeight <= 0
       ) {
@@ -265,6 +249,8 @@ export class PageView {
       const cleanFontFamily =
         fontFamily.replace(/['"]/g, "").trim() || "sans-serif";
 
+      const span = document.createElement("span");
+      span.textContent = content;
       span.style.cssText = `
         position: absolute;
         left: ${x.toFixed(2)}px;
@@ -278,26 +264,29 @@ export class PageView {
         color: transparent;
       `;
 
-      // Add to DOM first so we can measure
-      this.textLayer.appendChild(span);
+      span._visualWidth = visualWidth;
+      fragment.appendChild(span);
+      spansToMeasure.push(span);
+    }
 
-      // Calculate horizontal scaling to fit text in its box
-      // This compensates for font metric differences between PDF fonts and system fonts
-      const measuredWidth = span.offsetWidth;
+    this.textLayer.appendChild(fragment);
+    const measurements = [];
+    for (const span of spansToMeasure) {
+      measurements.push({
+        span,
+        measuredWidth: span.offsetWidth,
+        visualWidth: span._visualWidth,
+      });
+    }
+
+    for (const { span, measuredWidth, visualWidth } of measurements) {
       if (measuredWidth > 0 && visualWidth > 0) {
         const scaleX = visualWidth / measuredWidth;
-        // Only apply if within reasonable range (0.5x to 2x)
-        if (scaleX >= 0.5 && scaleX <= 2.0) {
-          span.style.transform = `scaleX(${scaleX.toFixed(4)})`;
-        } else if (scaleX > 0.1 && scaleX < 0.5) {
-          // Text might be condensed - still apply but log
-          span.style.transform = `scaleX(${scaleX.toFixed(4)})`;
-        } else if (scaleX > 2.0 && scaleX < 5.0) {
-          // Text might be expanded - still apply
+        if (scaleX >= 0.1 && scaleX <= 5.0) {
           span.style.transform = `scaleX(${scaleX.toFixed(4)})`;
         }
-        // If scaleX is very extreme (< 0.1 or > 5), the text might be garbage
       }
+      delete span._visualWidth;
     }
   }
 
@@ -315,9 +304,9 @@ export class PageView {
     if (!this.annotations || this.annotations.length === 0) return;
 
     const pageHeight = page.size.height;
+    const fragment = document.createDocumentFragment();
 
     for (const annot of this.annotations) {
-      // Only render Link annotations in the annotation layer
       if (!annot.target) continue;
       if (annot.target.type !== "destination" && annot.target.type !== "action")
         continue;
@@ -342,21 +331,17 @@ export class PageView {
         background-color: transparent;
       `;
 
-      // Handle different link types
       if (annot.target.type === "action" && annot.target.action?.uri) {
-        // External URL
         anchor.href = annot.target.action.uri;
         anchor.target = "_blank";
         anchor.rel = "noopener noreferrer";
       } else if (annot.target.type === "destination") {
         const dest = annot.target.destination;
-        // Internal destination
         anchor.href = typeof dest === "string" ? dest : "#";
         anchor.dataset.dest = "";
 
         if (dest && typeof dest === "object") {
           anchor.dataset.destPageIndex = dest.pageIndex?.toString() || "";
-          // dest.view contains [left, top, zoom] or similar
           if (Array.isArray(dest.view)) {
             anchor.dataset.destLeft = dest.view[0]?.toString() || "0";
             anchor.dataset.destTop = dest.view[1]?.toString() || "0";
@@ -366,8 +351,11 @@ export class PageView {
         continue;
       }
 
-      this.annotationLayer.appendChild(anchor);
+      fragment.appendChild(anchor);
     }
+
+    // Single DOM append
+    this.annotationLayer.appendChild(fragment);
   }
 
   cancel() {
@@ -379,14 +367,13 @@ export class PageView {
     if (this.pane.textSelectionManager) {
       this.pane.textSelectionManager.unregister(this.textLayer);
     }
+
     this.textLayer.innerHTML = "";
     this.annotationLayer.innerHTML = "";
     const ctx = this.canvas.getContext("2d");
     ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
 
     this.page = null;
-    this.textSlices = null;
-    this.annotations = null;
     this.endOfContent = null;
     this.canvas.dataset.rendered = "false";
 
@@ -449,7 +436,7 @@ export class PageView {
     if (!dest || dest.startsWith("http")) return;
 
     const pageHeight = this.#getPage()?.size.height;
-    
+
     if (anchor.dataset.destPageIndex) {
       this._showTimer = setTimeout(async () => {
         await citationPopup.show(
@@ -494,26 +481,6 @@ export class PageView {
     await this.pane.scrollToPoint(pageIndex, left, top);
   }
 
-  async #resolveDestToPosition(anchor, dest) {
-    if (anchor.dataset.destPageIndex) {
-      const pageIndex = parseInt(anchor.dataset.destPageIndex, 10);
-      if (!isNaN(pageIndex)) {
-        return {
-          pageIndex,
-          left: parseFloat(anchor.dataset.destLeft) || 0,
-          top: parseFloat(anchor.dataset.destTop) || 0,
-        };
-      }
-    }
-
-    const resolved = this.doc.resolveDestination(dest);
-    if (resolved) {
-      return resolved;
-    }
-
-    return null;
-  }
-
   async #findCiteText(left, pageIndex, top) {
     const pageNumber = pageIndex + 1;
     console.log(
@@ -546,9 +513,7 @@ export class PageView {
     if (!page) return null;
 
     try {
-      const textSlices = await native
-        .getPageTextRects(pdfDoc, page)
-        .toPromise();
+      const textSlices = this.doc.pdfDoc.pages.map((p) => this.doc.textIndex?.getRawSlices(p.index + 1)).flat();
       if (!textSlices || textSlices.length === 0) return null;
 
       let startIndex = -1;

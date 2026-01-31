@@ -83,6 +83,10 @@ export class DocumentTextIndex {
     return null;
   }
 
+  getRawSlices(pageNumber) {
+    return this.#pageData.get(pageNumber)?.rawSlices || null;
+  }
+
   getBodyFontSize() {
     this.#ensureBodyFontAnalyzed();
     return this.#bodyFontSize ?? 10;
@@ -166,6 +170,7 @@ export class DocumentTextIndex {
         marginLeft,
         lines,
         fullText: fullText || lines.map((l) => l.text).join(" "),
+        rawSlices: textSlices,
       });
       this.#indexedPages.add(pageNumber);
     } catch (error) {

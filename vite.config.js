@@ -1,6 +1,6 @@
 import { defineConfig } from "vite";
 import { resolve } from "path";
-import { copyFileSync } from "fs";
+import { copyFileSync, existsSync } from "fs";
 
 export default defineConfig({
   root: ".",
@@ -52,6 +52,23 @@ export default defineConfig({
           );
         } catch (err) {
           console.warn("Could not copy popup files:", err.message);
+        }
+      }
+    },
+    {
+      name: 'copy-wasm-to-public',
+      buildStart() {
+        // Copy pdfium.wasm from node_modules to public/ so it gets included in dist
+        const wasmSrc = resolve(__dirname, "node_modules/@embedpdf/pdfium/dist/pdfium.wasm");
+        const wasmDest = resolve(__dirname, "public/pdfium.wasm");
+        
+        if (existsSync(wasmSrc) && !existsSync(wasmDest)) {
+          try {
+            copyFileSync(wasmSrc, wasmDest);
+            console.log("[vite] Copied pdfium.wasm to public/");
+          } catch (err) {
+            console.warn("Could not copy pdfium.wasm:", err.message);
+          }
         }
       }
     }

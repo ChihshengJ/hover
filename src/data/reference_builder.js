@@ -61,8 +61,6 @@ export async function buildReferenceIndex(textIndex) {
       anchor.year = parsed.year;
     }
 
-    console.log("[Reference] Anchors:", anchors);
-
     return {
       anchors,
       format,
@@ -113,8 +111,9 @@ function findReferenceSection(textIndex) {
           line.fontStyle === FontStyle.BOLD ||
           line.fontStyle === FontStyle.BOLD_ITALIC;
         const isAllCapital = line.text === line.text.toUpperCase();
+        const isDirectMatch = line.text === "References";
 
-        if (isLarger || isBold || isAllCapital) {
+        if (isLarger || isBold || isAllCapital || isDirectMatch) {
           referenceStart = {
             pageNumber: pageNum,
             lineIndex: i,
@@ -173,8 +172,6 @@ function findReferenceSectionEnd(pageData, start, bodyFontSize) {
         line.text === line.text.toUpperCase() && /\d+/.test(line) && line.text.length > 3;
 
       if (isLarger || isBold || isAllCapital) {
-        console.log("found section end:");
-        console.log(line, bodyFontSize);
         return {
           pageNumber: pageNum,
           lineIndex: i - 1,
@@ -405,7 +402,6 @@ function detectBoundary(line, prevLine, currentRef, prevYDirection, metrics) {
   const isLargeGap =
     !isBoundaryJump && absYDelta > metrics.baselineLineGap * 1.5;
 
-  console.log(line.text, isIndented, isAfterShortLine, isLargeGap, isBoundaryJump);
   let isNewReference = false;
 
   if (isLargeGap) {

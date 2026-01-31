@@ -8,7 +8,10 @@
 
 import { initPdfiumEngine } from "./pdfium-init.js";
 import { DocumentTextIndex } from "./data/text_index.js";
-import { buildOutline, detectDocumentMetadata } from "./data/outline_builder.js";
+import {
+  buildOutline,
+  detectDocumentMetadata,
+} from "./data/outline_builder.js";
 import {
   buildReferenceIndex,
   findBoundingAnchors,
@@ -36,7 +39,7 @@ function rgbToColorName(rgb) {
 
   for (const [name, [cr, cg, cb]] of Object.entries(COLOR_TO_RGB)) {
     const distance = Math.sqrt(
-      Math.pow(r - cr, 2) + Math.pow(g - cg, 2) + Math.pow(b - cb, 2)
+      Math.pow(r - cr, 2) + Math.pow(g - cg, 2) + Math.pow(b - cb, 2),
     );
     if (distance < minDistance) {
       minDistance = distance;
@@ -66,6 +69,8 @@ export class PDFDocumentModel {
     this.annotationsByPage = new Map();
     this.importedPdfAnnotations = new Map();
 
+    /** @type {Map<number, Array>} - Native annotations cached per page */
+    this.nativeAnnotationsByPage = new Map();
     /** @type {Array<{id: string, title: string, pageIndex: number, left: number, top: number, children: Array}>} */
     this.outline = [];
     /** @type {DocumentTextIndex|null} */
@@ -276,7 +281,7 @@ export class PDFDocumentModel {
           } else {
             reject(new Error("No data received from background"));
           }
-        }
+        },
       );
     });
   }
@@ -348,7 +353,8 @@ export class PDFDocumentModel {
         const metadataTitle = metadata?.title?.trim();
         const detectedTitle = this.detectedMetadata?.title;
         const useDetected =
-          detectedTitle && detectedTitle?.length >= (metadataTitle?.length || 0);
+          detectedTitle &&
+          detectedTitle?.length >= (metadataTitle?.length || 0);
         return useDetected ? detectedTitle : metadataTitle;
       } catch (error) {
         console.warn("[Doc] Error getting PDF metadata:", error);
@@ -453,6 +459,10 @@ export class PDFDocumentModel {
       .filter(Boolean);
   }
 
+  getNativeAnnotations(pageNumber) {
+    return this.nativeAnnotationsByPage.get(pageNumber) || [];
+  }
+
   getAllAnnotations() {
     return Array.from(this.annotations.values());
   }
@@ -499,6 +509,9 @@ export class PDFDocumentModel {
         const annotations = await this.native
           .getPageAnnotations(this.pdfDoc, page)
           .toPromise();
+
+        this.nativeAnnotationsByPage.set(pageNum, annotations);
+
         const { width: pageWidth, height: pageHeight } = page.size;
 
         for (const annot of annotations) {
@@ -507,7 +520,7 @@ export class PDFDocumentModel {
               annot,
               pageNum,
               pageWidth,
-              pageHeight
+              pageHeight,
             );
             if (converted) {
               importedAnnotations.push(converted);
@@ -520,7 +533,10 @@ export class PDFDocumentModel {
           }
         }
       } catch (error) {
-        console.warn(`[Doc] Error loading annotations for page ${pageNum}:`, error);
+        console.warn(
+          `[Doc] Error loading annotations for page ${pageNum}:`,
+          error,
+        );
       }
     }
 
@@ -537,10 +553,14 @@ export class PDFDocumentModel {
         const quad = annot.quadPoints.slice(i, i + 8);
         if (quad.length < 8) break;
 
-        const tLx = quad[0], tLy = quad[1];
-        const tRx = quad[2], tRy = quad[3];
-        const bLx = quad[4], bLy = quad[5];
-        const bRx = quad[6], bRy = quad[7];
+        const tLx = quad[0],
+          tLy = quad[1];
+        const tRx = quad[2],
+          tRy = quad[3];
+        const bLx = quad[4],
+          bLy = quad[5];
+        const bRx = quad[6],
+          bRy = quad[7];
 
         const minX = Math.min(tLx, tRx, bLx, bRx);
         const maxX = Math.max(tLx, tRx, bLx, bRx);
@@ -597,7 +617,7 @@ export class PDFDocumentModel {
       this.pdfDoc,
       this.native,
       this.textIndex,
-      this.allNamedDests
+      this.allNamedDests,
     );
 
     this.#injectAbstractIntoOutline();
@@ -622,7 +642,11 @@ export class PDFDocumentModel {
     for (let i = 0; i < this.outline.length; i++) {
       const item = this.outline[i];
       if (item.pageIndex > abstractInfo.pageIndex) break;
-      if (item.pageIndex === abstractInfo.pageIndex && item.top <= abstractInfo.top) break;
+      if (
+        item.pageIndex === abstractInfo.pageIndex &&
+        item.top <= abstractInfo.top
+      )
+        break;
       insertIndex = i + 1;
     }
 
@@ -632,10 +656,16 @@ export class PDFDocumentModel {
   #outlineContainsAbstract(items) {
     for (const item of items) {
       const title = item.title?.toLowerCase().trim() || "";
-      if (title === "abstract" || /^\d+\.?\s*abstract$/i.test(item.title?.trim() || "")) {
+      if (
+        title === "abstract" ||
+        /^\d+\.?\s*abstract$/i.test(item.title?.trim() || "")
+      ) {
         return true;
       }
-      if (item.children?.length > 0 && this.#outlineContainsAbstract(item.children)) {
+      if (
+        item.children?.length > 0 &&
+        this.#outlineContainsAbstract(item.children)
+      ) {
         return true;
       }
     }
@@ -644,7 +674,9 @@ export class PDFDocumentModel {
 
   getReferenceAnchors(pageNumber) {
     if (!this.referenceIndex?.anchors) return [];
-    return this.referenceIndex.anchors.filter((a) => a.pageNumber === pageNumber);
+    return this.referenceIndex.anchors.filter(
+      (a) => a.pageNumber === pageNumber,
+    );
   }
 
   getAllReferenceAnchors() {
@@ -751,9 +783,9 @@ export class PDFDocumentModel {
         console.warn("[Doc] Error closing document:", error);
       }
     }
-
     this.pdfDoc = null;
     this.pdfData = null;
+    this.nativeAnnotationsByPage.clear();
     this.textIndex?.destroy();
     this.textIndex = null;
   }

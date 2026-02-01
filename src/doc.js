@@ -1,6 +1,9 @@
 /**
  * PDFDocumentModel - Refactored for @embedpdf/engines (PDFium)
  *
+ * Annotation system fully integrated with embedPDF's engine APIs.
+ * Changes are applied to the engine immediately and saveAsCopy() persists them.
+ *
  * @typedef {import('@embedpdf/engines/pdfium').PdfEngine} PdfEngine
  * @typedef {import('@embedpdf/engines/pdfium').PdfiumNative} PdfiumNative
  * @typedef {import('@embedpdf/engines').PdfDocumentObject} PdfDocumentObject
@@ -20,27 +23,64 @@ import {
 } from "./data/reference_builder.js";
 import { PdfiumDocumentFactory } from "./data/text_extractor.js";
 
-const COLOR_TO_RGB = {
-  yellow: [255, 179, 0],
-  red: [229, 57, 53],
-  blue: [30, 136, 229],
-  green: [67, 160, 71],
+// ============================================================================
+// Color conversion utilities
+// ============================================================================
+
+const COLOR_NAME_TO_HEX = {
+  yellow: "#FFB300",
+  red: "#E53935",
+  blue: "#1E88E5",
+  green: "#43A047",
 };
 
-function rgbToColorName(rgb) {
-  if (!rgb || rgb.length < 3) return "yellow";
+const HEX_TO_COLOR_NAME = {
+  "#FFB300": "yellow",
+  "#E53935": "red",
+  "#1E88E5": "blue",
+  "#43A047": "green",
+};
 
-  const r = rgb[0] > 1 ? rgb[0] : rgb[0] * 255;
-  const g = rgb[1] > 1 ? rgb[1] : rgb[1] * 255;
-  const b = rgb[2] > 1 ? rgb[2] : rgb[2] * 255;
+/**
+ * Convert color name to hex string for embedPDF
+ * @param {string} colorName
+ * @returns {string}
+ */
+function colorNameToHex(colorName) {
+  return COLOR_NAME_TO_HEX[colorName] || COLOR_NAME_TO_HEX.yellow;
+}
+
+/**
+ * Convert hex color to color name for UI
+ * @param {string} hex
+ * @returns {string}
+ */
+function hexToColorName(hex) {
+  if (!hex) return "yellow";
+
+  // Normalize hex
+  const normalizedHex = hex.toUpperCase();
+  if (HEX_TO_COLOR_NAME[normalizedHex]) {
+    return HEX_TO_COLOR_NAME[normalizedHex];
+  }
+
+  // Try to find closest match by parsing RGB
+  const rgb = hexToRgb(hex);
+  if (!rgb) return "yellow";
 
   let closestColor = "yellow";
   let minDistance = Infinity;
 
-  for (const [name, [cr, cg, cb]] of Object.entries(COLOR_TO_RGB)) {
+  for (const [name, hexVal] of Object.entries(COLOR_NAME_TO_HEX)) {
+    const targetRgb = hexToRgb(hexVal);
+    if (!targetRgb) continue;
+
     const distance = Math.sqrt(
-      Math.pow(r - cr, 2) + Math.pow(g - cg, 2) + Math.pow(b - cb, 2),
+      Math.pow(rgb.r - targetRgb.r, 2) +
+      Math.pow(rgb.g - targetRgb.g, 2) +
+      Math.pow(rgb.b - targetRgb.b, 2),
     );
+
     if (distance < minDistance) {
       minDistance = distance;
       closestColor = name;
@@ -49,6 +89,61 @@ function rgbToColorName(rgb) {
 
   return closestColor;
 }
+
+/**
+ * Parse hex color to RGB
+ * @param {string} hex
+ * @returns {{r: number, g: number, b: number}|null}
+ */
+function hexToRgb(hex) {
+  const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+  return result
+    ? {
+      r: parseInt(result[1], 16),
+      g: parseInt(result[2], 16),
+      b: parseInt(result[3], 16),
+    }
+    : null;
+}
+
+/**
+ * Convert RGB array (0-255 or 0-1) to hex
+ * @param {number[]} rgb
+ * @returns {string}
+ */
+function rgbArrayToHex(rgb) {
+  if (!rgb || rgb.length < 3) return "#FFB300";
+
+  const r = rgb[0] > 1 ? rgb[0] : Math.round(rgb[0] * 255);
+  const g = rgb[1] > 1 ? rgb[1] : Math.round(rgb[1] * 255);
+  const b = rgb[2] > 1 ? rgb[2] : Math.round(rgb[2] * 255);
+
+  return `#${r.toString(16).padStart(2, "0")}${g.toString(16).padStart(2, "0")}${b.toString(16).padStart(2, "0")}`.toUpperCase();
+}
+
+/**
+ * Generate UUID v4
+ * @returns {string}
+ */
+function uuidV4() {
+  return crypto.randomUUID();
+}
+
+// ============================================================================
+// Annotation Subtype Constants (matching embedPDF)
+// ============================================================================
+
+const PdfAnnotationSubtype = {
+  HIGHLIGHT: 9,
+  UNDERLINE: 10,
+  SQUIGGLY: 11,
+  STRIKEOUT: 12,
+  TEXT: 1, // Sticky note / comment
+};
+
+// ============================================================================
+// PDFDocumentModel
+// ============================================================================
 
 export class PDFDocumentModel {
   constructor() {
@@ -65,12 +160,40 @@ export class PDFDocumentModel {
 
     this.highlights = new Map();
     this.subscribers = new Set();
+
+    // ========================================================================
+    // Annotation storage
+    // ========================================================================
+
+    /**
+     * All annotations (our UI representation)
+     * @type {Map<string, AnnotationUI>}
+     */
     this.annotations = new Map();
+
+    /**
+     * Quick lookup: pageNumber -> Set of annotation IDs on that page
+     * @type {Map<number, Set<string>>}
+     */
     this.annotationsByPage = new Map();
-    this.importedPdfAnnotations = new Map();
+
+    /**
+     * Mapping from our annotation ID to the PDF's native annotation ID
+     * Used for updating/removing existing PDF annotations
+     * @type {Map<string, string>}
+     */
+    this.#annotationIdToPdfId = new Map();
+
+    /**
+     * Comment annotations (PdfTextAnnoObject) linked to markup annotations
+     * markupAnnotationId -> commentAnnotationId
+     * @type {Map<string, string>}
+     */
+    this.#linkedComments = new Map();
 
     /** @type {Map<number, Array>} - Native annotations cached per page */
     this.nativeAnnotationsByPage = new Map();
+
     /** @type {Array<{id: string, title: string, pageIndex: number, left: number, top: number, children: Array}>} */
     this.outline = [];
     /** @type {DocumentTextIndex|null} */
@@ -87,6 +210,14 @@ export class PDFDocumentModel {
     /** @type {import('./data/text_extractor.js').PdfiumTextExtractor|null} */
     this.textExtractor = null;
   }
+
+  // Private fields
+  #annotationIdToPdfId = new Map();
+  #linkedComments = new Map();
+
+  // ============================================================================
+  // Static methods for local PDF handling
+  // ============================================================================
 
   static hasLocalPdf() {
     return sessionStorage.getItem("hover_pdf_data") !== null;
@@ -114,6 +245,10 @@ export class PDFDocumentModel {
     sessionStorage.removeItem("hover_pdf_data");
     sessionStorage.removeItem("hover_pdf_name");
   }
+
+  // ============================================================================
+  // Document loading
+  // ============================================================================
 
   async load(source, onProgress) {
     const reportProgress = (loaded, total, phase) => {
@@ -333,6 +468,10 @@ export class PDFDocumentModel {
     }
   }
 
+  // ============================================================================
+  // Page access
+  // ============================================================================
+
   get numPages() {
     return this.pdfDoc?.pages?.length || 0;
   }
@@ -345,6 +484,10 @@ export class PDFDocumentModel {
   getPageDimensions(pageNumber) {
     return this.pageDimensions[pageNumber - 1] || null;
   }
+
+  // ============================================================================
+  // Metadata
+  // ============================================================================
 
   async getDocumentTitle() {
     if (this.pdfDoc && this.native) {
@@ -377,6 +520,10 @@ export class PDFDocumentModel {
     return this.lowLevelHandle.extractPageText(pageIndex);
   }
 
+  // ============================================================================
+  // Subscribers
+  // ============================================================================
+
   subscribe(pane) {
     this.subscribers.add(pane);
   }
@@ -384,6 +531,16 @@ export class PDFDocumentModel {
   unsubscribe(pane) {
     this.subscribers.delete(pane);
   }
+
+  notify(event, data) {
+    for (const subscriber of this.subscribers) {
+      subscriber.onDocumentChange?.(event, data);
+    }
+  }
+
+  // ============================================================================
+  // Legacy highlight support
+  // ============================================================================
 
   addHighlight(pageNum, highlight) {
     if (!this.highlights.has(pageNum)) {
@@ -397,60 +554,615 @@ export class PDFDocumentModel {
     this.notify("highlight-added", { pageNum, highlight });
   }
 
-  #generateAnnotationId() {
-    return `annotation-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+  // ============================================================================
+  // Annotation Loading (from PDF)
+  // ============================================================================
+
+  /**
+   * Load annotations from the PDF document.
+   * Converts embedPDF annotation format to our UI format.
+   */
+  async loadAnnotations() {
+    if (!this.pdfDoc || !this.engine) return;
+
+    // Clear existing state
+    this.annotations.clear();
+    this.annotationsByPage.clear();
+    this.#annotationIdToPdfId.clear();
+    this.#linkedComments.clear();
+    this.nativeAnnotationsByPage.clear();
+
+    // Temporary storage to link comments to their parent annotations
+    const textAnnotations = [];
+
+    for (let pageNum = 1; pageNum <= this.numPages; pageNum++) {
+      const page = this.getPage(pageNum);
+      if (!page) continue;
+
+      try {
+        const annotations = await this.engine
+          .getPageAnnotations(this.pdfDoc, page)
+          .toPromise();
+
+        this.nativeAnnotationsByPage.set(pageNum, annotations);
+
+        const { width: pageWidth, height: pageHeight } = page.size;
+
+        for (const annot of annotations) {
+          // Handle highlight and underline annotations
+          if (
+            annot.type === PdfAnnotationSubtype.HIGHLIGHT ||
+            annot.type === PdfAnnotationSubtype.UNDERLINE
+          ) {
+            const converted = this.#convertPdfAnnotationToUI(
+              annot,
+              pageNum,
+              pageWidth,
+              pageHeight,
+            );
+            if (converted) {
+              this.annotations.set(converted.id, converted);
+              this.#addToPageIndex(converted.id, pageNum);
+              this.#annotationIdToPdfId.set(converted.id, annot.id);
+            }
+          }
+          // Collect text (sticky note) annotations to link later
+          else if (annot.type === PdfAnnotationSubtype.TEXT) {
+            textAnnotations.push({
+              pdfAnnot: annot,
+              pageNum,
+              pageWidth,
+              pageHeight,
+            });
+          }
+        }
+      } catch (error) {
+        console.warn(
+          `[Doc] Error loading annotations for page ${pageNum}:`,
+          error,
+        );
+      }
+    }
+
+    // Link text annotations to their parent markup annotations
+    this.#linkTextAnnotationsToMarkup(textAnnotations);
+
+    if (this.annotations.size > 0) {
+      this.notify("annotations-imported", { count: this.annotations.size });
+    }
   }
 
-  addAnnotation(annotationData) {
+  /**
+   * Convert a PDF annotation to our UI representation
+   */
+  #convertPdfAnnotationToUI(annot, pageNum, pageWidth, pageHeight) {
+    const rects = [];
+
+    // Handle segmentRects (embedPDF format)
+    if (annot.segmentRects?.length > 0) {
+      for (const segRect of annot.segmentRects) {
+        const x = segRect.origin?.x ?? 0;
+        const y = segRect.origin?.y ?? 0;
+        const width = segRect.size?.width ?? 0;
+        const height = segRect.size?.height ?? 0;
+
+        // Convert from PDF coords (origin bottom-left) to ratio (origin top-left)
+        rects.push({
+          leftRatio: x / pageWidth,
+          topRatio: 1 - (y + height) / pageHeight,
+          widthRatio: width / pageWidth,
+          heightRatio: height / pageHeight,
+        });
+      }
+    }
+    // Handle rect (bounding box)
+    else if (annot.rect) {
+      const x = annot.rect.origin?.x ?? 0;
+      const y = annot.rect.origin?.y ?? 0;
+      const width = annot.rect.size?.width ?? 0;
+      const height = annot.rect.size?.height ?? 0;
+
+      rects.push({
+        leftRatio: x / pageWidth,
+        topRatio: 1 - (y + height) / pageHeight,
+        widthRatio: width / pageWidth,
+        heightRatio: height / pageHeight,
+      });
+    }
+
+    if (rects.length === 0) return null;
+
+    // Determine type
+    const type =
+      annot.type === PdfAnnotationSubtype.UNDERLINE ? "underline" : "highlight";
+
+    // Convert color
+    const color = hexToColorName(annot.color);
+
+    return {
+      id: annot.id || uuidV4(),
+      type,
+      color,
+      pageRanges: [{ pageNumber: pageNum, rects, text: "" }],
+      comment: annot.contents?.trim() || null,
+      createdAt: annot.created?.toISOString() || new Date().toISOString(),
+      updatedAt: annot.modified?.toISOString() || new Date().toISOString(),
+    };
+  }
+
+  /**
+   * Link text (sticky note) annotations to their parent markup annotations
+   * by checking if the text annotation's position is near a markup annotation
+   */
+  #linkTextAnnotationsToMarkup(textAnnotations) {
+    for (const { pdfAnnot, pageNum } of textAnnotations) {
+      // Check if this text annotation has a linkedAnnotationId in custom data
+      const linkedId = pdfAnnot.custom?.linkedAnnotationId;
+
+      if (linkedId && this.annotations.has(linkedId)) {
+        // Direct link via custom data
+        const markup = this.annotations.get(linkedId);
+        if (markup && pdfAnnot.contents) {
+          markup.comment = pdfAnnot.contents.trim();
+          this.#linkedComments.set(linkedId, pdfAnnot.id);
+        }
+      } else if (pdfAnnot.contents) {
+        // Try to find nearby markup annotation on same page
+        const nearbyMarkup = this.#findNearbyMarkupAnnotation(
+          pdfAnnot,
+          pageNum,
+        );
+        if (nearbyMarkup) {
+          nearbyMarkup.comment = pdfAnnot.contents.trim();
+          this.#linkedComments.set(nearbyMarkup.id, pdfAnnot.id);
+        }
+      }
+    }
+  }
+
+  /**
+   * Find a markup annotation near the text annotation's position
+   */
+  #findNearbyMarkupAnnotation(textAnnot, pageNum) {
+    const textX = textAnnot.rect?.origin?.x ?? 0;
+    const textY = textAnnot.rect?.origin?.y ?? 0;
+    const pageDims = this.getPageDimensions(pageNum);
+    if (!pageDims) return null;
+
+    const threshold = Math.max(pageDims.width, pageDims.height) * 0.1;
+
+    let closest = null;
+    let closestDist = Infinity;
+
+    for (const annotation of this.annotations.values()) {
+      if (annotation.comment) continue; // Already has a comment
+
+      const pageRange = annotation.pageRanges.find(
+        (pr) => pr.pageNumber === pageNum,
+      );
+      if (!pageRange || pageRange.rects.length === 0) continue;
+
+      // Get first rect position
+      const rect = pageRange.rects[0];
+      const markupX = rect.leftRatio * pageDims.width;
+      const markupY = (1 - rect.topRatio) * pageDims.height;
+
+      const dist = Math.sqrt(
+        Math.pow(textX - markupX, 2) + Math.pow(textY - markupY, 2),
+      );
+
+      if (dist < threshold && dist < closestDist) {
+        closestDist = dist;
+        closest = annotation;
+      }
+    }
+
+    return closest;
+  }
+
+  #addToPageIndex(annotationId, pageNumber) {
+    if (!this.annotationsByPage.has(pageNumber)) {
+      this.annotationsByPage.set(pageNumber, new Set());
+    }
+    this.annotationsByPage.get(pageNumber).add(annotationId);
+  }
+
+  #removeFromPageIndex(annotationId, pageNumber) {
+    const pageSet = this.annotationsByPage.get(pageNumber);
+    if (pageSet) {
+      pageSet.delete(annotationId);
+    }
+  }
+
+  // ============================================================================
+  // Annotation CRUD Operations
+  // ============================================================================
+
+  /**
+   * Add a new annotation.
+   * Creates it in the PDF engine immediately.
+   *
+   * @param {Object} annotationData
+   * @param {string} annotationData.type - 'highlight' or 'underline'
+   * @param {string} annotationData.color - Color name ('yellow', 'red', 'blue', 'green')
+   * @param {Array} annotationData.pageRanges - Array of {pageNumber, rects, text}
+   * @param {string} [annotationData.comment] - Optional comment text
+   * @returns {Object} The created annotation
+   */
+  async addAnnotation(annotationData) {
+    const id = uuidV4();
+    const now = new Date().toISOString();
+
     const annotation = {
-      id: this.#generateAnnotationId(),
+      id,
       type: annotationData.type,
       color: annotationData.color,
       pageRanges: annotationData.pageRanges,
       comment: annotationData.comment || null,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
+      createdAt: now,
+      updatedAt: now,
     };
 
-    this.annotations.set(annotation.id, annotation);
+    // Store in our local state
+    this.annotations.set(id, annotation);
 
     for (const pageRange of annotation.pageRanges) {
-      if (!this.annotationsByPage.has(pageRange.pageNumber)) {
-        this.annotationsByPage.set(pageRange.pageNumber, new Set());
-      }
-      this.annotationsByPage.get(pageRange.pageNumber).add(annotation.id);
+      this.#addToPageIndex(id, pageRange.pageNumber);
     }
+
+    // Create in PDF engine
+    await this.#createAnnotationInEngine(annotation);
 
     this.notify("annotation-added", { annotation });
     return annotation;
   }
 
-  updateAnnotation(id, updates) {
+  /**
+   * Create annotation in the embedPDF engine
+   */
+  async #createAnnotationInEngine(annotation) {
+    if (!this.pdfDoc || !this.engine) return;
+
+    for (const pageRange of annotation.pageRanges) {
+      const page = this.getPage(pageRange.pageNumber);
+      if (!page) continue;
+
+      const { width: pageWidth, height: pageHeight } = page.size;
+
+      // Convert rects to embedPDF's segmentRects format
+      const segmentRects = pageRange.rects.map((rect) =>
+        this.#uiRectToEngineRect(rect, pageWidth, pageHeight),
+      );
+
+      // Calculate bounding rect
+      const boundingRect = this.#calculateBoundingRect(segmentRects);
+
+      // Determine annotation type
+      const type =
+        annotation.type === "underline"
+          ? PdfAnnotationSubtype.UNDERLINE
+          : PdfAnnotationSubtype.HIGHLIGHT;
+
+      const pdfAnnotation = {
+        id: annotation.id,
+        type,
+        pageIndex: pageRange.pageNumber - 1,
+        rect: boundingRect,
+        segmentRects,
+        color: colorNameToHex(annotation.color),
+        opacity: annotation.type === "highlight" ? 0.5 : 1.0,
+        contents: annotation.comment || undefined,
+        custom: {
+          colorName: annotation.color,
+          text: pageRange.text || "",
+        },
+      };
+
+      try {
+        const resultId = await this.engine
+          .createPageAnnotation(this.pdfDoc, page, pdfAnnotation)
+          .toPromise();
+
+        // Store mapping if engine returns a different ID
+        if (resultId && resultId !== annotation.id) {
+          this.#annotationIdToPdfId.set(annotation.id, resultId);
+        } else {
+          this.#annotationIdToPdfId.set(annotation.id, annotation.id);
+        }
+      } catch (error) {
+        console.warn("[Doc] Error creating annotation in engine:", error);
+      }
+    }
+
+    // Create linked comment annotation if comment exists
+    if (annotation.comment) {
+      await this.#createCommentAnnotation(annotation);
+    }
+  }
+
+  /**
+   * Create a PdfTextAnnoObject (sticky note) for a comment
+   */
+  async #createCommentAnnotation(annotation) {
+    if (!this.pdfDoc || !this.engine || !annotation.comment) return;
+
+    const firstPageRange = annotation.pageRanges[0];
+    if (!firstPageRange || firstPageRange.rects.length === 0) return;
+
+    const page = this.getPage(firstPageRange.pageNumber);
+    if (!page) return;
+
+    const { width: pageWidth, height: pageHeight } = page.size;
+
+    // Position the comment to the right of the first highlight rect
+    const firstRect = firstPageRange.rects[0];
+    const highlightRight =
+      (firstRect.leftRatio + firstRect.widthRatio) * pageWidth;
+    const highlightTop = (1 - firstRect.topRatio) * pageHeight;
+
+    // Comment note icon size and position
+    const noteSize = 20;
+    const noteX = Math.min(highlightRight + 5, pageWidth - noteSize - 5);
+    const noteY = highlightTop - noteSize / 2;
+
+    const commentId = uuidV4();
+
+    const commentAnnotation = {
+      id: commentId,
+      type: PdfAnnotationSubtype.TEXT,
+      pageIndex: firstPageRange.pageNumber - 1,
+      rect: {
+        origin: { x: noteX, y: Math.max(5, noteY) },
+        size: { width: noteSize, height: noteSize },
+      },
+      contents: annotation.comment,
+      color: colorNameToHex(annotation.color),
+      opacity: 1.0,
+      icon: "Comment",
+      custom: {
+        linkedAnnotationId: annotation.id,
+      },
+    };
+
+    try {
+      const resultId = await this.engine
+        .createPageAnnotation(this.pdfDoc, page, commentAnnotation)
+        .toPromise();
+
+      this.#linkedComments.set(annotation.id, resultId || commentId);
+    } catch (error) {
+      console.warn("[Doc] Error creating comment annotation:", error);
+    }
+  }
+
+  /**
+   * Update an existing annotation
+   *
+   * @param {string} id - Annotation ID
+   * @param {Object} updates - Properties to update
+   * @returns {Object|null} The updated annotation
+   */
+  async updateAnnotation(id, updates) {
     const annotation = this.annotations.get(id);
     if (!annotation) return null;
 
+    const oldComment = annotation.comment;
+
+    // Apply updates
     if (updates.color !== undefined) annotation.color = updates.color;
     if (updates.type !== undefined) annotation.type = updates.type;
     if (updates.comment !== undefined) annotation.comment = updates.comment;
     annotation.updatedAt = new Date().toISOString();
 
+    // Update in PDF engine
+    await this.#updateAnnotationInEngine(annotation, oldComment);
+
     this.notify("annotation-updated", { annotation });
     return annotation;
   }
 
-  deleteAnnotation(id) {
+  /**
+   * Update annotation in the embedPDF engine
+   */
+  async #updateAnnotationInEngine(annotation, oldComment) {
+    if (!this.pdfDoc || !this.engine) return;
+
+    const pdfId = this.#annotationIdToPdfId.get(annotation.id);
+
+    for (const pageRange of annotation.pageRanges) {
+      const page = this.getPage(pageRange.pageNumber);
+      if (!page) continue;
+
+      const { width: pageWidth, height: pageHeight } = page.size;
+
+      const segmentRects = pageRange.rects.map((rect) =>
+        this.#uiRectToEngineRect(rect, pageWidth, pageHeight),
+      );
+
+      const boundingRect = this.#calculateBoundingRect(segmentRects);
+
+      const type =
+        annotation.type === "underline"
+          ? PdfAnnotationSubtype.UNDERLINE
+          : PdfAnnotationSubtype.HIGHLIGHT;
+
+      const pdfAnnotation = {
+        id: pdfId || annotation.id,
+        type,
+        pageIndex: pageRange.pageNumber - 1,
+        rect: boundingRect,
+        segmentRects,
+        color: colorNameToHex(annotation.color),
+        opacity: annotation.type === "highlight" ? 0.5 : 1.0,
+        contents: annotation.comment || undefined,
+        custom: {
+          colorName: annotation.color,
+          text: pageRange.text || "",
+        },
+      };
+
+      try {
+        await this.engine
+          .updatePageAnnotation(this.pdfDoc, page, pdfAnnotation)
+          .toPromise();
+      } catch (error) {
+        console.warn("[Doc] Error updating annotation in engine:", error);
+      }
+    }
+
+    // Handle comment annotation changes
+    await this.#updateCommentAnnotation(annotation, oldComment);
+  }
+
+  /**
+   * Update or create/remove the linked comment annotation
+   */
+  async #updateCommentAnnotation(annotation, oldComment) {
+    const existingCommentId = this.#linkedComments.get(annotation.id);
+
+    if (annotation.comment && !existingCommentId) {
+      // Create new comment annotation
+      await this.#createCommentAnnotation(annotation);
+    } else if (!annotation.comment && existingCommentId) {
+      // Remove comment annotation
+      await this.#removeCommentAnnotation(annotation.id);
+    } else if (annotation.comment && existingCommentId) {
+      // Update existing comment annotation
+      const firstPageRange = annotation.pageRanges[0];
+      if (!firstPageRange) return;
+
+      const page = this.getPage(firstPageRange.pageNumber);
+      if (!page) return;
+
+      try {
+        // Get the existing comment annotation to preserve position
+        const annotations = await this.engine
+          .getPageAnnotations(this.pdfDoc, page)
+          .toPromise();
+
+        const existingComment = annotations.find(
+          (a) => a.id === existingCommentId,
+        );
+
+        if (existingComment) {
+          const updatedComment = {
+            ...existingComment,
+            contents: annotation.comment,
+            color: colorNameToHex(annotation.color),
+          };
+
+          await this.engine
+            .updatePageAnnotation(this.pdfDoc, page, updatedComment)
+            .toPromise();
+        }
+      } catch (error) {
+        console.warn("[Doc] Error updating comment annotation:", error);
+      }
+    }
+  }
+
+  /**
+   * Remove the linked comment annotation
+   */
+  async #removeCommentAnnotation(annotationId) {
+    const commentId = this.#linkedComments.get(annotationId);
+    if (!commentId) return;
+
+    const annotation = this.annotations.get(annotationId);
+    if (!annotation) return;
+
+    const firstPageRange = annotation.pageRanges[0];
+    if (!firstPageRange) return;
+
+    const page = this.getPage(firstPageRange.pageNumber);
+    if (!page) return;
+
+    try {
+      await this.engine
+        .removePageAnnotation(this.pdfDoc, page, { id: commentId })
+        .toPromise();
+
+      this.#linkedComments.delete(annotationId);
+    } catch (error) {
+      console.warn("[Doc] Error removing comment annotation:", error);
+    }
+  }
+
+  /**
+   * Delete an annotation
+   *
+   * @param {string} id - Annotation ID
+   * @returns {boolean} Success
+   */
+  async deleteAnnotation(id) {
     const annotation = this.annotations.get(id);
     if (!annotation) return false;
 
+    // Remove from PDF engine
+    await this.#deleteAnnotationFromEngine(annotation);
+
+    // Remove from local state
     for (const pageRange of annotation.pageRanges) {
-      const pageAnnotations = this.annotationsByPage.get(pageRange.pageNumber);
-      if (pageAnnotations) pageAnnotations.delete(id);
+      this.#removeFromPageIndex(id, pageRange.pageNumber);
     }
 
     this.annotations.delete(id);
+    this.#annotationIdToPdfId.delete(id);
+
     this.notify("annotation-deleted", { annotationId: id });
     return true;
   }
+
+  /**
+   * Delete annotation from the embedPDF engine
+   */
+  async #deleteAnnotationFromEngine(annotation) {
+    if (!this.pdfDoc || !this.engine) return;
+
+    const pdfId = this.#annotationIdToPdfId.get(annotation.id);
+
+    for (const pageRange of annotation.pageRanges) {
+      const page = this.getPage(pageRange.pageNumber);
+      if (!page) continue;
+
+      try {
+        await this.engine
+          .removePageAnnotation(this.pdfDoc, page, {
+            id: pdfId || annotation.id,
+          })
+          .toPromise();
+      } catch (error) {
+        console.warn("[Doc] Error removing annotation from engine:", error);
+      }
+    }
+
+    // Also remove linked comment annotation
+    await this.#removeCommentAnnotation(annotation.id);
+  }
+
+  /**
+   * Delete only the comment from an annotation (keep the highlight/underline)
+   */
+  async deleteAnnotationComment(id) {
+    const annotation = this.annotations.get(id);
+    if (!annotation) return false;
+
+    annotation.comment = null;
+    annotation.updatedAt = new Date().toISOString();
+
+    // Remove comment annotation from PDF
+    await this.#removeCommentAnnotation(id);
+
+    // Update the markup annotation to clear contents
+    await this.#updateAnnotationInEngine(annotation, annotation.comment);
+
+    this.notify("annotation-updated", { annotation });
+    return true;
+  }
+
+  // ============================================================================
+  // Annotation Accessors
+  // ============================================================================
 
   getAnnotation(id) {
     return this.annotations.get(id) || null;
@@ -472,150 +1184,91 @@ export class PDFDocumentModel {
     return Array.from(this.annotations.values());
   }
 
-  deleteAnnotationComment(id) {
-    const annotation = this.annotations.get(id);
-    if (!annotation) return false;
-
-    annotation.comment = null;
-    annotation.updatedAt = new Date().toISOString();
-    this.notify("annotation-updated", { annotation });
-    return true;
-  }
-
   exportAnnotations() {
     return Array.from(this.annotations.values());
   }
 
-  importAnnotations(annotations) {
-    for (const annotation of annotations) {
-      this.annotations.set(annotation.id, annotation);
-
-      for (const pageRange of annotation.pageRanges) {
-        if (!this.annotationsByPage.has(pageRange.pageNumber)) {
-          this.annotationsByPage.set(pageRange.pageNumber, new Set());
-        }
-        this.annotationsByPage.get(pageRange.pageNumber).add(annotation.id);
-      }
-    }
-
-    this.notify("annotations-imported", { count: annotations.length });
+  hasAnnotations() {
+    return this.annotations.size > 0;
   }
 
-  async loadAnnotations() {
-    if (!this.pdfDoc || !this.native) return;
+  // ============================================================================
+  // Coordinate Conversion Utilities
+  // ============================================================================
 
-    const importedAnnotations = [];
-
-    for (let pageNum = 1; pageNum <= this.numPages; pageNum++) {
-      const page = this.getPage(pageNum);
-      if (!page) continue;
-
-      try {
-        const annotations = await this.native
-          .getPageAnnotations(this.pdfDoc, page)
-          .toPromise();
-
-        this.nativeAnnotationsByPage.set(pageNum, annotations);
-
-        const { width: pageWidth, height: pageHeight } = page.size;
-
-        for (const annot of annotations) {
-          if (annot.subtype === "Highlight" || annot.type === 9) {
-            const converted = this.#convertPdfiumHighlightAnnotation(
-              annot,
-              pageNum,
-              pageWidth,
-              pageHeight,
-            );
-            if (converted) {
-              importedAnnotations.push(converted);
-              this.importedPdfAnnotations.set(converted.id, {
-                pageNumber: pageNum,
-                pdfiumAnnotationId: annot.id || null,
-                annotationType: "Highlight",
-              });
-            }
-          }
-        }
-      } catch (error) {
-        console.warn(
-          `[Doc] Error loading annotations for page ${pageNum}:`,
-          error,
-        );
-      }
-    }
-
-    if (importedAnnotations.length > 0) {
-      this.importAnnotations(importedAnnotations);
-    }
-  }
-
-  #convertPdfiumHighlightAnnotation(annot, pageNum, pageWidth, pageHeight) {
-    const rects = [];
-
-    if (annot.quadPoints?.length >= 8) {
-      for (let i = 0; i < annot.quadPoints.length; i += 8) {
-        const quad = annot.quadPoints.slice(i, i + 8);
-        if (quad.length < 8) break;
-
-        const tLx = quad[0],
-          tLy = quad[1];
-        const tRx = quad[2],
-          tRy = quad[3];
-        const bLx = quad[4],
-          bLy = quad[5];
-        const bRx = quad[6],
-          bRy = quad[7];
-
-        const minX = Math.min(tLx, tRx, bLx, bRx);
-        const maxX = Math.max(tLx, tRx, bLx, bRx);
-        const minY = Math.min(tLy, tRy, bLy, bRy);
-        const maxY = Math.max(tLy, tRy, bLy, bRy);
-
-        rects.push({
-          leftRatio: minX / pageWidth,
-          topRatio: 1 - maxY / pageHeight,
-          widthRatio: (maxX - minX) / pageWidth,
-          heightRatio: (maxY - minY) / pageHeight,
-        });
-      }
-    } else if (annot.rect) {
-      const rect = annot.rect;
-      const minX = Math.min(rect[0], rect[2]);
-      const maxX = Math.max(rect[0], rect[2]);
-      const minY = Math.min(rect[1], rect[3]);
-      const maxY = Math.max(rect[1], rect[3]);
-
-      rects.push({
-        leftRatio: minX / pageWidth,
-        topRatio: 1 - maxY / pageHeight,
-        widthRatio: (maxX - minX) / pageWidth,
-        heightRatio: (maxY - minY) / pageHeight,
-      });
-    }
-
-    if (rects.length === 0) return null;
-
-    const color = rgbToColorName(annot.color);
-    const comment = annot.contents || null;
+  /**
+   * Convert UI rect (ratio-based, origin top-left) to engine Rect (PDF coords, origin bottom-left)
+   */
+  #uiRectToEngineRect(uiRect, pageWidth, pageHeight) {
+    const x = uiRect.leftRatio * pageWidth;
+    const width = uiRect.widthRatio * pageWidth;
+    const height = uiRect.heightRatio * pageHeight;
+    // Convert Y: UI has origin at top, PDF has origin at bottom
+    const y = (1 - uiRect.topRatio - uiRect.heightRatio) * pageHeight;
 
     return {
-      id: `imported-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-      type: "highlight",
-      color,
-      pageRanges: [{ pageNumber: pageNum, rects, text: "" }],
-      comment: comment?.trim() || null,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-      pdfiumAnnotationId: annot.id || null,
+      origin: { x, y },
+      size: { width, height },
     };
   }
 
-  notify(event, data) {
-    for (const subscriber of this.subscribers) {
-      subscriber.onDocumentChange?.(event, data);
+  /**
+   * Calculate bounding rect from an array of rects
+   */
+  #calculateBoundingRect(rects) {
+    if (rects.length === 0) {
+      return { origin: { x: 0, y: 0 }, size: { width: 0, height: 0 } };
+    }
+
+    let minX = Infinity,
+      minY = Infinity;
+    let maxX = -Infinity,
+      maxY = -Infinity;
+
+    for (const rect of rects) {
+      const x = rect.origin.x;
+      const y = rect.origin.y;
+      const right = x + rect.size.width;
+      const top = y + rect.size.height;
+
+      minX = Math.min(minX, x);
+      minY = Math.min(minY, y);
+      maxX = Math.max(maxX, right);
+      maxY = Math.max(maxY, top);
+    }
+
+    return {
+      origin: { x: minX, y: minY },
+      size: { width: maxX - minX, height: maxY - minY },
+    };
+  }
+
+  // ============================================================================
+  // Document Saving
+  // ============================================================================
+
+  /**
+   * Save the document with all annotation changes.
+   * Since we apply changes to the engine immediately, this just calls saveAsCopy.
+   *
+   * @returns {Promise<ArrayBuffer>} The saved PDF as ArrayBuffer
+   */
+  async saveWithAnnotations() {
+    if (!this.pdfDoc || !this.engine) {
+      throw new Error("No PDF document loaded");
+    }
+
+    try {
+      return await this.engine.saveAsCopy(this.pdfDoc).toPromise();
+    } catch (error) {
+      console.error("Error saving document:", error);
+      throw error;
     }
   }
+
+  // ============================================================================
+  // Outline Building
+  // ============================================================================
 
   async #buildOutline() {
     this.outline = await buildOutline(
@@ -677,6 +1330,10 @@ export class PDFDocumentModel {
     return false;
   }
 
+  // ============================================================================
+  // Reference Index
+  // ============================================================================
+
   getReferenceAnchors(pageNumber) {
     if (!this.referenceIndex?.anchors) return [];
     return this.referenceIndex.anchors.filter(
@@ -715,64 +1372,9 @@ export class PDFDocumentModel {
     };
   }
 
-  #colorNameToRgb(colorName) {
-    return COLOR_TO_RGB[colorName] || COLOR_TO_RGB.yellow;
-  }
-
-  async saveWithAnnotations() {
-    if (!this.pdfDoc || !this.engine || !this.native) {
-      throw new Error("No PDF document loaded");
-    }
-
-    const allAnnotations = this.getAllAnnotations();
-
-    if (allAnnotations.length === 0 && this.importedPdfAnnotations.size === 0) {
-      return await this.engine.saveAsCopy(this.pdfDoc).toPromise();
-    }
-
-    for (const annotation of allAnnotations) {
-      for (let i = 0; i < annotation.pageRanges.length; i++) {
-        const pageRange = annotation.pageRanges[i];
-        const page = this.getPage(pageRange.pageNumber);
-        if (!page) continue;
-
-        const { width: pageWidth, height: pageHeight } = page.size;
-        const color = this.#colorNameToRgb(annotation.color);
-
-        const rects = pageRange.rects.map((rect) => ({
-          x: rect.leftRatio * pageWidth,
-          y: (1 - rect.topRatio - rect.heightRatio) * pageHeight,
-          width: rect.widthRatio * pageWidth,
-          height: rect.heightRatio * pageHeight,
-        }));
-
-        try {
-          await this.native
-            .createPageAnnotation(this.pdfDoc, page, {
-              type: "highlight",
-              color,
-              opacity: 1,
-              rects,
-              contents: i === 0 ? annotation.comment : null,
-            })
-            .toPromise();
-        } catch (error) {
-          console.warn(`[Doc] Error creating annotation:`, error);
-        }
-      }
-    }
-
-    try {
-      return await this.engine.saveAsCopy(this.pdfDoc).toPromise();
-    } catch (error) {
-      console.error("Error saving document:", error);
-      throw error;
-    }
-  }
-
-  hasAnnotations() {
-    return this.annotations.size > 0;
-  }
+  // ============================================================================
+  // Cleanup
+  // ============================================================================
 
   async close() {
     if (this.lowLevelHandle) {
@@ -791,6 +1393,10 @@ export class PDFDocumentModel {
     this.pdfDoc = null;
     this.pdfData = null;
     this.nativeAnnotationsByPage.clear();
+    this.annotations.clear();
+    this.annotationsByPage.clear();
+    this.#annotationIdToPdfId.clear();
+    this.#linkedComments.clear();
     this.textIndex?.destroy();
     this.textIndex = null;
   }

@@ -12,6 +12,8 @@ import { AnnotationSVGLayer } from "./annotation_svg_layer.js";
  * - Managing comment input
  * - Coordinating with CommentDisplay
  * - SVG-based annotation rendering
+ *
+ * Updated to work with async annotation operations (embedPDF engine integration)
  */
 export class AnnotationManager {
   /** @type {ViewerPane} */
@@ -37,6 +39,9 @@ export class AnnotationManager {
 
   /** @type {AbortController|null} */
   #abortController = null;
+
+  /** @type {boolean} */
+  #isCreatingAnnotation = false;
 
   /**
    * @param {ViewerPane} pane
@@ -200,51 +205,66 @@ export class AnnotationManager {
     return lastRect;
   }
 
-  #createAnnotation(options) {
-    if (!this.#pendingSelection) return;
+  /**
+   * Create a new annotation from the pending selection
+   * @param {Object} options
+   * @param {string} options.color - Color name
+   * @param {string} options.type - 'highlight' or 'underline'
+   * @returns {Promise<Object|null>} The created annotation
+   */
+  async #createAnnotation(options) {
+    if (!this.#pendingSelection) return null;
+    if (this.#isCreatingAnnotation) return null;
 
-    const { color, type } = options;
+    this.#isCreatingAnnotation = true;
 
-    const pageRanges = this.#pendingSelection.map((sel) => {
-      const pageView = this.#pane.pages[sel.pageNumber - 1];
-      const layerWidth =
-        parseFloat(pageView.textLayer.style.width) ||
-        pageView.wrapper.clientWidth;
-      const layerHeight =
-        parseFloat(pageView.textLayer.style.height) ||
-        pageView.wrapper.clientHeight;
+    try {
+      const { color, type } = options;
 
-      const normalizedRects = sel.rects.map((rect) => ({
-        leftRatio: rect.left / layerWidth,
-        topRatio: rect.top / layerHeight,
-        widthRatio: rect.width / layerWidth,
-        heightRatio: rect.height / layerHeight,
-      }));
+      const pageRanges = this.#pendingSelection.map((sel) => {
+        const pageView = this.#pane.pages[sel.pageNumber - 1];
+        const layerWidth =
+          parseFloat(pageView.textLayer.style.width) ||
+          pageView.wrapper.clientWidth;
+        const layerHeight =
+          parseFloat(pageView.textLayer.style.height) ||
+          pageView.wrapper.clientHeight;
 
-      return {
-        pageNumber: sel.pageNumber,
-        rects: normalizedRects,
-        text: sel.text,
-      };
-    });
+        const normalizedRects = sel.rects.map((rect) => ({
+          leftRatio: rect.left / layerWidth,
+          topRatio: rect.top / layerHeight,
+          widthRatio: rect.width / layerWidth,
+          heightRatio: rect.height / layerHeight,
+        }));
 
-    const annotation = this.#pane.document.addAnnotation({
-      type,
-      color,
-      pageRanges,
-    });
+        return {
+          pageNumber: sel.pageNumber,
+          rects: normalizedRects,
+          text: sel.text,
+        };
+      });
 
-    document.getSelection()?.removeAllRanges();
-    this.#pendingSelection = null;
+      // addAnnotation is now async
+      const annotation = await this.#pane.document.addAnnotation({
+        type,
+        color,
+        pageRanges,
+      });
 
-    this.#toolbar.hide();
+      document.getSelection()?.removeAllRanges();
+      this.#pendingSelection = null;
 
-    return annotation;
+      this.#toolbar.hide();
+
+      return annotation;
+    } finally {
+      this.#isCreatingAnnotation = false;
+    }
   }
 
-  #showCommentInputForNewAnnotation(rect) {
+  async #showCommentInputForNewAnnotation(rect) {
     // First create the annotation
-    const annotation = this.#createAnnotation({
+    const annotation = await this.#createAnnotation({
       color: AnnotationToolbar.lastColor,
       type: AnnotationToolbar.lastType,
     });
@@ -253,8 +273,10 @@ export class AnnotationManager {
 
     // Then show comment input
     this.#commentInput.show(rect, annotation.color, "", {
-      onSave: (text) => {
-        this.#pane.document.updateAnnotation(annotation.id, { comment: text });
+      onSave: async (text) => {
+        await this.#pane.document.updateAnnotation(annotation.id, {
+          comment: text,
+        });
       },
       onCancel: () => {
         // Annotation already created, just close
@@ -285,8 +307,8 @@ export class AnnotationManager {
     if (!rect) return;
 
     this.#toolbar.showForAnnotation(rect, annotation, {
-      onAnnotate: (options) => {
-        this.#pane.document.updateAnnotation(annotationId, options);
+      onAnnotate: async (options) => {
+        await this.#pane.document.updateAnnotation(annotationId, options);
         this.#toolbar.hide();
         this.#selectAnnotation(null);
       },
@@ -296,8 +318,8 @@ export class AnnotationManager {
           annotation.color,
           annotation.comment || "",
           {
-            onSave: (text) => {
-              this.#pane.document.updateAnnotation(annotationId, {
+            onSave: async (text) => {
+              await this.#pane.document.updateAnnotation(annotationId, {
                 comment: text,
               });
             },
@@ -306,8 +328,8 @@ export class AnnotationManager {
         );
         this.#toolbar.hide();
       },
-      onDelete: () => {
-        this.#pane.document.deleteAnnotation(annotationId);
+      onDelete: async () => {
+        await this.#pane.document.deleteAnnotation(annotationId);
         this.#selectAnnotation(null);
       },
     });
@@ -346,15 +368,17 @@ export class AnnotationManager {
     if (!rect) return;
 
     this.#commentInput.show(rect, annotation.color, annotation.comment || "", {
-      onSave: (text) => {
-        this.#pane.document.updateAnnotation(annotationId, { comment: text });
+      onSave: async (text) => {
+        await this.#pane.document.updateAnnotation(annotationId, {
+          comment: text,
+        });
       },
       onCancel: () => { },
     });
   }
 
-  #deleteAnnotationComment(annotationId) {
-    this.#pane.document.deleteAnnotationComment(annotationId);
+  async #deleteAnnotationComment(annotationId) {
+    await this.#pane.document.deleteAnnotationComment(annotationId);
   }
 
   onDocumentChange(event, data) {

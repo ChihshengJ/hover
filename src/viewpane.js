@@ -139,7 +139,7 @@ export class ViewerPane {
       {
         root: this.scroller,
         rootMargin: "300px 0px",
-        threshold: 0.1,
+        threshold: 0.5,
       },
     );
     this.observer = observer;
@@ -238,7 +238,6 @@ export class ViewerPane {
       const selection = document.getSelection();
       const range = document.createRange();
 
-      // Determine order: is anchor before or after focus in DOM?
       const position = anchorNode.compareDocumentPosition(focus.node);
 
       let startNode, startOffset, endNode, endOffset;
@@ -279,10 +278,8 @@ export class ViewerPane {
     };
 
     this.scroller.addEventListener("mousedown", (e) => {
-      // If clicked on a text span already, let native behavior work
       if (e.target.closest(".textLayer span")) return;
 
-      // If clicked on interactive elements, ignore
       if (e.target.closest("a, button, .pane-controls, .annotationLayer a"))
         return;
 
@@ -309,7 +306,6 @@ export class ViewerPane {
       anchorNode = anchor.node;
       anchorOffset = anchor.offset;
 
-      // Set initial collapsed selection
       const selection = document.getSelection();
       const range = document.createRange();
       range.setStart(anchorNode, anchorOffset);
@@ -317,7 +313,6 @@ export class ViewerPane {
       selection.removeAllRanges();
       selection.addRange(range);
 
-      // Add selecting classes
       anchor.span.closest(".textLayer")?.classList.add("selecting");
       anchor.span.closest(".page-wrapper")?.classList.add("text-selecting");
     });

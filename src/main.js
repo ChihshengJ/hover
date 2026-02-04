@@ -1,7 +1,3 @@
-/**
- * Main entry point - Refactored for @embedpdf/engines (PDFium)
- */
-
 import { PDFDocumentModel } from "./doc.js";
 import { SplitWindowManager } from "./window_manager.js";
 import { FileMenu } from "./controls/file_menu.js";

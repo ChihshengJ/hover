@@ -138,8 +138,8 @@ export class ViewerPane {
       },
       {
         root: this.scroller,
-        rootMargin: "300px 0px",
-        threshold: 0.5,
+        rootMargin: "400px 0px",
+        threshold: 0.1,
       },
     );
     this.observer = observer;

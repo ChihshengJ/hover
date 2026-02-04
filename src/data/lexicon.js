@@ -422,14 +422,14 @@ export const SECTION_NUMBER_STRIP =
  * Tested against line text after stripping section numbers
  */
 export const REFERENCE_SECTION_PATTERN =
-  /^(?:references?|bibliography|works\s+cited|citations?|literature\s+cited|cited\s+literature)$/i;
+  /^(?:references?|bibliography|works\s+cited|citations?|literature\s+cited|cited\s+literature|参考文献|參考文獻)$/i;
 
 /**
  * Patterns that indicate the end of references (next section)
  * These sections typically follow references in academic papers
  */
 export const POST_REFERENCE_SECTION_PATTERN =
-  /^(?:appendix|appendices|supplementary|supplemental|acknowledgements?|acknowledgments?|author\s+contributions?|conflicts?\s+of\s+interest|competing\s+interests?|data\s+availability|code\s+availability|contents|funding|author\s+information|additional\s+information|extended\s+data|supporting\s+information)/i;
+  /^(?:appendix|appendices|supplementary|supplemental|acknowledgements?|acknowledgments?|author\s+contributions?|conflicts?\s+of\s+interest|competing\s+interests?|data\s+availability|code\s+availability|contents|funding|author\s+information|additional\s+information|extended\s+data|supporting\s+information|content)/i;
 
 // ============================================
 // Reference Format Detection
@@ -500,7 +500,7 @@ export const AUTHOR_YEAR_CITATION_PATTERNS = {
 
   // (Smith, 2020) or (Smith & Jones, 2020)
   parenAuthorYear:
-    /\(([A-Z][a-zÀ-ÿ]+(?:\s+(?:et\s+al\.?|and|&)\s+[A-Z][a-zÀ-ÿ]+)?),?\s*(\d{4}[a-z]?)\)/g,
+    /\(([A-Z][a-zÀ-ÿ]+(?:\s+(?:et\s+al\.,??|and|&)\s+[A-Z][a-zÀ-ÿ]+)?),?\s*(\d{4}[a-z]?)\)/g,
 
   // (Smith, 2020; Jones, 2021) - multiple citations
   parenMultiple:

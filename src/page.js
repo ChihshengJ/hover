@@ -166,6 +166,7 @@ export class PageView {
 
       this.textLayer.innerHTML = "";
       this.#renderAnnotations(page, textScale, cssWidth, cssHeight);
+      this.#renderCitationAnchors(page, textScale);
       this.#renderTextLayer(page, textScale, cssWidth, cssHeight);
       this.textLayer.style.setProperty("--total-scale-factor", `${this.scale}`);
       this.#ensureEndOfContent();
@@ -358,6 +359,46 @@ export class PageView {
     this.annotationLayer.appendChild(fragment);
   }
 
+  #renderCitationAnchors(page, scale) {
+    if (this.doc.isHyperrefed) return;
+
+    const citations = this.doc.getCitationAnchorsForPage(this.pageNumber);
+    if (!citations || citations.length === 0) return;
+
+    const fragment = document.createDocumentFragment();
+
+    for (const cite of citations) {
+      if (!cite.rect || !cite.matchedRefs?.length) continue;
+
+      const ref = cite.matchedRefs[0];
+      const left = cite.rect.x * scale;
+      const top = cite.rect.y * scale;
+      const width = cite.rect.width * scale;
+      const height = cite.rect.height * scale;
+
+      const anchor = document.createElement("a");
+      anchor.href = "#";
+      anchor.dataset.citeRef = "";
+      anchor.dataset.destPageIndex = (ref.pageNumber - 1).toString();
+      anchor.dataset.destLeft = ref.startCoord.x.toString();
+      anchor.dataset.destTop = ref.startCoord.y.toString();
+      anchor.dataset.refText = ref.cachedText || "";
+      anchor.style.cssText = `
+        position: absolute;
+        left: ${left}px;
+        top: ${top}px;
+        width: ${width}px;
+        height: ${height}px;
+        pointer-events: auto;
+        background-color: transparent;
+      `;
+
+      fragment.appendChild(anchor);
+    }
+
+    this.annotationLayer.appendChild(fragment);
+  }
+
   cancel() {
     this.renderTask = null;
   }
@@ -400,6 +441,11 @@ export class PageView {
     this.annotationLayer.addEventListener(
       "mouseenter",
       (e) => {
+        const citeAnchor = e.target.closest("a[data-cite-ref]");
+        if (citeAnchor) {
+          this.#handleCiteAnchorEnter(citeAnchor, citationPopup);
+          return;
+        }
         const anchor = e.target.closest("a[data-dest]");
         if (anchor) this.#handleAnchorEnter(anchor, citationPopup);
       },
@@ -409,6 +455,11 @@ export class PageView {
     this.annotationLayer.addEventListener(
       "mouseleave",
       (e) => {
+        const citeAnchor = e.target.closest("a[data-cite-ref]");
+        if (citeAnchor) {
+          this.#handleCiteAnchorLeave(citeAnchor, citationPopup);
+          return;
+        }
         const anchor = e.target.closest("a[data-dest]");
         if (anchor) this.#handleAnchorLeave(anchor, citationPopup);
       },
@@ -416,6 +467,12 @@ export class PageView {
     );
 
     this.annotationLayer.addEventListener("click", (e) => {
+      const citeAnchor = e.target.closest("a[data-cite-ref]");
+      if (citeAnchor) {
+        e.preventDefault();
+        this.#handleCiteAnchorClick(citeAnchor);
+        return;
+      }
       const anchor = e.target.closest("a[data-dest]");
       if (anchor && anchor.dataset.dest !== undefined) {
         e.preventDefault();
@@ -424,6 +481,49 @@ export class PageView {
     });
 
     this._delegatedListenersAttached = true;
+  }
+
+  #handleCiteAnchorEnter(anchor, citationPopup) {
+    if (this.wrapper.classList.contains("text-selecting")) return;
+    if (this._showTimer) clearTimeout(this._showTimer);
+    citationPopup.onAnchorEnter();
+
+    const refText = anchor.dataset.refText;
+    if (!refText) return;
+
+    const pageIndex = parseInt(anchor.dataset.destPageIndex, 10);
+    const left = parseFloat(anchor.dataset.destLeft) || 0;
+    const top = parseFloat(anchor.dataset.destTop) || 0;
+
+    this._showTimer = setTimeout(async () => {
+      await citationPopup.show(
+        anchor,
+        () => Promise.resolve(refText),
+        left,
+        pageIndex,
+        top,
+      );
+    }, 200);
+  }
+
+  #handleCiteAnchorLeave(anchor, citationPopup) {
+    if (this.wrapper.classList.contains("text-selecting")) return;
+    if (this._showTimer) {
+      clearTimeout(this._showTimer);
+      this._showTimer = null;
+    }
+    if (citationPopup.currentAnchor === anchor) {
+      citationPopup.onAnchorLeave();
+    }
+  }
+
+  async #handleCiteAnchorClick(anchor) {
+    const pageIndex = parseInt(anchor.dataset.destPageIndex, 10);
+    const left = parseFloat(anchor.dataset.destLeft) || 0;
+    const top = parseFloat(anchor.dataset.destTop) || 0;
+    if (!isNaN(pageIndex)) {
+      await this.pane.scrollToPoint(pageIndex, left, top);
+    }
   }
 
   async #handleAnchorEnter(anchor, citationPopup) {
@@ -513,7 +613,9 @@ export class PageView {
     if (!page) return null;
 
     try {
-      const textSlices = this.doc.pdfDoc.pages.map((p) => this.doc.textIndex?.getRawSlices(p.index + 1)).flat();
+      const textSlices = this.doc.pdfDoc.pages
+        .map((p) => this.doc.textIndex?.getRawSlices(p.index + 1))
+        .flat();
       if (!textSlices || textSlices.length === 0) return null;
 
       let startIndex = -1;

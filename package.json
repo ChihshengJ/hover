@@ -16,7 +16,6 @@
   "dependencies": {
     "@embedpdf/engines": "^2.3.0",
     "@embedpdf/pdfium": "^2.3.0",
-    "@leeoniya/ufuzzy": "^1.0.19",
-    "pdfjs-dist": "^5.4.530"
+    "@leeoniya/ufuzzy": "^1.0.19"
   }
 }

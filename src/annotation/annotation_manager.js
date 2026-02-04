@@ -12,8 +12,6 @@ import { AnnotationSVGLayer } from "./annotation_svg_layer.js";
  * - Managing comment input
  * - Coordinating with CommentDisplay
  * - SVG-based annotation rendering
- *
- * Updated to work with async annotation operations (embedPDF engine integration)
  */
 export class AnnotationManager {
   /** @type {ViewerPane} */
@@ -56,8 +54,6 @@ export class AnnotationManager {
     this.#setupEventListeners();
     this.#setupPaneCallbacks();
 
-    // Load any pre-existing annotations from the document
-    // Use requestAnimationFrame to ensure DOM is ready
     requestAnimationFrame(() => {
       this.#refreshAllAnnotations();
     });
@@ -71,7 +67,6 @@ export class AnnotationManager {
     document.addEventListener(
       "mousedown",
       (e) => {
-        // Don't hide if clicking on toolbar or comment input
         if (
           e.target.closest(".annotation-toolbar-container") ||
           e.target.closest(".comment-input-container")
@@ -244,7 +239,6 @@ export class AnnotationManager {
         };
       });
 
-      // addAnnotation is now async
       const annotation = await this.#pane.document.addAnnotation({
         type,
         color,
@@ -263,7 +257,6 @@ export class AnnotationManager {
   }
 
   async #showCommentInputForNewAnnotation(rect) {
-    // First create the annotation
     const annotation = await this.#createAnnotation({
       color: AnnotationToolbar.lastColor,
       type: AnnotationToolbar.lastType,
@@ -271,16 +264,13 @@ export class AnnotationManager {
 
     if (!annotation) return;
 
-    // Then show comment input
     this.#commentInput.show(rect, annotation.color, "", {
       onSave: async (text) => {
         await this.#pane.document.updateAnnotation(annotation.id, {
           comment: text,
         });
       },
-      onCancel: () => {
-        // Annotation already created, just close
-      },
+      onCancel: () => { },
     });
   }
 

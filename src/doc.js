@@ -20,12 +20,10 @@ import {
   findBoundingAnchors,
   findReferenceByIndex,
   matchCitationToReference,
+  findInlineCitations,
 } from "./data/reference_builder.js";
 import { PdfiumDocumentFactory } from "./data/text_extractor.js";
-
-// ============================================================================
-// Color conversion utilities
-// ============================================================================
+import { createCitationDetector } from "./data/citation_detector.js";
 
 const COLOR_NAME_TO_HEX = {
   yellow: "#FFB300",
@@ -107,31 +105,12 @@ function hexToRgb(hex) {
 }
 
 /**
- * Convert RGB array (0-255 or 0-1) to hex
- * @param {number[]} rgb
- * @returns {string}
- */
-function rgbArrayToHex(rgb) {
-  if (!rgb || rgb.length < 3) return "#FFB300";
-
-  const r = rgb[0] > 1 ? rgb[0] : Math.round(rgb[0] * 255);
-  const g = rgb[1] > 1 ? rgb[1] : Math.round(rgb[1] * 255);
-  const b = rgb[2] > 1 ? rgb[2] : Math.round(rgb[2] * 255);
-
-  return `#${r.toString(16).padStart(2, "0")}${g.toString(16).padStart(2, "0")}${b.toString(16).padStart(2, "0")}`.toUpperCase();
-}
-
-/**
  * Generate UUID v4
  * @returns {string}
  */
 function uuidV4() {
   return crypto.randomUUID();
 }
-
-// ============================================================================
-// Annotation Subtype Constants (matching embedPDF)
-// ============================================================================
 
 const PdfAnnotationSubtype = {
   HIGHLIGHT: 9,
@@ -140,10 +119,6 @@ const PdfAnnotationSubtype = {
   STRIKEOUT: 12,
   TEXT: 1, // Sticky note / comment
 };
-
-// ============================================================================
-// PDFDocumentModel
-// ============================================================================
 
 export class PDFDocumentModel {
   constructor() {
@@ -160,10 +135,6 @@ export class PDFDocumentModel {
 
     this.highlights = new Map();
     this.subscribers = new Set();
-
-    // ========================================================================
-    // Annotation storage
-    // ========================================================================
 
     /**
      * All annotations (our UI representation)
@@ -194,12 +165,19 @@ export class PDFDocumentModel {
     /** @type {Map<number, Array>} - Native annotations cached per page */
     this.nativeAnnotationsByPage = new Map();
 
+    this.anchors = null;
+
+    /** @type {Map<number, Array>} - Citation anchors by page for fast lookup */
+    this.citationsByPage = null;
+
     /** @type {Array<{id: string, title: string, pageIndex: number, left: number, top: number, children: Array}>} */
     this.outline = [];
     /** @type {DocumentTextIndex|null} */
     this.textIndex = null;
     /** @type {import('./reference_builder.js').ReferenceIndex|null} */
     this.referenceIndex = null;
+    /** @type {import('./citation_detector.js').CitationDetector|null} */
+    this.citationDetector = null;
     /** @type {{title: string|null, abstractInfo: Object|null}} */
     this.detectedMetadata = { title: null, abstractInfo: null };
 
@@ -211,13 +189,8 @@ export class PDFDocumentModel {
     this.textExtractor = null;
   }
 
-  // Private fields
   #annotationIdToPdfId = new Map();
   #linkedComments = new Map();
-
-  // ============================================================================
-  // Static methods for local PDF handling
-  // ============================================================================
 
   static hasLocalPdf() {
     return sessionStorage.getItem("hover_pdf_data") !== null;
@@ -245,10 +218,6 @@ export class PDFDocumentModel {
     sessionStorage.removeItem("hover_pdf_data");
     sessionStorage.removeItem("hover_pdf_name");
   }
-
-  // ============================================================================
-  // Document loading
-  // ============================================================================
 
   async load(source, onProgress) {
     const reportProgress = (loaded, total, phase) => {
@@ -288,7 +257,7 @@ export class PDFDocumentModel {
         })
         .toPromise();
 
-      reportProgress(55, 100, "setting up text extraction");
+      reportProgress(55, 100, "setting up text extraction engine");
       this.#setupLowLevelAccess(pdfiumModule);
 
       reportProgress(58, 100, "processing");
@@ -297,10 +266,7 @@ export class PDFDocumentModel {
       reportProgress(60, 100, "loading bookmarks");
       await this.#loadBookmarksAndDestinations();
 
-      reportProgress(70, 100, "loading annotations");
-      await this.loadAnnotations();
-
-      reportProgress(80, 100, "indexing text");
+      reportProgress(70, 100, "indexing text");
       this.textIndex = new DocumentTextIndex(this);
       if (this.lowLevelHandle) {
         this.textIndex.setLowLevelHandle(this.lowLevelHandle);
@@ -309,11 +275,19 @@ export class PDFDocumentModel {
 
       this.detectedMetadata = detectDocumentMetadata(this.textIndex);
 
-      reportProgress(85, 100, "indexing references");
+      reportProgress(75, 100, "indexing references");
       this.referenceIndex = await buildReferenceIndex(this.textIndex);
 
-      reportProgress(90, 100, "building outline");
+      reportProgress(80, 100, "building outline");
       await this.#buildOutline();
+
+      reportProgress(90, 100, "loading annotations");
+      await this.loadAnnotations();
+
+      console.log("[Doc] Starting citation detection...");
+      this.anchors = await this.createAnchors();
+      console.log(`[Doc] Found ${this.anchors?.length || 0} inline citations`);
+      console.log(this.anchors);
 
       reportProgress(100, 100, "complete");
 
@@ -539,22 +513,6 @@ export class PDFDocumentModel {
   }
 
   // ============================================================================
-  // Legacy highlight support
-  // ============================================================================
-
-  addHighlight(pageNum, highlight) {
-    if (!this.highlights.has(pageNum)) {
-      this.highlights.set(pageNum, []);
-    }
-    this.highlights.get(pageNum).push({
-      id: crypto.randomUUID(),
-      ...highlight,
-      timestamp: Date.now(),
-    });
-    this.notify("highlight-added", { pageNum, highlight });
-  }
-
-  // ============================================================================
   // Annotation Loading (from PDF)
   // ============================================================================
 
@@ -589,7 +547,6 @@ export class PDFDocumentModel {
         const { width: pageWidth, height: pageHeight } = page.size;
 
         for (const annot of annotations) {
-          // Handle highlight and underline annotations
           if (
             annot.type === PdfAnnotationSubtype.HIGHLIGHT ||
             annot.type === PdfAnnotationSubtype.UNDERLINE
@@ -638,7 +595,6 @@ export class PDFDocumentModel {
   #convertPdfAnnotationToUI(annot, pageNum, pageWidth, pageHeight) {
     const rects = [];
 
-    // Handle segmentRects (embedPDF format)
     if (annot.segmentRects?.length > 0) {
       for (const segRect of annot.segmentRects) {
         const x = segRect.origin?.x ?? 0;
@@ -646,7 +602,6 @@ export class PDFDocumentModel {
         const width = segRect.size?.width ?? 0;
         const height = segRect.size?.height ?? 0;
 
-        // Convert from PDF coords (origin bottom-left) to ratio (origin top-left)
         rects.push({
           leftRatio: x / pageWidth,
           topRatio: 1 - (y + height) / pageHeight,
@@ -654,9 +609,7 @@ export class PDFDocumentModel {
           heightRatio: height / pageHeight,
         });
       }
-    }
-    // Handle rect (bounding box)
-    else if (annot.rect) {
+    } else if (annot.rect) {
       const x = annot.rect.origin?.x ?? 0;
       const y = annot.rect.origin?.y ?? 0;
       const width = annot.rect.size?.width ?? 0;
@@ -672,11 +625,9 @@ export class PDFDocumentModel {
 
     if (rects.length === 0) return null;
 
-    // Determine type
     const type =
       annot.type === PdfAnnotationSubtype.UNDERLINE ? "underline" : "highlight";
 
-    // Convert color
     const color = hexToColorName(annot.color);
 
     return {
@@ -774,6 +725,20 @@ export class PDFDocumentModel {
     }
   }
 
+  async createAnchors() {
+    const detector = createCitationDetector(this);
+    if (!detector) {
+      console.warn("[Doc] Citation detector not available, falling back");
+      return [];
+    }
+
+    return await detector.detect();
+  }
+
+  getCitationAnchorsForPage(pageNumber) {
+    return this.citationsByPage?.get(pageNumber) || [];
+  }
+
   // ============================================================================
   // Annotation CRUD Operations
   // ============================================================================
@@ -803,23 +768,16 @@ export class PDFDocumentModel {
       updatedAt: now,
     };
 
-    // Store in our local state
     this.annotations.set(id, annotation);
-
     for (const pageRange of annotation.pageRanges) {
       this.#addToPageIndex(id, pageRange.pageNumber);
     }
-
-    // Create in PDF engine
     await this.#createAnnotationInEngine(annotation);
 
     this.notify("annotation-added", { annotation });
     return annotation;
   }
 
-  /**
-   * Create annotation in the embedPDF engine
-   */
   async #createAnnotationInEngine(annotation) {
     if (!this.pdfDoc || !this.engine) return;
 
@@ -829,15 +787,12 @@ export class PDFDocumentModel {
 
       const { width: pageWidth, height: pageHeight } = page.size;
 
-      // Convert rects to embedPDF's segmentRects format
       const segmentRects = pageRange.rects.map((rect) =>
         this.#uiRectToEngineRect(rect, pageWidth, pageHeight),
       );
 
-      // Calculate bounding rect
       const boundingRect = this.#calculateBoundingRect(segmentRects);
 
-      // Determine annotation type
       const type =
         annotation.type === "underline"
           ? PdfAnnotationSubtype.UNDERLINE
@@ -936,8 +891,6 @@ export class PDFDocumentModel {
   }
 
   /**
-   * Update an existing annotation
-   *
    * @param {string} id - Annotation ID
    * @param {Object} updates - Properties to update
    * @returns {Object|null} The updated annotation
@@ -961,9 +914,6 @@ export class PDFDocumentModel {
     return annotation;
   }
 
-  /**
-   * Update annotation in the embedPDF engine
-   */
   async #updateAnnotationInEngine(annotation, oldComment) {
     if (!this.pdfDoc || !this.engine) return;
 
@@ -1014,9 +964,6 @@ export class PDFDocumentModel {
     await this.#updateCommentAnnotation(annotation, oldComment);
   }
 
-  /**
-   * Update or create/remove the linked comment annotation
-   */
   async #updateCommentAnnotation(annotation, oldComment) {
     const existingCommentId = this.#linkedComments.get(annotation.id);
 
@@ -1061,9 +1008,6 @@ export class PDFDocumentModel {
     }
   }
 
-  /**
-   * Remove the linked comment annotation
-   */
   async #removeCommentAnnotation(annotationId) {
     const commentId = this.#linkedComments.get(annotationId);
     if (!commentId) return;
@@ -1089,8 +1033,6 @@ export class PDFDocumentModel {
   }
 
   /**
-   * Delete an annotation
-   *
    * @param {string} id - Annotation ID
    * @returns {boolean} Success
    */
@@ -1113,9 +1055,6 @@ export class PDFDocumentModel {
     return true;
   }
 
-  /**
-   * Delete annotation from the embedPDF engine
-   */
   async #deleteAnnotationFromEngine(annotation) {
     if (!this.pdfDoc || !this.engine) return;
 
@@ -1140,9 +1079,6 @@ export class PDFDocumentModel {
     await this.#removeCommentAnnotation(annotation.id);
   }
 
-  /**
-   * Delete only the comment from an annotation (keep the highlight/underline)
-   */
   async deleteAnnotationComment(id) {
     const annotation = this.annotations.get(id);
     if (!annotation) return false;
@@ -1397,6 +1333,9 @@ export class PDFDocumentModel {
     this.annotationsByPage.clear();
     this.#annotationIdToPdfId.clear();
     this.#linkedComments.clear();
+    this.citationsByPage?.clear();
+    this.citationsByPage = null;
+    this.anchors = null;
     this.textIndex?.destroy();
     this.textIndex = null;
   }

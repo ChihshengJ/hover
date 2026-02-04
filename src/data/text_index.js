@@ -230,7 +230,6 @@ export class DocumentTextIndex {
   }
 
   #createLine(items) {
-    // Use median height to get line height as the font size for better accuracy
     const first = items[0];
     const text = items.map((it) => it.str).join("");
     const fontStyle = this.#extractFontStyle(items);

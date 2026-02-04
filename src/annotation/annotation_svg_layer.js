@@ -39,8 +39,6 @@ export class AnnotationSVGLayer {
       overflow: visible;
     `;
 
-    // Insert as first child of stage so it's behind page content for text selection
-    // but visually renders the highlights
     this.#pane.stage.insertBefore(this.#svg, this.#pane.stage.firstChild);
 
     this.#updateSVGSize();
@@ -65,7 +63,6 @@ export class AnnotationSVGLayer {
   }
 
   /**
-   * Render all annotations
    * @param {Array} annotations
    */
   render(annotations) {
@@ -81,7 +78,6 @@ export class AnnotationSVGLayer {
   }
 
   /**
-   * Render a single annotation
    * @param {Object} annotation
    */
   #renderAnnotation(annotation) {
@@ -93,7 +89,6 @@ export class AnnotationSVGLayer {
     group.dataset.color = annotation.color;
     group.dataset.type = annotation.type;
 
-    // Track pixel rects per page for separate outlines
     const rectsPerPage = new Map();
 
     for (const pageRange of annotation.pageRanges) {
@@ -109,7 +104,6 @@ export class AnnotationSVGLayer {
         parseFloat(pageView.textLayer.style.height) ||
         pageView.wrapper.clientHeight;
 
-      // Merge rects to eliminate gaps
       const mergedRects = this.#mergeLineRects(pageRange.rects);
 
       const pagePixelRects = [];
@@ -134,10 +128,8 @@ export class AnnotationSVGLayer {
       }
     }
 
-    // Create one outline per page (all show/hide together since they're in the same group)
     for (const [pageNumber, pageRects] of rectsPerPage) {
       const outline = this.#createOutline(annotation, pageRects);
-      // Insert outlines first so marks render on top
       group.insertBefore(outline, group.firstChild);
     }
 
@@ -216,9 +208,6 @@ export class AnnotationSVGLayer {
     return element;
   }
 
-  /**
-   * Merge rects on the same line to eliminate gaps between text spans
-   */
   #mergeLineRects(rects) {
     if (rects.length === 0) return [];
     if (rects.length === 1) return rects;
@@ -233,7 +222,6 @@ export class AnnotationSVGLayer {
       return a.leftRatio - b.leftRatio;
     });
 
-    // Group into lines
     const lines = [];
     let currentLine = [sorted[0]];
     let lineTop = sorted[0].topRatio;
@@ -250,7 +238,6 @@ export class AnnotationSVGLayer {
     }
     lines.push(currentLine);
 
-    // Merge rects within each line
     const merged = [];
     for (const line of lines) {
       merged.push(...this.#mergeRectsOnLine(line, gapThreshold));
@@ -353,9 +340,6 @@ export class AnnotationSVGLayer {
     group.classList.toggle(state, value);
   }
 
-  /**
-   * Select an annotation (show selection state)
-   */
   selectAnnotation(annotationId) {
     if (this.#selectedId) {
       this.#setGroupState(this.#selectedId, "selected", false);
@@ -368,9 +352,6 @@ export class AnnotationSVGLayer {
     }
   }
 
-  /**
-   * Get bounding rect for an annotation (for toolbar positioning)
-   */
   getAnnotationRect(annotationId) {
     const group = this.#annotationGroups.get(annotationId);
     if (!group) return null;
@@ -394,17 +375,11 @@ export class AnnotationSVGLayer {
     return new DOMRect(minX, minY, maxX - minX, maxY - minY);
   }
 
-  /**
-   * Add or update a single annotation
-   */
   addAnnotation(annotation) {
     this.removeAnnotation(annotation.id);
     this.#renderAnnotation(annotation);
   }
 
-  /**
-   * Update an existing annotation
-   */
   updateAnnotation(annotation) {
     this.removeAnnotation(annotation.id);
     this.#renderAnnotation(annotation);
@@ -415,9 +390,6 @@ export class AnnotationSVGLayer {
     }
   }
 
-  /**
-   * Remove an annotation
-   */
   removeAnnotation(annotationId) {
     const group = this.#annotationGroups.get(annotationId);
     if (group) {
@@ -433,9 +405,6 @@ export class AnnotationSVGLayer {
     }
   }
 
-  /**
-   * Refresh all annotations (e.g., after zoom)
-   */
   refresh() {
     this.#updateSVGSize();
     const annotations = this.#pane.document.getAllAnnotations();
@@ -447,9 +416,6 @@ export class AnnotationSVGLayer {
     }
   }
 
-  /**
-   * Clear all annotations
-   */
   clear() {
     this.#svg.innerHTML = "";
     this.#annotationGroups.clear();

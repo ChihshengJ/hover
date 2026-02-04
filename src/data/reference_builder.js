@@ -1,7 +1,4 @@
 /**
- * ReferenceBuilder - Reference extraction using structural signals
- * Uses relative X/Y changes and line width for robust boundary detection
- *
  * @typedef {Object} ReferenceAnchor
  * @property {string} id
  * @property {number|null} index
@@ -26,6 +23,7 @@ import {
   NAME_SUFFIXES,
   LAST_NAME_PATTERNS,
   SECTION_NUMBER_STRIP,
+  POST_REFERENCE_SECTION_PATTERN,
 } from "./lexicon.js";
 
 const EMPTY_RESULT = {
@@ -54,12 +52,7 @@ export async function buildReferenceIndex(textIndex) {
 
     const anchors = extractReferenceAnchors(section.lines, format);
     console.log(`[Reference] Extracted ${anchors.length} anchors`);
-
-    for (const anchor of anchors) {
-      const parsed = parseAuthorYear(anchor.cachedText);
-      anchor.authors = parsed.authors;
-      anchor.year = parsed.year;
-    }
+    console.log(anchors)
 
     return {
       anchors,
@@ -81,15 +74,11 @@ export async function buildReferenceIndex(textIndex) {
   }
 }
 
-// ============================================
-// Section Location (kept from original)
-// ============================================
-
 function findReferenceSection(textIndex) {
   const docInfo = getDocInfo(textIndex);
   if (!docInfo?.pageData) return null;
 
-  const { pageData, fontSize: bodyFontSize } = docInfo;
+  const { pageData, lineHeight: bodyFontSize } = docInfo;
   let referenceStart = null;
 
   for (const [pageNum, data] of pageData) {
@@ -106,14 +95,13 @@ function findReferenceSection(textIndex) {
         .toLowerCase();
 
       if (REFERENCE_SECTION_PATTERN.test(strippedText)) {
-        const isLarger = line.fontSize > bodyFontSize * 1.05;
         const isBold =
           line.fontStyle === FontStyle.BOLD ||
           line.fontStyle === FontStyle.BOLD_ITALIC;
         const isAllCapital = line.text === line.text.toUpperCase();
         const isDirectMatch = line.text === "References";
 
-        if (isLarger || isBold || isAllCapital || isDirectMatch) {
+        if (isBold || isAllCapital || isDirectMatch) {
           referenceStart = {
             pageNumber: pageNum,
             lineIndex: i,
@@ -153,7 +141,7 @@ function findReferenceSectionEnd(pageData, start, bodyFontSize) {
   for (const pageNum of pageNumbers) {
     if (pageNum < start.pageNumber) continue;
 
-    const { lines } = pageData.get(pageNum);
+    const { lines, pageWidth, pageHeight } = pageData.get(pageNum);
     const startIdx = pageNum === start.pageNumber ? start.lineIndex + 1 : 0;
 
     for (let i = startIdx; i < lines.length; i++) {
@@ -164,14 +152,16 @@ function findReferenceSectionEnd(pageData, start, bodyFontSize) {
         .trim()
         .toLowerCase();
 
-      const isLarger = line.fontSize > bodyFontSize * 1.3;
-      const isBold =
-        line.fontStyle === FontStyle.BOLD ||
-        line.fontStyle === FontStyle.BOLD_ITALIC;
       const isAllCapital =
-        line.text === line.text.toUpperCase() && /\d+/.test(line) && line.text.length > 3;
+        line.text === line.text.toUpperCase() &&
+        /\d+/.test(line) &&
+        line.text.length > 3;
+      const isWeirdPosition =
+        line.y >= pageHeight * 0.95 || line.y <= pageHeight * 0.05;
+      const isDirectIndicator =
+        POST_REFERENCE_SECTION_PATTERN.test(strippedText);
 
-      if (isLarger || isBold || isAllCapital) {
+      if (!isWeirdPosition && (isDirectIndicator || isAllCapital)) {
         return {
           pageNumber: pageNum,
           lineIndex: i - 1,
@@ -224,10 +214,6 @@ function collectSectionLines(pageData, start, end) {
   return lines;
 }
 
-// ============================================
-// Format Detection (kept from original)
-// ============================================
-
 function detectReferenceFormat(lines) {
   if (lines.length === 0) return "unknown";
 
@@ -276,7 +262,7 @@ function detectHangingIndent(lines) {
 }
 
 // ============================================
-// Structural Reference Extraction (new)
+// Structural Reference Extraction
 // ============================================
 
 function extractReferenceAnchors(lines, format) {
@@ -410,6 +396,7 @@ function detectBoundary(line, prevLine, currentRef, prevYDirection, metrics) {
     if (isAfterShortLine && isAtFirstX) {
       isNewReference = true;
     } else if (isIndented) {
+      currentRef.firstLineX = line.x - lineHeight;
       isNewReference = false;
     } else {
       isNewReference = looksLikeReferenceStart(line.text);
@@ -428,7 +415,7 @@ function detectBoundary(line, prevLine, currentRef, prevYDirection, metrics) {
 function looksLikeReferenceStart(text) {
   const trimmed = text.trim();
   if (/^\s*[\[\(]?\d+[\]\)\.]/.test(trimmed)) return true;
-  if (/^[A-Z][a-zÀ-ÿ]+[,\.]/.test(trimmed)) return true;
+  if (/^[A-Z][a-zÀ-ÿ]]+[,\.]/.test(trimmed)) return true;
 
   const continuationWords =
     /^(and|the|in|of|on|at|to|for|with|from|by|as|or|an|a)\s/i;
@@ -496,6 +483,9 @@ function createAnchor(lines, index, format) {
   const lastItem = lastLine.items?.[lastLine.items.length - 1];
   const endX = lastItem ? lastItem.x + lastItem.width : lastLine.x + 200;
 
+  // Parse author/year information
+  const parsed = parseAuthorYear(text);
+
   return {
     id: `ref-${index}`,
     index,
@@ -504,8 +494,10 @@ function createAnchor(lines, index, format) {
     endCoord: { x: endX, y: lastLine.y - lastLineHeight },
     formatHint: format,
     cachedText: text,
-    authors: null,
-    year: null,
+    firstAuthorLastName: parsed.firstAuthorLastName,
+    allAuthorLastNames: parsed.allAuthorLastNames,
+    year: parsed.year,
+    hasMultipleAuthors: parsed.hasMultipleAuthors,
     pageRanges: buildPageRanges(lines),
   };
 }
@@ -550,32 +542,141 @@ function buildPageRanges(lines) {
 // Author/Year Parsing
 // ============================================
 
+
+/**
+ * Parse authors and year from reference text
+ * Returns structured data for citation matching
+ * 
+ * @param {string} text - Reference text
+ * @returns {{
+ *   firstAuthorLastName: string|null,
+ *   allAuthorLastNames: string[],
+ *   year: string|null,
+ *   hasMultipleAuthors: boolean
+ * }}
+ */
 function parseAuthorYear(text) {
-  if (!text) return { authors: null, year: null };
+  if (!text) {
+    return {
+      firstAuthorLastName: null,
+      allAuthorLastNames: [],
+      year: null,
+      hasMultipleAuthors: false,
+    };
+  }
 
-  let authors = null;
-  let year = null;
-
+  // Extract year
   const yearMatch = text.match(YEAR_PATTERN);
-  if (yearMatch) year = yearMatch[0];
+  const year = yearMatch ? yearMatch[0] : null;
 
-  const lastFirstMatch = text.match(LAST_NAME_PATTERNS.lastFirst);
-  if (lastFirstMatch) {
-    authors = lastFirstMatch[1];
-  } else {
-    const simpleMatch = text.match(
-      /^([A-Z][a-zÀ-ÿ]+(?:[-'][A-Z][a-zÀ-ÿ]+)?(?:\s*,?\s*(?:and|&)\s*[A-Z][a-zÀ-ÿ]+)*)/,
-    );
-    if (simpleMatch) {
-      authors = simpleMatch[1].replace(NAME_SUFFIXES, "").trim();
+  // Get the author section (everything before title/year)
+  // Heuristic: authors end at first quote, first year in parens, or "arXiv"
+  const authorSectionMatch = text.match(
+    /^(?:\[\d+\]\s*|\(\d+\)\s*|\d+\.\s*)?(.+?)(?:\.\s*(?:In\s|["""]|\(\d{4})|arXiv|http)/i
+  );
+  
+  const authorSection = authorSectionMatch 
+    ? authorSectionMatch[1] 
+    : text.slice(0, 300);
+
+  const lastNames = extractAllLastNames(authorSection);
+
+  return {
+    firstAuthorLastName: lastNames[0] || null,
+    allAuthorLastNames: lastNames,
+    year,
+    hasMultipleAuthors: lastNames.length > 1 || /\bet\s+al\b/i.test(text),
+  };
+}
+
+/**
+ * @param {string} authorSection
+ * @returns {string[]}
+ */
+function extractAllLastNames(authorSection) {
+  const lastNames = [];
+  
+  const normalized = authorSection
+    .replace(/\s+/g, ' ')
+    .replace(/,?\s*\band\b\s*/gi, ', ')
+    .replace(/\s*&\s*/g, ', ')
+    .trim();
+
+  // Strategy 1: "LastName, Initials" format (most common in CS/academic)
+  // Match: Azerbayev, Z., Schoelkopf, H., ...
+  const lastFirstPattern = /(\p{Lu}[\p{L}\p{M}]+(?:[-'][\p{L}\p{M}]+)?)\s*,\s*(?:\p{Lu}[\p{L}\p{M}]*\.?\s*,?\s*)+(?:,|&|$)/gu;
+  let match;
+  
+  while ((match = lastFirstPattern.exec(normalized)) !== null) {
+    const name = match[1].trim();
+    if (name.length > 1 && !isCommonWord(name)) {
+      lastNames.push(name);
     }
   }
 
-  return { authors, year };
+  // If Strategy 1 found names, return them
+  if (lastNames.length > 0) {
+    return [...new Set(lastNames)]; // Dedupe
+  }
+
+  // Strategy 2: "Initials LastName" format
+  // Match: Z. Azerbayev, H. Schoelkopf, ...
+  const firstLastPattern = /(?:[\p{Lu}]\.?\s*)+(\p{Lu}[\p{L}\p{M}]+(?:[-'][\p{L}\p{M}]+)?)\s*(?:,|$)/gu;
+  
+  while ((match = firstLastPattern.exec(normalized)) !== null) {
+    const name = match[1].trim();
+    if (name.length > 1 && !isCommonWord(name)) {
+      lastNames.push(name);
+    }
+  }
+
+  if (lastNames.length > 0) {
+    return [...new Set(lastNames)];
+  }
+
+  // Strategy 3: Fallback - find all capitalized words that look like names
+  const fallbackPattern = /\b(\p{Lu}[\p{L}\p{M}]{2,}(?:[-'][\p{L}\p{M}]+)?)\b/gu;
+  
+  while ((match = fallbackPattern.exec(normalized)) !== null) {
+    const name = match[1].trim();
+    if (!isCommonWord(name) && name.length > 2) {
+      lastNames.push(name);
+    }
+    // Limit fallback to avoid grabbing title words
+    if (lastNames.length >= 8) break;
+  }
+
+  return [...new Set(lastNames)];
 }
 
+/**
+ * @param {string} word
+ * @returns {boolean}
+ */
+function isCommonWord(word) {
+  const commonWords = new Set([
+    // Articles & conjunctions
+    'The', 'And', 'For', 'With', 'From', 'This', 'That', 'Their', 'Which',
+    // Publishing
+    'Journal', 'Conference', 'Proceedings', 'International', 'Annual',
+    'Review', 'Press', 'University', 'Chapter', 'Volume', 'Issue', 'Pages',
+    'Transactions', 'Letters', 'Symposium', 'Workshop', 'Technical', 'Report',
+    // Publishers
+    'Springer', 'Wiley', 'Elsevier', 'Cambridge', 'Oxford', 'MIT', 'IEEE', 'ACM',
+    'Nature', 'Science', 'PNAS', 'JMLR', 'ICML', 'NeurIPS', 'ICLR', 'AAAI',
+    // Common title words
+    'Available', 'Accessed', 'Retrieved', 'Online', 'Published', 'Submitted',
+    'Learning', 'Neural', 'Network', 'Deep', 'Model', 'Method', 'Approach',
+    'Analysis', 'Study', 'Research', 'Theory', 'Algorithm', 'System', 'Data',
+    // Prepositions often capitalized
+    'New', 'York', 'San', 'Francisco', 'Los', 'Angeles',
+  ]);
+  return commonWords.has(word);
+}
+
+
 // ============================================
-// Anchor Lookup (simplified)
+// Anchor Lookup
 // ============================================
 
 export function findBoundingAnchors(anchors, pageNumber, x, y) {
@@ -596,7 +697,9 @@ export function findBoundingAnchors(anchors, pageNumber, x, y) {
   if (!closest) {
     for (let i = 0; i < anchors.length; i++) {
       const anchor = anchors[i];
-      const hasPageRange = anchor.pageRanges.some(pr => pr.pageNumber === pageNumber);
+      const hasPageRange = anchor.pageRanges.some(
+        (pr) => pr.pageNumber === pageNumber,
+      );
       if (!hasPageRange) continue;
       const dist = Math.abs(anchor.startCoord.y - y);
       if (dist < closestDist) {
@@ -661,44 +764,93 @@ export function matchCitationToReference(
 }
 
 // ============================================
-// Inline Citations (kept from original)
+// Inline Citations and References
 // ============================================
 
-export function findInlineCitations(textIndex, referenceIndex) {
+export async function findInlineCitations(pages, textIndex, referenceIndex) {
   if (!textIndex) return [];
 
-  const citations = [];
-  const docInfo = getDocInfo(textIndex);
-  if (!docInfo?.pageData) return citations;
-
-  const { pageData } = docInfo;
+  const anchors = referenceIndex?.anchors || [];
   const refStartPage = referenceIndex?.sectionStart?.pageNumber || Infinity;
+  const citations = [];
 
-  for (const [pageNum, data] of pageData) {
+  for (const p of pages) {
+    const pageNum = p.index + 1;
     if (pageNum >= refStartPage) continue;
+    const lines = textIndex.getPageLines(pageNum);
+    if (!lines) continue;
 
-    for (const line of data.lines) {
-      citations.push(...findNumericCitationsInLine(line, pageNum));
-      citations.push(...findAuthorYearCitationsInLine(line, pageNum));
+    for (const line of lines) {
+      const numericCites = findNumericCitationsInLine(line, pageNum);
+      const authorYearCites = findAuthorYearCitationsInLine(line, pageNum);
+
+      for (const cite of numericCites) {
+        const matched = matchNumericCitation(cite, anchors);
+        if (matched.length > 0) {
+          citations.push({
+            pageNumber: pageNum,
+            rect: cite.rect,
+            text: cite.text,
+            matchedRefs: matched,
+          });
+        }
+      }
+
+      for (const cite of authorYearCites) {
+        const matched = matchAuthorYearCitation(cite, anchors);
+        if (matched.length > 0) {
+          citations.push({
+            pageNumber: pageNum,
+            rect: cite.rect,
+            text: cite.text,
+            matchedRefs: matched,
+          });
+        }
+      }
     }
   }
 
   return citations;
 }
 
+function matchNumericCitation(cite, anchors) {
+  if (!cite.refIndices || cite.refIndices.length === 0) return [];
+  const matched = [];
+  for (const idx of cite.refIndices) {
+    const ref = anchors.find((a) => a.index === idx);
+    if (ref) matched.push(ref);
+  }
+  return matched;
+}
+
+function matchAuthorYearCitation(cite, anchors) {
+  if (!cite.refKeys || cite.refKeys.length === 0) return [];
+  const matched = [];
+  for (const key of cite.refKeys) {
+    const ref = matchCitationToReference(key.author, key.year, anchors);
+    if (ref) matched.push(ref);
+  }
+  return matched;
+}
+
 function findNumericCitationsInLine(line, pageNumber) {
   const citations = [];
-  const bracketPattern = /\[(\d+(?:\s*[-–—,;]\s*\d+)*)\]/g;
+  const seen = new Set();
+
+  const bracketPattern =
+    /\[(\d+(?:\s*[-\u2013\u2014]\s*\d+)?(?:\s*[,;]\s*\d+(?:\s*[-\u2013\u2014]\s*\d+)?)*)\]/g;
   let match;
 
   while ((match = bracketPattern.exec(line.text)) !== null) {
+    const key = `${match.index}-${match[0].length}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
     citations.push({
       type: "numeric",
       text: match[0],
       pageNumber,
       rect: estimateRectFromMatch(line, match.index, match[0].length),
       refIndices: parseNumericCitation(match[1]),
-      refKeys: null,
     });
   }
 
@@ -707,37 +859,74 @@ function findNumericCitationsInLine(line, pageNumber) {
 
 function findAuthorYearCitationsInLine(line, pageNumber) {
   const citations = [];
-
-  const authorThenYear =
-    /([A-Z][a-zÀ-ÿ]+(?:\s+et\s+al\.?)?)\s*\((\d{4}[a-z]?)\)/g;
+  const seen = new Set();
   let match;
 
+  const authorThenYear =
+    /([\p{Lu}][\p{L}\-']+(?:\s+et\s+al\.?)?)\s*\((\d{4}[a-z]?)\)/gu;
   while ((match = authorThenYear.exec(line.text)) !== null) {
+    const key = `${match.index}-${match[0].length}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
     citations.push({
       type: "author-year",
       text: match[0],
       pageNumber,
       rect: estimateRectFromMatch(line, match.index, match[0].length),
-      refIndices: null,
-      refKeys: [{ author: match[1], year: match[2] }],
+      refKeys: [{ author: match[1].trim(), year: match[2] }],
     });
   }
 
   const parenStyle =
-    /\(([A-Z][a-zÀ-ÿ]+(?:\s+(?:et\s+al\.?|and|&)\s+[A-Z][a-zÀ-ÿ]+)?),?\s*(\d{4}[a-z]?)\)/g;
-
+    /\(([\p{Lu}][\p{L}\-']+(?:\s+(?:et\s+al\.?,?|and|&)\s+[\p{Lu}][\p{L}\-']+)*),?\s*(\d{4}[a-z]?)\)/gu;
   while ((match = parenStyle.exec(line.text)) !== null) {
+    const key = `${match.index}-${match[0].length}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
     citations.push({
       type: "author-year",
       text: match[0],
       pageNumber,
       rect: estimateRectFromMatch(line, match.index, match[0].length),
-      refIndices: null,
-      refKeys: [{ author: match[1], year: match[2] }],
+      refKeys: [{ author: match[1].trim(), year: match[2] }],
     });
   }
 
+  // Multiple citations: (Smith, 2020; Jones, 2021)
+  const multiPattern = /\(([^)]+\d{4}[a-z]?(?:\s*;\s*[^)]+\d{4}[a-z]?)+)\)/g;
+  while ((match = multiPattern.exec(line.text)) !== null) {
+    const key = `${match.index}-${match[0].length}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    const keys = parseMultipleCitations(match[1]);
+    if (keys.length > 0) {
+      citations.push({
+        type: "author-year-multi",
+        text: match[0],
+        pageNumber,
+        rect: estimateRectFromMatch(line, match.index, match[0].length),
+        refKeys: keys,
+      });
+    }
+  }
+
   return citations;
+}
+
+function parseMultipleCitations(inner) {
+  const keys = [];
+  const parts = inner.split(/\s*;\s*/);
+  for (const part of parts) {
+    const yearMatch = part.match(/(\d{4}[a-z]?)\s*$/);
+    if (yearMatch) {
+      const authorPart = part
+        .slice(0, yearMatch.index)
+        .replace(/,\s*$/, "")
+        .trim();
+      if (authorPart) keys.push({ author: authorPart, year: yearMatch[1] });
+    }
+  }
+  return keys;
 }
 
 function parseNumericCitation(str) {
@@ -746,7 +935,8 @@ function parseNumericCitation(str) {
 
   for (const part of parts) {
     const trimmed = part.trim();
-    const rangeMatch = trimmed.match(/(\d+)\s*[-–—]\s*(\d+)/);
+    // Match ranges: 1-5, 1–5 (en-dash), 1—5 (em-dash)
+    const rangeMatch = trimmed.match(/(\d+)\s*[-\u2013\u2014]\s*(\d+)/);
 
     if (rangeMatch) {
       const start = parseInt(rangeMatch[1], 10);
@@ -804,10 +994,6 @@ function estimateRectFromMatch(line, matchStart, matchLength) {
     height: line.fontSize || 12,
   };
 }
-
-// ============================================
-// Cross References (kept from original)
-// ============================================
 
 export function findCrossReferences(textIndex) {
   if (!textIndex) return [];

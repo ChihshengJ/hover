@@ -20,7 +20,6 @@ import {
   findBoundingAnchors,
   findReferenceByIndex,
   matchCitationToReference,
-  findInlineCitations,
 } from "./data/reference_builder.js";
 import { PdfiumDocumentFactory } from "./data/text_extractor.js";
 import { createCitationDetector } from "./data/citation_detector.js";

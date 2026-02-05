@@ -315,12 +315,78 @@ body {
 }
 
 .annotationLayer a:hover {
-  outline: 1px dashed rgba(0, 0, 255, 0.3);
+  outline: 2px dashed rgba(0, 0, 255, 0.3);
 }
 
 .page-wrapper.text-selecting .annotationLayer {
   pointer-events: none !important;
   z-index: -1;
+}
+
+.citation-overlay {
+  position: absolute;
+  z-index: 2;
+  pointer-events: none;
+}
+
+.citation-rect {
+  display: block;
+  background-color: transparent;
+  border-radius: 2px;
+  border-bottom: 2px dotted rgba(0, 0, 255, 0.5);
+  pointer-events: auto;
+  cursor: pointer;
+}
+
+.citation-rect:hover {
+  background-color: rgba(59, 130, 246, 0.15);
+}
+
+/* High confidence citations */
+.citation-overlay[data-confidence^="0.9"] .citation-rect:hover,
+.citation-overlay[data-confidence="1.00"] .citation-rect:hover {
+  background-color: rgba(0, 0, 255, 0.5);
+}
+
+/* Medium confidence citations */
+.citation-overlay[data-confidence^="0.7"] .citation-rect:hover,
+.citation-overlay[data-confidence^="0.8"] .citation-rect:hover {
+  background-color: rgba(0, 0, 255, 0.3);
+}
+
+/* Lower confidence citations */
+.citation-overlay[data-confidence^="0.3"] .citation-rect:hover,
+.citation-overlay[data-confidence^="0.4"] .citation-rect:hover,
+.citation-overlay[data-confidence^="0.5"] .citation-rect:hover,
+.citation-overlay[data-confidence^="0.6"] .citation-rect:hover {
+  background-color: rgba(0, 0, 255, 0.1);
+}
+
+/* Author-year citations - different color */
+.citation-overlay[data-citation-type="author-year"] .citation-rect:hover {
+  background-color: rgba(0, 255, 0, 0.1);
+}
+
+.citation-overlay[data-citation-type="author-year"][data-confidence^="0.9"]
+  .citation-rect:hover,
+.citation-overlay[data-citation-type="author-year"][data-confidence="1.00"]
+  .citation-rect:hover {
+  background-color: rgba(0, 255, 0, 0.5);
+}
+
+/* Native annotation links */
+.native-annotation-link {
+  display: block;
+  text-decoration: none;
+  border-bottom: 2px solid blue;
+}
+
+.native-annotation-link:hover {
+  background-color: rgba(255, 0, 0, 0.5);
+}
+
+.native-annotation-link[data-link-type="external"]:hover {
+  background-color: rgba(255, 0, 0, 0.8);
 }
 
 /* ===========================================

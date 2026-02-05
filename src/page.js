@@ -2,6 +2,7 @@
  * PageView - Refactored for @embedpdf/engines (PDFium)
  *
  * Handles rendering of individual PDF pages using PDFium's native rendering.
+ * Supports both native annotation links (hyperref) and heuristically extracted citations.
  */
 
 import { CitationPopup } from "./controls/citation_popup.js";
@@ -44,6 +45,9 @@ export class PageView {
 
     this._showTimer = null;
     this._delegatedListenersAttached = false;
+
+    // Track native annotation rects for deduplication
+    this._nativeAnnotationRects = [];
   }
 
   /**
@@ -165,13 +169,28 @@ export class PageView {
       }
 
       this.textLayer.innerHTML = "";
+      this.annotationLayer.innerHTML = "";
+
+      // Reset native annotation tracking
+      this._nativeAnnotationRects = [];
+
+      // Render native annotations first (priority)
       this.#renderAnnotations(page, textScale, cssWidth, cssHeight);
-      this.#renderCitationAnchors(page, textScale);
+
+      // Render extracted citations (skip duplicates with native annotations)
+      this.#renderCitationOverlays(page, textScale, cssWidth, cssHeight);
+
+      // Render text layer
       this.#renderTextLayer(page, textScale, cssWidth, cssHeight);
+
       this.textLayer.style.setProperty("--total-scale-factor", `${this.scale}`);
       this.#ensureEndOfContent();
       this.textLayer.style.width = `${cssWidth}px`;
       this.textLayer.style.height = `${cssHeight}px`;
+
+      // Setup event listeners
+      this.#setupAnnotationLayerEvents();
+
       this.canvas.dataset.rendered = "true";
     } catch (err) {
       if (err?.name !== "RenderingCancelledException") {
@@ -292,16 +311,15 @@ export class PageView {
   }
 
   /**
-   * Render annotation layer (links)
+   * Render annotation layer (native links)
+   * These take priority over extracted citations
+   *
    * @param {import('@embedpdf/engines').PdfPageObject} page
    * @param {number} scale
    * @param {number} cssWidth
    * @param {number} cssHeight
    */
   #renderAnnotations(page, scale, cssWidth, cssHeight) {
-    this.annotationLayer.innerHTML = "";
-    this.#setupAnnotationLayerEvents();
-
     if (!this.annotations || this.annotations.length === 0) return;
 
     const pageHeight = page.size.height;
@@ -321,7 +339,20 @@ export class PageView {
       const width = rect.size.width * scale;
       const height = rect.size.height * scale;
 
+      // Store native annotation rect for deduplication (in PDF coordinates)
+      this._nativeAnnotationRects.push({
+        x: rect.origin.x,
+        y: rect.origin.y,
+        width: rect.size.width,
+        height: rect.size.height,
+        dest: {
+          x: annot.target.destination?.view[0] || 0,
+          y: annot.target.destination?.view[1] || 0,
+        },
+      });
+
       const anchor = document.createElement("a");
+      anchor.className = "native-annotation-link";
       anchor.style.cssText = `
         position: absolute;
         left: ${left}px;
@@ -336,10 +367,12 @@ export class PageView {
         anchor.href = annot.target.action.uri;
         anchor.target = "_blank";
         anchor.rel = "noopener noreferrer";
+        anchor.dataset.linkType = "external";
       } else if (annot.target.type === "destination") {
         const dest = annot.target.destination;
         anchor.href = typeof dest === "string" ? dest : "#";
         anchor.dataset.dest = "";
+        anchor.dataset.linkType = "internal";
 
         if (dest && typeof dest === "object") {
           anchor.dataset.destPageIndex = dest.pageIndex?.toString() || "";
@@ -359,44 +392,99 @@ export class PageView {
     this.annotationLayer.appendChild(fragment);
   }
 
-  #renderCitationAnchors(page, scale) {
-    if (this.doc.isHyperrefed) return;
+  /**
+   * Render citation overlays from extracted citations
+   * Skips citations that overlap with native annotation anchors
+   *
+   * @param {import('@embedpdf/engines').PdfPageObject} page
+   * @param {number} scale
+   * @param {number} cssWidth
+   * @param {number} cssHeight
+   */
+  #renderCitationOverlays(page, scale, cssWidth, cssHeight) {
+    const citations = this.doc.anchors?.filter(
+      (c) => c.pageNumber === this.pageNumber,
+    );
 
-    const citations = this.doc.getCitationAnchorsForPage(this.pageNumber);
     if (!citations || citations.length === 0) return;
 
     const fragment = document.createDocumentFragment();
 
-    for (const cite of citations) {
-      if (!cite.rect || !cite.matchedRefs?.length) continue;
+    for (const citation of citations) {
+      if (!citation.rects || citation.rects.length === 0) continue;
 
-      const ref = cite.matchedRefs[0];
-      const left = cite.rect.x * scale;
-      const top = cite.rect.y * scale;
-      const width = cite.rect.width * scale;
-      const height = cite.rect.height * scale;
+      // Check if this citation overlaps with any native annotation
+      const useNative = this.#useNativeAnnotations(citation);
+      if (useNative) {
+        continue;
+      }
 
-      const anchor = document.createElement("a");
-      anchor.href = "#";
-      anchor.dataset.citeRef = "";
-      anchor.dataset.destPageIndex = (ref.pageNumber - 1).toString();
-      anchor.dataset.destLeft = ref.startCoord.x.toString();
-      anchor.dataset.destTop = ref.startCoord.y.toString();
-      anchor.dataset.refText = ref.cachedText || "";
-      anchor.style.cssText = `
-        position: absolute;
-        left: ${left}px;
-        top: ${top}px;
-        width: ${width}px;
-        height: ${height}px;
-        pointer-events: auto;
-        background-color: transparent;
-      `;
+      // Create a container for multi-rect citations (e.g., cross-line)
+      const citationEl = document.createElement("div");
+      citationEl.className = "citation-overlay";
+      citationEl.dataset.citationType = citation.type;
+      citationEl.dataset.refIndices = JSON.stringify(citation.refIndices || []);
+      citationEl.dataset.confidence = citation.confidence?.toFixed(2) || "0";
 
-      fragment.appendChild(anchor);
+      // Render each rect
+      for (const rect of citation.rects) {
+        const rectEl = document.createElement("span");
+        rectEl.className = "citation-rect";
+
+        // Convert PDF coordinates to CSS coordinates
+        const left = rect.x * scale;
+        const top = rect.y * scale;
+        const width = rect.width * scale;
+        const height = rect.height * scale;
+
+        rectEl.style.cssText = `
+          position: absolute;
+          left: ${left}px;
+          top: ${top}px;
+          width: ${width}px;
+          height: ${height}px;
+          pointer-events: auto;
+          cursor: pointer;
+        `;
+
+        citationEl.appendChild(rectEl);
+      }
+
+      // Store citation data for hover handler
+      citationEl._citationData = citation;
+
+      fragment.appendChild(citationEl);
     }
 
     this.annotationLayer.appendChild(fragment);
+  }
+
+  /**
+   * Check if a citation overlaps with any native annotation
+   * @param {Object} citation
+   * @returns {boolean}
+   */
+  #useNativeAnnotations(citation) {
+    const tolerance = 5; // PDF units tolerance
+
+    for (const citRect of citation.rects) {
+      for (const nativeRect of this._nativeAnnotationRects) {
+        // If the dest is not helpful we use our own extracted citations.
+        if (nativeRect.dest.x * nativeRect.dest.y === 0) return false;
+        const overlapX =
+          citRect.x < nativeRect.x + nativeRect.width + tolerance &&
+          citRect.x + citRect.width > nativeRect.x - tolerance;
+        const overlapY =
+          citRect.y < nativeRect.y + nativeRect.height + tolerance &&
+          citRect.y + citRect.height > nativeRect.y - tolerance;
+
+        if (overlapX && overlapY) {
+          return true;
+        }
+      }
+    }
+
+    return false;
   }
 
   cancel() {
@@ -417,6 +505,7 @@ export class PageView {
     this.page = null;
     this.endOfContent = null;
     this.canvas.dataset.rendered = "false";
+    this._nativeAnnotationRects = [];
 
     if (this._showTimer) {
       clearTimeout(this._showTimer);
@@ -434,99 +523,99 @@ export class PageView {
     await this.render();
   }
 
+  /**
+   * Setup unified event listeners for both native annotations and extracted citations
+   */
   #setupAnnotationLayerEvents() {
     if (this._delegatedListenersAttached) return;
     const citationPopup = getSharedPopup();
 
+    // Unified mouseenter handler
     this.annotationLayer.addEventListener(
       "mouseenter",
       (e) => {
-        const citeAnchor = e.target.closest("a[data-cite-ref]");
-        if (citeAnchor) {
-          this.#handleCiteAnchorEnter(citeAnchor, citationPopup);
+        // Check for native annotation anchor first (priority)
+        const anchor = e.target.closest("a[data-dest]");
+        if (anchor) {
+          this.#handleNativeAnchorEnter(anchor, citationPopup);
           return;
         }
-        const anchor = e.target.closest("a[data-dest]");
-        if (anchor) this.#handleAnchorEnter(anchor, citationPopup);
+
+        // Check for extracted citation overlay
+        const citationEl = e.target.closest(
+          ".citation-overlay, .citation-rect",
+        );
+        if (citationEl) {
+          const overlay = citationEl.classList.contains("citation-overlay")
+            ? citationEl
+            : citationEl.closest(".citation-overlay");
+          if (overlay) {
+            this.#handleCitationEnter(overlay, citationPopup);
+          }
+        }
       },
       true,
     );
 
+    // Unified mouseleave handler
     this.annotationLayer.addEventListener(
       "mouseleave",
       (e) => {
-        const citeAnchor = e.target.closest("a[data-cite-ref]");
-        if (citeAnchor) {
-          this.#handleCiteAnchorLeave(citeAnchor, citationPopup);
+        // Check for native annotation anchor
+        const anchor = e.target.closest("a[data-dest]");
+        if (anchor) {
+          this.#handleNativeAnchorLeave(anchor, citationPopup);
           return;
         }
-        const anchor = e.target.closest("a[data-dest]");
-        if (anchor) this.#handleAnchorLeave(anchor, citationPopup);
+
+        // Check for extracted citation overlay
+        const citationEl = e.target.closest(
+          ".citation-overlay, .citation-rect",
+        );
+        if (citationEl) {
+          const overlay = citationEl.classList.contains("citation-overlay")
+            ? citationEl
+            : citationEl.closest(".citation-overlay");
+          if (overlay) {
+            this.#handleCitationLeave(overlay, citationPopup);
+          }
+        }
       },
       true,
     );
 
+    // Unified click handler
     this.annotationLayer.addEventListener("click", (e) => {
-      const citeAnchor = e.target.closest("a[data-cite-ref]");
-      if (citeAnchor) {
-        e.preventDefault();
-        this.#handleCiteAnchorClick(citeAnchor);
-        return;
-      }
+      // Check for native annotation anchor
       const anchor = e.target.closest("a[data-dest]");
       if (anchor && anchor.dataset.dest !== undefined) {
         e.preventDefault();
-        this.#handleAnchorClick(anchor);
+        this.#handleNativeAnchorClick(anchor);
+        return;
+      }
+
+      // Check for extracted citation overlay
+      const citationEl = e.target.closest(".citation-overlay, .citation-rect");
+      if (citationEl) {
+        const overlay = citationEl.classList.contains("citation-overlay")
+          ? citationEl
+          : citationEl.closest(".citation-overlay");
+
+        if (overlay) {
+          e.preventDefault();
+          this.#handleCitationClick(overlay);
+        }
       }
     });
 
     this._delegatedListenersAttached = true;
   }
 
-  #handleCiteAnchorEnter(anchor, citationPopup) {
-    if (this.wrapper.classList.contains("text-selecting")) return;
-    if (this._showTimer) clearTimeout(this._showTimer);
-    citationPopup.onAnchorEnter();
+  // ============================================
+  // Native Annotation Handlers
+  // ============================================
 
-    const refText = anchor.dataset.refText;
-    if (!refText) return;
-
-    const pageIndex = parseInt(anchor.dataset.destPageIndex, 10);
-    const left = parseFloat(anchor.dataset.destLeft) || 0;
-    const top = parseFloat(anchor.dataset.destTop) || 0;
-
-    this._showTimer = setTimeout(async () => {
-      await citationPopup.show(
-        anchor,
-        () => Promise.resolve(refText),
-        left,
-        pageIndex,
-        top,
-      );
-    }, 200);
-  }
-
-  #handleCiteAnchorLeave(anchor, citationPopup) {
-    if (this.wrapper.classList.contains("text-selecting")) return;
-    if (this._showTimer) {
-      clearTimeout(this._showTimer);
-      this._showTimer = null;
-    }
-    if (citationPopup.currentAnchor === anchor) {
-      citationPopup.onAnchorLeave();
-    }
-  }
-
-  async #handleCiteAnchorClick(anchor) {
-    const pageIndex = parseInt(anchor.dataset.destPageIndex, 10);
-    const left = parseFloat(anchor.dataset.destLeft) || 0;
-    const top = parseFloat(anchor.dataset.destTop) || 0;
-    if (!isNaN(pageIndex)) {
-      await this.pane.scrollToPoint(pageIndex, left, top);
-    }
-  }
-
-  async #handleAnchorEnter(anchor, citationPopup) {
+  async #handleNativeAnchorEnter(anchor, citationPopup) {
     if (this.wrapper.classList.contains("text-selecting")) return;
 
     if (this._showTimer) clearTimeout(this._showTimer);
@@ -550,7 +639,7 @@ export class PageView {
     }
   }
 
-  #handleAnchorLeave(anchor, citationPopup) {
+  #handleNativeAnchorLeave(anchor, citationPopup) {
     if (this.wrapper.classList.contains("text-selecting")) return;
 
     if (this._showTimer) {
@@ -563,7 +652,7 @@ export class PageView {
     }
   }
 
-  async #handleAnchorClick(anchor) {
+  async #handleNativeAnchorClick(anchor) {
     const destStr = anchor.dataset.dest;
     if (!destStr) {
       const pageIndex = parseInt(anchor.dataset.destPageIndex, 10);
@@ -580,6 +669,109 @@ export class PageView {
     const pageIndex = Math.floor(page);
     await this.pane.scrollToPoint(pageIndex, left, top);
   }
+
+  // ============================================
+  // Extracted Citation Handlers
+  // ============================================
+
+  /**
+   * Handle extracted citation hover enter
+   */
+  async #handleCitationEnter(overlay, citationPopup) {
+    if (this.wrapper.classList.contains("text-selecting")) return;
+
+    if (this._showTimer) clearTimeout(this._showTimer);
+    citationPopup.onAnchorEnter();
+
+    const citation = overlay._citationData;
+    if (!citation) return;
+
+    // Get the first rect element for positioning
+    const firstRect = overlay.querySelector(".citation-rect");
+    if (!firstRect) return;
+
+    this._showTimer = setTimeout(async () => {
+      // Create a callback that returns the reference text
+      const findCiteTextCallback = async () => {
+        return this.#findReferenceTextForCitation(citation);
+      };
+
+      await citationPopup.show(
+        firstRect,
+        findCiteTextCallback,
+        0, // left - not used, callback uses citation data
+        0, // pageIndex - not used
+        0, // top - not used
+      );
+    }, 200);
+  }
+
+  /**
+   * Handle extracted citation hover leave
+   */
+  #handleCitationLeave(overlay, citationPopup) {
+    if (this.wrapper.classList.contains("text-selecting")) return;
+
+    if (this._showTimer) {
+      clearTimeout(this._showTimer);
+      this._showTimer = null;
+    }
+
+    const firstRect = overlay.querySelector(".citation-rect");
+    if (citationPopup.currentAnchor === firstRect) {
+      citationPopup.onAnchorLeave();
+    }
+  }
+
+  /**
+   * Handle extracted citation click - scroll to reference
+   */
+  async #handleCitationClick(overlay) {
+    const citation = overlay._citationData;
+    if (!citation?.refIndices?.length) return;
+
+    // Get the first reference index
+    const refIndex = citation.refIndices[0];
+    const refAnchor = this.doc.getReferenceByIndex(refIndex);
+
+    if (refAnchor) {
+      await this.pane.scrollToPoint(
+        refAnchor.pageNumber - 1,
+        refAnchor.startCoord.x,
+        refAnchor.startCoord.y,
+      );
+    }
+  }
+
+  /**
+   * Find reference text for an extracted citation
+   */
+  #findReferenceTextForCitation(citation) {
+    if (!citation?.refIndices?.length) return null;
+
+    // For numeric citations, get the first referenced entry
+    const refIndex = citation.refIndices[0];
+    const refAnchor = this.doc.getReferenceByIndex(refIndex);
+
+    if (refAnchor?.cachedText) {
+      return refAnchor.cachedText;
+    }
+
+    // For author-year, try matching
+    if (citation.refKeys?.length) {
+      const key = citation.refKeys[0];
+      const matched = this.doc.matchCitationToReference(key.author, key.year);
+      if (matched?.cachedText) {
+        return matched.cachedText;
+      }
+    }
+
+    return null;
+  }
+
+  // ============================================
+  // Shared Citation Text Finding (for native annotations)
+  // ============================================
 
   async #findCiteText(left, pageIndex, top) {
     const pageNumber = pageIndex + 1;

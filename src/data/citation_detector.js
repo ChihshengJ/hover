@@ -23,7 +23,10 @@
 import {
   REFERENCE_FORMAT_PATTERNS,
   AUTHOR_YEAR_START_PATTERN,
+  CROSS_REFERENCE_PATTERNS,
 } from "./lexicon.js";
+
+import { getDocInfo } from "./outline_builder.js";
 
 /**
  * Low-level text and rect extraction for citation detection
@@ -174,6 +177,7 @@ export class CitationTextExtractor {
  */
 export class CitationDetector {
   #textExtractor = null;
+  #textIndex = null;
   #referenceIndex = null;
   #nativeAnnotations = null;
   #numPages = 0;
@@ -189,8 +193,9 @@ export class CitationDetector {
    * @param {Map<number, Array>} nativeAnnotations - Native annotations by page
    * @param {number} numPages - Total page count
    */
-  constructor(textExtractor, referenceIndex, nativeAnnotations, numPages) {
+  constructor(textExtractor, textIndex, referenceIndex, nativeAnnotations, numPages) {
     this.#textExtractor = textExtractor;
+    this.#textIndex = textIndex;
     this.#referenceIndex = referenceIndex;
     this.#nativeAnnotations = nativeAnnotations || new Map();
     this.#numPages = numPages;
@@ -203,7 +208,7 @@ export class CitationDetector {
   async detect() {
     console.log("[CitationDetector] Starting detection...");
 
-    // Phase 1: Build reference signatures
+    // Phase 1: Import reference signatures
     this.#signatures = this.#buildReferenceSignatures();
     console.log(
       `[CitationDetector] Built ${this.#signatures.length} reference signatures`,
@@ -226,14 +231,19 @@ export class CitationDetector {
       `[CitationDetector] Indexed ${this.#hyperlinkMap.size} reference hyperlinks`,
     );
 
-    // Phase 4: Scan pages for citations
+    // Phase 4: Scan pages for citations and cross references
     const allCitations = [];
-    const refStartPage =
-      this.#referenceIndex?.sectionStart?.pageNumber || Infinity;
+    const allCrossRefs = []
 
-    for (let pageNum = 1; pageNum < refStartPage && pageNum <= this.#numPages; pageNum++) {
-      const pageCitations = this.#scanPage(pageNum);
+    for (
+      let pageNum = 1;
+      pageNum <= this.#numPages;
+      pageNum++
+    ) {
+      const bodyLineHeight = this.#textIndex.getBodyLineHeight()
+      const { pageCitations, pageCrossRefs } = this.#scanPage(pageNum, bodyLineHeight);
       allCitations.push(...pageCitations);
+      allCrossRefs.push(...pageCrossRefs);
     }
 
     console.log(
@@ -319,6 +329,7 @@ export class CitationDetector {
 
     for (const [pageNum, annotations] of this.#nativeAnnotations) {
       if (pageNum >= refStartPage) continue;
+      const { height: pageHeight } = this.#textIndex.getPageDimensions(pageNum);
 
       for (const annot of annotations) {
         if (annot.target?.type !== "destination") continue;
@@ -327,13 +338,18 @@ export class CitationDetector {
         if (!dest) continue;
 
         const destPageIndex = dest.pageIndex ?? -1;
+        const destX = dest.view?.[0] ?? 0;
         const destY = dest.view?.[1] ?? 0;
+
+        // Discard unhelpful hyperlinks
+        if ( destX * destY === 0 ) continue;
 
         // Check if link points to reference section
         if (destPageIndex + 1 >= refStartPage) {
           const matchedSig = this.#findSignatureAtLocation(
             destPageIndex + 1,
-            destY,
+            destX,
+            pageHeight - destY,
           );
 
           if (matchedSig) {
@@ -352,14 +368,15 @@ export class CitationDetector {
     return map;
   }
 
-  #findSignatureAtLocation(pageNumber, y) {
+  #findSignatureAtLocation(pageNumber, x, y) {
     let best = null;
     let bestDist = Infinity;
 
     for (const anchor of this.#signatures) {
       if (anchor.pageNumber !== pageNumber) continue;
 
-      const dist = Math.abs(anchor.startCoord.y - y);
+      const dist =
+        Math.abs(anchor.startCoord.y - y) + Math.abs(anchor.startCoord.x - x);
       if (dist < bestDist) {
         bestDist = dist;
         best = anchor;
@@ -373,35 +390,48 @@ export class CitationDetector {
   // Phase 4: Scan Pages for Citations
   // ========================================
 
-  #scanPage(pageNumber) {
+  #scanPage(pageNumber, bodyLineHeight) {
     const pageIndex = pageNumber - 1;
     const { fullText, charCount, pageWidth, pageHeight } =
       this.#textExtractor.getPageFullText(pageIndex);
 
     if (!fullText || charCount === 0) return [];
 
-    const citations = [];
+    const pageCitations = [];
 
-    // Always scan for numeric citations
-    citations.push(
+    // Always scan for numeric and author-year citations
+    pageCitations.push(
       ...this.#findNumericCitations(fullText, pageNumber, pageIndex),
     );
-
-    // Always scan for author-year citations
-    citations.push(
+    pageCitations.push(
       ...this.#findAuthorYearCitations(fullText, pageNumber, pageIndex),
     );
 
+    // If those two aren't present, it's probably superscript citations
+    if (pageCitations.length <= 10) {
+      pageCitations.push(
+        ...this.#findSuperscriptCitations(pageNumber, bodyLineHeight),
+      )
+    }
+
     // Adjust confidence based on detected format
-    for (const cit of citations) {
+    for (const cit of pageCitations) {
       if (this.#detectedFormat.isAuthorYear && cit.type === "numeric") {
         cit.confidence *= 0.6; // Lower confidence for non-dominant format
-      } else if (!this.#detectedFormat.isAuthorYear && cit.type === "author-year") {
+      } else if (
+        !this.#detectedFormat.isAuthorYear &&
+        cit.type === "author-year"
+      ) {
         cit.confidence *= 0.6;
       }
     }
 
-    return citations;
+    const pageCrossRefs = [];
+    pageCrossRefs.push(
+      ...this.#findCrossRefs(fullText, pageNumber, pageIndex),
+    );
+
+    return { pageCitations, pageCrossRefs };
   }
 
   #findNumericCitations(fullText, pageNumber, pageIndex) {
@@ -409,7 +439,7 @@ export class CitationDetector {
 
     // Pattern: [1] or [1,2,3] or [1-5]
     const bracketPattern =
-      /\[(\d+(?:\s*[-–—]\s*\d+)?(?:\s*[,;]\s*\d+(?:\s*[-–—]\s*\d+)?)*)\]/g;
+      /\[(\d+(?:\s*[-â€“â€”]\s*\d+)?(?:\s*[,;]\s*\d+(?:\s*[-â€“â€”]\s*\d+)?)*)\]/g;
 
     let match;
     while ((match = bracketPattern.exec(fullText)) !== null) {
@@ -417,7 +447,7 @@ export class CitationDetector {
 
       // Validate against known references
       const validIndices = refIndices.filter((idx) =>
-        this.#signatures.some((anchor) => anchor.index === idx)
+        this.#signatures.some((anchor) => anchor.index === idx),
       );
       if (validIndices.length === 0) continue;
 
@@ -446,57 +476,108 @@ export class CitationDetector {
     return citations;
   }
 
+  #findSuperscriptCitations(pageNumber, bodyLineHeight) {
+    const citations = [];
+    const rawSlices = this.#textIndex.getRawSlices(pageNumber);
+    for (const slice of rawSlices) {
+      const idx = slice.content;
+      if (/^\d+$/g.test(idx) && slice.rect.size.height < bodyLineHeight * 0.55) {
+        const validIndices = this.#signatures.filter((anchor) => anchor.index === parseInt(idx));
+        if (validIndices.length === 0) continue;
+        citations.push({
+          type: "superscript",
+          text: slice.content,
+          pageNumber,
+          charIndex: 0,
+          charCount: slice.content.length,
+          rects: [{ x: slice.rect.origin.x, y: slice.rect.origin.y, width: slice.rect.size.width, height: slice.rect.size.height }],
+          refIndices: [validIndices[0].index],
+          refKeys: null,
+          confidence: 0.9,
+          source: "pattern",
+        });
+      }
+    }
+    return citations;
+  }
+
   #findAuthorYearCitations(fullText, pageNumber, pageIndex) {
     const citations = [];
 
-    const patterns = [
-      // Smith (2020) or Smith et al. (2020)
-      {
-        regex: /(\p{Lu}[\p{L}\p{M}]+(?:\s+et\s+al\.?)?),?\s*\((\d{4}[a-z]?)\)/gu,
-        extractAuthor: (m) => m[1].replace(/\s+et\s+al\.?/i, "").trim(),
-        extractYear: (m) => m[2],
-      },
-      // (Smith, 2020) or (Smith et al., 2020)
-      {
-        regex: /\((\p{Lu}[\p{L}\p{M}]+(?:\s+et\s+al\.?)?)\s*,?\s*(\d{4}[a-z]?)\)/gu,
-        extractAuthor: (m) => m[1].replace(/\s+et\s+al\.?/i, "").trim(),
-        extractYear: (m) => m[2],
-      },
-      // (Smith and Jones, 2020)
-      {
-        regex: /\((\p{Lu}[\p{L}\p{M}]+)\s+(?:and|&|&amp;|＆)\s+(\p{Lu}[\p{L}\p{M}]+)\s*,?\s*(\d{4}[a-z]?)\)/gu,
-        extractAuthor: (m) => m[1],
-        extractYear: (m) => m[3],
-      },
-    ];
+    // Pattern 1: Parenthetical citation blocks (can contain multiple authors/years)
+    // Matches: (Author, 2020), (Author et al., 2020), (e.g., Author, 2020; Other, 2021)
+    // Also handles: (Author, 2008, 2013; Other et al., 2014)
+    const parenBlockPattern = /\((?:e\.g\.,?\s*|i\.e\.,?\s*|see\s+)?([^()]+?\d{4}[a-z]?[^()]*)\)/gu;
 
-    for (const { regex, extractAuthor, extractYear } of patterns) {
-      const re = new RegExp(regex.source, regex.flags);
-      let match;
+    let blockMatch;
+    while ((blockMatch = parenBlockPattern.exec(fullText)) !== null) {
+      const blockContent = blockMatch[1];
+      const blockStart = blockMatch.index;
 
-      while ((match = re.exec(fullText)) !== null) {
-        const author = extractAuthor(match);
-        const year = extractYear(match);
+      // Parse the block content into individual author-year citations
+      const parsedCitations = this.#parseAuthorYearBlock(blockContent);
 
-        // Validate against signatures
-        const matchResult = this.#matchAuthorYearToSignature(author, year);
-
+      for (const parsed of parsedCitations) {
+        const matchResult = this.#matchAuthorYearToSignature(parsed.author, parsed.year);
         if (!matchResult) continue;
+
+        // Calculate character position within the full text
+        const citationStart = blockStart + 1 + parsed.startOffset; // +1 for opening paren
+        const citationLength = parsed.endOffset - parsed.startOffset;
 
         const rects = this.#textExtractor.getRectsForCharRange(
           pageIndex,
-          match.index,
-          match[0].length,
+          citationStart,
+          citationLength,
         );
 
         if (rects.length === 0) continue;
 
         citations.push({
           type: "author-year",
-          text: match[0],
+          text: parsed.text,
           pageNumber,
-          charIndex: match.index,
-          charCount: match[0].length,
+          charIndex: citationStart,
+          charCount: citationLength,
+          rects,
+          refIndices: [matchResult.index],
+          refKeys: [{ author: parsed.author, year: parsed.year }],
+          confidence: matchResult.confidence,
+          source: "pattern",
+        });
+      }
+    }
+
+    // Pattern 2: Narrative citations - Author (year) or Author et al. (year)
+    const narrativePattern = /((?:(?:de|van|von|del|la|le)\s+)?[\p{Lu}][\p{L}\p{M}]+(?:\s+et\s+al\.?)?)\s*\((\d{4}[a-z]?(?:\s*,\s*\d{4}[a-z]?)*)\)/gu;
+
+    let narrativeMatch;
+    while ((narrativeMatch = narrativePattern.exec(fullText)) !== null) {
+      const authorPart = narrativeMatch[1];
+      const yearsPart = narrativeMatch[2];
+      const author = authorPart.replace(/\s+et\s+al\.?/i, "").trim();
+
+      // Parse multiple years (e.g., "2008, 2013")
+      const years = yearsPart.split(/\s*,\s*/).map(y => y.trim()).filter(y => /^\d{4}[a-z]?$/.test(y));
+
+      for (const year of years) {
+        const matchResult = this.#matchAuthorYearToSignature(author, year);
+        if (!matchResult) continue;
+
+        const rects = this.#textExtractor.getRectsForCharRange(
+          pageIndex,
+          narrativeMatch.index,
+          narrativeMatch[0].length,
+        );
+
+        if (rects.length === 0) continue;
+
+        citations.push({
+          type: "author-year",
+          text: narrativeMatch[0],
+          pageNumber,
+          charIndex: narrativeMatch.index,
+          charCount: narrativeMatch[0].length,
           rects,
           refIndices: [matchResult.index],
           refKeys: [{ author, year }],
@@ -509,13 +590,92 @@ export class CitationDetector {
     return citations;
   }
 
+  /**
+   * Parse a parenthetical citation block into individual author-year pairs
+   * Handles: "Abutalebi et al., 2008, 2013; de Bruin et al., 2014; Garbin et al., 2011"
+   * 
+   * @param {string} blockContent - Content inside parentheses
+   * @returns {Array<{author: string, year: string, text: string, startOffset: number, endOffset: number}>}
+   */
+  #parseAuthorYearBlock(blockContent) {
+    const results = [];
+
+    // Split by semicolons to get individual author groups
+    // But be careful: some blocks might not use semicolons consistently
+    const authorGroups = blockContent.split(/\s*;\s*/);
+
+    let currentOffset = 0;
+
+    for (const group of authorGroups) {
+      if (!group.trim()) {
+        currentOffset += 1; // semicolon
+        continue;
+      }
+
+      const groupStart = blockContent.indexOf(group, currentOffset);
+      const parsedGroup = this.#parseAuthorGroup(group, groupStart);
+      results.push(...parsedGroup);
+
+      currentOffset = groupStart + group.length + 1; // +1 for semicolon
+    }
+
+    return results;
+  }
+
+  /**
+   * Parse a single author group which may have multiple years
+   * Handles: "Abutalebi et al., 2008, 2013" or "Smith and Jones, 2020"
+   * 
+   * @param {string} group - Single author group text
+   * @param {number} groupStartOffset - Offset within the block
+   * @returns {Array<{author: string, year: string, text: string, startOffset: number, endOffset: number}>}
+   */
+  #parseAuthorGroup(group, groupStartOffset) {
+    const results = [];
+
+    // Pattern to extract author part and years
+    // Author can be: "Smith", "Smith et al.", "de Bruin et al.", "Smith and Jones"
+    const authorYearPattern = /^((?:(?:de|van|von|del|la|le|di|da)\s+)?[\p{Lu}][\p{L}\p{M}'-]+(?:\s+(?:and|&)\s+(?:(?:de|van|von|del|la|le|di|da)\s+)?[\p{Lu}][\p{L}\p{M}'-]+)?(?:\s+et\s+al\.?)?)\s*,?\s*(.+)$/u;
+
+    const match = group.match(authorYearPattern);
+    if (!match) return results;
+
+    const authorPart = match[1].trim();
+    const yearsPart = match[2].trim();
+
+    // Clean author name (remove "et al." for matching)
+    const author = authorPart.replace(/\s+et\s+al\.?/i, "").trim();
+
+    // Extract all years from the years part
+    // Years can be: "2008", "2008, 2013", "2008a, 2008b"
+    const yearPattern = /\d{4}[a-z]?/g;
+    let yearMatch;
+
+    while ((yearMatch = yearPattern.exec(yearsPart)) !== null) {
+      const year = yearMatch[0];
+
+      // Calculate the position of this specific year in the original group
+      const yearStartInGroup = match[1].length + match[0].indexOf(yearsPart) - match[1].length + yearMatch.index;
+
+      results.push({
+        author,
+        year,
+        text: `${authorPart}, ${year}`,
+        startOffset: groupStartOffset,
+        endOffset: groupStartOffset + group.length,
+      });
+    }
+
+    return results;
+  }
+
   #parseNumericIndices(str) {
     const indices = [];
     const parts = str.split(/[,;]/);
 
     for (const part of parts) {
       const trimmed = part.trim();
-      const rangeMatch = trimmed.match(/(\d+)\s*[-–—]\s*(\d+)/);
+      const rangeMatch = trimmed.match(/(\d+)\s*[-—]\s*(\d+)/);
 
       if (rangeMatch) {
         const start = parseInt(rangeMatch[1], 10);
@@ -568,7 +728,38 @@ export class CitationDetector {
     return bestConfidence > 0.4 ? bestMatch : null;
   }
 
+  #findCrossRefs(fullText, pageNumber, pageIndex) {
+    const crossRefs = [];
 
+    for (const [type, regex] of Object.entries(CROSS_REFERENCE_PATTERNS)) {
+      regex.lastIndex = 0;
+
+      let match;
+      while ((match = regex.exec(fullText)) !== null) {
+
+        const rects = this.#textExtractor.getRectsForCharRange(
+          pageIndex,
+          match.index,
+          match[0].length,
+        );
+        console.log(match[0], rects);
+
+        if (rects.length === 0) continue;
+
+        crossRefs.push({
+          type: type,
+          text: match[0],
+          pageNumber,
+          charIndex: match.index,
+          charCount: match[0].length,
+          rects,
+          source: "pattern",
+        });
+      }
+    }
+
+    return crossRefs;
+  }
   // ========================================
   // Phase 5: Merge with Hyperlinks
   // ========================================
@@ -612,7 +803,7 @@ export class CitationDetector {
       // If no pattern match, create citation from hyperlink
       if (!foundMatch) {
         const cit = {
-          type: "numeric",
+          type: "imported",
           text: `[${linkData.refIndex}]`,
           pageNumber: linkData.pageNumber,
           charIndex: -1,
@@ -650,7 +841,6 @@ export class CitationDetector {
     const linkH = linkRect.size?.height || 0;
 
     for (const rect of rects) {
-      // Check for overlap with some tolerance
       const tolerance = 5;
       const overlapX =
         rect.x < linkX + linkW + tolerance &&
@@ -674,9 +864,7 @@ export class CitationDetector {
  */
 export function createCitationDetector(doc) {
   if (!doc.lowLevelHandle || !doc.referenceIndex) {
-    console.warn(
-      "[CitationDetector] Missing lowLevelHandle or referenceIndex",
-    );
+    console.warn("[CitationDetector] Missing lowLevelHandle or referenceIndex");
     return null;
   }
 
@@ -687,6 +875,7 @@ export function createCitationDetector(doc) {
 
   return new CitationDetector(
     textExtractor,
+    doc.textIndex,
     doc.referenceIndex,
     doc.nativeAnnotationsByPage,
     doc.numPages,

@@ -429,7 +429,7 @@ export const REFERENCE_SECTION_PATTERN =
  * These sections typically follow references in academic papers
  */
 export const POST_REFERENCE_SECTION_PATTERN =
-  /^(?:appendix|appendices|supplementary|supplemental|acknowledgements?|acknowledgments?|author\s+contributions?|conflicts?\s+of\s+interest|competing\s+interests?|data\s+availability|code\s+availability|contents|funding|author\s+information|additional\s+information|extended\s+data|supporting\s+information|content)/i;
+  /^(?:appendix|appendices|supplementary|supplemental|acknowledgements?|acknowledgments?|author\s+contributions?|conflicts?\s+of\s+interest|competing\s+interests?|data\s+availability|code\s+availability|contents|funding|author\s+information|additional\s+information|extended\s+data|supporting\s+information|content)$/i;
 
 // ============================================
 // Reference Format Detection
@@ -476,6 +476,9 @@ export const NUMERIC_CITATION_PATTERNS = {
   // [1] or [1,2,3] or [1, 2, 3]
   bracketList: /\[(\d+(?:\s*[,;]\s*\d+)*)\]/g,
 
+  // [YYZS+23] or [CHA21] or [CHAN+21, ZZYD+24]
+  bracketAbbr: /\[([A-Z]*\+?\d+(?:\s*[,;]\s*[A-Z]*\+?\d+)*)\]/g,
+
   // [1-5] or [1–5] or [1—5]
   bracketRange: /\[(\d+)\s*[-–—]\s*(\d+)\]/g,
 
@@ -518,8 +521,8 @@ export const CROSS_REFERENCE_PATTERNS = {
   // Table 1, Tab. 1, Tables 1-3
   table: /\b(?:Tab(?:le|s)?\.?\s*)(\d+[a-z]?(?:\s*[-–—]\s*\d+[a-z]?)?)/gi,
 
-  // Section 1, Sec. 1.2, §1, §1.2.3
-  section: /\b(?:Sec(?:tion|s)?\.?\s*|§\s*)(\d+(?:\.\d+)*)/gi,
+  // Section 1, Sec. 1.2, §1, §1.2.3, §C.2
+  section: /\b(?:Sec(?:tion|s)?\.?\s*|§\s*)((?:[A-Z]\.)\d+(?:\.\d+)*)/gi,
 
   // Equation 1, Eq. 1, Eqs. 1-3, Eqn. (1)
   equation: /\b(?:Eq(?:uation|n|s)?\.?\s*)\(?(\d+)\)?/gi,

@@ -88,6 +88,10 @@ export class CitationPopup {
     }
   }
 
+  async showWithText(anchor, text) {
+    await this.show(anchor, async () => text, 0, 0, 0);
+  }
+
   positionPopup() {
     if (!this.currentAnchor) return;
 

@@ -468,10 +468,7 @@ export class PageView {
       const findTextForTarget = async (target) => {
         if (target?.location) {
           const { x, pageIndex, y } = target.location;
-          const pageHeight = this.doc.textIndex?.getPageDimensions(
-            pageIndex + 1,
-          ).height;
-          const text = await this.#findCiteText(x, pageIndex, pageHeight - y);
+          const text = await this.#findCiteText(x, pageIndex, y);
           if (text) return text;
         }
 

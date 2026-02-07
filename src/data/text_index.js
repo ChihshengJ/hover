@@ -44,6 +44,7 @@ export class DocumentTextIndex {
   #lowLevelHandle = null;
   #bodyFontSize = null;
   #bodyLineHeight = null;
+  #bodyMarginBottom = null;
   #bodyFontStyle = null;
   #bodyFontAnalyzed = false;
 
@@ -99,7 +100,12 @@ export class DocumentTextIndex {
 
   getBodyLineHeight() {
     this.#ensureBodyFontAnalyzed();
-    return this.#bodyLineHeight ?? FontStyle.REGULAR;
+    return this.#bodyLineHeight ?? 10;
+  }
+
+  getBodyMarginBottom() {
+    this.#ensureBodyFontAnalyzed();
+    return this.#bodyMarginBottom ?? 0;
   }
 
   async ensurePageIndexed(pageNumber) {
@@ -162,12 +168,15 @@ export class DocumentTextIndex {
       const lines = this.#groupIntoLines(items, pageHeight);
       const marginLeft =
         lines.length > 0 ? Math.min(...lines.map((l) => l.x)) : 0;
+      const marginBottom =
+        lines.length > 0 ? Math.min(...lines.map((l) => l.y)) : 0;
 
       this.#pageData.set(pageNumber, {
         pageNumber,
         pageWidth,
         pageHeight,
         marginLeft,
+        marginBottom,
         lines,
         fullText: fullText || lines.map((l) => l.text).join(" "),
         rawSlices: textSlices,
@@ -322,6 +331,7 @@ export class DocumentTextIndex {
       pageWidth,
       pageHeight,
       marginLeft: 0,
+      marginBottom: 0,
       lines: [],
       fullText: "",
     });
@@ -335,8 +345,10 @@ export class DocumentTextIndex {
     const fontSizes = [];
     const fontStyles = [];
     const lineHeights = [];
+    const marginBottoms = [];
 
     for (const [, data] of this.#pageData) {
+      if (data.marginBottom > 0) marginBottoms.push(data.marginBottom);
       for (const line of data.lines) {
         if (line.fontSize > 0) fontSizes.push(line.fontSize);
         if (line.lineHeight > 0) lineHeights.push(line.lineHeight);
@@ -351,14 +363,16 @@ export class DocumentTextIndex {
     );
     this.#bodyFontStyle = this.#findMostCommon(fontStyles);
     this.#bodyLineHeight = this.#findMedian(lineHeights);
+    this.#bodyMarginBottom = this.#findMostCommon(marginBottoms);
+    console.log(this.#bodyMarginBottom);
 
-    for (const [, data] of this.#pageData) {
-      for (const line of data.lines) {
-        const sizeMatch = Math.abs(line.fontSize - this.#bodyFontSize) < 0.5;
-        const styleMatch = line.fontStyle === this.#bodyFontStyle;
-        line.isCommonFont = sizeMatch && styleMatch ? 1 : 0;
-      }
-    }
+    // for (const [, data] of this.#pageData) {
+    //   for (const line of data.lines) {
+    //     const sizeMatch = Math.abs(line.fontSize - this.#bodyFontSize) < 0.5;
+    //     const styleMatch = line.fontStyle === this.#bodyFontStyle;
+    //     line.isCommonFont = sizeMatch && styleMatch ? 1 : 0;
+    //   }
+    // }
   }
 
   #findMedian(arr) {

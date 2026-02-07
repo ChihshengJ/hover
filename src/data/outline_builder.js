@@ -145,6 +145,7 @@ export function getDocInfo(textIndex) {
       pageWidth: data.pageWidth,
       pageHeight: data.pageHeight,
       marginLeft: data.marginLeft,
+      marginBottom: data.marginBottom,
     });
   }
 
@@ -152,6 +153,7 @@ export function getDocInfo(textIndex) {
     fontSize: textIndex.getBodyFontSize(),
     fontStyle: textIndex.getBodyFontStyle(),
     lineHeight: textIndex.getBodyLineHeight(),
+    marginBottom: textIndex.getBodyMarginBottom(),
     pageData,
   };
 }

@@ -138,7 +138,7 @@ export class CitationBuilder {
           matchedRef = this.#findReferenceAtLocation(
             destPageIndex + 1,
             destX,
-            pageHeight - destY,
+            destY,
           );
         }
 
@@ -212,7 +212,7 @@ export class CitationBuilder {
     return {
       pageIndex: refAnchor.pageNumber - 1,
       x: refAnchor.startCoord.x,
-      y: pageHeight - refAnchor.startCoord.y,
+      y: refAnchor.startCoord.y,
     };
   }
 

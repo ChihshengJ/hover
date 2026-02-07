@@ -276,6 +276,7 @@ export class PDFDocumentModel {
 
       reportProgress(75, 100, "indexing references");
       this.referenceIndex = await buildReferenceIndex(this.textIndex);
+      console.log(this.referenceIndex);
 
       reportProgress(80, 100, "building outline");
       await this.#buildOutline();

@@ -75,7 +75,7 @@ function findReferenceSection(textIndex) {
   const docInfo = getDocInfo(textIndex);
   if (!docInfo?.pageData) return null;
 
-  const { pageData, lineHeight: bodyFontSize } = docInfo;
+  const { pageData, lineHeight: bodyFontSize, marginBottom: bodyMarginBottom} = docInfo;
   let referenceStart = null;
 
   for (const [pageNum, data] of pageData) {
@@ -119,6 +119,7 @@ function findReferenceSection(textIndex) {
     pageData,
     referenceStart,
     bodyFontSize,
+    bodyMarginBottom,
   );
   const lines = collectSectionLines(pageData, referenceStart, referenceEnd);
 
@@ -133,18 +134,22 @@ function findReferenceSection(textIndex) {
   };
 }
 
-function findReferenceSectionEnd(pageData, start, bodyFontSize) {
+function findReferenceSectionEnd(pageData, start, bodyFontSize, bodyMarginBottom) {
   let lastValidLine = null;
   const pageNumbers = Array.from(pageData.keys()).sort((a, b) => a - b);
 
   for (const pageNum of pageNumbers) {
     if (pageNum < start.pageNumber) continue;
 
-    const { lines, pageWidth, pageHeight } = pageData.get(pageNum);
+    const { lines, pageWidth, pageHeight, marginLeft, marginBottom } = pageData.get(pageNum);
     const startIdx = pageNum === start.pageNumber ? start.lineIndex + 1 : 0;
 
     for (let i = startIdx; i < lines.length; i++) {
       const line = lines[i];
+      const isColumnBreak = lastValidLine?.y - line.y < 0;
+      const isWeirdPosition =
+        line.y >= pageHeight * 0.95 || line.y <= pageHeight * 0.05 || (isColumnBreak && line.x < pageWidth / 2 && line.x > marginLeft + 30);
+      if (isWeirdPosition) continue;
       const strippedText = line.text
         .replace(SECTION_NUMBER_STRIP, "")
         .replace(/\s+/g, "")
@@ -157,15 +162,11 @@ function findReferenceSectionEnd(pageData, start, bodyFontSize) {
         line.text === line.text.toUpperCase() &&
         /\d+/.test(line) &&
         line.text.length > 3;
-      const isWeirdPosition =
-        line.y >= pageHeight * 0.95 || line.y <= pageHeight * 0.05;
       const isDirectIndicator =
         POST_REFERENCE_SECTION_PATTERN.test(strippedText);
+      const isBigJump = line.y === marginBottom && marginBottom > bodyMarginBottom + 20;
 
-      if (
-        !isWeirdPosition &&
-        (isDirectIndicator || isAllCapital || isBoldAndLarge)
-      ) {
+      if (isDirectIndicator || isAllCapital || isBoldAndLarge || isBigJump) {
         return {
           pageNumber: pageNum,
           lineIndex: i - 1,
@@ -330,12 +331,19 @@ function extractStructuralReferences(lines, format) {
   let refIndex = 0;
 
   for (const line of lines) {
+    console.log(line);
     if (line.text.trim().length <= 2) continue;
+
     let isNewReference = false;
 
     if (currentRef.lines.length === 0) {
       isNewReference = true;
     } else {
+      // Initialize prevYDirection from first transition if not yet set
+      if (prevYDirection === null && prevLine) {
+        prevYDirection = Math.sign(line.y - prevLine.y);
+      }
+
       const result = detectBoundary(
         line,
         prevLine,
@@ -386,7 +394,7 @@ function detectBoundary(line, prevLine, currentRef, prevYDirection, metrics) {
 
   const isIndented = line.x > currentRef.firstLineX + tolerance;
   const isAtFirstX = line.x <= currentRef.firstLineX + tolerance;
-  const wasIndented = prevLine.x > currentRef.firstLineX + tolerance;
+  const wasIndented = prevLine.x >= currentRef.firstLineX;
 
   const isColumnBreak =
     prevYDirection !== null &&

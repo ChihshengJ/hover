@@ -465,20 +465,42 @@ export class PageView {
     if (!citation) return;
 
     this._showTimer = setTimeout(async () => {
-      if (citation.targetLocation) {
-        const pageHeight = this.#getPage()?.size.height;
-        await citationPopup.show(
-          el,
-          this.#findCiteText.bind(this),
-          citation.targetLocation.x,
-          citation.targetLocation.pageIndex,
-          pageHeight - citation.targetLocation.y,
-        );
-      } else {
-        const callback = async () =>
-          this.#findReferenceTextForCitation(citation);
-        await citationPopup.show(el, callback, 0, 0, 0);
-      }
+      // Callback receives the target object and returns reference text
+      // Handles both location-based lookup and fallback methods
+      const findTextForTarget = async (target) => {
+        // First, try using the target's location if available
+        if (target?.location) {
+          const { x, pageIndex, y: screenY } = target.location;
+
+          // Get page height to convert screen coords back to PDF coords
+          const targetPageNumber = pageIndex + 1;
+          const dims = this.doc.textIndex?.getPageDimensions(targetPageNumber);
+          const pageHeight = dims?.height || this.#getPage()?.size.height;
+          const pdfY = pageHeight - screenY;
+
+          // Convert screen Y (top-left origin) to PDF Y (bottom-left origin)
+
+          const text = await this.#findCiteText(x, pageIndex, pdfY);
+          if (text) return text;
+        }
+
+        // Fallback: try to find reference by index
+        if (target?.refIndex != null) {
+          const refAnchor = this.doc.getReferenceByIndex(target.refIndex);
+          if (refAnchor?.cachedText) return refAnchor.cachedText;
+        }
+
+        // Fallback: try to match by author-year key
+        if (target?.refKey) {
+          const matched = this.doc.matchCitationToReference(
+            target.refKey.author,
+            target.refKey.year,
+          );
+          if (matched?.cachedText) return matched.cachedText;
+        }
+        return null;
+      };
+      await citationPopup.show(el, citation, findTextForTarget);
     }, 200);
   }
 
@@ -560,7 +582,6 @@ export class PageView {
     if (!crossRef?.targetLocation) return;
     const scrollFlag = crossRef.flags === 3 ? false : true;
 
-  
     await this.pane.scrollToPoint(
       crossRef.targetLocation.pageIndex,
       crossRef.targetLocation.x,

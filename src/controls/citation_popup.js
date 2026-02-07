@@ -1,5 +1,4 @@
 export class CitationPopup {
-  citation;
   constructor() {
     this.popup = null;
     this.currentAnchor = null;
@@ -15,6 +14,12 @@ export class CitationPopup {
     this.scholarData = null;
     this.scholarError = null;
     this.isLoadingScholar = false;
+
+    // Range navigation state
+    this.citation = null;
+    this.allTargets = [];
+    this.currentTargetIndex = 0;
+    this.findCiteTextCallback = null;
 
     this.init();
   }
@@ -46,7 +51,13 @@ export class CitationPopup {
     });
   }
 
-  async show(anchor, findCiteTextCallback, left, pageIndex, top) {
+  /**
+   * Show the citation popup
+   * @param {HTMLElement} anchor - The citation element being hovered
+   * @param {Object} citation - Full citation object with allTargets
+   * @param {Function} findCiteTextCallback - Callback to find reference text
+   */
+  async show(anchor, citation, findCiteTextCallback) {
     if (this.currentAnchor === anchor && this.popup.style.display === "block") {
       this.cancelClose();
       return;
@@ -64,6 +75,12 @@ export class CitationPopup {
     this.scholarError = null;
     this.isLoadingScholar = false;
 
+    // Store citation and range navigation state
+    this.citation = citation;
+    this.allTargets = citation?.allTargets || [];
+    this.currentTargetIndex = 0;
+    this.findCiteTextCallback = findCiteTextCallback;
+
     this.cancelClose();
 
     this.popup.style.display = "block";
@@ -73,13 +90,26 @@ export class CitationPopup {
     this.popup.style.opacity = "1";
     this.popup.style.transform = "translateY(0) scale(1)";
 
+    await this.#loadCurrentReference();
+  }
+
+  /**
+   * Load reference text for the current target
+   */
+  async #loadCurrentReference() {
     try {
-      const result = await findCiteTextCallback(left, pageIndex, top);
+      const target = this.allTargets[this.currentTargetIndex];
+      let result = null;
+
+      if (this.findCiteTextCallback) {
+        result = await this.findCiteTextCallback(target);
+      }
 
       if (!result) {
         this.showError("Reference not found");
         return;
       }
+
       this.renderContent(result);
       this.positionPopup();
     } catch (error) {
@@ -88,8 +118,74 @@ export class CitationPopup {
     }
   }
 
+  /**
+   * Navigate to previous reference in range
+   */
+  #navigatePrev() {
+    if (this.allTargets.length <= 1) return;
+
+    // Wrap around
+    if (this.currentTargetIndex === 0) {
+      this.currentTargetIndex = this.allTargets.length - 1;
+    } else {
+      this.currentTargetIndex--;
+    }
+
+    this.#onTargetChanged();
+  }
+
+  /**
+   * Navigate to next reference in range
+   */
+  #navigateNext() {
+    if (this.allTargets.length <= 1) return;
+
+    // Wrap around
+    if (this.currentTargetIndex === this.allTargets.length - 1) {
+      this.currentTargetIndex = 0;
+    } else {
+      this.currentTargetIndex++;
+    }
+
+    this.#onTargetChanged();
+  }
+
+  /**
+   * Called when target changes - reset state and reload
+   */
+  async #onTargetChanged() {
+    // Reset scholar data for new reference
+    this.scholarData = null;
+    this.scholarError = null;
+    this.isLoadingScholar = false;
+    this.isExpanded = false;
+
+    // Update dots indicator
+    this.#updateDotsIndicator();
+
+    // Reload reference content
+    await this.#loadCurrentReference();
+  }
+
+  /**
+   * Update the dots indicator to reflect current position
+   */
+  #updateDotsIndicator() {
+    const dotsContainer = this.popup.querySelector(".citation-nav-dots");
+    if (!dotsContainer) return;
+
+    const dots = dotsContainer.querySelectorAll(".citation-nav-dot");
+    dots.forEach((dot, index) => {
+      dot.classList.toggle("active", index === this.currentTargetIndex);
+    });
+  }
+
   async showWithText(anchor, text) {
-    await this.show(anchor, async () => text, 0, 0, 0);
+    // Create a minimal citation object for backward compatibility
+    const fakeCitation = {
+      allTargets: [{ refIndex: 0, refKey: null, location: null }]
+    };
+    await this.show(anchor, fakeCitation, async () => text);
   }
 
   positionPopup() {
@@ -198,8 +294,9 @@ export class CitationPopup {
 
     this.popup.innerHTML = "";
 
-    // Create tab header
-    const header = this.#createTabHeader();
+    // Create tab header with navigation (arrows + dots) if this is a range
+    const isRange = this.allTargets.length > 1;
+    const header = this.#createTabHeader(isRange);
     this.popup.appendChild(header);
 
     // Create content container
@@ -211,7 +308,7 @@ export class CitationPopup {
     this.#renderReferenceContent(content, text);
   }
 
-  #createTabHeader() {
+  #createTabHeader(showNavigation = false) {
     const header = document.createElement("div");
     header.className = "citation-popup-header";
 
@@ -239,6 +336,54 @@ export class CitationPopup {
     tabs.appendChild(sep);
     tabs.appendChild(absTab);
     header.appendChild(tabs);
+
+    // Add navigation (arrows + dots) if this is a range
+    if (showNavigation && this.allTargets.length > 1) {
+      const navContainer = document.createElement("div");
+      navContainer.className = "citation-nav-container";
+
+      // Previous arrow
+      const prevArrow = document.createElement("button");
+      prevArrow.className = "citation-nav-arrow prev";
+      prevArrow.innerHTML = `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <path d="M10 12L6 8L10 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>`;
+      prevArrow.title = "Previous reference";
+      prevArrow.addEventListener("click", (e) => {
+        e.stopPropagation();
+        this.#navigatePrev();
+      });
+      navContainer.appendChild(prevArrow);
+
+      // Dots
+      const dotsContainer = document.createElement("div");
+      dotsContainer.className = "citation-nav-dots";
+
+      for (let i = 0; i < this.allTargets.length; i++) {
+        const dot = document.createElement("span");
+        dot.className = "citation-nav-dot";
+        if (i === this.currentTargetIndex) {
+          dot.classList.add("active");
+        }
+        dotsContainer.appendChild(dot);
+      }
+      navContainer.appendChild(dotsContainer);
+
+      // Next arrow
+      const nextArrow = document.createElement("button");
+      nextArrow.className = "citation-nav-arrow next";
+      nextArrow.innerHTML = `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <path d="M6 12L10 8L6 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>`;
+      nextArrow.title = "Next reference";
+      nextArrow.addEventListener("click", (e) => {
+        e.stopPropagation();
+        this.#navigateNext();
+      });
+      navContainer.appendChild(nextArrow);
+
+      header.appendChild(navContainer);
+    }
 
     return header;
   }
@@ -625,6 +770,11 @@ export class CitationPopup {
       this.scholarError = null;
       this.isLoadingScholar = false;
       this.activeTab = "reference";
+      // Reset range navigation state
+      this.citation = null;
+      this.allTargets = [];
+      this.currentTargetIndex = 0;
+      this.findCiteTextCallback = null;
       return;
     }
 
@@ -641,6 +791,11 @@ export class CitationPopup {
       this.scholarError = null;
       this.isLoadingScholar = false;
       this.activeTab = "reference";
+      // Reset range navigation state
+      this.citation = null;
+      this.allTargets = [];
+      this.currentTargetIndex = 0;
+      this.findCiteTextCallback = null;
     }, 300);
   }
 }

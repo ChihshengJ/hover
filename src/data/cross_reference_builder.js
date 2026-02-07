@@ -65,8 +65,7 @@ export class CrossReferenceBuilder {
     this.#numPages = numPages;
     this.#refSectionStartPage =
       referenceIndex?.sectionStart?.pageNumber || Infinity;
-    this.#refSectionEndPage =
-      referenceIndex?.sectionEnd?.pageNumber || -1;
+    this.#refSectionEndPage = referenceIndex?.sectionEnd?.pageNumber || -1;
   }
 
   /**
@@ -84,7 +83,6 @@ export class CrossReferenceBuilder {
     // Phase 1: Extract target definitions (Figure 1:, Table 1:, etc.)
     this.#targets = this.#extractTargetDefinitions();
     console.log(`[CrossRefBuilder] Found ${this.#targets.size} targets`);
-    console.log(this.#targets);
 
     // Phase 2: Index native cross-reference links
     const nativeIndex = this.#indexNativeCrossRefLinks();
@@ -277,7 +275,11 @@ export class CrossReferenceBuilder {
         if (!rect) continue;
 
         // Skip links pointing to reference section
-        if (destPageIndex + 1 >= this.#refSectionStartPage && destPageIndex + 1 < this.#refSectionEndPage) continue;
+        if (
+          destPageIndex + 1 >= this.#refSectionStartPage &&
+          destPageIndex + 1 < this.#refSectionEndPage
+        )
+          continue;
 
         // Skip links with invalid destinations
         if (destX === 0 && destY === 0) continue;

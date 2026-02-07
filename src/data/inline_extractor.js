@@ -49,12 +49,6 @@ import {
   AUTHOR_YEAR_BLOCKS,
 } from "./lexicon.js";
 
-/**
- * Thin adapter that binds a PdfiumTextExtractor to a specific docPtr,
- * providing the same getPageFullText / getRectsForCharRange API that
- * InlineExtractor expects.  All actual WASM work is delegated to the
- * shared PdfiumTextExtractor in text_extractor.js.
- */
 class InlineTextAdapter {
   /** @type {import('./text_extractor.js').PdfiumTextExtractor} */
   #extractor = null;
@@ -322,25 +316,27 @@ export class InlineExtractor {
    */
   #findNumericCitations(fullText, pageNumber, pageIndex) {
     const citations = [];
-    
+
     // First, find inter-bracket ranges like [17]-[19]
     // These must be processed first to avoid partial matches with single brackets
-    const interBracketPattern = cloneRegex(INLINE_CITATION_PATTERNS.interBracketRange);
+    const interBracketPattern = cloneRegex(
+      INLINE_CITATION_PATTERNS.interBracketRange,
+    );
     let match;
-    
+
     while ((match = interBracketPattern.exec(fullText)) !== null) {
       const startNum = parseInt(match[1], 10);
       const endNum = parseInt(match[2], 10);
-      
+
       // Sanity check: range should be reasonable
       if (startNum >= endNum || endNum - startNum > 30) continue;
-      
+
       // Expand range to indices
       const indices = [];
       for (let i = startNum; i <= endNum; i++) {
         indices.push(i);
       }
-      
+
       // Validate against known references
       const validIndices = indices.filter((idx) =>
         this.#signatures.some((anchor) => anchor.index === idx),
@@ -383,16 +379,22 @@ export class InlineExtractor {
         match.index + match[0].length,
       );
     }
-    
+
     // Then, find standard bracket citations: [1], [1,2,3], [1-8]
     const pattern = cloneRegex(INLINE_CITATION_PATTERNS.numericBracket);
 
     while ((match = pattern.exec(fullText)) !== null) {
       // Skip if this range was already matched by inter-bracket pattern
-      if (this.#isRangeMatched(pageNumber, match.index, match.index + match[0].length)) {
+      if (
+        this.#isRangeMatched(
+          pageNumber,
+          match.index,
+          match.index + match[0].length,
+        )
+      ) {
         continue;
       }
-      
+
       const content = match[1];
       const { indices, ranges } = parseNumericCitationContent(content);
 

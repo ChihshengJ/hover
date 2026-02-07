@@ -1,9 +1,6 @@
 /**
  * TextSelectionManager - Handles text selection across PDF pages
  *
- * This module operates on DOM elements and requires minimal changes
- * for the PDFium migration since it doesn't directly interact with
- * the PDF library.
  */
 
 export class TextSelectionManager {
@@ -353,8 +350,8 @@ export class TextSelectionManager {
     if (rects.length === 0) return [];
 
     rects.sort((a, b) => {
-      const topDiff = a.top - b.top;
-      if (Math.abs(topDiff) > 2) return topDiff;
+      const topDiff = a.bottom - b.bottom;
+      if (Math.abs(topDiff) > 8) return topDiff;
       return a.left - b.left;
     });
 
@@ -364,25 +361,16 @@ export class TextSelectionManager {
     for (let i = 1; i < rects.length; i++) {
       const rect = rects[i];
 
-      const sameLine =
-        Math.abs(rect.top - current.top) < 3 &&
-        Math.abs(rect.height - current.height) < 3;
+      const sameLine = Math.abs(rect.bottom - current.bottom) < 8;
 
-      const overlapsOrAdjacent = rect.left <= current.left + current.width + 2;
+      const overlapsOrAdjacent = rect.right <= current.left + 8;
 
       if (sameLine && overlapsOrAdjacent) {
-        const newRight = Math.max(
-          current.left + current.width,
-          rect.left + rect.width,
-        );
-        current.width = newRight - current.left;
-        const newBottom = Math.max(
-          current.top + current.height,
-          rect.top + rect.height,
-        );
-        const newTop = Math.min(current.top, rect.top);
+        const newRight = Math.max(current.right, rect.right);
+        const newBottom = Math.min(current.bottom, rect.botom);
+        const newTop = Math.max(current.top, rect.top);
         current.top = newTop;
-        current.height = newBottom - newTop;
+        current.height = Math.abs(newBottom - newTop);
       } else {
         merged.push(current);
         current = { ...rect };

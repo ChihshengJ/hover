@@ -27,7 +27,6 @@ import { createInlineExtractor } from "./data/inline_extractor.js";
 import { createCitationBuilder } from "./data/citation_builder.js";
 import { createCrossReferenceBuilder } from "./data/cross_reference_builder.js";
 
-
 const COLOR_NAME_TO_HEX = {
   yellow: "#FFB300",
   red: "#E53935",
@@ -151,10 +150,10 @@ export class PDFDocumentModel {
      */
     this.annotationsByPage = new Map();
 
-    this.citationsByPage = new Map();      // Map<pageNum, Citation[]>
-    this.crossRefsByPage = new Map();      // Map<pageNum, CrossReference[]>
-    this.crossRefTargets = new Map();      // Map<string, CrossRefTarget>
-    this.urlsByPage = new Map();           // Map<pageNum, UrlLink[]>
+    this.citationsByPage = new Map(); // Map<pageNum, Citation[]>
+    this.crossRefsByPage = new Map(); // Map<pageNum, CrossReference[]>
+    this.crossRefTargets = new Map(); // Map<string, CrossRefTarget>
+    this.urlsByPage = new Map(); // Map<pageNum, UrlLink[]>
 
     /**
      * Mapping from our annotation ID to the PDF's native annotation ID
@@ -225,7 +224,11 @@ export class PDFDocumentModel {
     sessionStorage.removeItem("hover_pdf_name");
   }
 
-  async load(source, onProgress) {
+  async load(arrayBuffer, onProgress) {
+    if (!(arrayBuffer instanceof ArrayBuffer)) {
+      throw new Error("PDFDocumentModel.load() requires an ArrayBuffer");
+    }
+
     const reportProgress = (loaded, total, phase) => {
       if (onProgress) {
         const percent = total > 0 ? Math.round((loaded / total) * 100) : 0;
@@ -242,17 +245,7 @@ export class PDFDocumentModel {
     this.native = native;
 
     try {
-      let arrayBuffer;
-
-      if (source instanceof ArrayBuffer) {
-        arrayBuffer = source;
-        reportProgress(25, 100, "parsing");
-      } else {
-        reportProgress(20, -1, "downloading");
-        arrayBuffer = await this.#fetchPdfAsArrayBuffer(source, reportProgress);
-        reportProgress(45, 100, "downloaded");
-      }
-
+      reportProgress(25, 100, "parsing");
       this.pdfData = new Uint8Array(arrayBuffer);
 
       reportProgress(50, 100, "parsing");
@@ -302,50 +295,6 @@ export class PDFDocumentModel {
     }
   }
 
-  async #fetchPdfAsArrayBuffer(url, reportProgress) {
-    try {
-      const response = await fetch(url);
-      if (!response.ok) throw new Error(`HTTP ${response.status}`);
-
-      const contentLength = response.headers.get("content-length");
-      const total = contentLength ? parseInt(contentLength, 10) : -1;
-
-      if (total > 0 && response.body) {
-        const reader = response.body.getReader();
-        const chunks = [];
-        let loaded = 0;
-
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-
-          chunks.push(value);
-          loaded += value.length;
-
-          if (reportProgress) {
-            const scaledPercent = 20 + Math.round((loaded / total) * 25);
-            reportProgress(scaledPercent, 100, "downloading");
-          }
-        }
-
-        const combined = new Uint8Array(loaded);
-        let offset = 0;
-        for (const chunk of chunks) {
-          combined.set(chunk, offset);
-          offset += chunk.length;
-        }
-        return combined.buffer;
-      } else {
-        return await response.arrayBuffer();
-      }
-    } catch (error) {
-      if (this.#isCorsOrNetworkError(error)) {
-        return await this.#fetchViaBackground(url, reportProgress);
-      }
-      throw error;
-    }
-  }
-
   #setupLowLevelAccess(pdfiumModule) {
     if (!this.pdfData || !pdfiumModule) return;
 
@@ -356,47 +305,6 @@ export class PDFDocumentModel {
     } catch (error) {
       console.error("[Doc] Error setting up low-level access:", error);
     }
-  }
-
-  #isCorsOrNetworkError(error) {
-    const message = error?.message?.toLowerCase() || "";
-    return (
-      message.includes("cors") ||
-      message.includes("cross-origin") ||
-      message.includes("network") ||
-      message.includes("failed to fetch") ||
-      message.includes("load pdf")
-    );
-  }
-
-  async #fetchViaBackground(url, reportProgress) {
-    return new Promise((resolve, reject) => {
-      if (typeof chrome === "undefined" || !chrome.runtime?.sendMessage) {
-        reject(new Error("Chrome runtime not available"));
-        return;
-      }
-
-      chrome.runtime.sendMessage(
-        { type: "FETCH_PDF", query: url },
-        (response) => {
-          if (chrome.runtime.lastError) {
-            reject(new Error(chrome.runtime.lastError.message));
-            return;
-          }
-          if (response?.error) {
-            reject(new Error(response.error));
-            return;
-          }
-          if (response?.data) {
-            const arrayBuffer = new Uint8Array(response.data).buffer;
-            if (reportProgress) reportProgress(45, 100, "downloaded");
-            resolve(arrayBuffer);
-          } else {
-            reject(new Error("No data received from background"));
-          }
-        },
-      );
-    });
   }
 
   async #cachePageDimensions() {
@@ -733,19 +641,19 @@ export class PDFDocumentModel {
     // Single-pass extraction
     const extractor = createInlineExtractor(this);
     if (!extractor) return;
-    
+
     const { citations, crossRefs, detectedFormat } = extractor.extract();
-    
+
     // Build merged citations
     const citationBuilder = createCitationBuilder(this);
     this.citationsByPage = citationBuilder.build(citations);
-    
+
     // Build merged cross-references
     const crossRefBuilder = createCrossReferenceBuilder(this);
     const { byPage, targets } = crossRefBuilder.build(crossRefs);
     this.crossRefsByPage = byPage;
     this.crossRefTargets = targets;
-    
+
     // Extract URLs from native annotations
     this.#indexUrls();
   }
@@ -766,7 +674,6 @@ export class PDFDocumentModel {
       }
     }
   }
-
 
   getCitationAnchorsForPage(pageNumber) {
     return this.citationsByPage?.get(pageNumber) || [];

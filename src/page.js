@@ -149,7 +149,7 @@ export class PageView {
       this.#renderUrlLinks(page, textScale, cssWidth, cssHeight);
       this.#renderCitationOverlays(page, textScale, cssWidth, cssHeight);
       this.#renderCrossRefOverlays(page, textScale, cssWidth, cssHeight);
-      this.#renderTextLayer(page, textScale, cssWidth, cssHeight);
+      this.#renderTextLayer(page, textScale, pageHeight);
 
       this.textLayer.style.setProperty("--total-scale-factor", `${this.scale}`);
       this.#ensureEndOfContent();
@@ -177,7 +177,7 @@ export class PageView {
     return true;
   }
 
-  #renderTextLayer(page, scale, cssWidth, cssHeight) {
+  #renderTextLayer(page, scale, pageHeight) {
     if (!this.textSlices || this.textSlices.length === 0) return;
 
     const fragment = document.createDocumentFragment();
@@ -188,7 +188,7 @@ export class PageView {
       if (!content || !this.#isValidTextContent(content)) continue;
 
       const rectX = slice.rect.origin.x;
-      const rectY = slice.rect.origin.y;
+      const rectY = pageHeight - slice.rect.origin.y;
       const rectWidth = slice.rect.size.width;
       const rectHeight = slice.rect.size.height;
 
@@ -465,22 +465,13 @@ export class PageView {
     if (!citation) return;
 
     this._showTimer = setTimeout(async () => {
-      // Callback receives the target object and returns reference text
-      // Handles both location-based lookup and fallback methods
       const findTextForTarget = async (target) => {
-        // First, try using the target's location if available
         if (target?.location) {
-          const { x, pageIndex, y: screenY } = target.location;
-
-          // Get page height to convert screen coords back to PDF coords
-          const targetPageNumber = pageIndex + 1;
-          const dims = this.doc.textIndex?.getPageDimensions(targetPageNumber);
-          const pageHeight = dims?.height || this.#getPage()?.size.height;
-          const pdfY = pageHeight - screenY;
-
-          // Convert screen Y (top-left origin) to PDF Y (bottom-left origin)
-
-          const text = await this.#findCiteText(x, pageIndex, pdfY);
+          const { x, pageIndex, y } = target.location;
+          const pageHeight = this.doc.textIndex?.getPageDimensions(
+            pageIndex + 1,
+          ).height;
+          const text = await this.#findCiteText(x, pageIndex, pageHeight - y);
           if (text) return text;
         }
 
@@ -530,21 +521,6 @@ export class PageView {
         );
       }
     }
-  }
-
-  #findReferenceTextForCitation(citation) {
-    if (!citation?.refIndices?.length) return null;
-
-    const refAnchor = this.doc.getReferenceByIndex(citation.refIndices[0]);
-    if (refAnchor?.cachedText) return refAnchor.cachedText;
-
-    if (citation.refKeys?.length) {
-      const key = citation.refKeys[0];
-      const matched = this.doc.matchCitationToReference(key.author, key.year);
-      if (matched?.cachedText) return matched.cachedText;
-    }
-
-    return null;
   }
 
   // ============================================

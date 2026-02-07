@@ -589,8 +589,8 @@ export const AUTHOR_YEAR_PATTERNS = {
   authorThenYear: {
     pattern: new RegExp(
       `(${AUTHOR_YEAR_BLOCKS.authorSurname}${AUTHOR_YEAR_BLOCKS.etAl}?)` +
-        `\\s*,?\\((${AUTHOR_YEAR_BLOCKS.multipleYears})\\)`,
-      "gu"
+      `,?\\s*\\((${AUTHOR_YEAR_BLOCKS.multipleYears})\\)`,
+      "gu",
     ),
     extractAuthor: (match) => match[1].replace(/\s+et\s+al\.?/i, "").trim(),
     extractYears: (match) => parseYearsFromString(match[2]),
@@ -604,10 +604,10 @@ export const AUTHOR_YEAR_PATTERNS = {
   twoAuthorsExternal: {
     pattern: new RegExp(
       `(${AUTHOR_YEAR_BLOCKS.authorSurname})` +
-        `\\s+${AUTHOR_YEAR_BLOCKS.andConnector}\\s*` +
-        `(${AUTHOR_YEAR_BLOCKS.authorSurname})` +
-        `\\s*\\((${AUTHOR_YEAR_BLOCKS.multipleYears})\\)`,
-      "gu"
+      `\\s+${AUTHOR_YEAR_BLOCKS.andConnector}\\s*` +
+      `(${AUTHOR_YEAR_BLOCKS.authorSurname})` +
+      `\\s*\\((${AUTHOR_YEAR_BLOCKS.multipleYears})\\)`,
+      "gu",
     ),
     extractAuthor: (match) => match[1].trim(),
     extractSecondAuthor: (match) => match[2].trim(),
@@ -622,9 +622,9 @@ export const AUTHOR_YEAR_PATTERNS = {
   parenAuthorYear: {
     pattern: new RegExp(
       `\\((?:${AUTHOR_YEAR_BLOCKS.prefixPhrases})?` +
-        `(${AUTHOR_YEAR_BLOCKS.authorSurname}${AUTHOR_YEAR_BLOCKS.etAl}?)` +
-        `\\s*,?\\s*(${AUTHOR_YEAR_BLOCKS.multipleYears})\\)`,
-      "gu"
+      `(${AUTHOR_YEAR_BLOCKS.authorSurname}${AUTHOR_YEAR_BLOCKS.etAl}?)` +
+      `\\s*,?\\s*(${AUTHOR_YEAR_BLOCKS.multipleYears})\\)`,
+      "gu",
     ),
     extractAuthor: (match) => match[1].replace(/\s+et\s+al\.?/i, "").trim(),
     extractYears: (match) => parseYearsFromString(match[2]),
@@ -638,11 +638,11 @@ export const AUTHOR_YEAR_PATTERNS = {
   twoAuthorsInternal: {
     pattern: new RegExp(
       `\\((?:${AUTHOR_YEAR_BLOCKS.prefixPhrases})?` +
-        `(${AUTHOR_YEAR_BLOCKS.authorSurname})` +
-        `\\s+${AUTHOR_YEAR_BLOCKS.andConnector}\\s+` +
-        `(${AUTHOR_YEAR_BLOCKS.authorSurname})` +
-        `\\s*,?\\s*(${AUTHOR_YEAR_BLOCKS.multipleYears})\\)`,
-      "gu"
+      `(${AUTHOR_YEAR_BLOCKS.authorSurname})` +
+      `\\s+${AUTHOR_YEAR_BLOCKS.andConnector}\\s+` +
+      `(${AUTHOR_YEAR_BLOCKS.authorSurname})` +
+      `\\s*,?\\s*(${AUTHOR_YEAR_BLOCKS.multipleYears})\\)`,
+      "gu",
     ),
     extractAuthor: (match) => match[1].trim(),
     extractSecondAuthor: (match) => match[2].trim(),
@@ -663,24 +663,24 @@ export const AUTHOR_YEAR_PATTERNS = {
  */
 export const PARENTHETICAL_CITATION_BLOCK = new RegExp(
   `\\(` +
-    `(?:${AUTHOR_YEAR_BLOCKS.prefixPhrases})?` +
-    // First citation chunk (required)
-    `(?:${AUTHOR_YEAR_BLOCKS.authorSurname})` +
-    `(?:\\s+${AUTHOR_YEAR_BLOCKS.andConnector}\\s+${AUTHOR_YEAR_BLOCKS.authorSurname})?` +
-    `${AUTHOR_YEAR_BLOCKS.etAl}?` +
-    `\\s*,?\\s*` +
-    `${AUTHOR_YEAR_BLOCKS.multipleYears}` +
-    // Additional semicolon-separated citations (zero or more)
-    `(?:` +
-    `\\s*;\\s*` +
-    `(?:${AUTHOR_YEAR_BLOCKS.authorSurname})` +
-    `(?:\\s+${AUTHOR_YEAR_BLOCKS.andConnector}\\s+${AUTHOR_YEAR_BLOCKS.authorSurname})?` +
-    `${AUTHOR_YEAR_BLOCKS.etAl}?` +
-    `\\s*,?\\s*` +
-    `${AUTHOR_YEAR_BLOCKS.multipleYears}` +
-    `)*` +
-    `\\)`,
-  "gu"
+  `(?:${AUTHOR_YEAR_BLOCKS.prefixPhrases})?` +
+  // First citation chunk (required)
+  `(?:${AUTHOR_YEAR_BLOCKS.authorSurname})` +
+  `(?:\\s+${AUTHOR_YEAR_BLOCKS.andConnector}\\s+${AUTHOR_YEAR_BLOCKS.authorSurname})?` +
+  `${AUTHOR_YEAR_BLOCKS.etAl}?` +
+  `\\s*,?\\s*` +
+  `${AUTHOR_YEAR_BLOCKS.multipleYears}` +
+  // Additional semicolon-separated citations (zero or more)
+  `(?:` +
+  `\\s*;\\s*` +
+  `(?:${AUTHOR_YEAR_BLOCKS.authorSurname})` +
+  `(?:\\s+${AUTHOR_YEAR_BLOCKS.andConnector}\\s+${AUTHOR_YEAR_BLOCKS.authorSurname})?` +
+  `${AUTHOR_YEAR_BLOCKS.etAl}?` +
+  `\\s*,?\\s*` +
+  `${AUTHOR_YEAR_BLOCKS.multipleYears}` +
+  `)*` +
+  `\\)`,
+  "gu",
 );
 
 /**
@@ -701,18 +701,18 @@ export const CITATION_CHUNK_SPLITTER = /\s*;\s*/;
  */
 export const CITATION_CHUNK_PARSER = new RegExp(
   `^\\s*` +
-    `(?:${AUTHOR_YEAR_BLOCKS.prefixPhrases})?` +
-    // Author part - capture the whole thing and components
-    `(` +
-    `(${AUTHOR_YEAR_BLOCKS.authorSurname})` +
-    `(?:\\s+${AUTHOR_YEAR_BLOCKS.andConnector}\\s+(${AUTHOR_YEAR_BLOCKS.authorSurname}))?` +
-    `${AUTHOR_YEAR_BLOCKS.etAl}?` +
-    `)` +
-    `\\s*,?\\s*` +
-    // Years
-    `(${AUTHOR_YEAR_BLOCKS.multipleYears})` +
-    `\\s*$`,
-  "u"
+  `(?:${AUTHOR_YEAR_BLOCKS.prefixPhrases})?` +
+  // Author part - capture the whole thing and components
+  `(` +
+  `(${AUTHOR_YEAR_BLOCKS.authorSurname})` +
+  `(?:\\s+${AUTHOR_YEAR_BLOCKS.andConnector}\\s+(${AUTHOR_YEAR_BLOCKS.authorSurname}))?` +
+  `${AUTHOR_YEAR_BLOCKS.etAl}?` +
+  `)` +
+  `\\s*,?\\s*` +
+  // Years
+  `(${AUTHOR_YEAR_BLOCKS.multipleYears})` +
+  `\\s*$`,
+  "u",
 );
 
 // ============================================
@@ -729,13 +729,16 @@ export const CITATION_CHUNK_PARSER = new RegExp(
  */
 export function parseYearsFromString(yearStr) {
   const results = [];
-  
+
   // First, expand compact notation like "2009a,b" to "2009a, 2009b"
-  const expanded = yearStr.replace(/(\d{4})([a-z])((?:,[a-z])+)/g, (match, year, firstLetter, rest) => {
-    const letters = [firstLetter, ...rest.split(',').filter(l => l)];
-    return letters.map(l => `${year}${l}`).join(', ');
-  });
-  
+  const expanded = yearStr.replace(
+    /(\d{4})([a-z])((?:,[a-z])+)/g,
+    (match, year, firstLetter, rest) => {
+      const letters = [firstLetter, ...rest.split(",").filter((l) => l)];
+      return letters.map((l) => `${year}${l}`).join(", ");
+    },
+  );
+
   const parts = expanded.split(/\s*,\s*/);
 
   for (const part of parts) {
@@ -755,7 +758,6 @@ export function parseYearsFromString(yearStr) {
 
   return results;
 }
-
 
 /**
  * Parse a citation chunk into structured data.
@@ -800,7 +802,7 @@ export function parseParentheticalBlock(block) {
   // Remove prefix phrases
   inner = inner.replace(
     new RegExp(`^${AUTHOR_YEAR_BLOCKS.prefixPhrases}`, "i"),
-    ""
+    "",
   );
 
   // Split by semicolon and parse each chunk
@@ -837,8 +839,7 @@ export const CROSS_REFERENCE_PATTERNS = {
     /\b(?:Fig(?:ure|s)?\.?\s*)(\d+[a-z]?(?:\s*[-–—]\s*\d+[a-z]?)?(?:\s*[,&]\s*\d+[a-z]?)*)/gi,
 
   // Table 1, Tab. 1, Tables 1-3
-  table:
-  /\bTab(?:le|s)?\.?\s+(\d+[a-z]?(?:\s*[–—,-]\s*\d+[a-z]?)*)/gi,
+  table: /\bTab(?:le|s)?\.?\s+(\d+[a-z]?(?:\s*[–—,-]\s*\d+[a-z]?)*)/gi,
 
   // Section 1, Sec. 1.2, Sec 3 (in-text references, not headers)
   // Note: § symbol in headers is handled by SECTION_MARK_HEADER_PATTERN

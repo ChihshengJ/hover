@@ -237,6 +237,8 @@ export class DocumentTextIndex {
 
     const lineHeight = this.#findMedian(items.map((i) => i.height));
 
+    const lineWidth = items.at(-1).x + items.at(-1).width - items[0].x;
+
     const lineItems = items.map((it) => ({
       str: it.str,
       x: it.x,
@@ -253,6 +255,7 @@ export class DocumentTextIndex {
       y: first.y,
       originalY: first.originalY,
       lineHeight,
+      lineWidth,
       fontSize,
       fontStyle,
       isCommonFont: 0,

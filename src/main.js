@@ -23,37 +23,30 @@ const el = {
   pageNum: document.getElementById("current-page"),
 };
 
-function getIntendedPdfUrl() {
-  const urlParams = new URLSearchParams(window.location.search);
-  const urlParam = urlParams.get("file");
-  if (urlParam) {
-    return urlParam;
-  }
-
-  if (window.location.hash) {
-    const hashUrl = window.location.hash.substring(1);
-    if (hashUrl) return hashUrl;
-  }
-
-  return "https://arxiv.org/pdf/2501.19393";
+/**
+ * Check if we're running in extension context vs dev server
+ */
+function isExtensionContext() {
+  return (
+    typeof chrome !== "undefined" &&
+    chrome.runtime?.id &&
+    window.location.protocol === "chrome-extension:"
+  );
 }
 
-function getPdfUrl(forceDefault = false) {
-  if (forceDefault) {
-    return OnboardingWalkthrough.getDefaultPaperUrl();
-  }
-
-  return getIntendedPdfUrl() || OnboardingWalkthrough.getDefaultPaperUrl();
+/**
+ * Get URL parameter for dev mode
+ */
+function getDevUrl() {
+  const urlParams = new URLSearchParams(window.location.search);
+  return urlParams.get("file") || urlParams.get("url");
 }
 
 /**
  * Get human-readable status message for loading phase
- * @param {string} phase
- * @returns {string}
  */
 function getStatusMessage(phase) {
   const messages = {
-    // Engine initialization phases
     "loading-wasm": "Loading PDF engine...",
     "downloading-wasm": "Downloading PDF engine...",
     "parsing-wasm": "Parsing PDF engine...",
@@ -61,10 +54,7 @@ function getStatusMessage(phase) {
     "creating-engine": "Creating engine...",
     ready: "Engine ready",
     "initializing engine": "Initializing PDF engine...",
-
-    // Document loading phases
     downloading: "Downloading document...",
-    downloaded: "Document downloaded",
     parsing: "Parsing PDF...",
     processing: "Processing document...",
     caching: "Caching pages...",
@@ -79,8 +69,96 @@ function getStatusMessage(phase) {
 }
 
 /**
- * Check for local PDF from background script (for popup-initiated loads)
- * @returns {Promise<{data: ArrayBuffer, name: string} | null>}
+ * Fetch PDF from URL (for dev mode only)
+ */
+async function fetchPdfFromUrl(url, onProgress) {
+  const response = await fetch(url);
+  if (!response.ok) {
+    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+  }
+
+  const contentLength = response.headers.get("content-length");
+  const total = contentLength ? parseInt(contentLength, 10) : -1;
+
+  if (total > 0 && response.body) {
+    const reader = response.body.getReader();
+    const chunks = [];
+    let loaded = 0;
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      chunks.push(value);
+      loaded += value.length;
+
+      if (onProgress) {
+        const percent = Math.round((loaded / total) * 100);
+        onProgress({ loaded, total, percent, phase: "downloading" });
+      }
+    }
+
+    const combined = new Uint8Array(loaded);
+    let offset = 0;
+    for (const chunk of chunks) {
+      combined.set(chunk, offset);
+      offset += chunk.length;
+    }
+    return combined.buffer;
+  } else {
+    return await response.arrayBuffer();
+  }
+}
+
+/**
+ * Get intercepted PDF from background script
+ */
+async function getInterceptedPdf() {
+  const urlParams = new URLSearchParams(window.location.search);
+  if (urlParams.get("source") !== "intercepted") {
+    return null;
+  }
+
+  if (typeof chrome === "undefined" || !chrome.runtime?.sendMessage) {
+    return null;
+  }
+
+  return new Promise((resolve) => {
+    chrome.runtime.sendMessage({ type: "GET_PENDING_PDF" }, (response) => {
+      if (chrome.runtime.lastError) {
+        console.error(
+          "[Main] Error getting pending PDF:",
+          chrome.runtime.lastError,
+        );
+        resolve(null);
+        return;
+      }
+
+      if (response?.success && response?.data?.data) {
+        try {
+          const binary = atob(response.data.data);
+          const bytes = new Uint8Array(binary.length);
+          for (let i = 0; i < binary.length; i++) {
+            bytes[i] = binary.charCodeAt(i);
+          }
+          resolve({
+            data: bytes.buffer,
+            name: response.data.name || "document.pdf",
+            url: response.data.url || null,
+          });
+        } catch (error) {
+          console.error("[Main] Error parsing intercepted PDF:", error);
+          resolve(null);
+        }
+      } else {
+        resolve(null);
+      }
+    });
+  });
+}
+
+/**
+ * Get local PDF from background script (for popup-initiated loads)
  */
 async function getLocalPdfFromBackground() {
   if (typeof chrome === "undefined" || !chrome.runtime?.sendMessage) {
@@ -106,7 +184,10 @@ async function getLocalPdfFromBackground() {
             name: response.data.name || "document.pdf",
           });
         } catch (error) {
-          console.error("Error parsing local PDF from background:", error);
+          console.error(
+            "[Main] Error parsing local PDF from background:",
+            error,
+          );
           resolve(null);
         }
       } else {
@@ -117,8 +198,7 @@ async function getLocalPdfFromBackground() {
 }
 
 /**
- * Load PDF from either local upload (sessionStorage), background script, or URL
- * @param {boolean} isFirstLaunch - Whether this is the first launch
+ * Load PDF - handles both extension and dev contexts
  */
 async function loadPdf(isFirstLaunch = false) {
   const loadingOverlay = new LoadingOverlay();
@@ -126,8 +206,8 @@ async function loadPdf(isFirstLaunch = false) {
 
   try {
     const pdfmodel = new PDFDocumentModel();
+    const inExtension = isExtensionContext();
 
-    // Progress callback for loading updates
     const onProgress = ({ loaded, total, percent, phase }) => {
       if (total === -1) {
         loadingOverlay.setIndeterminate(getStatusMessage(phase));
@@ -136,10 +216,13 @@ async function loadPdf(isFirstLaunch = false) {
       }
     };
 
+    // For first launch, load the default onboarding paper
     if (isFirstLaunch) {
-      // For first launch, always load the default paper
+      loadingOverlay.setProgress(0.1, "Fetching tutorial document...");
       const url = OnboardingWalkthrough.getDefaultPaperUrl();
-      await pdfmodel.load(url, onProgress);
+      const defaultPdfData = await fetchPdfFromUrl(url, onProgress);
+
+      await pdfmodel.load(defaultPdfData, onProgress);
       loadingOverlay.setProgress(0.95, "Initializing viewer...");
 
       const wm = new SplitWindowManager(el.wd, pdfmodel);
@@ -149,7 +232,6 @@ async function loadPdf(isFirstLaunch = false) {
       document.title = "Welcome to Hover - Tutorial";
       await loadingOverlay.hide();
 
-      // Start onboarding after a short delay
       setTimeout(async () => {
         const onboarding = new OnboardingWalkthrough(wm, fileMenu);
         await onboarding.start();
@@ -158,64 +240,91 @@ async function loadPdf(isFirstLaunch = false) {
       return;
     }
 
-    // Check for locally uploaded PDF first (from sessionStorage)
-    if (PDFDocumentModel.hasLocalPdf()) {
-      const localPdf = PDFDocumentModel.getLocalPdf();
-      if (localPdf) {
-        loadingOverlay.setProgress(0.1, "Loading local file...");
-        await pdfmodel.load(localPdf.data, onProgress);
-        loadingOverlay.setProgress(0.9, "Initializing viewer...");
+    let pdfSource = null;
+    let pdfName = "document.pdf";
 
-        const wm = new SplitWindowManager(el.wd, pdfmodel);
-        await wm.initialize();
-        const fileMenu = new FileMenu(wm);
+    if (inExtension) {
+      // 1. Check for intercepted PDF (from content script)
+      const interceptedPdf = await getInterceptedPdf();
+      if (interceptedPdf) {
+        pdfSource = interceptedPdf.data;
+        pdfName = interceptedPdf.name;
+        console.log("[Main] Loading intercepted PDF:", pdfName);
+      }
 
-        const detectedTitle = await pdfmodel.getDocumentTitle();
-        const fileName = localPdf.name.replace(/\.pdf$/i, "");
-        document.title = (detectedTitle || fileName) + " - Hover PDF";
+      // 2. Check for local PDF from sessionStorage
+      if (!pdfSource && PDFDocumentModel.hasLocalPdf()) {
+        const localPdf = PDFDocumentModel.getLocalPdf();
+        if (localPdf) {
+          pdfSource = localPdf.data;
+          pdfName = localPdf.name;
+          console.log("[Main] Loading local PDF from sessionStorage:", pdfName);
+        }
+      }
 
-        PDFDocumentModel.clearLocalPdf();
-        await loadingOverlay.hide();
-        return;
+      // 3. Check for local PDF from background (popup uploads)
+      if (!pdfSource) {
+        const backgroundPdf = await getLocalPdfFromBackground();
+        if (backgroundPdf) {
+          pdfSource = backgroundPdf.data;
+          pdfName = backgroundPdf.name;
+          console.log("[Main] Loading PDF from background:", pdfName);
+        }
       }
     }
 
-    // Check for local PDF from background script (from popup uploads)
-    const backgroundPdf = await getLocalPdfFromBackground();
-    if (backgroundPdf) {
-      loadingOverlay.setProgress(0.1, "Loading local file...");
-      await pdfmodel.load(backgroundPdf.data, onProgress);
-      loadingOverlay.setProgress(0.9, "Initializing viewer...");
+    else {
+      const devUrl = getDevUrl();
+      if (devUrl) {
+        console.log("[Main] DEV MODE - Loading from URL:", devUrl);
+        loadingOverlay.setIndeterminate("Downloading document...");
+        pdfSource = await fetchPdfFromUrl(devUrl, onProgress);
+        pdfName = devUrl.split("/").pop()?.split("?")[0] || "document.pdf";
+      }
 
-      const wm = new SplitWindowManager(el.wd, pdfmodel);
-      await wm.initialize();
-      const fileMenu = new FileMenu(wm);
-
-      const detectedTitle = await pdfmodel.getDocumentTitle();
-      const fileName = backgroundPdf.name.replace(/\.pdf$/i, "");
-      document.title = (detectedTitle || fileName) + " - Hover PDF";
-
-      await loadingOverlay.hide();
-      return;
+      if (!pdfSource && PDFDocumentModel.hasLocalPdf()) {
+        const localPdf = PDFDocumentModel.getLocalPdf();
+        if (localPdf) {
+          pdfSource = localPdf.data;
+          pdfName = localPdf.name;
+          console.log(
+            "[Main] DEV MODE - Loading from sessionStorage:",
+            pdfName,
+          );
+        }
+      }
     }
 
-    // Fall back to URL-based loading
-    const url = getPdfUrl();
-    await pdfmodel.load(url, onProgress);
+    if (!pdfSource && !inExtension) {
+      console.log("[Main] DEV MODE - No URL specified, loading default paper");
+      const defaultUrl = "https://arxiv.org/pdf/2501.19393";
+      pdfSource = await fetchPdfFromUrl(defaultUrl, onProgress);
+      pdfName = "default.pdf";
+    }
+
+    if (!pdfSource) {
+      throw new Error(
+        "No PDF document to display. Please open a PDF file or navigate to a PDF URL.",
+      );
+    }
+
+    loadingOverlay.setProgress(0.1, "Loading document...");
+    await pdfmodel.load(pdfSource, onProgress);
     loadingOverlay.setProgress(0.95, "Initializing viewer...");
 
     const wm = new SplitWindowManager(el.wd, pdfmodel);
     await wm.initialize();
     const fileMenu = new FileMenu(wm);
 
-    const documentTitle = await pdfmodel.getDocumentTitle();
-    if (documentTitle) {
-      document.title = documentTitle + " - Hover PDF";
-    }
+    const detectedTitle = await pdfmodel.getDocumentTitle();
+    const fileName = pdfName.replace(/\.pdf$/i, "");
+    document.title = (detectedTitle || fileName) + " - Hover PDF";
+
+    PDFDocumentModel.clearLocalPdf();
 
     await loadingOverlay.hide();
   } catch (error) {
-    console.error("Error loading PDF:", error);
+    console.error("[Main] Error loading PDF:", error);
     PDFDocumentModel.clearLocalPdf();
     loadingOverlay.destroy();
     el.wd.innerHTML = `
@@ -223,31 +332,23 @@ async function loadPdf(isFirstLaunch = false) {
         <h2>Failed to load PDF</h2>
         <p>${error.message}</p>
         <p style="font-size: 12px; color: #666; margin-top: 20px;">
-          If this is a CORS error, try using the extension popup to upload the file directly.
+          ${isExtensionContext()
+        ? "Try uploading a PDF file directly using the extension popup."
+        : "DEV MODE: Pass a URL with ?file=https://... or upload a file."
+      }
         </p>
       </div>
     `;
   }
 }
 
-function loadWallPaper() {
-  const wallPaperPath = "assets/wallpapers/Texture_Carpet.jpg";
-  document.body.style.background = `url(${wallPaperPath})`;
-  document.body.style.backgroundSize = "cover";
-}
-
 async function main() {
   const isFirstLaunch = await OnboardingWalkthrough.isFirstLaunch();
 
   if (isFirstLaunch) {
-    const intendedUrl = getIntendedPdfUrl();
-    if (intendedUrl) {
-      OnboardingWalkthrough.saveIntendedUrl(intendedUrl);
-    }
     PDFDocumentModel.clearLocalPdf();
   }
 
-  // loadWallPaper();
   await loadPdf(isFirstLaunch);
 }
 

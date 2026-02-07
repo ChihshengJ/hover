@@ -205,8 +205,8 @@ function collectHeadingCandidates(textIndex) {
     const skipThresholdY = abstractLine ? abstractLine.y : pageHeight * 0.3;
 
     for (const line of lines) {
-      if (abstractLine && line.y < skipThresholdY) continue;
-      if (pageNum === 1 && line.y < skipThresholdY) continue;
+      if (abstractLine && line.y > skipThresholdY) continue;
+      if (pageNum === 1 && line.y > skipThresholdY) continue;
 
       const candidate = analyzeLineAsHeading(
         line,
@@ -267,8 +267,8 @@ function analyzeLineAsHeading(
   const isStyled =
     fontStyle === FontStyle.BOLD || fontStyle === FontStyle.BOLD_ITALIC;
 
-  const lineWidth = line.items.reduce((sum, it) => sum + it.width, 0);
-  const isShortLine = lineWidth < page.pageWidth * 0.4;
+  const isShortLine = line.lineWidth < page.pageWidth * 0.4;
+  const isAllCapital = line.text === line.text.toUpperCase();
 
   if (isNumbered) {
     const strippedText = text
@@ -277,7 +277,7 @@ function analyzeLineAsHeading(
       .trim();
     if (!/[A-Z]/.test(strippedText[0])) return null;
     if (!isShortLine) return null;
-    if (!isStyled) return null;
+    if (!isStyled && !isAllCapital) return null;
   }
 
   const isNonNumberedHeading =
@@ -563,7 +563,7 @@ function buildOutlineTree(candidates) {
       title: candidate.title,
       pageIndex: candidate.pageIndex,
       left: candidate.x,
-      top: candidate.top,
+      top: candidate.y,
       children: [],
     };
 
@@ -689,9 +689,7 @@ function detectTitle(allLines, bodyFontSize) {
 
   const pageHeight = page1Lines[0]?.pageHeight || 792;
   const topThreshold = pageHeight * 0.4;
-  const titleCandidates = page1Lines.filter(
-    (line) => pageHeight - line.y > topThreshold,
-  );
+  const titleCandidates = page1Lines.filter((line) => line.y > topThreshold);
   if (titleCandidates.length === 0) return null;
 
   const largeFontThreshold = bodyFontSize * 1.2;

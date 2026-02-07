@@ -98,7 +98,7 @@ function findReferenceSection(textIndex) {
           line.fontStyle === FontStyle.BOLD ||
           line.fontStyle === FontStyle.BOLD_ITALIC;
         const isAllCapital = line.text === line.text.toUpperCase();
-        const isDirectMatch = line.text === "References";
+        const isDirectMatch = strippedText === "references";
 
         if (!isWeirdPosition && (isBold || isAllCapital || isDirectMatch)) {
           referenceStart = {
@@ -152,7 +152,7 @@ function findReferenceSectionEnd(pageData, start, bodyFontSize) {
         .toLowerCase();
 
       const isBoldAndLarge =
-        line.fontSize > bodyFontSize * 1.3 && line.fontStyle === FontStyle.BOLD;
+        line.fontSize > bodyFontSize * 1.5 && line.fontStyle === FontStyle.BOLD;
       const isAllCapital =
         line.text === line.text.toUpperCase() &&
         /\d+/.test(line) &&

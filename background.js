@@ -1,132 +1,15 @@
-const PDF_REGEX =
-  "^https?://.*(?:\\.pdf(?:\\?.*)?|arxiv\\.org/pdf/.*|/pdf/.*)$";
-
 // ============================================
-// Redirect Rules Management
+// Hover PDF Viewer - Background Script
 // ============================================
+//
+// Content-type based PDF interception:
+// - Content script detects when Chrome displays a PDF natively
+// - Content script fetches PDF with credentials (same-origin)
+// - Background receives PDF data and opens in Hover viewer
 
-async function setupRedirectRules() {
-  // Check if Hover is enabled
-  const { hoverEnabled = true } = await chrome.storage.local.get('hoverEnabled');
-  
-  if (hoverEnabled) {
-    await enableRedirectRules();
-  } else {
-    await disableRedirectRules();
-  }
-  
-  console.log(`Hover PDF: ${hoverEnabled ? 'Enabled' : 'Disabled'}`);
-}
-
-async function enableRedirectRules() {
-  const viewerUrl = chrome.runtime.getURL("index.html");
-
-  const rules = [
-    {
-      id: 1,
-      priority: 1,
-      action: {
-        type: "redirect",
-        redirect: {
-          regexSubstitution: `${viewerUrl}?file=\\0`,
-        },
-      },
-      condition: {
-        regexFilter: PDF_REGEX,
-        resourceTypes: ["main_frame"],
-      },
-    },
-  ];
-
-  await chrome.declarativeNetRequest.updateDynamicRules({
-    removeRuleIds: [1],
-    addRules: rules,
-  });
-
-  console.log("PDF Redirect rules enabled");
-}
-
-async function disableRedirectRules() {
-  await chrome.declarativeNetRequest.updateDynamicRules({
-    removeRuleIds: [1],
-    addRules: [],
-  });
-
-  console.log("PDF Redirect rules disabled");
-}
-
-// ============================================
-// Navigation Interception (for enabled state)
-// ============================================
-
-let navigationListener = null;
-
-function setupNavigationListener() {
-  if (navigationListener) return;
-  
-  navigationListener = async function(details) {
-    // Check if enabled before intercepting
-    const { hoverEnabled = true } = await chrome.storage.local.get('hoverEnabled');
-    if (!hoverEnabled) return;
-    
-    if (details.frameId === 0 && isPdfUrl(details.url)) {
-      const viewerUrl =
-        chrome.runtime.getURL("index.html") +
-        "?file=" +
-        encodeURIComponent(details.url);
-      chrome.tabs.update(details.tabId, { url: viewerUrl });
-    }
-  };
-  
-  chrome.webNavigation.onBeforeNavigate.addListener(navigationListener);
-}
-
-function removeNavigationListener() {
-  if (navigationListener) {
-    chrome.webNavigation.onBeforeNavigate.removeListener(navigationListener);
-    navigationListener = null;
-  }
-}
-
-function isPdfUrl(url) {
-  if (url.toLowerCase().endsWith(".pdf")) {
-    return true;
-  }
-  const pdfPatterns = [/arxiv\.org\/pdf\//, /\.pdf$/i, /\/pdf\//];
-  return pdfPatterns.some((pattern) => pattern.test(url));
-}
-
-// ============================================
-// Initialization
-// ============================================
-
-// Initialize on install or startup
-chrome.runtime.onInstalled.addListener(async () => {
-  // Set default enabled state on first install
-  const { hoverEnabled } = await chrome.storage.local.get('hoverEnabled');
-  if (hoverEnabled === undefined) {
-    await chrome.storage.local.set({ hoverEnabled: true });
-  }
-  await setupRedirectRules();
-  setupNavigationListener();
-});
-
-chrome.runtime.onStartup.addListener(async () => {
-  await setupRedirectRules();
-  const { hoverEnabled = true } = await chrome.storage.local.get('hoverEnabled');
-  if (hoverEnabled) {
-    setupNavigationListener();
-  }
-});
-
-// Also set up on service worker activation
-(async () => {
-  await setupRedirectRules();
-  const { hoverEnabled = true } = await chrome.storage.local.get('hoverEnabled');
-  if (hoverEnabled) {
-    setupNavigationListener();
-  }
-})();
+// Temporary storage for intercepted PDF data
+let pendingPdfData = null;
+let localPdfData = null;
 
 // ============================================
 // Message Handlers
@@ -139,102 +22,164 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       .catch((err) => sendResponse({ error: err.message }));
     return true;
   }
-  
-  if (message.type === "FETCH_PDF") {
-    fetch(message.query)
-      .then((response) => response.arrayBuffer())
-      .then((buffer) => {
-        sendResponse({ data: Array.from(new Uint8Array(buffer)) });
-      })
+
+  // Content script detected a PDF page
+  if (message.type === "PDF_PAGE_DETECTED") {
+    handlePdfPageDetected(message, sender)
+      .then((result) => sendResponse(result))
       .catch((err) => sendResponse({ error: err.message }));
     return true;
   }
-  
+
+  // Content script sending PDF data after fetching with credentials
+  if (message.type === "PDF_DATA_READY") {
+    handlePdfDataReady(message, sender)
+      .then((result) => sendResponse(result))
+      .catch((err) => sendResponse({ error: err.message }));
+    return true;
+  }
+
+  // Viewer requesting the pending PDF data
+  if (message.type === "GET_PENDING_PDF") {
+    const data = pendingPdfData;
+    pendingPdfData = null; // Clear after retrieval
+    sendResponse({ success: true, data });
+    return true;
+  }
+
   if (message.type === "FETCH_SCHOLAR") {
     fetchGoogleScholar(message.query)
       .then((result) => sendResponse({ success: true, data: result }))
       .catch((error) => sendResponse({ success: false, error: error.message }));
     return true;
   }
-  
+
   if (message.type === "FETCH_CITE") {
     fetchGoogleScholarCite(message.query)
       .then((result) => sendResponse({ success: true, data: result }))
       .catch((error) => sendResponse({ success: false, error: error.message }));
     return true;
   }
-  
+
   if (message.type === "FETCH_WEB") {
     fetchWebsite(message.query)
       .then((result) => sendResponse({ success: true, data: result }))
       .catch((error) => sendResponse({ success: false, error: error.message }));
     return true;
   }
-  
+
   if (message.type === "STORE_LOCAL_PDF") {
-    // Store PDF data for the viewer to access
-    // Using a different approach since service workers can't use sessionStorage
     localPdfData = {
       data: message.data,
-      name: message.name
+      name: message.name,
     };
     sendResponse({ success: true });
     return true;
   }
-  
+
   if (message.type === "GET_LOCAL_PDF") {
-    sendResponse({ 
-      success: true, 
-      data: localPdfData 
+    sendResponse({
+      success: true,
+      data: localPdfData,
     });
-    localPdfData = null; // Clear after retrieval
+    localPdfData = null;
     return true;
   }
-  
+
   if (message.type === "GET_HOVER_STATUS") {
-    chrome.storage.local.get('hoverEnabled')
-      .then(({ hoverEnabled = true }) => {
-        sendResponse({ enabled: hoverEnabled });
-      });
+    chrome.storage.local.get("hoverEnabled").then(({ hoverEnabled = true }) => {
+      sendResponse({ enabled: hoverEnabled });
+    });
     return true;
   }
 });
 
-// Temporary storage for local PDF data (since service workers can't use sessionStorage)
-let localPdfData = null;
+// ============================================
+// PDF Page Detection Handlers
+// ============================================
+
+async function handlePdfPageDetected(message, sender) {
+  const { hoverEnabled = true } =
+    await chrome.storage.local.get("hoverEnabled");
+
+  if (!hoverEnabled) {
+    return { action: "none", reason: "disabled" };
+  }
+
+  // Tell content script to fetch the PDF with credentials and send it back
+  return { action: "fetch_and_send" };
+}
+
+async function handlePdfDataReady(message, sender) {
+  const { url, data, filename } = message;
+
+  // Store the PDF data temporarily
+  pendingPdfData = {
+    data: data, // Base64 encoded
+    url: url,
+    name: filename || extractFilename(url),
+  };
+
+  // Open the viewer in the same tab
+  const viewerUrl = chrome.runtime.getURL("index.html") + "?source=intercepted";
+
+  await chrome.tabs.update(sender.tab.id, { url: viewerUrl });
+
+  return { success: true };
+}
+
+function extractFilename(url) {
+  try {
+    const urlObj = new URL(url);
+    const pathname = urlObj.pathname;
+    const filename = pathname.split("/").pop() || "document.pdf";
+    return filename.endsWith(".pdf") ? filename : filename + ".pdf";
+  } catch {
+    return "document.pdf";
+  }
+}
+
+// ============================================
+// Toggle Handler
+// ============================================
 
 async function handleToggle(enabled) {
-  // Save state
   await chrome.storage.local.set({ hoverEnabled: enabled });
-  
-  // Update redirect rules
-  if (enabled) {
-    await enableRedirectRules();
-    setupNavigationListener();
-  } else {
-    await disableRedirectRules();
-    removeNavigationListener();
-  }
-  
-  // Check if there's a currently open Hover viewer tab with a PDF
+
   const viewerUrl = chrome.runtime.getURL("index.html");
   const tabs = await chrome.tabs.query({});
-  
+
   let currentPdfUrl = null;
   for (const tab of tabs) {
     if (tab.url && tab.url.startsWith(viewerUrl)) {
       const url = new URL(tab.url);
-      currentPdfUrl = url.searchParams.get('file');
+      currentPdfUrl = url.searchParams.get("file");
       break;
     }
   }
-  
-  return { 
-    success: true, 
+
+  return {
+    success: true,
     enabled,
-    currentPdfUrl 
+    currentPdfUrl,
   };
 }
+
+// ============================================
+// Initialization
+// ============================================
+
+chrome.runtime.onInstalled.addListener(async () => {
+  const { hoverEnabled } = await chrome.storage.local.get("hoverEnabled");
+  if (hoverEnabled === undefined) {
+    await chrome.storage.local.set({ hoverEnabled: true });
+  }
+  console.log("Hover PDF Viewer installed");
+});
+
+chrome.runtime.onStartup.addListener(async () => {
+  console.log("Hover PDF Viewer started");
+});
 
 // ============================================
 // Scholar Fetch Functions

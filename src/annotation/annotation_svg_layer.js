@@ -272,13 +272,12 @@ export class AnnotationSVGLayer {
         );
         current.widthRatio = newRight - current.leftRatio;
 
-        // Unify vertical bounds
         const currentBottom = current.topRatio + current.heightRatio;
         const nextBottom = next.topRatio + next.heightRatio;
         const minTop = Math.min(current.topRatio, next.topRatio);
         const maxBottom = Math.max(currentBottom, nextBottom);
         current.topRatio = minTop;
-        current.heightRatio = maxBottom - minTop;
+        current.heightRatio = Math.abs(maxBottom - minTop);
       } else {
         // Gap too large, start new rect
         merged.push(current);

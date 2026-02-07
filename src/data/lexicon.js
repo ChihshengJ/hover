@@ -1,4 +1,35 @@
 /**
+ * Bit flags for citation metadata storage
+ * Use bitwise operations: flags |= CitationFlags.NATIVE_CONFIRMED
+ * Check with: (flags & CitationFlags.NATIVE_CONFIRMED) !== 0
+ */
+export const CitationFlags = Object.freeze({
+  NONE: 0,
+  NATIVE_CONFIRMED: 1 << 0, // Overlapped with native PDF annotation
+  DEST_CONFIRMED: 1 << 1, // Native destination was validated
+  RANGE_NOTATION: 1 << 2, // Original was range notation (e.g., [1-8], [17]-[19])
+  MULTI_REF: 1 << 3, // References multiple items (e.g., [1,2,3])
+  MULTI_YEAR: 1 << 4, // Single author with multiple years
+});
+
+/**
+ * Cross-reference types enum
+ */
+export const CrossRefType = Object.freeze({
+  FIGURE: "figure",
+  TABLE: "table",
+  SECTION: "section",
+  EQUATION: "equation",
+  ALGORITHM: "algorithm",
+  THEOREM: "theorem",
+  APPENDIX: "appendix",
+});
+
+// ============================================
+// Common Section Names
+// ============================================
+
+/**
  * Common section names across academic disciplines
  * Organized for fast lookup using a Set
  */
@@ -458,7 +489,7 @@ export const REFERENCE_FORMAT_PATTERNS = {
  * Matches: "Smith, J. (2020)" or "Smith J (2020)" at start
  */
 export const AUTHOR_YEAR_START_PATTERN =
-  /^[A-Z][a-zÀ-ÿ]+(?:[,\s]+[A-Z]\.?\s*)+.*?\(?(19|20)\d{2}[a-z]?\)?/;
+  /^[A-Z][a-z\u00C0-\u00FF]+(?:[,\s]+[A-Z]\.?\s*)+.*?\(?(19|20)\d{2}[a-z]?\)?/;
 
 /**
  * Pattern to detect a year anywhere in text (for validation)
@@ -466,77 +497,426 @@ export const AUTHOR_YEAR_START_PATTERN =
 export const YEAR_PATTERN = /\b(19|20)\d{2}[a-z]?\b/;
 
 // ============================================
-// Inline Citation Patterns
+// Inline Citation Patterns (Body Text)
 // ============================================
+
+/**
+ * Unicode-aware dash pattern for ranges
+ * Matches: - (hyphen), – (en-dash), — (em-dash)
+ */
+export const DASH_PATTERN = /[-–—]/;
 
 /**
  * Numeric citation patterns found in paper body
+ * Updated with proper Unicode dash support
  */
-export const NUMERIC_CITATION_PATTERNS = {
-  // [1] or [1,2,3] or [1, 2, 3]
-  bracketList: /\[(\d+(?:\s*[,;]\s*\d+)*)\]/g,
-
-  // [YYZS+23] or [CHA21] or [CHAN+21, ZZYD+24]
-  bracketAbbr: /\[([A-Z]*\+?\d+(?:\s*[,;]\s*[A-Z]*\+?\d+)*)\]/g,
-
-  // [1-5] or [1–5] or [1—5]
-  bracketRange: /\[(\d+)\s*[-–—]\s*(\d+)\]/g,
-
-  // [1-3, 5, 7-9] - mixed ranges and singles
-  bracketMixed:
+export const INLINE_CITATION_PATTERNS = {
+  /**
+   * Bracket citations: [1], [1,2,3], [1-5], [1-3, 5, 7-9]
+   * Captures the inner content for parsing
+   * Uses Unicode-aware dash matching
+   */
+  numericBracket:
     /\[(\d+(?:\s*[-–—]\s*\d+)?(?:\s*[,;]\s*\d+(?:\s*[-–—]\s*\d+)?)*)\]/g,
 
-  // Superscript numbers (detected via font size, but pattern for validation)
-  superscript: /[⁰¹²³⁴⁵⁶⁷⁸⁹]+/g,
+  /**
+   * Inter-bracket range: [17]-[19], [17]–[19], [17]—[19]
+   * Matches range notation where each number is in its own bracket
+   * Captures: group 1 = start number, group 2 = end number
+   */
+  interBracketRange: /\[(\d+)\]\s*[-–—]\s*\[(\d+)\]/g,
+
+  /**
+   * Abbreviated citations: [YYZS+23], [CHA21], [CHAN+21, ZZYD+24]
+   * Common in CS papers (first letters of authors + year)
+   */
+  abbreviatedBracket:
+    /\[([A-Z]{2,}(?:\+)?\d{2}(?:\s*[,;]\s*[A-Z]{2,}(?:\+)?\d{2})*)\]/g,
+
+  /**
+   * Superscript number pattern (for validation after font-size detection)
+   * Actual superscript detection uses font metrics, this is for text validation
+   */
+  superscriptDigits: /^\d+$/,
+};
+
+// ============================================
+// Author-Year Citation Building Blocks
+// ============================================
+
+/**
+ * Modular building blocks for author-year citation patterns.
+ * These are string fragments that can be composed into full patterns.
+ * Using strings allows for easier reading, modification, and composition.
+ */
+export const AUTHOR_YEAR_BLOCKS = {
+  // Single author surname (Unicode-aware, handles hyphenated and apostrophe names)
+  // Examples: Smith, O'Brien, García-López, Müller, de Bruin
+  authorSurname: `(?:(?:[Dd]e|[Vv]on|[Vv]an|[Dd]er|[Dd]en|[Ll]e|[Ll]a|[Dd]el|[Dd]os|[Dd]as|[Dd]i|[Dd]u)\\s+)?\\p{Lu}[\\p{L}\\p{M}'-]+`,
+
+  // Et al. suffix (optional)
+  etAl: `(?:\\s+et\\s+al\\.?)`,
+
+  // "and" connector for two authors (includes various ampersand forms)
+  andConnector: `(?:and|&|&amp;|＆)`,
+
+  // Single year (with optional letter suffix for multiple papers same year)
+  // Examples: 2020, 2020a, 2020b, 2009a,b
+  year: `\\d{4}[a-z]?(?:,[a-z])*`,
+
+  // Single year or year with letter suffix(es)
+  // Note: Year ranges like "1996-2004" are NOT supported as they are rare edge cases
+  // that represent a single reference, not a range of years
+  yearOrRange: `\\d{4}[a-z]?(?:,[a-z])*`,
+
+  // Multiple years separated by commas
+  // Examples: 2008, 2013 or 2009a,b
+  multipleYears: `\\d{4}[a-z]?(?:,[a-z])*(?:\\s*,\\s*\\d{4}[a-z]?(?:,[a-z])*)*`,
+
+  // Prefix phrases that may appear before citations in parentheses
+  prefixPhrases: `(?:e\\.g\\.,?|i\\.e\\.,?|see|see also|cf\\.|compare)\\s*`,
 };
 
 /**
- * Author-year citation patterns found in paper body
+ * Composed patterns for author-year citations.
+ * Built from AUTHOR_YEAR_BLOCKS for maintainability.
  */
-export const AUTHOR_YEAR_CITATION_PATTERNS = {
-  // Smith (2020) or Smith et al. (2020)
-  authorThenYear: /([A-Z][a-zÀ-ÿ]+(?:\s+et\s+al\.?)?)\s*\((\d{4}[a-z]?)\)/g,
+export const AUTHOR_YEAR_PATTERNS = {
+  /**
+   * Single author with year(s) OUTSIDE parentheses, year(s) IN parentheses
+   * Examples: Smith (2020), Smith et al. (2020), Müller (2019, 2020)
+   */
+  authorThenYear: {
+    pattern: new RegExp(
+      `(${AUTHOR_YEAR_BLOCKS.authorSurname}${AUTHOR_YEAR_BLOCKS.etAl}?)` +
+        `\\s*,?\\((${AUTHOR_YEAR_BLOCKS.multipleYears})\\)`,
+      "gu"
+    ),
+    extractAuthor: (match) => match[1].replace(/\s+et\s+al\.?/i, "").trim(),
+    extractYears: (match) => parseYearsFromString(match[2]),
+    isTwoAuthor: false,
+  },
 
-  // Smith and Jones (2020)
-  twoAuthors:
-    /([A-Z][a-zÀ-ÿ]+)\s+(?:and|&)\s+([A-Z][a-zÀ-ÿ]+)\s*\((\d{4}[a-z]?)\)/g,
+  /**
+   * Two authors with year(s) OUTSIDE parentheses
+   * Examples: Garza and Williamson (2001), Smith & Jones (2020, 2021)
+   */
+  twoAuthorsExternal: {
+    pattern: new RegExp(
+      `(${AUTHOR_YEAR_BLOCKS.authorSurname})` +
+        `\\s+${AUTHOR_YEAR_BLOCKS.andConnector}\\s*` +
+        `(${AUTHOR_YEAR_BLOCKS.authorSurname})` +
+        `\\s*\\((${AUTHOR_YEAR_BLOCKS.multipleYears})\\)`,
+      "gu"
+    ),
+    extractAuthor: (match) => match[1].trim(),
+    extractSecondAuthor: (match) => match[2].trim(),
+    extractYears: (match) => parseYearsFromString(match[3]),
+    isTwoAuthor: true,
+  },
 
-  // (Smith, 2020) or (Smith & Jones, 2020)
-  parenAuthorYear:
-    /\(([A-Z][a-zÀ-ÿ]+(?:\s+(?:et\s+al\.,??|and|&)\s+[A-Z][a-zÀ-ÿ]+)?),?\s*(\d{4}[a-z]?)\)/g,
+  /**
+   * Single citation inside parentheses: (Author, Year) or (Author et al., Year)
+   * Examples: (Smith, 2020), (Smith et al., 2020), (Müller, 2019, 2020)
+   */
+  parenAuthorYear: {
+    pattern: new RegExp(
+      `\\((?:${AUTHOR_YEAR_BLOCKS.prefixPhrases})?` +
+        `(${AUTHOR_YEAR_BLOCKS.authorSurname}${AUTHOR_YEAR_BLOCKS.etAl}?)` +
+        `\\s*,?\\s*(${AUTHOR_YEAR_BLOCKS.multipleYears})\\)`,
+      "gu"
+    ),
+    extractAuthor: (match) => match[1].replace(/\s+et\s+al\.?/i, "").trim(),
+    extractYears: (match) => parseYearsFromString(match[2]),
+    isTwoAuthor: false,
+  },
 
-  // (Smith, 2020; Jones, 2021) - multiple citations
-  parenMultiple:
-    /\(([A-Z][a-zÀ-ÿ]+.*?\d{4}[a-z]?(?:\s*[;,]\s*[A-Z][a-zÀ-ÿ]+.*?\d{4}[a-z]?)+)\)/g,
+  /**
+   * Two authors inside parentheses: (Author1 and Author2, Year)
+   * Examples: (Smith and Jones, 2020), (García & López, 2021)
+   */
+  twoAuthorsInternal: {
+    pattern: new RegExp(
+      `\\((?:${AUTHOR_YEAR_BLOCKS.prefixPhrases})?` +
+        `(${AUTHOR_YEAR_BLOCKS.authorSurname})` +
+        `\\s+${AUTHOR_YEAR_BLOCKS.andConnector}\\s+` +
+        `(${AUTHOR_YEAR_BLOCKS.authorSurname})` +
+        `\\s*,?\\s*(${AUTHOR_YEAR_BLOCKS.multipleYears})\\)`,
+      "gu"
+    ),
+    extractAuthor: (match) => match[1].trim(),
+    extractSecondAuthor: (match) => match[2].trim(),
+    extractYears: (match) => parseYearsFromString(match[3]),
+    isTwoAuthor: true,
+  },
 };
 
+/**
+ * Pattern to match large parenthetical citation blocks containing multiple citations.
+ * These are semicolon-separated groups of author-year citations.
+ *
+ * Examples:
+ * - (Abutalebi et al., 2008, 2013; de Bruin et al., 2014; Garbin et al., 2011)
+ * - (see Smith, 2020; Jones et al., 2021)
+ *
+ * Strategy: Match the entire parenthetical block, then parse internally.
+ */
+export const PARENTHETICAL_CITATION_BLOCK = new RegExp(
+  `\\(` +
+    `(?:${AUTHOR_YEAR_BLOCKS.prefixPhrases})?` +
+    // First citation chunk (required)
+    `(?:${AUTHOR_YEAR_BLOCKS.authorSurname})` +
+    `(?:\\s+${AUTHOR_YEAR_BLOCKS.andConnector}\\s+${AUTHOR_YEAR_BLOCKS.authorSurname})?` +
+    `${AUTHOR_YEAR_BLOCKS.etAl}?` +
+    `\\s*,?\\s*` +
+    `${AUTHOR_YEAR_BLOCKS.multipleYears}` +
+    // Additional semicolon-separated citations (zero or more)
+    `(?:` +
+    `\\s*;\\s*` +
+    `(?:${AUTHOR_YEAR_BLOCKS.authorSurname})` +
+    `(?:\\s+${AUTHOR_YEAR_BLOCKS.andConnector}\\s+${AUTHOR_YEAR_BLOCKS.authorSurname})?` +
+    `${AUTHOR_YEAR_BLOCKS.etAl}?` +
+    `\\s*,?\\s*` +
+    `${AUTHOR_YEAR_BLOCKS.multipleYears}` +
+    `)*` +
+    `\\)`,
+  "gu"
+);
+
+/**
+ * Pattern to split a parenthetical block into individual citation chunks.
+ * Used after matching PARENTHETICAL_CITATION_BLOCK.
+ */
+export const CITATION_CHUNK_SPLITTER = /\s*;\s*/;
+
+/**
+ * Pattern to parse a single citation chunk (author + years).
+ * Used on each chunk after splitting by semicolon.
+ *
+ * Captures:
+ * - Group 1: Full author part (including "et al." and second author if present)
+ * - Group 2: First author surname
+ * - Group 3: Second author surname (if two-author citation)
+ * - Group 4: Years string
+ */
+export const CITATION_CHUNK_PARSER = new RegExp(
+  `^\\s*` +
+    `(?:${AUTHOR_YEAR_BLOCKS.prefixPhrases})?` +
+    // Author part - capture the whole thing and components
+    `(` +
+    `(${AUTHOR_YEAR_BLOCKS.authorSurname})` +
+    `(?:\\s+${AUTHOR_YEAR_BLOCKS.andConnector}\\s+(${AUTHOR_YEAR_BLOCKS.authorSurname}))?` +
+    `${AUTHOR_YEAR_BLOCKS.etAl}?` +
+    `)` +
+    `\\s*,?\\s*` +
+    // Years
+    `(${AUTHOR_YEAR_BLOCKS.multipleYears})` +
+    `\\s*$`,
+  "u"
+);
+
 // ============================================
-// Cross-Reference Patterns (Figures, Tables, etc.)
+// Year Parsing Utilities
 // ============================================
 
+/**
+ * Parse a year string that may contain multiple years.
+ * Note: Year ranges like "1996-2004" are treated as single unusual year patterns,
+ * not as ranges. This is intentional as such patterns are rare edge cases.
+ *
+ * @param {string} yearStr - String like "2020", "2020, 2021", "2009a,b"
+ * @returns {Array<{year: string, isRange: boolean}>}
+ */
+export function parseYearsFromString(yearStr) {
+  const results = [];
+  
+  // First, expand compact notation like "2009a,b" to "2009a, 2009b"
+  const expanded = yearStr.replace(/(\d{4})([a-z])((?:,[a-z])+)/g, (match, year, firstLetter, rest) => {
+    const letters = [firstLetter, ...rest.split(',').filter(l => l)];
+    return letters.map(l => `${year}${l}`).join(', ');
+  });
+  
+  const parts = expanded.split(/\s*,\s*/);
+
+  for (const part of parts) {
+    const trimmed = part.trim();
+    // Match year with optional letter suffix
+    const yearMatch = trimmed.match(/^(\d{4}[a-z]?)$/);
+    if (yearMatch) {
+      results.push({
+        year: yearMatch[1],
+        isRange: false,
+      });
+    }
+    // Note: Year ranges like "1996-2004" are ignored as they don't match
+    // the expected single-year pattern. These are rare edge cases that
+    // represent a single reference entry, not a range of years.
+  }
+
+  return results;
+}
+
+
+/**
+ * Parse a citation chunk into structured data.
+ *
+ * @param {string} chunk - A single citation chunk like "Smith et al., 2020, 2021"
+ * @returns {Object|null} Parsed citation or null if invalid
+ */
+export function parseCitationChunk(chunk) {
+  const match = chunk.match(CITATION_CHUNK_PARSER);
+  if (!match) return null;
+
+  const fullAuthorPart = match[1];
+  const firstAuthor = match[2];
+  const secondAuthor = match[3] || null;
+  const yearsStr = match[4];
+
+  const hasEtAl = /\s+et\s+al\.?/i.test(fullAuthorPart);
+  const years = parseYearsFromString(yearsStr);
+
+  return {
+    firstAuthor: firstAuthor.trim(),
+    secondAuthor: secondAuthor?.trim() || null,
+    hasEtAl,
+    isTwoAuthor: !!secondAuthor,
+    years,
+    rawText: chunk,
+  };
+}
+
+/**
+ * Parse an entire parenthetical citation block into structured data.
+ *
+ * @param {string} block - Full parenthetical block like "(Smith, 2020; Jones et al., 2021)"
+ * @returns {Array<Object>} Array of parsed citations
+ */
+export function parseParentheticalBlock(block) {
+  // Remove outer parentheses
+  let inner = block.trim();
+  if (inner.startsWith("(")) inner = inner.slice(1);
+  if (inner.endsWith(")")) inner = inner.slice(0, -1);
+
+  // Remove prefix phrases
+  inner = inner.replace(
+    new RegExp(`^${AUTHOR_YEAR_BLOCKS.prefixPhrases}`, "i"),
+    ""
+  );
+
+  // Split by semicolon and parse each chunk
+  const chunks = inner.split(CITATION_CHUNK_SPLITTER);
+  const results = [];
+
+  for (const chunk of chunks) {
+    const parsed = parseCitationChunk(chunk);
+    if (parsed) {
+      results.push(parsed);
+    }
+  }
+
+  return results;
+}
+
+// ============================================
+// Cross-Reference Patterns (In-text)
+// ============================================
+
+/**
+ * Pattern to parse numeric indices from bracket citation content
+ * Handles: "1", "1,2,3", "1-5", "1-3, 5, 7-9"
+ */
+export const NUMERIC_INDEX_RANGE_PATTERN = /(\d+)\s*[-–—]\s*(\d+)/;
+
+/**
+ * Patterns for detecting in-text cross-references (Figure X, Table Y, etc.)
+ * These appear in the body text and reference other parts of the document
+ */
 export const CROSS_REFERENCE_PATTERNS = {
-  // Figure 1, Fig. 1, Fig 1, Figs. 1-3
-  figure: /\b(?:Fig(?:ure|s)?\.?\s*)(\d+[a-z]?(?:\s*[-–—]\s*\d+[a-z]?)?)/gi,
+  // Figure 1, Fig. 1, Fig 1, Figs. 1-3, Figure 1a
+  figure:
+    /\b(?:Fig(?:ure|s)?\.?\s*)(\d+[a-z]?(?:\s*[-–—]\s*\d+[a-z]?)?(?:\s*[,&]\s*\d+[a-z]?)*)/gi,
 
   // Table 1, Tab. 1, Tables 1-3
-  table: /\b(?:Tab(?:le|s)?\.?\s*)(\d+[a-z]?(?:\s*[-–—]\s*\d+[a-z]?)?)/gi,
+  table:
+  /\bTab(?:le|s)?\.?\s+(\d+[a-z]?(?:\s*[–—,-]\s*\d+[a-z]?)*)/gi,
 
-  // Section 1, Sec. 1.2, §1, §1.2.3, §C.2
-  section: /\b(?:Sec(?:tion|s)?\.?\s*|§\s*)((?:[A-Z]\.)\d+(?:\.\d+)*)/gi,
+  // Section 1, Sec. 1.2, Sec 3 (in-text references, not headers)
+  // Note: § symbol in headers is handled by SECTION_MARK_HEADER_PATTERN
+  section: /\b(?:Sec(?:tion|s)?\.?\s*)(\d+(?:\.\d+)*)/gi,
+
+  // §1, §1.2.3, §A.2 (section mark - always a reference, never a header by itself)
+  sectionMark: /§\s*(([A-Z]|\d+)(?:\.\d+)*)/gi,
 
   // Equation 1, Eq. 1, Eqs. 1-3, Eqn. (1)
-  equation: /\b(?:Eq(?:uation|n|s)?\.?\s*)\(?(\d+)\)?/gi,
+  equation: /\b(?:Eq(?:uation|n|s)?\.?\s*)\(?(\d+(?:\.\d+)?)\)?/gi,
 
   // Algorithm 1, Alg. 1
   algorithm: /\b(?:Alg(?:orithm|s)?\.?\s*)(\d+)/gi,
 
-  // Theorem 1, Lemma 2, Proposition 3, Corollary 4
+  // Theorem 1, Lemma 2, Proposition 3, Corollary 4, Definition 5
   theorem:
     /\b(Theorem|Lemma|Proposition|Corollary|Definition)\s+(\d+(?:\.\d+)?)/gi,
 
-  // Appendix A, Appendix B.1
+  // Appendix A, Appendix B.1, App. C
   appendix: /\b(?:Appendix|App\.)\s+([A-Z](?:\.\d+)?)/gi,
 };
+
+// ============================================
+// Cross-Reference Definition Patterns (Captions/Headers)
+// ============================================
+
+/**
+ * Patterns for detecting actual figure/table/section definitions (captions)
+ * These are used to find the TARGET locations that cross-references point to
+ *
+ * Key distinction from CROSS_REFERENCE_PATTERNS:
+ * - These patterns look for DEFINITIONS (e.g., "Figure 1:" at start of a caption)
+ * - CROSS_REFERENCE_PATTERNS look for MENTIONS in body text
+ *
+ * Usage: Check if match is at/near line start and has appropriate font styling
+ */
+export const CROSSREF_DEFINITION_PATTERNS = {
+  // "Figure 1:" or "Figure 1." or "Fig. 1:" at line start (caption)
+  figure: /^(?:Fig(?:ure)?\.?\s*)(\d+[a-z]?)\s*[:.]/i,
+
+  // "Table 1:" or "Table 1." or "Tab. 1:" at line start (caption)
+  table: /^(?:Tab(?:le)?\.?\s*)(\d+[a-z]?)\s*[:.]*/i,
+
+  // "Algorithm 1:" or "Algorithm 1." (algorithm caption)
+  algorithm: /^(?:Algorithm\.?\s*)(\d+)\s*[:.]/i,
+
+  // "Theorem 1." or "Lemma 2." etc. (theorem-like environments)
+  theorem:
+    /^(Theorem|Lemma|Proposition|Corollary|Definition)\s+(\d+(?:\.\d+)?)\s*[:.]/i,
+
+  // "§1" or "§1.2" at line start (section header with mark)
+  // This is different from section references in body text
+  sectionMark: /^§\s*(\d+(?:\.\d+)*)\s/,
+};
+
+/**
+ * Pattern to detect section headers using § symbol
+ * Used when scanning for actual section definition locations
+ */
+export const SECTION_MARK_HEADER_PATTERN = /^§\s*(\d+(?:\.\d+)*)\s+\S/;
+
+// ============================================
+// URL and External Link Patterns
+// ============================================
+
+/**
+ * URL pattern for detecting external links in text
+ * Matches http://, https://, and common URL formats
+ */
+export const URL_PATTERN =
+  /https?:\/\/(?:www\.)?[-a-zA-Z0-9@:%._+~#=]{1,256}\.[a-zA-Z0-9()]{1,6}\b(?:[-a-zA-Z0-9()@:%_+.~#?&/=]*)/gi;
+
+/**
+ * DOI pattern - Digital Object Identifier
+ * Matches: doi:10.xxxx/xxxxx, https://doi.org/10.xxxx/xxxxx
+ */
+export const DOI_PATTERN =
+  /(?:doi[:\s]*|https?:\/\/(?:dx\.)?doi\.org\/)(10\.\d{4,}(?:\.\d+)*\/\S+)/gi;
 
 // ============================================
 // Author Name Parsing
@@ -553,10 +933,12 @@ export const NAME_SUFFIXES = /\s+(?:Jr\.?|Sr\.?|II|III|IV|PhD|MD|et\s+al\.?)$/i;
  */
 export const LAST_NAME_PATTERNS = {
   // Smith, J. or Smith, John
-  lastFirst: /^([A-ZÀ-Ý][a-zà-ÿ]+(?:[-'][A-ZÀ-Ý][a-zà-ÿ]+)?),/,
+  lastFirst:
+    /^([A-Z\u00C0-\u00D6][a-z\u00E0-\u00FF]+(?:[-'][A-Z\u00C0-\u00D6][a-z\u00E0-\u00FF]+)?),/,
 
   // J. Smith or John Smith (last word is surname)
-  firstLast: /([A-ZÀ-Ý][a-zà-ÿ]+(?:[-'][A-ZÀ-Ý][a-zà-ÿ]+)?)\s*(?:,|$|\()/,
+  firstLast:
+    /([A-Z\u00C0-\u00D6][a-z\u00E0-\u00FF]+(?:[-'][A-Z\u00C0-\u00D6][a-z\u00E0-\u00FF]+)?)\s*(?:,|$|\()/,
 };
 
 /**
@@ -597,3 +979,80 @@ export const REFERENCE_ENDING_PATTERNS = {
   // Volume/issue at end: 15(3), Vol. 5
   volumeIssue: /\d+\s*\(\d+\)\.?\s*$/,
 };
+
+// ============================================
+// Utility Functions
+// ============================================
+
+/**
+ * Parse numeric indices from citation bracket content
+ * Handles: "1", "1,2,3", "1-5", "1-3, 5, 7-9"
+ *
+ * @param {string} content - Inner bracket content (e.g., "1-3, 5, 7-9")
+ * @returns {{indices: number[], ranges: Array<{start: number, end: number}>}}
+ */
+export function parseNumericCitationContent(content) {
+  const indices = [];
+  const ranges = [];
+  const parts = content.split(/[,;]/);
+
+  for (const part of parts) {
+    const trimmed = part.trim();
+    const rangeMatch = trimmed.match(NUMERIC_INDEX_RANGE_PATTERN);
+
+    if (rangeMatch) {
+      const start = parseInt(rangeMatch[1], 10);
+      const end = parseInt(rangeMatch[2], 10);
+
+      ranges.push({ start, end });
+
+      // Sanity limit: max 30 refs in a range
+      for (let i = start; i <= Math.min(end, start + 30); i++) {
+        indices.push(i);
+      }
+    } else {
+      const num = parseInt(trimmed, 10);
+      if (!isNaN(num) && num > 0 && num < 1000) {
+        indices.push(num);
+      }
+    }
+  }
+
+  return { indices, ranges };
+}
+
+/**
+ * Check if citation has range notation flag
+ * @param {number} flags - Citation flags
+ * @returns {boolean}
+ */
+export function hasRangeNotation(flags) {
+  return (flags & CitationFlags.RANGE_NOTATION) !== 0;
+}
+
+/**
+ * Check if citation was confirmed by native annotation
+ * @param {number} flags - Citation flags
+ * @returns {boolean}
+ */
+export function isNativeConfirmed(flags) {
+  return (flags & CitationFlags.NATIVE_CONFIRMED) !== 0;
+}
+
+/**
+ * Check if citation has multiple years for same author
+ * @param {number} flags - Citation flags
+ * @returns {boolean}
+ */
+export function hasMultipleYears(flags) {
+  return (flags & CitationFlags.MULTI_YEAR) !== 0;
+}
+
+/**
+ * Create a fresh regex instance (avoids lastIndex issues with global patterns)
+ * @param {RegExp} pattern - Pattern to clone
+ * @returns {RegExp}
+ */
+export function cloneRegex(pattern) {
+  return new RegExp(pattern.source, pattern.flags);
+}

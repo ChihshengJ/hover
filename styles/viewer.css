@@ -318,11 +318,6 @@ body {
   outline: 2px dashed rgba(0, 0, 255, 0.3);
 }
 
-.page-wrapper.text-selecting .annotationLayer {
-  pointer-events: none !important;
-  z-index: -1;
-}
-
 .citation-overlay {
   position: absolute;
   z-index: 2;
@@ -333,7 +328,16 @@ body {
   display: block;
   background-color: transparent;
   border-radius: 2px;
-  border-bottom: 2px dotted rgba(0, 0, 255, 0.5);
+  border: 2px dotted rgba(0, 0, 255, 0.8);
+  pointer-events: auto;
+  cursor: pointer;
+}
+
+.crossref-rect {
+  display: block;
+  background-color: transparent;
+  border-radius: 2px;
+  border: 2px dotted rgba(0, 255, 0, 0.8);
   pointer-events: auto;
   cursor: pointer;
 }
@@ -372,21 +376,6 @@ body {
 .citation-overlay[data-citation-type="author-year"][data-confidence="1.00"]
   .citation-rect:hover {
   background-color: rgba(0, 255, 0, 0.5);
-}
-
-/* Native annotation links */
-.native-annotation-link {
-  display: block;
-  text-decoration: none;
-  border-bottom: 2px solid blue;
-}
-
-.native-annotation-link:hover {
-  background-color: rgba(255, 0, 0, 0.5);
-}
-
-.native-annotation-link[data-link-type="external"]:hover {
-  background-color: rgba(255, 0, 0, 0.8);
 }
 
 /* ===========================================

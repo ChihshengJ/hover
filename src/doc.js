@@ -22,7 +22,11 @@ import {
   matchCitationToReference,
 } from "./data/reference_builder.js";
 import { PdfiumDocumentFactory } from "./data/text_extractor.js";
-import { createCitationDetector } from "./data/citation_detector.js";
+
+import { createInlineExtractor } from "./data/inline_extractor.js";
+import { createCitationBuilder } from "./data/citation_builder.js";
+import { createCrossReferenceBuilder } from "./data/cross_reference_builder.js";
+
 
 const COLOR_NAME_TO_HEX = {
   yellow: "#FFB300",
@@ -147,6 +151,11 @@ export class PDFDocumentModel {
      */
     this.annotationsByPage = new Map();
 
+    this.citationsByPage = new Map();      // Map<pageNum, Citation[]>
+    this.crossRefsByPage = new Map();      // Map<pageNum, CrossReference[]>
+    this.crossRefTargets = new Map();      // Map<string, CrossRefTarget>
+    this.urlsByPage = new Map();           // Map<pageNum, UrlLink[]>
+
     /**
      * Mapping from our annotation ID to the PDF's native annotation ID
      * Used for updating/removing existing PDF annotations
@@ -175,8 +184,6 @@ export class PDFDocumentModel {
     this.textIndex = null;
     /** @type {import('./reference_builder.js').ReferenceIndex|null} */
     this.referenceIndex = null;
-    /** @type {import('./citation_detector.js').CitationDetector|null} */
-    this.citationDetector = null;
     /** @type {{title: string|null, abstractInfo: Object|null}} */
     this.detectedMetadata = { title: null, abstractInfo: null };
 
@@ -283,10 +290,8 @@ export class PDFDocumentModel {
       reportProgress(90, 100, "loading annotations");
       await this.loadAnnotations();
 
-      console.log("[Doc] Starting citation detection...");
-      this.anchors = await this.createAnchors();
-      console.log(`[Doc] Found ${this.anchors?.length || 0} inline citations`);
-      console.log(this.anchors);
+      console.log("[Doc] Parsing full text for inline links...");
+      await this.#buildInlineElements();
 
       reportProgress(100, 100, "complete");
 
@@ -724,15 +729,44 @@ export class PDFDocumentModel {
     }
   }
 
-  async createAnchors() {
-    const detector = createCitationDetector(this);
-    if (!detector) {
-      console.warn("[Doc] Citation detector not available, falling back");
-      return [];
-    }
-
-    return await detector.detect();
+  async #buildInlineElements() {
+    // Single-pass extraction
+    const extractor = createInlineExtractor(this);
+    if (!extractor) return;
+    
+    const { citations, crossRefs, detectedFormat } = extractor.extract();
+    
+    // Build merged citations
+    const citationBuilder = createCitationBuilder(this);
+    this.citationsByPage = citationBuilder.build(citations);
+    
+    // Build merged cross-references
+    const crossRefBuilder = createCrossReferenceBuilder(this);
+    const { byPage, targets } = crossRefBuilder.build(crossRefs);
+    this.crossRefsByPage = byPage;
+    this.crossRefTargets = targets;
+    
+    // Extract URLs from native annotations
+    this.#indexUrls();
   }
+
+  #indexUrls() {
+    for (const [pageNum, annotations] of this.nativeAnnotationsByPage) {
+      const urls = [];
+      for (const annot of annotations) {
+        if (annot.target?.type === "action" && annot.target.action?.uri) {
+          urls.push({
+            url: annot.target.action.uri,
+            rect: annot.rect,
+          });
+        }
+      }
+      if (urls.length > 0) {
+        this.urlsByPage.set(pageNum, urls);
+      }
+    }
+  }
+
 
   getCitationAnchorsForPage(pageNumber) {
     return this.citationsByPage?.get(pageNumber) || [];

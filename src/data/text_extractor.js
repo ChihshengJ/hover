@@ -27,6 +27,113 @@ export class PdfiumTextExtractor {
     this.#pdfium = pdfiumModule;
   }
 
+  // ============================================================================
+  // Core low-level WASM helpers (shared by all consumers)
+  // ============================================================================
+
+  /**
+   * Open a page and text-page, run a callback, then close both.
+   * Centralises the load/close lifecycle that was duplicated everywhere.
+   *
+   * @param {number} docPtr
+   * @param {number} pageIndex - 0-based
+   * @param {(ctx: {pagePtr: number, textPagePtr: number, pageWidth: number, pageHeight: number, charCount: number}) => T} fn
+   * @returns {T|null}
+   * @template T
+   */
+  withTextPage(docPtr, pageIndex, fn) {
+    const pdfium = this.#pdfium;
+    const pagePtr = pdfium.FPDF_LoadPage(docPtr, pageIndex);
+    if (!pagePtr) return null;
+
+    try {
+      const pageWidth = pdfium.FPDF_GetPageWidthF(pagePtr);
+      const pageHeight = pdfium.FPDF_GetPageHeightF(pagePtr);
+      const textPagePtr = pdfium.FPDFText_LoadPage(pagePtr);
+      if (!textPagePtr) return null;
+
+      try {
+        const charCount = pdfium.FPDFText_CountChars(textPagePtr);
+        return fn({ pagePtr, textPagePtr, pageWidth, pageHeight, charCount });
+      } finally {
+        pdfium.FPDFText_ClosePage(textPagePtr);
+      }
+    } finally {
+      pdfium.FPDF_ClosePage(pagePtr);
+    }
+  }
+
+  /**
+   * Extract a UTF-16 text range from an already-opened text page.
+   *
+   * @param {number} textPagePtr
+   * @param {number} startIndex
+   * @param {number} count
+   * @returns {string}
+   */
+  extractTextRange(textPagePtr, startIndex, count) {
+    return this.#extractTextRange(textPagePtr, startIndex, count);
+  }
+
+  /**
+   * Get bounding rects for a character range on an already-opened text page.
+   * Returns rects in top-left origin coordinate system.
+   *
+   * @param {number} textPagePtr
+   * @param {number} startCharIndex
+   * @param {number} charCount
+   * @param {number} pageHeight - needed for Y-flip
+   * @returns {Array<{x: number, y: number, width: number, height: number}>}
+   */
+  getRectsForCharRange(textPagePtr, startCharIndex, charCount, pageHeight) {
+    return this.#getRectsForRange(textPagePtr, startCharIndex, charCount, pageHeight);
+  }
+
+  // ============================================================================
+  // Convenience: full-text + rects using docPtr (opens/closes page internally)
+  // ============================================================================
+
+  /**
+   * Extract full NFC-normalised text from a page.
+   * Opens and closes the page automatically.
+   *
+   * @param {number} docPtr
+   * @param {number} pageIndex - 0-based
+   * @returns {{fullText: string, charCount: number, pageWidth: number, pageHeight: number}}
+   */
+  getPageFullText(docPtr, pageIndex) {
+    const result = this.withTextPage(docPtr, pageIndex, (ctx) => {
+      if (ctx.charCount <= 0) {
+        return { fullText: "", charCount: 0, pageWidth: ctx.pageWidth, pageHeight: ctx.pageHeight };
+      }
+      let fullText = this.#extractTextRange(ctx.textPagePtr, 0, ctx.charCount);
+      fullText = fullText.normalize("NFC");
+      return { fullText, charCount: ctx.charCount, pageWidth: ctx.pageWidth, pageHeight: ctx.pageHeight };
+    });
+    return result || { fullText: "", charCount: 0, pageWidth: 0, pageHeight: 0 };
+  }
+
+  /**
+   * Get bounding rectangles for a character range.
+   * Opens and closes the page automatically.
+   *
+   * @param {number} docPtr
+   * @param {number} pageIndex - 0-based
+   * @param {number} startCharIndex
+   * @param {number} charCount
+   * @returns {Array<{x: number, y: number, width: number, height: number}>}
+   */
+  getRectsForCharRangeOnPage(docPtr, pageIndex, startCharIndex, charCount) {
+    const result = this.withTextPage(docPtr, pageIndex, (ctx) => {
+      return this.#getRectsForRange(ctx.textPagePtr, startCharIndex, charCount, ctx.pageHeight);
+    });
+    return result || [];
+  }
+
+  // ============================================================================
+  // High-level page extraction (used by DocumentTextIndex)
+  // ============================================================================
+
   /**
    * Extract text from a page with proper UTF-16LE handling
    * Returns data in a format compatible with getPageTextRects
@@ -36,62 +143,93 @@ export class PdfiumTextExtractor {
    * @returns {PageTextResult}
    */
   extractPageText(docPtr, pageIndex) {
-    const pdfium = this.#pdfium;
-
-    // Load the page
-    const pagePtr = pdfium.FPDF_LoadPage(docPtr, pageIndex);
-    if (!pagePtr) {
-      throw new Error(`Failed to load page ${pageIndex}`);
-    }
-
-    try {
-      const pageWidth = pdfium.FPDF_GetPageWidthF(pagePtr);
-      const pageHeight = pdfium.FPDF_GetPageHeightF(pagePtr);
-
-      const textPagePtr = pdfium.FPDFText_LoadPage(pagePtr);
-      if (!textPagePtr) {
+    const result = this.withTextPage(docPtr, pageIndex, (ctx) => {
+      if (ctx.charCount <= 0) {
         return {
           pageIndex,
           fullText: "",
           textSlices: [],
-          pageWidth,
-          pageHeight,
+          pageWidth: ctx.pageWidth,
+          pageHeight: ctx.pageHeight,
         };
       }
 
-      try {
-        const charCount = pdfium.FPDFText_CountChars(textPagePtr);
-        if (charCount <= 0) {
-          return {
-            pageIndex,
-            fullText: "",
-            textSlices: [],
-            pageWidth,
-            pageHeight,
-          };
-        }
+      const fullText = this.#extractTextRange(ctx.textPagePtr, 0, ctx.charCount);
 
-        const fullText = this.#extractTextRange(textPagePtr, 0, charCount);
+      const textSlices = this.#extractTextSlices(
+        ctx.textPagePtr,
+        ctx.charCount,
+        ctx.pageHeight,
+      );
 
-        const textSlices = this.#extractTextSlices(
-          textPagePtr,
-          charCount,
-          pageHeight,
+      return {
+        pageIndex,
+        fullText,
+        textSlices,
+        pageWidth: ctx.pageWidth,
+        pageHeight: ctx.pageHeight,
+      };
+    });
+
+    if (!result) {
+      throw new Error(`Failed to load page ${pageIndex}`);
+    }
+    return result;
+  }
+
+  // ============================================================================
+  // Private low-level helpers
+  // ============================================================================
+
+  /**
+   * Get bounding rects for a character range (core implementation).
+   * Operates on an already-opened textPagePtr.
+   *
+   * @param {number} textPagePtr
+   * @param {number} startCharIndex
+   * @param {number} charCount
+   * @param {number} pageHeight - for Y-flip (PDF bottom-left → top-left)
+   * @returns {Array<{x: number, y: number, width: number, height: number}>}
+   */
+  #getRectsForRange(textPagePtr, startCharIndex, charCount, pageHeight) {
+    const pdfium = this.#pdfium;
+    const rects = [];
+
+    const rectCount = pdfium.FPDFText_CountRects(textPagePtr, startCharIndex, charCount);
+    if (rectCount <= 0) return rects;
+
+    const leftPtr = pdfium.pdfium.wasmExports.malloc(8);
+    const topPtr = pdfium.pdfium.wasmExports.malloc(8);
+    const rightPtr = pdfium.pdfium.wasmExports.malloc(8);
+    const bottomPtr = pdfium.pdfium.wasmExports.malloc(8);
+
+    try {
+      for (let i = 0; i < rectCount; i++) {
+        const success = pdfium.FPDFText_GetRect(
+          textPagePtr, i, leftPtr, topPtr, rightPtr, bottomPtr,
         );
+        if (!success) continue;
 
-        return {
-          pageIndex,
-          fullText,
-          textSlices,
-          pageWidth,
-          pageHeight,
-        };
-      } finally {
-        pdfium.FPDFText_ClosePage(textPagePtr);
+        const left = pdfium.pdfium.HEAPF64[leftPtr >> 3];
+        const top = pdfium.pdfium.HEAPF64[topPtr >> 3];
+        const right = pdfium.pdfium.HEAPF64[rightPtr >> 3];
+        const bottom = pdfium.pdfium.HEAPF64[bottomPtr >> 3];
+
+        rects.push({
+          x: left,
+          y: pageHeight - top,
+          width: right - left,
+          height: top - bottom,
+        });
       }
     } finally {
-      pdfium.FPDF_ClosePage(pagePtr);
+      pdfium.pdfium.wasmExports.free(leftPtr);
+      pdfium.pdfium.wasmExports.free(topPtr);
+      pdfium.pdfium.wasmExports.free(rightPtr);
+      pdfium.pdfium.wasmExports.free(bottomPtr);
     }
+
+    return rects;
   }
 
   /**

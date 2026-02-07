@@ -19,11 +19,9 @@ import {
   REFERENCE_FORMAT_PATTERNS,
   AUTHOR_YEAR_START_PATTERN,
   YEAR_PATTERN,
-  CROSS_REFERENCE_PATTERNS,
-  NAME_SUFFIXES,
-  LAST_NAME_PATTERNS,
   SECTION_NUMBER_STRIP,
   POST_REFERENCE_SECTION_PATTERN,
+  AUTHOR_YEAR_BLOCKS,
 } from "./lexicon.js";
 
 const EMPTY_RESULT = {
@@ -52,7 +50,6 @@ export async function buildReferenceIndex(textIndex) {
 
     const anchors = extractReferenceAnchors(section.lines, format);
     console.log(`[Reference] Extracted ${anchors.length} anchors`);
-    console.log(anchors);
 
     return {
       anchors,
@@ -208,9 +205,13 @@ function collectSectionLines(pageData, start, end) {
     if (pageNum === end.pageNumber) endIdx = end.lineIndex;
 
     for (let i = startIdx; i <= endIdx && i < pageLines.length; i++) {
-      if (pageLines[i].y >= pageHeight * 0.92 || pageLines[i].y <= pageHeight * 0.05) continue;
-      if (pageLines[i].width / 2 + pageLines[i].x )
-      if (pageLines[i].text.length < 3) continue;
+      if (
+        pageLines[i].y >= pageHeight * 0.92 ||
+        pageLines[i].y <= pageHeight * 0.05
+      )
+        continue;
+      if (pageLines[i].width / 2 + pageLines[i].x)
+        if (pageLines[i].text.length < 3) continue;
       lines.push({
         ...pageLines[i],
         pageNumber: pageNum,
@@ -601,6 +602,12 @@ function parseAuthorYear(text) {
 }
 
 /**
+ * Surname prefix pattern - matches prefixes like De, Van, Di, etc.
+ * Must be followed by a space and then the main surname part
+ */
+const SURNAME_PREFIX = `(?:[Dd]e|[Vv]on|[Vv]an|[Dd]er|[Dd]en|[Ll]e|[Ll]a|[Dd]el|[Dd]os|[Dd]as|[Dd]i|[Dd]u)`;
+
+/**
  * @param {string} authorSection
  * @returns {string[]}
  */
@@ -614,9 +621,11 @@ function extractAllLastNames(authorSection) {
     .trim();
 
   // Strategy 1: "LastName, Initials" format (most common in CS/academic)
-  // Match: Azerbayev, Z., Schoelkopf, H., ...
-  const lastFirstPattern =
-    /(\p{Lu}[\p{L}\p{M}]+(?:[-'][\p{L}\p{M}]+)?)\s*,\s*(?:\p{Lu}[\p{L}\p{M}]*\.?\s*,?\s*)+(?:,|&|$)/gu;
+  // Now handles prefixed surnames like "Di Rienzo, A." or "Van Oosterhout, C."
+  const lastFirstPattern = new RegExp(
+    `((?:${SURNAME_PREFIX}\\s+)?\\p{Lu}[\\p{L}\\p{M}]+(?:[-'][\\p{L}\\p{M}]+)?)\\s*,\\s*(?:\\p{Lu}[\\p{L}\\p{M}]*\\.?\\s*,?\\s*)+(?:,|&|$)`,
+    "gu",
+  );
   let match;
 
   while ((match = lastFirstPattern.exec(normalized)) !== null) {
@@ -632,9 +641,11 @@ function extractAllLastNames(authorSection) {
   }
 
   // Strategy 2: "Initials LastName" format
-  // Match: Z. Azerbayev, H. Schoelkopf, ...
-  const firstLastPattern =
-    /(?:[\p{Lu}]\.?\s*)+(\p{Lu}[\p{L}\p{M}]+(?:[-'][\p{L}\p{M}]+)?)\s*(?:,|$)/gu;
+  // Now handles prefixed surnames like "A. Di Rienzo" or "C. Van Oosterhout"
+  const firstLastPattern = new RegExp(
+    `(?:[\\p{Lu}]\\.?\\s*)+((?:${SURNAME_PREFIX}\\s+)?\\p{Lu}[\\p{L}\\p{M}]+(?:[-'][\\p{L}\\p{M}]+)?)\\s*(?:,|$)`,
+    "gu",
+  );
 
   while ((match = firstLastPattern.exec(normalized)) !== null) {
     const name = match[1].trim();
@@ -648,8 +659,11 @@ function extractAllLastNames(authorSection) {
   }
 
   // Strategy 3: Fallback - find all capitalized words that look like names
-  const fallbackPattern =
-    /\b(\p{Lu}[\p{L}\p{M}]{2,}(?:[-'][\p{L}\p{M}]+)?)\b/gu;
+  // Now handles prefixed surnames
+  const fallbackPattern = new RegExp(
+    `\\b((?:${SURNAME_PREFIX}\\s+)?\\p{Lu}[\\p{L}\\p{M}]{2,}(?:[-'][\\p{L}\\p{M}]+)?)\\b`,
+    "gu",
+  );
 
   while ((match = fallbackPattern.exec(normalized)) !== null) {
     const name = match[1].trim();
@@ -759,7 +773,8 @@ export function findBoundingAnchors(anchors, pageNumber, x, y) {
   for (let i = 0; i < anchors.length; i++) {
     const anchor = anchors[i];
     if (anchor.pageNumber !== pageNumber) continue;
-    const dist = Math.abs(anchor.startCoord.y - y) + Math.abs(anchor.startCoord.x - x);
+    const dist =
+      Math.abs(anchor.startCoord.y - y) + Math.abs(anchor.startCoord.x - x);
     if (dist < closestDist) {
       closestDist = dist;
       closest = anchor;
@@ -773,7 +788,8 @@ export function findBoundingAnchors(anchors, pageNumber, x, y) {
         (pr) => pr.pageNumber === pageNumber,
       );
       if (!hasPageRange) continue;
-      const dist = Math.abs(anchor.startCoord.y - y) + Math.abs(anchor.startCoord.x - x);
+      const dist =
+        Math.abs(anchor.startCoord.y - y) + Math.abs(anchor.startCoord.x - x);
       if (dist < closestDist) {
         closestDist = dist;
         closest = anchor;

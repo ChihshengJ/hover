@@ -387,18 +387,26 @@ export class ViewerPane {
       target.wrapper.scrollIntoView({ behavior: "smooth", block: "center" });
   }
 
-  async scrollToPoint(pageIndex, left, top) {
+  async scrollToPoint(pageIndex, left, top, center = false) {
     const page = this.document.getPage(pageIndex + 1);
     if (!page) return;
-
     const pageHeight = page.size.height;
     const viewportY = (pageHeight - top) * this.scale;
-
     const wrapper = this.pages[pageIndex]?.wrapper;
     if (!wrapper) return;
 
-    const targetTop = wrapper.offsetTop + Math.max(0, viewportY);
-    this.scroller.scrollTo({ top: targetTop, behavior: "instant" });
+    let targetTop = wrapper.offsetTop + Math.max(0, viewportY);
+
+    if (center) {
+      // Offset by half the viewport height so the point appears centered
+      const viewportHeight = this.scroller.clientHeight;
+      targetTop -= viewportHeight / 2.3;
+    }
+
+    this.scroller.scrollTo({
+      top: Math.max(0, targetTop),
+      behavior: "instant",
+    });
   }
 
   scrollToTop() {

@@ -1,7 +1,4 @@
 /**
- * OutlineBuilder - Document outline extraction and heuristic generation
- * Refactored for DocumentTextIndex (PDFium-based)
- *
  * @typedef {Object} OutlineItem
  * @property {string} id
  * @property {string} title
@@ -14,7 +11,8 @@
 import { COMMON_SECTION_NAMES, SECTION_NUMBER_STRIP } from "./lexicon.js";
 import { FontStyle } from "./text_index.js";
 
-const NUMBERED_SECTION_PATTERN = /^(\d+(?:\.\d+)*\.?|[A-Z]\.|[IVXLCDM]+\.)\s+\S/;
+const NUMBERED_SECTION_PATTERN =
+  /^(\d+(?:\.\d+)*\.?|[A-Z]\.|[IVXLCDM]+\.)\s+\S/;
 const SECTION_NUMBER_EXTRACT = /^(\d+(?:\.\d+)*\.?|[A-Z]\.|[IVXLCDM]+\.)\s*/;
 
 /**
@@ -27,7 +25,10 @@ export async function buildOutline(pdfDoc, native, textIndex, allNamedDests) {
     if (nativeOutline.length === 1 && nativeOutline[0].children.length > 1) {
       console.log("[Outline]Use Embeded Outline's root");
       return nativeOutline[0].children;
-    } else if (nativeOutline.length === 1 && nativeOutline[0].children.length <= 1) {
+    } else if (
+      nativeOutline.length === 1 &&
+      nativeOutline[0].children.length <= 1
+    ) {
       return buildHeuristicOutline(textIndex);
     }
     console.log("[Outline]Use Embeded Outlines");
@@ -44,7 +45,7 @@ async function extractPdfOutline(pdfDoc, native, allNamedDests) {
     const bookmarkTask = await native.getBookmarks(pdfDoc).toPromise();
     const bookmarks = bookmarkTask.bookmarks;
     if (!bookmarks?.length) return [];
-    
+
     if (bookmarks.length === 1 && bookmarks[0].children) {
       return processBookmarks(bookmarks[0].children, allNamedDests);
     }
@@ -68,9 +69,9 @@ function processBookmarks(bookmarks, allNamedDests) {
       pageIndex: dest?.pageIndex ?? 0,
       left: dest?.left ?? 0,
       top: dest?.top ?? 0,
-      children: bookmark.children?.length 
+      children: bookmark.children?.length
         ? processBookmarks(bookmark.children, allNamedDests)
-        : []
+        : [],
     });
   }
 
@@ -85,12 +86,12 @@ function resolveBookmarkDestination(bookmark, allNamedDests) {
     dest = bookmark.target.destination;
   }
   if (!dest) return null;
-  
+
   if (dest && typeof dest === "object") {
     return {
       pageIndex: dest.pageIndex ?? 0,
       left: dest.view[0] ?? 0,
-      top: dest.view[1] ?? 0
+      top: dest.view[1] ?? 0,
     };
   }
 
@@ -100,7 +101,7 @@ function resolveBookmarkDestination(bookmark, allNamedDests) {
       return {
         pageIndex: resolved.pageIndex ?? 0,
         left: resolved.left ?? 0,
-        top: resolved.top ?? 0
+        top: resolved.top ?? 0,
       };
     }
   }
@@ -116,7 +117,7 @@ function buildHeuristicOutline(textIndex) {
 
   const leveledCandidates = assignHeadingLevels(candidates);
   const outline = buildOutlineTree(leveledCandidates);
-  
+
   console.log("[Outline] Built heuristically Parsed Tree");
   return purgeReferenceChildren(outline);
 }
@@ -136,14 +137,14 @@ export function getDocInfo(textIndex) {
     const data = textIndex.getPageData?.(pageNum);
     if (!data || data.lines.length === 0) continue;
 
-    const lines = data.lines.filter(line => !line.text.startsWith("arXiv:"));
+    const lines = data.lines.filter((line) => !line.text.startsWith("arXiv:"));
     if (lines.length === 0) continue;
 
     pageData.set(pageNum, {
       lines,
       pageWidth: data.pageWidth,
       pageHeight: data.pageHeight,
-      marginLeft: data.marginLeft
+      marginLeft: data.marginLeft,
     });
   }
 
@@ -151,7 +152,7 @@ export function getDocInfo(textIndex) {
     fontSize: textIndex.getBodyFontSize(),
     fontStyle: textIndex.getBodyFontStyle(),
     lineHeight: textIndex.getBodyLineHeight(),
-    pageData
+    pageData,
   };
 }
 
@@ -173,7 +174,12 @@ export function getDocInfo(textIndex) {
 
 function collectHeadingCandidates(textIndex) {
   const candidates = [];
-  const { fontSize: bodyFontSize, fontStyle: bodyFontStyle, lineHeight: bodyLineHeight, pageData } = getDocInfo(textIndex);
+  const {
+    fontSize: bodyFontSize,
+    fontStyle: bodyFontStyle,
+    lineHeight: bodyLineHeight,
+    pageData,
+  } = getDocInfo(textIndex);
 
   let abstractLine = null;
   let startPage = 0;
@@ -181,9 +187,12 @@ function collectHeadingCandidates(textIndex) {
     if (pageNum > 2) break;
     const { lines, pageHeight, pageWidth } = data;
 
-    abstractLine = lines.find(line => {
-        const text = line.text.replace(/\s+/, "").replace(SECTION_NUMBER_STRIP, "").trim();
-        return /^(?:\d+\.?\s+)?abstract/i.test(text)
+    abstractLine = lines.find((line) => {
+      const text = line.text
+        .replace(/\s+/, "")
+        .replace(SECTION_NUMBER_STRIP, "")
+        .trim();
+      return /^(?:\d+\.?\s+)?abstract/i.test(text);
     });
     if (abstractLine) startPage = pageNum;
   }
@@ -199,7 +208,13 @@ function collectHeadingCandidates(textIndex) {
       if (abstractLine && line.y < skipThresholdY) continue;
       if (pageNum === 1 && line.y < skipThresholdY) continue;
 
-      const candidate = analyzeLineAsHeading(line, pageNum, bodyFontSize, bodyLineHeight, pageData);
+      const candidate = analyzeLineAsHeading(
+        line,
+        pageNum,
+        bodyFontSize,
+        bodyLineHeight,
+        pageData,
+      );
       if (candidate) candidates.push(candidate);
     }
   }
@@ -217,7 +232,13 @@ function isCommonSectionName(text) {
   return false;
 }
 
-function analyzeLineAsHeading(line, pageNum, bodyFontSize, bodyLineHeight, page) {
+function analyzeLineAsHeading(
+  line,
+  pageNum,
+  bodyFontSize,
+  bodyLineHeight,
+  page,
+) {
   const text = line.text?.trim();
   if (!text || text.length < 2 || text.length > 100) return null;
 
@@ -225,7 +246,8 @@ function analyzeLineAsHeading(line, pageNum, bodyFontSize, bodyLineHeight, page)
   let numberPrefix = null;
   let numberDepth = 0;
 
-  const weirdPosition = line.y < page.pageHeight * 0.05 || line.y > page.pageHeight * 0.95;
+  const weirdPosition =
+    line.y < page.pageHeight * 0.08 || line.y > page.pageHeight * 0.95;
   const isTabFig = /^(tab|fig|sec|keywords)/.test(text.toLowerCase());
   if (weirdPosition || isTabFig) return null;
 
@@ -240,22 +262,40 @@ function analyzeLineAsHeading(line, pageNum, bodyFontSize, bodyLineHeight, page)
   const fontSize = line.items[0].fontSize ?? 0;
   const fontStyle = line.items[0].fontStyle ?? FontStyle.REGULAR;
 
-  const isSmallerFont = lineHeight < bodyLineHeight * 0.96;
-  const isStyled = fontStyle === FontStyle.BOLD || fontStyle === FontStyle.BOLD_ITALIC;
+  const isSmallerFont = lineHeight < bodyLineHeight * 0.92;
+  const isLargerFont = lineHeight > bodyLineHeight * 1.4;
+  const isStyled =
+    fontStyle === FontStyle.BOLD || fontStyle === FontStyle.BOLD_ITALIC;
 
   const lineWidth = line.items.reduce((sum, it) => sum + it.width, 0);
   const isShortLine = lineWidth < page.pageWidth * 0.4;
 
   if (isNumbered) {
-    if (!/^[\d\.*]+\s+[A-Z]/.test(text)) return null;
+    const strippedText = text
+      .replace(SECTION_NUMBER_STRIP, "")
+      .replace(/\s+/g, "")
+      .trim();
+    if (!/[A-Z]/.test(strippedText[0])) return null;
     if (!isShortLine) return null;
+    if (!isStyled) return null;
   }
 
-  const isNonNumberedHeading = !isNumbered && !isSmallerFont && isStyled && isShortLine && text.length < 80;
-  const isTitleCaseHeading = !isNumbered && !isSmallerFont && isShortLine && isStyled && isTitleCase(line.items[0]?.str || text);
-  const isCommonSectionHeading =  isShortLine && isCommonSectionName(text);
+  const isNonNumberedHeading =
+    !isNumbered && isLargerFont && isStyled && isShortLine && text.length < 80;
+  const isTitleCaseHeading =
+    !isNumbered &&
+    !isSmallerFont &&
+    isShortLine &&
+    isStyled &&
+    isTitleCase(line.items[0]?.str || text);
+  const isCommonSectionHeading = isShortLine && isCommonSectionName(text);
 
-  if (!isNumbered && !isNonNumberedHeading && !isTitleCaseHeading && !isCommonSectionHeading) {
+  if (
+    !isNumbered &&
+    !isNonNumberedHeading &&
+    !isTitleCaseHeading &&
+    !isCommonSectionHeading
+  ) {
     return null;
   }
 
@@ -278,11 +318,12 @@ function analyzeLineAsHeading(line, pageNum, bodyFontSize, bodyLineHeight, page)
     x: line.x || 0,
     y: line.y || 0,
     top: line.originalY + lineHeight || line.y || 0,
-    fontSize: lineHeight,
+    fontSize: line.fontSize,
+    lineHeight: lineHeight,
     fontStyle,
     numberPrefix,
     numberDepth,
-    isNumbered
+    isNumbered,
   };
 }
 
@@ -297,41 +338,132 @@ function isTitleCase(text) {
   if (!text || text.length < 5) return false;
   const words = text.split(/[\s .]+/);
   if (words.length < 2) return false;
-  const upperWords = words.filter(w => w.length > 0 && /^[A-Z]/.test(w));
-  return upperWords.length >= words.length * 0.8;
+  const upperWords = words.filter((w) => w.length > 0 && /^[A-Z]/.test(w));
+  return upperWords.length >= words.length * 0.6;
 }
 
 function assignHeadingLevels(candidates) {
   if (candidates.length === 0) return [];
 
-  const numbered = candidates.filter(c => c.isNumbered);
-  const nonNumbered = candidates.filter(c => !c.isNumbered);
+  // Phase 1: Collect all line heights and cluster into tiers
+  const allSizes = candidates.map((c) => Math.round(c.fontSize * 10) / 10);
+  const uniqueHeights = [...new Set(allSizes)].sort((a, b) => b - a);
+  const tiers = clusterSizes(uniqueHeights);
 
-  const leveledNumbered = numbered.map(c => ({ ...c, level: c.numberDepth || 1 }));
-  const leveledNonNumbered = assignLevelsByFontSize(nonNumbered);
+  // Phase 2: For each tier, compute depth offsets for numbered candidates
+  const tierMinDepths = new Map(); // tierIndex -> minimum numberDepth in that tier
+  for (const c of candidates) {
+    if (!c.isNumbered || !c.numberDepth) continue;
+    const h = Math.round(c.fontSize * 10) / 10;
+    const tier = tiers.get(h) ?? 1;
+    const current = tierMinDepths.get(tier);
+    if (current === undefined || c.numberDepth < current) {
+      tierMinDepths.set(tier, c.numberDepth);
+    }
+  }
 
-  return [...leveledNumbered, ...leveledNonNumbered];
+  // Phase 3: Compute max possible offset across all tiers so we can
+  // space tiers apart enough to avoid collisions
+  const tierMaxOffsets = new Map(); // tierIndex -> max offset within tier
+  for (const c of candidates) {
+    if (!c.isNumbered || !c.numberDepth) continue;
+    const h = Math.round(c.fontSize * 10) / 10;
+    const tier = tiers.get(h) ?? 1;
+    const minDepth = tierMinDepths.get(tier) ?? 1;
+    const offset = c.numberDepth - minDepth;
+    const current = tierMaxOffsets.get(tier) ?? 0;
+    if (offset > current) tierMaxOffsets.set(tier, offset);
+  }
 
+  // Build a map from raw tier index to spaced-out base level
+  // Each tier needs enough room for its depth offsets before the next tier starts
+  const tierBaseLevels = new Map(); // tierIndex -> actual base level
+  const tierCount = Math.max(...tiers.values(), 0);
+  let currentLevel = 1;
+  for (let t = 1; t <= tierCount; t++) {
+    tierBaseLevels.set(t, currentLevel);
+    const maxOffset = tierMaxOffsets.get(t) ?? 0;
+    currentLevel += 1 + maxOffset; // reserve space for sub-levels
+  }
+
+  // Phase 4: Assign final level to each candidate
+  return candidates.map((c) => {
+    const h = Math.round(c.fontSize * 10) / 10;
+    const tier = tiers.get(h) ?? 1;
+    const baseLevel = tierBaseLevels.get(tier) ?? 1;
+
+    let level = baseLevel;
+    if (c.isNumbered && c.numberDepth > 0) {
+      const minDepth = tierMinDepths.get(tier) ?? 1;
+      level = baseLevel + (c.numberDepth - minDepth);
+    }
+
+    return { ...c, level };
+  });
 }
 
-function assignLevelsByFontSize(candidates) {
-  if (candidates.length === 0) return [];
+/**
+ * Cluster nearby font sizes into tiers.
+ *
+ * @param {number[]} sortedSizes - unique sizes sorted descending
+ * @returns {Map<number, number>} map from rounded size to tier index (1-based)
+ */
+function clusterSizes(sortedSizes) {
+  if (sortedSizes.length === 0) return new Map();
 
-  const uniqueSizes = [...new Set(candidates.map(c => Math.round(c.fontSize * 10) / 10))].sort((a, b) => b - a);
-  const sizeToLevel = new Map();
-  uniqueSizes.forEach((size, idx) => sizeToLevel.set(size, idx + 1));
+  const RELATIVE_THRESHOLD = 0.1;
+  const sizeToTier = new Map();
+  let tierIndex = 1;
+  let clusterAnchor = sortedSizes[0];
 
-  return candidates.map(c => ({
-    ...c,
-    level: sizeToLevel.get(Math.round(c.fontSize * 10) / 10) || 1
-  }));
+  sizeToTier.set(sortedSizes[0], tierIndex);
+
+  for (let i = 1; i < sortedSizes.length; i++) {
+    const size = sortedSizes[i];
+    // Compare relative to the cluster anchor (the largest size in current cluster)
+    const relativeDiff =
+      clusterAnchor > 0 ? (clusterAnchor - size) / clusterAnchor : 1;
+
+    if (relativeDiff > RELATIVE_THRESHOLD) {
+      tierIndex++;
+      clusterAnchor = size;
+    }
+    sizeToTier.set(size, tierIndex);
+  }
+
+  return sizeToTier;
 }
 
 const ROMAN_NUMERAL_MAP = {
-  I: 1, II: 2, III: 3, IV: 4, V: 5, VI: 6, VII: 7, VIII: 8, IX: 9, X: 10,
-  XI: 11, XII: 12, XIII: 13, XIV: 14, XV: 15, XVI: 16, XVII: 17, XVIII: 18,
-  XIX: 19, XX: 20, XXI: 21, XXII: 22, XXIII: 23, XXIV: 24, XXV: 25,
-  L: 50, C: 100, D: 500, M: 1000,
+  I: 1,
+  II: 2,
+  III: 3,
+  IV: 4,
+  V: 5,
+  VI: 6,
+  VII: 7,
+  VIII: 8,
+  IX: 9,
+  X: 10,
+  XI: 11,
+  XII: 12,
+  XIII: 13,
+  XIV: 14,
+  XV: 15,
+  XVI: 16,
+  XVII: 17,
+  XVIII: 18,
+  XIX: 19,
+  XX: 20,
+  XXI: 21,
+  XXII: 22,
+  XXIII: 23,
+  XXIV: 24,
+  XXV: 25,
+  L: 50,
+  C: 100,
+  D: 500,
+  M: 1000,
 };
 
 function parseRomanNumeral(str) {
@@ -352,10 +484,10 @@ function parseLetter(str) {
 function parsePrefix(prefix) {
   if (!prefix) return [];
 
-  const cleaned = prefix.replace(/\.$/, '').trim();
+  const cleaned = prefix.replace(/\.$/, "").trim();
   if (!cleaned) return [];
 
-  const parts = cleaned.split('.');
+  const parts = cleaned.split(".");
   const components = [];
 
   for (const part of parts) {
@@ -415,7 +547,9 @@ function buildOutlineTree(candidates) {
     return true;
   });
 
-  const sorted = [...filtered].sort((a, b) => a.pageIndex !== b.pageIndex ? a.pageIndex- b.pageIndex : true);
+  const sorted = [...filtered].sort((a, b) =>
+    a.pageIndex !== b.pageIndex ? a.pageIndex - b.pageIndex : true,
+  );
 
   const root = { children: [] };
   const stack = [{ node: root, level: 0, components: [] }];
@@ -467,15 +601,19 @@ function buildOutlineTree(candidates) {
     }
 
     stack[stack.length - 1].node.children.push(item);
-    stack.push({ node: item, level: candidate.level, components: childComponents });
+    stack.push({
+      node: item,
+      level: candidate.level,
+      components: childComponents,
+    });
   }
 
   return root.children;
 }
 
-
 function purgeReferenceChildren(outline) {
-  const REFERENCE_PATTERN = /^(?:\d+\.?\s+)?(?:references?|bibliography|works cited|citations?)$/i;
+  const REFERENCE_PATTERN =
+    /^(?:\d+\.?\s+)?(?:references?|bibliography|works cited|citations?)$/i;
 
   function processNode(node) {
     const titleToCheck = node.title.replace(SECTION_NUMBER_STRIP, "").trim();
@@ -502,7 +640,7 @@ export function detectDocumentMetadata(textIndex) {
   if (!textIndex) return { title: null, abstractInfo: null };
 
   const result = { title: null, abstractInfo: null };
-  const pagesToScan = Math.min(2, textIndex.getPageCount?.() || 2);
+  const pagesToScan = Math.min(3, textIndex.getPageCount?.() || 2);
   const allLines = [];
   const allFontSizes = [];
 
@@ -529,7 +667,7 @@ export function detectDocumentMetadata(textIndex) {
 }
 
 function findMostCommonFontSize(fontSizes) {
-  const rounded = fontSizes.map(s => Math.round(s * 10) / 10);
+  const rounded = fontSizes.map((s) => Math.round(s * 10) / 10);
   const counts = new Map();
   for (const size of rounded) {
     counts.set(size, (counts.get(size) || 0) + 1);
@@ -546,19 +684,25 @@ function findMostCommonFontSize(fontSizes) {
 }
 
 function detectTitle(allLines, bodyFontSize) {
-  const page1Lines = allLines.filter(line => line.pageNum === 1);
+  const page1Lines = allLines.filter((line) => line.pageNum === 1);
   if (page1Lines.length === 0) return null;
 
   const pageHeight = page1Lines[0]?.pageHeight || 792;
   const topThreshold = pageHeight * 0.4;
-  const titleCandidates = page1Lines.filter(line => line.y < topThreshold);
+  const titleCandidates = page1Lines.filter(
+    (line) => pageHeight - line.y > topThreshold,
+  );
   if (titleCandidates.length === 0) return null;
 
   const largeFontThreshold = bodyFontSize * 1.2;
-  const largeFontLines = titleCandidates.filter(line => line.fontSize >= largeFontThreshold);
+  const largeFontLines = titleCandidates.filter(
+    (line) => line.fontSize >= largeFontThreshold,
+  );
 
   if (largeFontLines.length === 0) {
-    const sortedBySize = [...titleCandidates].sort((a, b) => (b.fontSize || 0) - (a.fontSize || 0));
+    const sortedBySize = [...titleCandidates].sort(
+      (a, b) => (b.fontSize || 0) - (a.fontSize || 0),
+    );
     if (sortedBySize.length > 0 && sortedBySize[0].fontSize > bodyFontSize) {
       return cleanTitleText(sortedBySize[0].text);
     }
@@ -571,7 +715,7 @@ function detectTitle(allLines, bodyFontSize) {
     return (b.fontSize || 0) - (a.fontSize || 0);
   });
 
-  const maxFontSize = Math.max(...largeFontLines.map(l => l.fontSize || 0));
+  const maxFontSize = Math.max(...largeFontLines.map((l) => l.fontSize || 0));
   const titleLines = [];
   let foundTitleBlock = false;
 
@@ -580,7 +724,11 @@ function detectTitle(allLines, bodyFontSize) {
     if (isMaxFont) {
       if (/^\d+\.?\s*$/.test(line.text.trim())) continue;
       const lowerText = line.text.toLowerCase().trim();
-      if (lowerText === "abstract" || lowerText === "introduction" || lowerText.startsWith("chapter ")) {
+      if (
+        lowerText === "abstract" ||
+        lowerText === "introduction" ||
+        lowerText.startsWith("chapter ")
+      ) {
         continue;
       }
       titleLines.push(line);
@@ -610,7 +758,12 @@ function detectTitle(allLines, bodyFontSize) {
 
 function cleanTitleText(text) {
   if (!text) return null;
-  let cleaned = text.trim().replace(/\*+$/, "").trim().replace(/^(title:\s*)/i, "").trim();
+  let cleaned = text
+    .trim()
+    .replace(/\*+$/, "")
+    .trim()
+    .replace(/^(title:\s*)/i, "")
+    .trim();
   if (cleaned.length < 5 || !/[a-zA-Z]{3,}/.test(cleaned)) return null;
   return cleaned;
 }
@@ -621,8 +774,12 @@ function detectAbstract(allLines, bodyFontSize) {
     const stripped = text.replace(SECTION_NUMBER_STRIP, "").trim();
     const lowerStripped = stripped.toLowerCase();
 
-    if (lowerStripped === "abstract" || lowerStripped === "abstract:" || 
-        lowerStripped === "abstract." || /^abstract\s*[-â€“â€”]\s*/i.test(stripped)) {
+    if (
+      lowerStripped === "abstract" ||
+      lowerStripped === "abstract:" ||
+      lowerStripped === "abstract." ||
+      /^abstract\s*[-â€“â€”]\s*/i.test(stripped)
+    ) {
       for (const item of line.items) {
         const isLarger = item.fontSize > bodyFontSize * 1.05;
         const isStyled = item.fontStyle !== FontStyle.REGULAR;
@@ -631,7 +788,7 @@ function detectAbstract(allLines, bodyFontSize) {
           return {
             pageIndex: line.pageNum - 1,
             top: line.originalY || line.y || 0,
-            left: line.x || 0
+            left: line.x || 0,
           };
         }
       }

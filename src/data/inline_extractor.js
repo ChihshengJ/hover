@@ -170,6 +170,26 @@ export class InlineExtractor {
       allCrossRefs.push(...crossRefs);
     }
 
+    if (allCitations.length < 10) {
+      console.log(
+        `[InlineExtractor] This paper uses superscripts for citations.`,
+      );
+      for (let pageNum = 1; pageNum <= this.#numPages; pageNum++) {
+        this.#matchedRanges.set(pageNum, new Set());
+
+        const isInRefSection =
+          pageNum > refSectionStart && pageNum < refSectionEnd;
+
+        const citations = this.#scanPageForSuperscripts(
+          pageNum,
+          bodyLineHeight,
+          isInRefSection,
+        );
+
+        allCitations.push(...citations);
+      }
+    }
+
     console.log(
       `[InlineExtractor] Found ${allCitations.length} citations, ${allCrossRefs.length} cross-references`,
     );
@@ -294,13 +314,6 @@ export class InlineExtractor {
         ...this.#findAuthorYearCitations(fullText, pageNumber, pageIndex),
       );
 
-      // Check for superscript citations if few others found
-      if (citations.length < 2) {
-        citations.push(
-          ...this.#findSuperscriptCitations(pageNumber, bodyLineHeight),
-        );
-      }
-
       // Adjust confidence based on detected format
       this.#adjustConfidenceByFormat(citations);
     }
@@ -309,6 +322,27 @@ export class InlineExtractor {
     crossRefs.push(...this.#findCrossRefs(fullText, pageNumber, pageIndex));
 
     return { citations, crossRefs };
+  }
+
+  /**
+   * Scan a single page for citations and cross-references
+   */
+  #scanPageForSuperscripts(pageNumber, bodyLineHeight, isInRefSection) {
+    const pageIndex = pageNumber - 1;
+    const { fullText, charCount, pageWidth, pageHeight } =
+      this.#textExtractor.getPageFullText(pageIndex);
+    const citations = [];
+    if (!fullText || charCount === 0) {
+      return citations;
+    }
+    if (!isInRefSection) {
+      citations.push(
+        ...this.#findSuperscriptCitations(pageNumber, bodyLineHeight),
+      );
+      this.#adjustConfidenceByFormat(citations);
+    }
+
+    return citations;
   }
 
   /**
@@ -447,9 +481,6 @@ export class InlineExtractor {
     return citations;
   }
 
-  /**
-   * Find superscript citations based on font metrics
-   */
   #findSuperscriptCitations(pageNumber, bodyLineHeight) {
     const citations = [];
     const rawSlices = this.#textIndex?.getRawSlices(pageNumber);
@@ -462,7 +493,7 @@ export class InlineExtractor {
       // Must be pure digits and significantly smaller than body text
       if (
         !INLINE_CITATION_PATTERNS.superscriptDigits.test(content) ||
-        slice.rect.size.height >= bodyLineHeight * 0.55
+        slice.rect.size.height >= bodyLineHeight * 0.6
       ) {
         continue;
       }
@@ -478,7 +509,7 @@ export class InlineExtractor {
         type: "superscript",
         text: content,
         pageNumber,
-        charIndex: 0, // Not available for slice-based detection
+        charIndex: 0,
         charCount: content.length,
         rects: [
           {
@@ -760,64 +791,62 @@ export class InlineExtractor {
 
   /**
    * Match author-year citation to reference signature
-   * Enhanced to handle two-author citations and year ranges
    *
    * @param {string} author - First author surname
-   * @param {string} year - Year string (may include letter suffix or be a range)
-   * @param {string|null} secondAuthor - Second author surname (if two-author citation)
+   * @param {string} year - Year string (may include letter suffix)
+   * @param {string|null} secondAuthor - Second author surname (for two-author citations)
    * @returns {{index: number, confidence: number}|null}
    */
   #matchAuthorYearToSignature(author, year, secondAuthor = null) {
-    // Handle year ranges by extracting the start year for matching
+    if (!author || !year) return null;
+
+    // Handle year ranges - extract start year
     let yearToMatch = year;
-    const rangeMatch = year.match(/^(\d{4})\s*[-–—]\s*\d{4}$/);
+    const rangeMatch = year.match(/^(\d{4}[a-z]?)\s*[-–—]\s*\d{4}$/);
     if (rangeMatch) {
       yearToMatch = rangeMatch[1];
     }
 
-    const yearBase = yearToMatch.replace(/[a-z]$/, "");
-    const authorLower = author.toLowerCase();
-    const secondAuthorLower = secondAuthor?.toLowerCase();
+    // Clean author: remove "et al.", trim, lowercase
+    const authorClean = author
+      .replace(/\s*et\s+al\.?\s*/gi, '')
+      .trim()
+      .toLowerCase();
 
-    let bestMatch = null;
-    let bestConfidence = 0;
+    if (authorClean.length < 2) return null;
 
-    for (const anchor of this.#signatures) {
-      // Year must match (base year for ranges/suffixed years)
-      if (anchor.year !== yearBase && anchor.year !== yearToMatch) continue;
+    // Find anchors with exact year match
+    const yearMatches = this.#signatures.filter((a) => a.year === yearToMatch);
+    if (yearMatches.length === 0) return null;
 
-      let confidence = 0;
-      const firstAuthorLower = anchor.firstAuthorLastName?.toLowerCase();
+    // Find anchor where author appears in authorSearchText
+    for (const anchor of yearMatches) {
+      if (!anchor.authorSearchText) continue;
 
-      // First author matching
-      if (firstAuthorLower === authorLower) {
-        confidence = 1.0;
-      } else if (firstAuthorLower?.startsWith(authorLower.slice(0, 4))) {
-        confidence = 0.7;
-      } else if (
-        anchor.allAuthorLastNames?.some((n) => n.toLowerCase() === authorLower)
-      ) {
-        confidence = 0.6;
-      }
+      const hasFirstAuthor = anchor.authorSearchText.includes(authorClean);
+      if (!hasFirstAuthor) continue;
 
-      // Boost confidence if second author also matches
-      if (secondAuthorLower && confidence > 0) {
-        if (
-          anchor.allAuthorLastNames?.some(
-            (n) => n.toLowerCase() === secondAuthorLower,
-          )
-        ) {
-          confidence = Math.min(1.0, confidence + 0.2);
+      // For two-author citations, check second author too
+      if (secondAuthor) {
+        const secondClean = secondAuthor.trim().toLowerCase();
+        const hasSecondAuthor = anchor.authorSearchText.includes(secondClean);
+        
+        if (hasSecondAuthor) {
+          return { index: anchor.index, confidence: 1.0 };
         }
+        // First author matched but second didn't - lower confidence
+        return { index: anchor.index, confidence: 0.7 };
       }
 
-      if (confidence > bestConfidence) {
-        bestConfidence = confidence;
-        bestMatch = { index: anchor.index, confidence };
-      }
+      return { index: anchor.index, confidence: 1.0 };
     }
 
-    return bestConfidence > 0.4 ? bestMatch : null;
+    // No author match found - if only one year match, return it with low confidence
+    if (yearMatches.length === 1) {
+      return { index: yearMatches[0].index, confidence: 0.5 };
+    }
+
+    return null;
   }
 
   /**

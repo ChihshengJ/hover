@@ -484,7 +484,9 @@ export class PdfiumTextExtractor {
         continue;
       }
 
-      const sameLine = Math.abs(box.bottom - currentRun.bottom) < currentRun.avgHeight * LINE_TOLERANCE_FACTOR;
+      const sameLine =
+        Math.abs(box.bottom - currentRun.bottom) <
+        currentRun.avgHeight * LINE_TOLERANCE_FACTOR;
       const gapThreshold = currentRun.avgHeight * WORD_GAP_FACTOR;
       const horizontalGap = box.left - currentRun.right;
       const isAdjacent = horizontalGap < gapThreshold;
@@ -510,7 +512,10 @@ export class PdfiumTextExtractor {
         currentRun.right = Math.max(currentRun.right, box.right);
         currentRun.bottom = Math.min(currentRun.bottom, box.bottom);
         currentRun.top = Math.max(currentRun.top, box.top);
-        currentRun.avgHeight = box.height > 5 ? (currentRun.avgHeight + box.height) / 2 : currentRun.avgHeight;
+        currentRun.avgHeight =
+          box.height > 5
+            ? (currentRun.avgHeight + box.height) / 2
+            : currentRun.avgHeight;
       }
     }
 
@@ -561,10 +566,6 @@ export class PdfiumTextExtractor {
       _charRange: { start: run.startIndex, end: run.endIndex },
     });
   }
-
-
-
-
 
   /**
    * DEPRECATED: Old character-by-character extraction

@@ -75,7 +75,11 @@ function findReferenceSection(textIndex) {
   const docInfo = getDocInfo(textIndex);
   if (!docInfo?.pageData) return null;
 
-  const { pageData, lineHeight: bodyFontSize, marginBottom: bodyMarginBottom} = docInfo;
+  const {
+    pageData,
+    lineHeight: bodyFontSize,
+    marginBottom: bodyMarginBottom,
+  } = docInfo;
   let referenceStart = null;
 
   for (const [pageNum, data] of pageData) {
@@ -134,21 +138,29 @@ function findReferenceSection(textIndex) {
   };
 }
 
-function findReferenceSectionEnd(pageData, start, bodyFontSize, bodyMarginBottom) {
+function findReferenceSectionEnd(
+  pageData,
+  start,
+  bodyFontSize,
+  bodyMarginBottom,
+) {
   let lastValidLine = null;
   const pageNumbers = Array.from(pageData.keys()).sort((a, b) => a - b);
 
   for (const pageNum of pageNumbers) {
     if (pageNum < start.pageNumber) continue;
 
-    const { lines, pageWidth, pageHeight, marginLeft, marginBottom } = pageData.get(pageNum);
+    const { lines, pageWidth, pageHeight, marginLeft, marginBottom } =
+      pageData.get(pageNum);
     const startIdx = pageNum === start.pageNumber ? start.lineIndex + 1 : 0;
 
     for (let i = startIdx; i < lines.length; i++) {
       const line = lines[i];
       const isColumnBreak = lastValidLine?.y - line.y < 0;
       const isWeirdPosition =
-        line.y >= pageHeight * 0.95 || line.y <= pageHeight * 0.05 || (isColumnBreak && line.x < pageWidth / 2 && line.x > marginLeft + 30);
+        line.y >= pageHeight * 0.95 ||
+        line.y <= pageHeight * 0.05 ||
+        (isColumnBreak && line.x < pageWidth / 2 && line.x > marginLeft + 30);
       if (isWeirdPosition) continue;
       const strippedText = line.text
         .replace(SECTION_NUMBER_STRIP, "")
@@ -164,7 +176,8 @@ function findReferenceSectionEnd(pageData, start, bodyFontSize, bodyMarginBottom
         line.text.length > 3;
       const isDirectIndicator =
         POST_REFERENCE_SECTION_PATTERN.test(strippedText);
-      const isBigJump = line.y === marginBottom && marginBottom > bodyMarginBottom + 20;
+      const isBigJump =
+        line.y === marginBottom && marginBottom > bodyMarginBottom + 20;
 
       if (isDirectIndicator || isAllCapital || isBoldAndLarge || isBigJump) {
         return {
@@ -331,7 +344,6 @@ function extractStructuralReferences(lines, format) {
   let refIndex = 0;
 
   for (const line of lines) {
-    console.log(line);
     if (line.text.trim().length <= 2) continue;
 
     let isNewReference = false;
@@ -504,7 +516,6 @@ function createAnchor(lines, index, format) {
   const lastItem = lastLine.items?.[lastLine.items.length - 1];
   const endX = lastItem ? lastItem.x + lastItem.width : lastLine.x + 200;
 
-  // Parse author/year information
   const parsed = parseAuthorYear(text);
 
   return {
@@ -515,9 +526,8 @@ function createAnchor(lines, index, format) {
     endCoord: { x: endX, y: lastLine.y - lastLineHeight },
     formatHint: format,
     cachedText: text,
-    firstAuthorLastName: parsed.firstAuthorLastName,
-    allAuthorLastNames: parsed.allAuthorLastNames,
     year: parsed.year,
+    authorSearchText: parsed.authorSearchText,
     hasMultipleAuthors: parsed.hasMultipleAuthors,
     pageRanges: buildPageRanges(lines),
   };
@@ -565,208 +575,44 @@ function buildPageRanges(lines) {
 
 /**
  * Parse authors and year from reference text
- * Returns structured data for citation matching
+ * Simplified approach: store first 40 chars for substring matching
  *
  * @param {string} text - Reference text
  * @returns {{
- *   firstAuthorLastName: string|null,
- *   allAuthorLastNames: string[],
  *   year: string|null,
+ *   authorSearchText: string,
  *   hasMultipleAuthors: boolean
  * }}
  */
 function parseAuthorYear(text) {
   if (!text) {
     return {
-      firstAuthorLastName: null,
-      allAuthorLastNames: [],
       year: null,
+      authorSearchText: "",
       hasMultipleAuthors: false,
     };
   }
 
-  // Extract year
-  const yearMatch = text.match(YEAR_PATTERN);
-  const year = yearMatch ? yearMatch[0] : null;
+  // Extract year with optional letter suffix (2024, 2024a, 2024b)
+  const yearMatch = text.match(/\b((?:19|20)\d{2}[a-z]?)\b/);
+  const year = yearMatch ? yearMatch[1] : null;
 
-  // Get the author section (everything before title/year)
-  // Heuristic: authors end at first quote, first year in parens, or "arXiv"
-  const authorSectionMatch = text.match(
-    /^(?:\[\d+\]\s*|\(\d+\)\s*|\d+\.\s*)?(.+?)(?:\.\s*(?:In\s|["""]|\(\d{4})|arXiv|http)/i,
+  // Strip leading reference number/bracket and get first 40 chars
+  const stripped = text
+    .replace(/^[\[\(]?\d+[\]\)\.\s]*/, "")
+    .slice(0, 40)
+    .toLowerCase();
+
+  // Check for multiple authors
+  const hasMultipleAuthors = /\bet\s+al\b|,.*,|\band\b|&/i.test(
+    text.slice(0, 100),
   );
-
-  const authorSection = authorSectionMatch
-    ? authorSectionMatch[1]
-    : text.slice(0, 300);
-
-  const lastNames = extractAllLastNames(authorSection);
 
   return {
-    firstAuthorLastName: lastNames[0] || null,
-    allAuthorLastNames: lastNames,
     year,
-    hasMultipleAuthors: lastNames.length > 1 || /\bet\s+al\b/i.test(text),
+    authorSearchText: stripped,
+    hasMultipleAuthors,
   };
-}
-
-/**
- * Surname prefix pattern - matches prefixes like De, Van, Di, etc.
- * Must be followed by a space and then the main surname part
- */
-const SURNAME_PREFIX = `(?:[Dd]e|[Vv]on|[Vv]an|[Dd]er|[Dd]en|[Ll]e|[Ll]a|[Dd]el|[Dd]os|[Dd]as|[Dd]i|[Dd]u)`;
-
-/**
- * @param {string} authorSection
- * @returns {string[]}
- */
-function extractAllLastNames(authorSection) {
-  const lastNames = [];
-
-  const normalized = authorSection
-    .replace(/\s+/g, " ")
-    .replace(/,?\s*\band\b\s*/gi, ", ")
-    .replace(/\s*&\s*/g, ", ")
-    .trim();
-
-  // Strategy 1: "LastName, Initials" format (most common in CS/academic)
-  // Now handles prefixed surnames like "Di Rienzo, A." or "Van Oosterhout, C."
-  const lastFirstPattern = new RegExp(
-    `((?:${SURNAME_PREFIX}\\s+)?\\p{Lu}[\\p{L}\\p{M}]+(?:[-'][\\p{L}\\p{M}]+)?)\\s*,\\s*(?:\\p{Lu}[\\p{L}\\p{M}]*\\.?\\s*,?\\s*)+(?:,|&|$)`,
-    "gu",
-  );
-  let match;
-
-  while ((match = lastFirstPattern.exec(normalized)) !== null) {
-    const name = match[1].trim();
-    if (name.length > 1 && !isCommonWord(name)) {
-      lastNames.push(name);
-    }
-  }
-
-  // If Strategy 1 found names, return them
-  if (lastNames.length > 0) {
-    return [...new Set(lastNames)]; // Dedupe
-  }
-
-  // Strategy 2: "Initials LastName" format
-  // Now handles prefixed surnames like "A. Di Rienzo" or "C. Van Oosterhout"
-  const firstLastPattern = new RegExp(
-    `(?:[\\p{Lu}]\\.?\\s*)+((?:${SURNAME_PREFIX}\\s+)?\\p{Lu}[\\p{L}\\p{M}]+(?:[-'][\\p{L}\\p{M}]+)?)\\s*(?:,|$)`,
-    "gu",
-  );
-
-  while ((match = firstLastPattern.exec(normalized)) !== null) {
-    const name = match[1].trim();
-    if (name.length > 1 && !isCommonWord(name)) {
-      lastNames.push(name);
-    }
-  }
-
-  if (lastNames.length > 0) {
-    return [...new Set(lastNames)];
-  }
-
-  // Strategy 3: Fallback - find all capitalized words that look like names
-  // Now handles prefixed surnames
-  const fallbackPattern = new RegExp(
-    `\\b((?:${SURNAME_PREFIX}\\s+)?\\p{Lu}[\\p{L}\\p{M}]{2,}(?:[-'][\\p{L}\\p{M}]+)?)\\b`,
-    "gu",
-  );
-
-  while ((match = fallbackPattern.exec(normalized)) !== null) {
-    const name = match[1].trim();
-    if (!isCommonWord(name) && name.length > 2) {
-      lastNames.push(name);
-    }
-    // Limit fallback to avoid grabbing title words
-    if (lastNames.length >= 8) break;
-  }
-
-  return [...new Set(lastNames)];
-}
-
-/**
- * @param {string} word
- * @returns {boolean}
- */
-function isCommonWord(word) {
-  const commonWords = new Set([
-    // Articles & conjunctions
-    "The",
-    "And",
-    "For",
-    "With",
-    "From",
-    "This",
-    "That",
-    "Their",
-    "Which",
-    // Publishing
-    "Journal",
-    "Conference",
-    "Proceedings",
-    "International",
-    "Annual",
-    "Review",
-    "Press",
-    "University",
-    "Chapter",
-    "Volume",
-    "Issue",
-    "Pages",
-    "Transactions",
-    "Letters",
-    "Symposium",
-    "Workshop",
-    "Technical",
-    "Report",
-    // Publishers
-    "Springer",
-    "Wiley",
-    "Elsevier",
-    "Cambridge",
-    "Oxford",
-    "MIT",
-    "IEEE",
-    "ACM",
-    "Nature",
-    "Science",
-    "PNAS",
-    "JMLR",
-    "ICML",
-    "NeurIPS",
-    "ICLR",
-    "AAAI",
-    // Common title words
-    "Available",
-    "Accessed",
-    "Retrieved",
-    "Online",
-    "Published",
-    "Submitted",
-    "Learning",
-    "Neural",
-    "Network",
-    "Deep",
-    "Model",
-    "Method",
-    "Approach",
-    "Analysis",
-    "Study",
-    "Research",
-    "Theory",
-    "Algorithm",
-    "System",
-    "Data",
-    // Prepositions often capitalized
-    "New",
-    "York",
-    "San",
-    "Francisco",
-    "Los",
-    "Angeles",
-  ]);
-  return commonWords.has(word);
 }
 
 // ============================================
@@ -820,6 +666,14 @@ export function findReferenceByIndex(anchors, index) {
 // Citation Matching
 // ============================================
 
+/**
+ * Match citation to reference anchor
+ *
+ * @param {string} citationAuthor - Author from citation (e.g., "Smith" from "Smith et al.")
+ * @param {string} citationYear - Year with optional suffix (e.g., "2024a")
+ * @param {Array} anchors - Reference anchors
+ * @returns {Object|null}
+ */
 export function matchCitationToReference(
   citationAuthor,
   citationYear,
@@ -827,34 +681,26 @@ export function matchCitationToReference(
 ) {
   if (!citationYear) return null;
 
+  // Year must match exactly (including letter suffix)
   const yearMatches = anchors.filter((a) => a.year === citationYear);
   if (yearMatches.length === 0) return null;
   if (yearMatches.length === 1) return yearMatches[0];
 
   if (citationAuthor) {
-    const authorLower = citationAuthor
-      .toLowerCase()
-      .replace(/\s+et\s+al\.?/i, "")
-      .trim();
+    // Clean author: remove "et al.", trim, lowercase
+    const authorClean = citationAuthor
+      .replace(/\s*et\s+al\.?\s*/gi, "")
+      .trim()
+      .toLowerCase();
 
-    const authorMatches = yearMatches.filter((a) => {
-      if (!a.authors) return false;
-      const refAuthorLower = a.authors.toLowerCase();
-      return (
-        refAuthorLower.startsWith(authorLower) ||
-        refAuthorLower.includes(authorLower)
+    if (authorClean.length > 1) {
+      const authorMatch = yearMatches.find((a) =>
+        a.authorSearchText.includes(authorClean),
       );
-    });
-
-    if (authorMatches.length === 1) return authorMatches[0];
-    if (authorMatches.length > 1) {
-      return (
-        authorMatches.find((a) =>
-          a.authors?.toLowerCase().startsWith(authorLower),
-        ) || authorMatches[0]
-      );
+      if (authorMatch) return authorMatch;
     }
   }
 
   return yearMatches[0];
 }
+

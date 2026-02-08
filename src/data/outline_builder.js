@@ -778,7 +778,7 @@ function detectAbstract(allLines, bodyFontSize) {
       lowerStripped === "abstract" ||
       lowerStripped === "abstract:" ||
       lowerStripped === "abstract." ||
-      /^abstract\s*[-â€“â€”]\s*/i.test(stripped)
+      /^abstract\s*[-—]\s*/i.test(stripped)
     ) {
       for (const item of line.items) {
         const isLarger = item.fontSize > bodyFontSize * 1.05;
@@ -787,7 +787,7 @@ function detectAbstract(allLines, bodyFontSize) {
         if (isLarger || isStyled || lowerStripped === "abstract") {
           return {
             pageIndex: line.pageNum - 1,
-            top: line.originalY || line.y || 0,
+            top: line.y || 0,
             left: line.x || 0,
           };
         }

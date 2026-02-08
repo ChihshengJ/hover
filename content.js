@@ -54,7 +54,6 @@
 
     console.log("[Hover] Fetching PDF with credentials...");
 
-    // Fetch the PDF with credentials - this works because we're same-origin!
     const pdfResponse = await fetch(window.location.href, {
       credentials: "include", // Include cookies for authenticated access
       cache: "force-cache", // Use cached version if available

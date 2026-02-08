@@ -517,7 +517,7 @@ export class PDFDocumentModel {
 
         rects.push({
           leftRatio: x / pageWidth,
-          topRatio: 1 - (y + height) / pageHeight,
+          topRatio: y / pageHeight,
           widthRatio: width / pageWidth,
           heightRatio: height / pageHeight,
         });
@@ -530,7 +530,7 @@ export class PDFDocumentModel {
 
       rects.push({
         leftRatio: x / pageWidth,
-        topRatio: 1 - (y + height) / pageHeight,
+        topRatio: y / pageHeight,
         widthRatio: width / pageWidth,
         heightRatio: height / pageHeight,
       });
@@ -1081,7 +1081,7 @@ export class PDFDocumentModel {
     const width = uiRect.widthRatio * pageWidth;
     const height = uiRect.heightRatio * pageHeight;
     // Convert Y: UI has origin at top, PDF has origin at bottom
-    const y = (1 - uiRect.topRatio - uiRect.heightRatio) * pageHeight;
+    const y = uiRect.topRatio * pageHeight;
 
     return {
       origin: { x, y },

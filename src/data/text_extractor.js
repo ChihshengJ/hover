@@ -382,6 +382,7 @@ export class PdfiumTextExtractor {
       const isWhitespace = charCode === 32; // space
       const isNewline = charCode === 10 || charCode === 13; // LF or CR
       const isControlChar = charCode < 32 && !isNewline; // other control chars
+      const isDigit = charCode >= 48 && charCode <= 57; // 0-9
 
       chars.push({
         index: i,
@@ -391,6 +392,7 @@ export class PdfiumTextExtractor {
         isWhitespace,
         isNewline,
         isControlChar,
+        isDigit,
       });
     }
 
@@ -469,6 +471,8 @@ export class PdfiumTextExtractor {
         currentRun.trailingChars &&
         currentRun.trailingChars.length > 0;
 
+      const isDigit = chars[i].isDigit;
+
       if (!currentRun) {
         currentRun = {
           startIndex: i,
@@ -480,6 +484,7 @@ export class PdfiumTextExtractor {
           right: box.right,
           bottom: box.bottom,
           avgHeight: box.height,
+          lastVisibleCharCode: charCode,
         };
         continue;
       }
@@ -491,8 +496,14 @@ export class PdfiumTextExtractor {
       const horizontalGap = box.left - currentRun.right;
       const isAdjacent = horizontalGap < gapThreshold;
 
+      const lastCode = currentRun.lastVisibleCharCode;
+      const lastIsDigit = lastCode >= 48 && lastCode <= 57;
+      const lastIsAlpha = (lastCode >= 65 && lastCode <= 90) || (lastCode >= 97 && lastCode <= 122) || lastCode > 127;
+      const currentIsAlpha = (charCode >= 65 && charCode <= 90) || (charCode >= 97 && charCode <= 122) || charCode > 127;
+      const digitAlphaBoundary = (isDigit && lastIsAlpha) || (currentIsAlpha && lastIsDigit);
+
       // If there was trailing whitespace, we should start a new run (word break)
-      if (hasTrailingWhitespace || !sameLine || !isAdjacent) {
+      if (hasTrailingWhitespace || !sameLine || !isAdjacent || digitAlphaBoundary) {
         // Finalize current run and start new one
         this.#finalizeRun(currentRun, textSlices, getFontInfo);
         currentRun = {
@@ -505,6 +516,7 @@ export class PdfiumTextExtractor {
           right: box.right,
           bottom: box.bottom,
           avgHeight: box.height,
+          lastVisibleCharCode: charCode,
         };
       } else {
         currentRun.endIndex = i;
@@ -516,6 +528,7 @@ export class PdfiumTextExtractor {
           box.height > 5
             ? (currentRun.avgHeight + box.height) / 2
             : currentRun.avgHeight;
+        currentRun.lastVisibleCharCode = charCode;
       }
     }
 
@@ -544,7 +557,7 @@ export class PdfiumTextExtractor {
     if (!visibleContent || /^\s*$/.test(visibleContent)) return;
 
     const width = run.right - run.left;
-    const height = run.top - run.bottom;
+    const height = run.avgHeight;
 
     // Skip invalid dimensions
     if (width < 0 && height < 0) return;

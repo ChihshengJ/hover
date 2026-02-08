@@ -223,7 +223,7 @@ export class DocumentTextIndex {
     for (let i = 1; i < items.length; i++) {
       const item = items[i];
       if (item.str.startsWith("arXiv:")) continue;
-      const threshold = Math.max(3, currentLine[0].height);
+      const threshold = Math.max(5, currentLine[0].height);
 
       if (Math.abs(item.y - currentY) <= threshold) {
         currentLine.push(item);
@@ -244,9 +244,9 @@ export class DocumentTextIndex {
     const fontStyle = this.#extractFontStyle(items);
     const fontSize = this.#findMedian(items.map((i) => i.fontSize));
 
-    const lineHeight = this.#findMedian(items.map((i) => i.height));
-
+    const lineHeight = Math.max(...items.map((i) => i.height));
     const lineWidth = items.at(-1).x + items.at(-1).width - items[0].x;
+    const lineBottom = Math.max(...items.map((i) => i.originalY));
 
     const lineItems = items.map((it) => ({
       str: it.str,
@@ -262,7 +262,7 @@ export class DocumentTextIndex {
       text,
       x: first.x,
       y: first.y,
-      originalY: first.originalY,
+      originalY: lineBottom,
       lineHeight,
       lineWidth,
       fontSize,

@@ -351,7 +351,6 @@ function extractStructuralReferences(lines, format) {
     if (currentRef.lines.length === 0) {
       isNewReference = true;
     } else {
-      // Initialize prevYDirection from first transition if not yet set
       if (prevYDirection === null && prevLine) {
         prevYDirection = Math.sign(line.y - prevLine.y);
       }
@@ -402,7 +401,9 @@ function detectBoundary(line, prevLine, currentRef, prevYDirection, metrics) {
   const isAfterShortLine = prevLineWidth < metrics.typicalLineWidth * 0.75;
 
   const lineHeight = line.lineHeight || 10;
-  const tolerance = lineHeight * 0.5;
+
+  // Treat one character height as the tolerance
+  const tolerance = lineHeight;
 
   const isIndented = line.x > currentRef.firstLineX + tolerance;
   const isAtFirstX = line.x <= currentRef.firstLineX + tolerance;
@@ -703,4 +704,3 @@ export function matchCitationToReference(
 
   return yearMatches[0];
 }
-

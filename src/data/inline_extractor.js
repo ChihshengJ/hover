@@ -337,7 +337,11 @@ export class InlineExtractor {
     }
     if (!isInRefSection) {
       citations.push(
-        ...this.#findSuperscriptCitations(pageNumber, bodyLineHeight),
+        ...this.#findSuperscriptCitations(
+          pageNumber,
+          pageHeight,
+          bodyLineHeight,
+        ),
       );
       this.#adjustConfidenceByFormat(citations);
     }
@@ -481,49 +485,79 @@ export class InlineExtractor {
     return citations;
   }
 
-  #findSuperscriptCitations(pageNumber, bodyLineHeight) {
+  /**
+   * Find superscript citations by examining text slices with small bounding boxes.
+   * Handles single numbers (e.g., "1"), comma-separated lists ("1,2,3"),
+   * and ranges ("1-3", "1,2-5,7").
+   *
+   * Slice content is cleaned first since word-based extraction may attach
+   * trailing punctuation and whitespace (e.g., "7, 18. " → "7, 18").
+   */
+  #findSuperscriptCitations(pageNumber, pageHeight, bodyLineHeight) {
     const citations = [];
     const rawSlices = this.#textIndex?.getRawSlices(pageNumber);
 
     if (!rawSlices) return citations;
 
     for (const slice of rawSlices) {
-      const content = slice.content;
+      // Clean slice content: strip trailing/leading punctuation and whitespace
+      // that gets attached during word-based extraction.
+      // e.g., "7, 18. " → "7,18", "1-3, " → "1-3"
+      const cleaned = slice.content
+        .replace(/^[^\d]+/, "") // strip leading non-digits
+        .replace(/[^\d]+$/, "") // strip trailing non-digits
+        .replace(/\s+/g, ""); // collapse internal whitespace
 
-      // Must be pure digits and significantly smaller than body text
-      if (
-        !INLINE_CITATION_PATTERNS.superscriptDigits.test(content) ||
-        slice.rect.size.height >= bodyLineHeight * 0.6
-      ) {
+      if (!cleaned) continue;
+
+      // Must be significantly smaller than body text
+      if (slice.rect.size.height >= bodyLineHeight * 0.7) {
         continue;
       }
 
-      const idx = parseInt(content, 10);
-      const validAnchor = this.#signatures.find(
-        (anchor) => anchor.index === idx,
+      // Match against the multi-number superscript pattern
+      if (!INLINE_CITATION_PATTERNS.superscriptCitation.test(cleaned)) {
+        continue;
+      }
+
+      // Parse using the shared numeric content parser (handles "1", "1,2,3", "1-3", etc.)
+      const { indices, ranges } = parseNumericCitationContent(cleaned);
+
+      // Validate against known references
+      const validIndices = indices.filter((idx) =>
+        this.#signatures.some((anchor) => anchor.index === idx),
       );
 
-      if (!validAnchor) continue;
+      if (validIndices.length === 0) continue;
+
+      // Determine flags
+      let flags = CitationFlags.NONE;
+      if (ranges.length > 0) {
+        flags |= CitationFlags.RANGE_NOTATION;
+      }
+      if (validIndices.length > 1) {
+        flags |= CitationFlags.MULTI_REF;
+      }
 
       citations.push({
         type: "superscript",
-        text: content,
+        text: cleaned,
         pageNumber,
         charIndex: 0,
-        charCount: content.length,
+        charCount: cleaned.length,
         rects: [
           {
             x: slice.rect.origin.x,
-            y: slice.rect.origin.y,
+            y: pageHeight - slice.rect.origin.y,
             width: slice.rect.size.width,
             height: slice.rect.size.height,
           },
         ],
-        refIndices: [idx],
-        refRanges: [],
+        refIndices: validIndices,
+        refRanges: ranges,
         refKeys: null,
-        confidence: 0.9,
-        flags: CitationFlags.NONE,
+        confidence: validIndices.length / indices.length,
+        flags,
       });
     }
 
@@ -809,7 +843,7 @@ export class InlineExtractor {
 
     // Clean author: remove "et al.", trim, lowercase
     const authorClean = author
-      .replace(/\s*et\s+al\.?\s*/gi, '')
+      .replace(/\s*et\s+al\.?\s*/gi, "")
       .trim()
       .toLowerCase();
 
@@ -830,7 +864,7 @@ export class InlineExtractor {
       if (secondAuthor) {
         const secondClean = secondAuthor.trim().toLowerCase();
         const hasSecondAuthor = anchor.authorSearchText.includes(secondClean);
-        
+
         if (hasSecondAuthor) {
           return { index: anchor.index, confidence: 1.0 };
         }

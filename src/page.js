@@ -92,7 +92,7 @@ export class PageView {
 
     try {
       if (!this.textSlices) {
-        this.textSlices = this.doc.textIndex?.getRawSlices(this.pageNumber);
+        this.textSlices = this.doc.textIndex?.getPageLines(this.pageNumber);
 
         if (!this.textSlices) {
           if (this.doc.lowLevelHandle) {
@@ -183,14 +183,14 @@ export class PageView {
     const fragment = document.createDocumentFragment();
     const spansToMeasure = [];
 
-    for (const slice of this.textSlices) {
-      const content = slice.content || "";
+    for (const line of this.textSlices) {
+      const content = line.text || "";
       if (!content || !this.#isValidTextContent(content)) continue;
 
-      const rectX = slice.rect.origin.x;
-      const rectY = pageHeight - slice.rect.origin.y;
-      const rectWidth = slice.rect.size.width;
-      const rectHeight = slice.rect.size.height;
+      const rectX = line.x;
+      const rectY = line.originalY;
+      const rectWidth = line.lineWidth;
+      const rectHeight = line.lineHeight;
 
       const x = rectX * scale;
       const y = rectY * scale;
@@ -209,7 +209,7 @@ export class PageView {
       }
 
       const fontFamily =
-        slice.font?.family || slice.font?.famliy || "sans-serif";
+        line.font?.family || line.font?.famliy || "sans-serif";
       const cleanFontFamily =
         fontFamily.replace(/['"]/g, "").trim() || "sans-serif";
 

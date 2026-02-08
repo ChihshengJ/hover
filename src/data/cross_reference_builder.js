@@ -171,7 +171,7 @@ export class CrossReferenceBuilder {
               targetId,
               pageNumber: pageNum,
               x: line.x,
-              y: pageHeight - line.y,
+              y: line.y,
               text: line.text,
             });
           }

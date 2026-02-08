@@ -538,6 +538,14 @@ export const INLINE_CITATION_PATTERNS = {
    * Actual superscript detection uses font metrics, this is for text validation
    */
   superscriptDigits: /^\d+$/,
+
+  /**
+   * Superscript citation pattern - matches single numbers, comma-separated lists,
+   * and ranges that appear in superscript citation slices.
+   * Examples: "1", "1,2,3", "1-3", "1,2-5,7", "1–3"
+   * Applied AFTER stripping trailing punctuation/whitespace from slice content.
+   */
+  superscriptCitation: /^\d+(?:\s*[-\u2013\u2014]\s*\d+)?(?:\s*,\s*\d+(?:\s*[-\u2013\u2014]\s*\d+)?)*$/,
 };
 
 // ============================================

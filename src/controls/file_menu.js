@@ -4,6 +4,7 @@
  */
 
 import { OnboardingWalkthrough } from "../settings/onboarding.js";
+import { WallpaperSettings } from "../settings/settings.js";
 
 export class FileMenu {
   /**
@@ -20,8 +21,16 @@ export class FileMenu {
     /** @type {OnboardingWalkthrough|null} */
     this.onboarding = null;
 
+    /** @type {WallpaperSettings} */
+    this.wallpaperSettings = new WallpaperSettings(wm, (msg) =>
+      this.#showToast(msg),
+    );
+
     this.#createDOM();
     this.#setupEventListeners();
+
+    // Apply saved wallpaper on startup
+    this.wallpaperSettings.applyOnStartup();
   }
 
   #createDOM() {
@@ -92,10 +101,13 @@ export class FileMenu {
         </svg>
         <span>Tutorial</span>
       </button>
-      <button class="file-menu-item" data-action="wallpaper">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+      <button class="file-menu-item" data-action="settings">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="3"/>
+          <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
         </svg>
-        <span>Wallpaper</span>
+        <span>Settings</span>
+      </button>
       <div class="file-menu-divider"></div>
       <button class="file-menu-item" data-action="about">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
@@ -283,8 +295,8 @@ export class FileMenu {
       case "tutorial":
         this.#startTutorial();
         break;
-      case "wallpaper":
-        this.#showWallPaperSetting();
+      case "settings":
+        this.#showSettings();
         break;
       case "about":
         this.#showAbout();
@@ -442,42 +454,8 @@ export class FileMenu {
     }
   }
 
-  #showWallPaperSetting() {
-    const existing = document.querySelector(".file-menu-modal-overlay");
-    if (existing) existing.remove();
-
-    const overlay = document.createElement("div");
-    overlay.className = "file-menu-modal-overlay";
-    overlay.innerHTML = `
-      <div class="file-menu-modal">
-        <div class="file-menu-modal-header">
-          <h2>Current</h2>
-          <button class="file-menu-modal-close">×</button>
-
-
-        </div>
-      </div>
-    `;
-
-    document.body.appendChild(overlay);
-
-    // Animate in
-    requestAnimationFrame(() => {
-      overlay.classList.add("visible");
-    });
-
-    // Close handlers
-    const close = () => {
-      overlay.classList.remove("visible");
-      setTimeout(() => overlay.remove(), 300);
-    };
-
-    overlay
-      .querySelector(".file-menu-modal-close")
-      .addEventListener("click", close);
-    overlay.addEventListener("click", (e) => {
-      if (e.target === overlay) close();
-    });
+  #showSettings() {
+    this.wallpaperSettings.open();
   }
 
   /**
@@ -688,7 +666,7 @@ export class FileMenu {
           <div class="citation-search-info">
             <span class="citation-query-text" title="${this.#escapeHtml(query)}">${this.#escapeHtml(this.#truncateText(query, 50))}</span>
             <a href="https://scholar.google.com/scholar?q=${encodeURIComponent(query)}" target="_blank" class="citation-scholar-link">
-              Open in Google Scholar ->’
+              Open in Google Scholar ->
             </a>
           </div>
           <div class="citation-formats">
@@ -808,9 +786,11 @@ export class FileMenu {
 
     if (dateStr instanceof Date) {
       dateObj = dateStr;
-    } else if (typeof dateStr === 'string') {
-      const pdfMatch = dateStr.match(/D:(\d{4})(\d{2})(\d{2})(\d{2})?(\d{2})?(\d{2})?/);
-      
+    } else if (typeof dateStr === "string") {
+      const pdfMatch = dateStr.match(
+        /D:(\d{4})(\d{2})(\d{2})(\d{2})?(\d{2})?(\d{2})?/,
+      );
+
       if (pdfMatch) {
         const [, year, month, day, hour = "00", min = "00"] = pdfMatch;
         return `${year}-${month}-${day} ${hour}:${min}`;
@@ -826,10 +806,10 @@ export class FileMenu {
     }
 
     const year = dateObj.getFullYear();
-    const month = String(dateObj.getMonth() + 1).padStart(2, '0');
-    const day = String(dateObj.getDate()).padStart(2, '0');
-    const hour = String(dateObj.getHours()).padStart(2, '0');
-    const min = String(dateObj.getMinutes()).padStart(2, '0');
+    const month = String(dateObj.getMonth() + 1).padStart(2, "0");
+    const day = String(dateObj.getDate()).padStart(2, "0");
+    const hour = String(dateObj.getHours()).padStart(2, "0");
+    const min = String(dateObj.getMinutes()).padStart(2, "0");
 
     return `${year}-${month}-${day} ${hour}:${min}`;
   }
@@ -878,8 +858,8 @@ export class FileMenu {
               <span class="metadata-label">DOI</span>
               <span class="metadata-value">${data.custom.DOI}</span>
             </div>
-          ` 
-          : ""
+          `
+        : ""
       }
           ${data.custom.License
         ? `
@@ -887,8 +867,8 @@ export class FileMenu {
               <span class="metadata-label">License</span>
               <span class="metadata-value">${data.custom.License}</span>
             </div>
-          ` 
-          : ""
+          `
+        : ""
       }
           ${data.custom.arXivID
         ? `
@@ -896,17 +876,17 @@ export class FileMenu {
               <span class="metadata-label">arXiv</span>
               <span class="metadata-value">${data.custom.arXivID}</span>
             </div>
-          ` 
-          : ""
+          `
+        : ""
       }
-          ${data.custom['PTEX.Fullbanner']
+          ${data.custom["PTEX.Fullbanner"]
         ? `
             <div class="metadata-row">
               <span class="metadata-label">PTEX</span>
-              <span class="metadata-value">${data.custom['PTEX.Fullbanner']}</span>
+              <span class="metadata-value">${data.custom["PTEX.Fullbanner"]}</span>
             </div>
-          ` 
-          : ""
+          `
+        : ""
       }
           <div class="metadata-divider"></div>
           <div class="metadata-row">
@@ -985,7 +965,7 @@ export class FileMenu {
             <span class="metadata-label">Donate</span>
             <span class="metadata-value">
               This app is my first solo project, so if it makes your PDF reading experience better, please consider donating through the link below. It means a ton to this project and to me! Thank you!
-              <br></br>
+              <br><br>
               <a href="https://www.buymeacoffee.com/chihshengj" target="_blank"><img src="https://www.buymeacoffee.com/assets/img/custom_images/orange_img.png" alt="Buy Me A Coffee" style="width: 120px !important;box-shadow: 0px 3px 2px 0px rgba(190, 190, 190, 0.5) !important;-webkit-box-shadow: 0px 3px 2px 0px rgba(190, 190, 190, 0.5) !important;" ></a>
             </span>
           </div>

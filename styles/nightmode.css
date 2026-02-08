@@ -133,8 +133,8 @@
     rgba(250, 250, 250, 0.8) 90%
   );
   box-shadow:
-    inset -2px -2px 2px 1px #00000099,
-    inset 1px 1px 2px 1px #00000099,
+    inset -2px -2px 5px 1px #0000008e,
+    inset 1px 1px 5px 1px #0000006d,
     0 3px 5px 2px #ffffff10,
     0 0 10px 2px #ffffff05;
 }

@@ -1,0 +1,429 @@
+.settings-modal {
+  max-width: 520px;
+  width: 92%;
+}
+
+.settings-content {
+  padding: 16px 20px 20px;
+}
+
+.settings-section {
+  margin-bottom: 20px;
+}
+
+.settings-section:last-child {
+  margin-bottom: 0;
+}
+
+.settings-section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 14px;
+}
+
+.settings-section-title {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.settings-section-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.settings-edit-btn,
+.settings-delete-confirm-btn {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 5px 8px;
+  background: transparent;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-size: 11px;
+  transition: all var(--transition-fast);
+}
+
+.settings-edit-btn:hover,
+.settings-delete-confirm-btn:hover {
+  background: var(--bg-hover);
+  border-color: var(--border-color-strong);
+  color: var(--text-primary);
+}
+
+.settings-edit-btn.active {
+  background: var(--color-accent-light, rgba(59, 130, 246, 0.1));
+  border-color: var(--color-accent-border, rgba(59, 130, 246, 0.3));
+  color: var(--color-accent-hover, #2563eb);
+}
+
+.settings-delete-confirm-btn {
+  color: #dc2626;
+  border-color: rgba(220, 38, 38, 0.3);
+}
+
+.settings-delete-confirm-btn:hover {
+  background: rgba(220, 38, 38, 0.08);
+  border-color: #dc2626;
+  color: #dc2626;
+}
+
+.delete-count {
+  font-size: 11px;
+  font-weight: 600;
+}
+
+/* ===========================================
+   Wallpaper Grid
+   =========================================== */
+
+.wallpaper-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));
+  gap: 12px;
+}
+
+/* ===========================================
+   Wallpaper Card (base)
+   =========================================== */
+
+.wallpaper-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  transition: transform var(--transition-fast);
+}
+
+.wallpaper-card:hover {
+  transform: translateY(-1px);
+}
+
+.wallpaper-card:active {
+  transform: scale(0.97);
+}
+
+.wallpaper-card-preview {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 16 / 10;
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  background: var(--bg-tertiary);
+  border: 2px solid transparent;
+  transition:
+    border-color var(--transition-fast),
+    box-shadow var(--transition-fast);
+}
+
+.wallpaper-card.selected .wallpaper-card-preview {
+  border-color: var(--color-accent-hover, #2563eb);
+  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.25);
+}
+
+.wallpaper-card-preview img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.wallpaper-card-label {
+  font-size: 11px;
+  color: var(--text-secondary);
+  text-align: center;
+  line-height: 1.2;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.wallpaper-card.selected .wallpaper-card-label {
+  color: var(--color-accent-hover, #2563eb);
+  font-weight: 600;
+}
+
+/* ===========================================
+   None Card
+   =========================================== */
+
+.wallpaper-none-preview {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg-tertiary);
+}
+
+/* ===========================================
+   Add Card
+   =========================================== */
+
+.wallpaper-card-add {
+  position: relative;
+}
+
+.wallpaper-add-preview {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg-tertiary);
+  border: 2px dashed var(--border-color);
+  transition:
+    border-color var(--transition-fast),
+    background var(--transition-fast);
+}
+
+.wallpaper-card-add:hover .wallpaper-add-preview {
+  border-color: var(--border-color-strong);
+  background: var(--bg-hover);
+}
+
+.wallpaper-card-add:hover .wallpaper-add-preview svg {
+  opacity: 0.8;
+}
+
+/* ===========================================
+   Add Popover
+   =========================================== */
+
+.wallpaper-add-popover {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 50%;
+  transform: translateX(-50%) translateY(8px);
+  z-index: 10;
+  background: var(--bg-glass-solid);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
+  box-shadow:
+    0 8px 24px rgba(0, 0, 0, 0.15),
+    0 2px 8px rgba(0, 0, 0, 0.1);
+  padding: 4px;
+  min-width: 140px;
+  opacity: 0;
+  transition:
+    opacity var(--transition-fast),
+    transform var(--transition-fast);
+}
+
+.wallpaper-add-popover.visible {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+}
+
+.wallpaper-add-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 8px 12px;
+  border: none;
+  background: transparent;
+  border-radius: var(--radius-md);
+  font-size: 13px;
+  color: var(--text-primary);
+  cursor: pointer;
+  font-family: inherit;
+  white-space: nowrap;
+  transition:
+    background var(--transition-fast),
+    color var(--transition-fast);
+}
+
+.wallpaper-add-option:hover {
+  background: var(--bg-hover);
+}
+
+.wallpaper-add-option svg {
+  flex-shrink: 0;
+  opacity: 0.6;
+}
+
+/* ===========================================
+   URL Input Area
+   =========================================== */
+
+.wallpaper-url-input-area {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 14px;
+  padding: 8px 10px;
+  background: var(--bg-tertiary);
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--border-color);
+  transition: border-color var(--transition-fast);
+}
+
+.wallpaper-url-input-area:focus-within {
+  border-color: var(--color-accent-hover, #2563eb);
+}
+
+.wallpaper-url-input {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  background: transparent;
+  font-size: 13px;
+  font-family: inherit;
+  color: var(--text-primary);
+  outline: none;
+}
+
+.wallpaper-url-input::placeholder {
+  color: var(--text-muted);
+}
+
+.wallpaper-url-confirm,
+.wallpaper-url-cancel {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: none;
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  background: transparent;
+  transition: all var(--transition-fast);
+}
+
+.wallpaper-url-confirm {
+  color: #16a34a;
+}
+
+.wallpaper-url-confirm:hover {
+  background: rgba(22, 163, 74, 0.1);
+}
+
+.wallpaper-url-cancel {
+  color: var(--text-muted);
+}
+
+.wallpaper-url-cancel:hover {
+  background: var(--bg-hover);
+  color: var(--text-secondary);
+}
+
+/* ===========================================
+   Loading Spinner (inside card)
+   =========================================== */
+
+.wallpaper-card-loading {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg-tertiary);
+}
+
+.wallpaper-spinner {
+  width: 18px;
+  height: 18px;
+  border: 2px solid var(--border-color);
+  border-top-color: var(--text-secondary);
+  border-radius: 50%;
+  animation: wp-spin 0.7s linear infinite;
+}
+
+@keyframes wp-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* ===========================================
+   Placeholder (failed thumbnail)
+   =========================================== */
+
+.wallpaper-card-placeholder {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg-tertiary);
+}
+
+/* ===========================================
+   Edit / Delete Mode
+   =========================================== */
+
+.wallpaper-card-custom.edit-mode .wallpaper-card-preview {
+  border-color: var(--border-color);
+}
+
+.wallpaper-card-custom.edit-mode:hover .wallpaper-card-preview {
+  border-color: #dc2626;
+}
+
+.wallpaper-card-custom.marked-delete .wallpaper-card-preview {
+  border-color: #dc2626;
+  box-shadow: 0 0 0 2px rgba(220, 38, 38, 0.2);
+}
+
+.wallpaper-delete-check {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.4);
+  border: 2px solid rgba(255, 255, 255, 0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all var(--transition-fast);
+}
+
+.wallpaper-delete-check svg {
+  opacity: 0;
+  transition: opacity var(--transition-fast);
+}
+
+.wallpaper-delete-check.checked {
+  background: #dc2626;
+  border-color: #dc2626;
+}
+
+.wallpaper-delete-check.checked svg {
+  opacity: 1;
+}
+
+/* ===========================================
+   Selection Indicator (checkmark overlay)
+   =========================================== */
+
+.wallpaper-card.selected .wallpaper-card-preview::after {
+  content: "";
+  position: absolute;
+  top: 6px;
+  left: 6px;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--color-accent-hover, #2563eb);
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='3' xmlns='http://www.w3.org/2000/svg'%3E%3Cpolyline points='20 6 9 17 4 12'/%3E%3C/svg%3E");
+  background-size: 12px 12px;
+  background-repeat: no-repeat;
+  background-position: center;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.2);
+}
+
+/* Don't show selection indicator in edit mode */
+.wallpaper-card-custom.edit-mode.selected .wallpaper-card-preview::after {
+  display: none;
+}

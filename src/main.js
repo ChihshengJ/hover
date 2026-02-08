@@ -17,6 +17,7 @@ import "../styles/file_menu.css";
 import "../styles/search.css";
 import "../styles/loading_overlay.css";
 import "../styles/onboarding.css";
+import "../styles/settings.css";
 
 const el = {
   wd: document.getElementById("window-container"),
@@ -271,9 +272,7 @@ async function loadPdf(isFirstLaunch = false) {
           console.log("[Main] Loading PDF from background:", pdfName);
         }
       }
-    }
-
-    else {
+    } else {
       const devUrl = getDevUrl();
       if (devUrl) {
         console.log("[Main] DEV MODE - Loading from URL:", devUrl);

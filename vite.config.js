@@ -28,7 +28,7 @@ export default defineConfig({
     emptyOutDir: true,
     // Needed for extension compatibility
     target: "esnext",
-    minify: false, // Easier debugging during development
+    minify: true, // Easier debugging during development
   },
   publicDir: "public",
   resolve: {
@@ -38,30 +38,33 @@ export default defineConfig({
   },
   plugins: [
     {
-      name: 'copy-popup-files',
+      name: "copy-popup-files",
       closeBundle() {
         // Copy popup.css and popup.js to dist (they're not processed by Vite)
         try {
           copyFileSync(
             resolve(__dirname, "popup.css"),
-            resolve(__dirname, "dist/popup.css")
+            resolve(__dirname, "dist/popup.css"),
           );
           copyFileSync(
             resolve(__dirname, "popup.js"),
-            resolve(__dirname, "dist/popup.js")
+            resolve(__dirname, "dist/popup.js"),
           );
         } catch (err) {
           console.warn("Could not copy popup files:", err.message);
         }
-      }
+      },
     },
     {
-      name: 'copy-wasm-to-public',
+      name: "copy-wasm-to-public",
       buildStart() {
         // Copy pdfium.wasm from node_modules to public/ so it gets included in dist
-        const wasmSrc = resolve(__dirname, "node_modules/@embedpdf/pdfium/dist/pdfium.wasm");
+        const wasmSrc = resolve(
+          __dirname,
+          "node_modules/@embedpdf/pdfium/dist/pdfium.wasm",
+        );
         const wasmDest = resolve(__dirname, "public/pdfium.wasm");
-        
+
         if (existsSync(wasmSrc) && !existsSync(wasmDest)) {
           try {
             copyFileSync(wasmSrc, wasmDest);
@@ -70,7 +73,7 @@ export default defineConfig({
             console.warn("Could not copy pdfium.wasm:", err.message);
           }
         }
-      }
-    }
-  ]
+      },
+    },
+  ],
 });

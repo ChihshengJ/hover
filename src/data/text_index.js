@@ -364,15 +364,6 @@ export class DocumentTextIndex {
     this.#bodyFontStyle = this.#findMostCommon(fontStyles);
     this.#bodyLineHeight = this.#findMedian(lineHeights);
     this.#bodyMarginBottom = this.#findMostCommon(marginBottoms);
-    console.log(this.#bodyMarginBottom);
-
-    // for (const [, data] of this.#pageData) {
-    //   for (const line of data.lines) {
-    //     const sizeMatch = Math.abs(line.fontSize - this.#bodyFontSize) < 0.5;
-    //     const styleMatch = line.fontStyle === this.#bodyFontStyle;
-    //     line.isCommonFont = sizeMatch && styleMatch ? 1 : 0;
-    //   }
-    // }
   }
 
   #findMedian(arr) {

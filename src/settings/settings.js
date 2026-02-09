@@ -96,11 +96,11 @@ export class WallpaperSettings {
       name: "Bike - Photography",
       url: "https://raw.githubusercontent.com/ChihshengJ/ChihshengJ.github.io/refs/heads/main/assets/wallpapers/Photography_Bike.jpeg",
     },
-    // {
-    //   id: "preset_Chicago",
-    //   name: "Chicago - Photography",
-    //   url: "https://raw.githubusercontent.com/ChihshengJ/ChihshengJ.github.io/refs/heads/main/assets/wallpapers/Photography_Chicago.jpeg",
-    // },
+    {
+      id: "preset_Chicago",
+      name: "Chicago - Photography",
+      url: "https://raw.githubusercontent.com/ChihshengJ/ChihshengJ.github.io/refs/heads/main/assets/wallpapers/Photography_Chicago.jpg",
+    },
   ];
 
   /**

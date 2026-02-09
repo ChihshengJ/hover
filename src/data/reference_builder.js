@@ -177,7 +177,9 @@ function findReferenceSectionEnd(
       const isDirectIndicator =
         POST_REFERENCE_SECTION_PATTERN.test(strippedText);
       const isBigJump =
-        line.y === marginBottom && marginBottom > bodyMarginBottom + 20;
+        line.y === marginBottom &&
+        marginBottom > bodyMarginBottom + 20 &&
+        i === lines.length - 1;
 
       if (isDirectIndicator || isAllCapital || isBoldAndLarge || isBigJump) {
         return {
@@ -343,7 +345,8 @@ function extractStructuralReferences(lines, format) {
   let prevYDirection = null;
   let refIndex = 0;
 
-  for (const line of lines) {
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
     if (line.text.trim().length <= 2) continue;
 
     let isNewReference = false;
@@ -354,10 +357,12 @@ function extractStructuralReferences(lines, format) {
       if (prevYDirection === null && prevLine) {
         prevYDirection = Math.sign(line.y - prevLine.y);
       }
+      const nextLineX = i < lines.length - 1 ? lines[i + 1].x : lines[i].x;
 
       const result = detectBoundary(
         line,
         prevLine,
+        nextLineX,
         currentRef,
         prevYDirection,
         metrics,
@@ -392,7 +397,14 @@ function extractStructuralReferences(lines, format) {
   return anchors;
 }
 
-function detectBoundary(line, prevLine, currentRef, prevYDirection, metrics) {
+function detectBoundary(
+  line,
+  prevLine,
+  nextLineX,
+  currentRef,
+  prevYDirection,
+  metrics,
+) {
   const yDelta = line.y - prevLine.y;
   const yDirection = Math.sign(yDelta);
   const absYDelta = Math.abs(yDelta);
@@ -426,13 +438,8 @@ function detectBoundary(line, prevLine, currentRef, prevYDirection, metrics) {
   if (isLargeGap) {
     isNewReference = true;
   } else if (isBoundaryJump) {
-    if (isAfterShortLine) {
+    if (isAfterShortLine || Math.floor(line.x) < Math.floor(nextLineX)) {
       isNewReference = true;
-    } else if (isIndented) {
-      currentRef.firstLineX = line.x - lineHeight;
-      isNewReference = false;
-    } else {
-      isNewReference = looksLikeReferenceStart(line.text);
     }
   } else if (isAtFirstX && wasIndented) {
     if (isAfterShortLine) {
@@ -449,7 +456,7 @@ function looksLikeReferenceStart(text) {
   const trimmed = text.trim();
   if (/^\s*[\[\(]?\d+[\]\)\.]/.test(trimmed)) return true;
   if (/^\s*[\[\(]?[A-Z]*\+?\d+[\]\)\.]/.test(trimmed)) return true;
-  if (/^[A-Z][a-zÀ-ÿ]]+[,\.]/.test(trimmed)) return true;
+  if (/^[A-Z][a-zÀ-ÿ]+[,\.]/.test(trimmed)) return true;
 
   const continuationWords =
     /^(and|the|in|of|on|at|to|for|with|from|by|as|or|an|a)\s/i;

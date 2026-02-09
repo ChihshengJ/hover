@@ -157,8 +157,7 @@ export class AnnotationSVGLayer {
       element.setAttribute("rx", 3);
       element.setAttribute("ry", 3);
     } else {
-      // Underline - thin bar at bottom
-      const underlineHeight = 3;
+      const underlineHeight = 2;
       element.setAttribute("x", rect.x);
       element.setAttribute("y", rect.y + rect.height - underlineHeight);
       element.setAttribute("width", rect.width);
@@ -383,7 +382,6 @@ export class AnnotationSVGLayer {
     this.removeAnnotation(annotation.id);
     this.#renderAnnotation(annotation);
 
-    // Restore selection state if this was selected
     if (this.#selectedId === annotation.id) {
       this.#setGroupState(annotation.id, "selected", true);
     }
@@ -409,7 +407,6 @@ export class AnnotationSVGLayer {
     const annotations = this.#pane.document.getAllAnnotations();
     this.render(annotations);
 
-    // Restore selection state
     if (this.#selectedId) {
       this.#setGroupState(this.#selectedId, "selected", true);
     }

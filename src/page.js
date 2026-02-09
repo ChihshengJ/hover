@@ -521,7 +521,7 @@ export class PageView {
   }
 
   // ============================================
-  // Cross-Reference Handlers
+  // Cross-Reference Handlers (for future add-ons?)
   // ============================================
 
   async #handleCrossRefEnter(el, citationPopup) {

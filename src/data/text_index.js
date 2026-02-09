@@ -244,7 +244,7 @@ export class DocumentTextIndex {
     const fontStyle = this.#extractFontStyle(items);
     const fontSize = this.#findMedian(items.map((i) => i.fontSize));
 
-    const lineHeight = Math.max(...items.map((i) => i.height));
+    const lineHeight = this.#findMedian(items.map((i) => i.height));
     const lineWidth = items.at(-1).x + items.at(-1).width - items[0].x;
     const lineBottom = Math.max(...items.map((i) => i.originalY));
 

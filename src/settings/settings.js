@@ -19,7 +19,10 @@ export class WallpaperSettings {
   static STORE_NAME = "wallpapers";
   /** @type {string} */
   static META_KEY = "hover_wallpaper_meta";
-
+  /** @type {string} */
+  static PROGRESS_BAR_KEY = "hover_progress_bar_enabled";
+  /** @type {string} */
+  static BALL_STYLE_KEY = "hover_ball_style";
   /** @type {number} Max dimension for stored wallpaper (px) */
   static MAX_IMAGE_DIM = 3840;
   /** @type {number} Thumbnail max width (px) */
@@ -32,9 +35,27 @@ export class WallpaperSettings {
   static THUMB_QUALITY = 0.5;
   /** @type {number} Max custom wallpapers allowed */
   static MAX_CUSTOM = 10;
+  /** @type {number} Max gradient stops */
+  static MAX_STOPS = 3;
 
   /** @type {string[]} Supported MIME types */
   static SUPPORTED_TYPES = ["image/jpeg", "image/png", "image/webp"];
+
+  /**
+   * Default ball style matching the CSS variables in _variables.css
+   */
+  static DEFAULT_BALL_STYLE = {
+    gradient: {
+      direction: 120,
+      stops: [
+        { color: "#ffffff", position: 10 },
+        { color: "#fafafa", position: 25 },
+        { color: "#bebebe", position: 85 },
+      ],
+    },
+    pageColor: "#000000",
+    pageWeight: 300,
+  };
 
   /**
    * Preset wallpapers hosted on GitHub.
@@ -113,17 +134,29 @@ export class WallpaperSettings {
      * @type {Set<string>}
      */
     this._pendingPresetThumbs = new Set();
+
+    // ── Ball Style Editor state ──
+    /** @type {Object|null} Current ball style config */
+    this._ballStyle = null;
+    /** @type {number} Index of the currently selected gradient stop */
+    this._selectedStopIndex = 0;
+    /** @type {boolean} Whether a stop is being dragged */
+    this._isDraggingStop = false;
+    /** @type {number} Debounce timer for saving ball style */
+    this._ballSaveTimer = null;
   }
 
-  // ─── Public API ──────────────────────────────────────────
+  // ═══ Public API ═══════════════════════════════════════════
 
   /** Open the settings modal */
   async open() {
     try {
       await this._ensureDB();
       this._meta = await this._loadMeta();
+      this._ballStyle = await this._loadBallStyle();
       this._editMode = false;
       this._deleteSet.clear();
+      this._selectedStopIndex = 0;
       this._renderModal();
     } catch (err) {
       console.error("[WallpaperSettings] Failed to open:", err);
@@ -161,7 +194,58 @@ export class WallpaperSettings {
     }
   }
 
-  // ─── IndexedDB Helpers ───────────────────────────────────
+  /**
+   * Apply the saved ball style on app startup.
+   * Call this once after the viewer is initialized.
+   */
+  async applyBallStyleOnStartup() {
+    try {
+      this._ballStyle = await this._loadBallStyle();
+      this._applyBallStyleToDOM(this._ballStyle);
+    } catch (err) {
+      console.warn(
+        "[WallpaperSettings] Failed to apply ball style on startup:",
+        err,
+      );
+    }
+  }
+
+  /**
+   * Check if the progress bar is enabled.
+   * @returns {boolean}
+   */
+  static isProgressBarEnabled() {
+    try {
+      const val = localStorage.getItem(WallpaperSettings.PROGRESS_BAR_KEY);
+      return val === null ? true : val === "true";
+    } catch {
+      return true;
+    }
+  }
+
+  /**
+   * Save progress bar enabled state.
+   * @param {boolean} enabled
+   */
+  static setProgressBarEnabled(enabled) {
+    try {
+      localStorage.setItem(WallpaperSettings.PROGRESS_BAR_KEY, String(enabled));
+    } catch (err) {
+      console.warn(
+        "[WallpaperSettings] Failed to save progress bar setting:",
+        err,
+      );
+    }
+
+    // Also save to chrome.storage if available
+    if (typeof chrome !== "undefined" && chrome.storage?.local) {
+      chrome.storage.local.set({
+        [WallpaperSettings.PROGRESS_BAR_KEY]: enabled,
+      });
+    }
+  }
+
+  // ═══ IndexedDB Helpers ════════════════════════════════════
 
   /** @returns {Promise<IDBDatabase>} */
   _ensureDB() {
@@ -249,7 +333,7 @@ export class WallpaperSettings {
     });
   }
 
-  // ─── Metadata (chrome.storage.local / localStorage) ──────
+  // ═══ Metadata (chrome.storage.local / localStorage) ══════
 
   /**
    * Metadata shape:
@@ -324,7 +408,174 @@ export class WallpaperSettings {
     }
   }
 
-  // ─── Image Processing ────────────────────────────────────
+  // ═══ Ball Style Storage ══════════════════════════════════
+
+  /**
+   * Load ball style from storage, falling back to defaults.
+   * @returns {Promise<Object>}
+   */
+  async _loadBallStyle() {
+    const fallback = structuredClone(WallpaperSettings.DEFAULT_BALL_STYLE);
+
+    if (typeof chrome !== "undefined" && chrome.storage?.local) {
+      return new Promise((resolve) => {
+        chrome.storage.local.get(WallpaperSettings.BALL_STYLE_KEY, (result) => {
+          if (chrome.runtime.lastError) {
+            resolve(this._loadBallStyleLocalStorage(fallback));
+            return;
+          }
+          const data = result[WallpaperSettings.BALL_STYLE_KEY];
+          resolve(data ? this._mergeBallStyle(fallback, data) : fallback);
+        });
+      });
+    }
+
+    return this._loadBallStyleLocalStorage(fallback);
+  }
+
+  _loadBallStyleLocalStorage(fallback) {
+    try {
+      const raw = localStorage.getItem(WallpaperSettings.BALL_STYLE_KEY);
+      return raw ? this._mergeBallStyle(fallback, JSON.parse(raw)) : fallback;
+    } catch {
+      return fallback;
+    }
+  }
+
+  /**
+   * Merge saved data with defaults to handle missing/new fields.
+   */
+  _mergeBallStyle(fallback, saved) {
+    return {
+      gradient: {
+        direction: saved.gradient?.direction ?? fallback.gradient.direction,
+        stops:
+          Array.isArray(saved.gradient?.stops) && saved.gradient.stops.length > 0
+            ? saved.gradient.stops.map((s) => ({
+                color: s.color || "#ffffff",
+                position: typeof s.position === "number" ? s.position : 50,
+              }))
+            : fallback.gradient.stops,
+      },
+      pageColor: saved.pageColor || fallback.pageColor,
+      pageWeight: saved.pageWeight || fallback.pageWeight,
+    };
+  }
+
+  /**
+   * Save ball style to storage (debounced for live editing).
+   * @param {Object} style
+   */
+  async _saveBallStyle(style) {
+    this._ballStyle = style;
+
+    // Debounce saves during rapid slider/drag changes
+    clearTimeout(this._ballSaveTimer);
+    this._ballSaveTimer = setTimeout(() => {
+      this._persistBallStyle(style);
+    }, 300);
+  }
+
+  async _persistBallStyle(style) {
+    if (typeof chrome !== "undefined" && chrome.storage?.local) {
+      return new Promise((resolve) => {
+        chrome.storage.local.set(
+          { [WallpaperSettings.BALL_STYLE_KEY]: style },
+          () => {
+            if (chrome.runtime.lastError) {
+              this._saveBallStyleLocalStorage(style);
+            }
+            resolve();
+          },
+        );
+      });
+    }
+    this._saveBallStyleLocalStorage(style);
+  }
+
+  _saveBallStyleLocalStorage(style) {
+    try {
+      localStorage.setItem(
+        WallpaperSettings.BALL_STYLE_KEY,
+        JSON.stringify(style),
+      );
+    } catch (err) {
+      console.error("[WallpaperSettings] localStorage write error:", err);
+    }
+  }
+
+  // ═══ Ball Style Application ══════════════════════════════
+
+  /**
+   * Build CSS linear-gradient string from ball style config.
+   * @param {Object} gradient - { direction, stops }
+   * @returns {string}
+   */
+  _buildGradientCSS(gradient) {
+    const sorted = [...gradient.stops].sort((a, b) => a.position - b.position);
+    const stopStr = sorted.map((s) => `${s.color} ${s.position}%`).join(", ");
+    return `linear-gradient(${gradient.direction}deg, ${stopStr})`;
+  }
+
+  /**
+   * Convert hex color to "R, G, B" triplet string for --goo-body.
+   * @param {string} hex
+   * @returns {string}
+   */
+  _hexToRgbTriplet(hex) {
+    const h = hex.replace("#", "");
+    const r = parseInt(h.substring(0, 2), 16) || 0;
+    const g = parseInt(h.substring(2, 4), 16) || 0;
+    const b = parseInt(h.substring(4, 6), 16) || 0;
+    return `${r}, ${g}, ${b}`;
+  }
+
+  /**
+   * Apply ball style to :root CSS custom properties.
+   * @param {Object} style
+   */
+  _applyBallStyleToDOM(style) {
+    const root = document.documentElement;
+    root.style.setProperty("--ball-body", this._buildGradientCSS(style.gradient));
+
+    // Use middle stop for goo color
+    const midIdx = Math.floor(style.gradient.stops.length / 2);
+    const gooColor = style.gradient.stops[midIdx]?.color || "#ffffff";
+    root.style.setProperty("--goo-body", this._hexToRgbTriplet(gooColor));
+
+    root.style.setProperty("--page-color", style.pageColor);
+    root.style.setProperty("--page-weight", String(style.pageWeight));
+  }
+
+  /**
+   * Apply ball style to the preview ball in the settings modal.
+   * @param {Object} style
+   */
+  _applyBallStyleToPreview(style) {
+    const preview = this._overlay?.querySelector(".ball-preview-container");
+    if (!preview) return;
+
+    preview.style.setProperty(
+      "--preview-ball-body",
+      this._buildGradientCSS(style.gradient),
+    );
+    preview.style.setProperty("--preview-page-color", style.pageColor);
+    preview.style.setProperty(
+      "--preview-page-weight",
+      String(style.pageWeight),
+    );
+  }
+
+  /**
+   * Update the gradient bar preview.
+   */
+  _updateGradientBarPreview() {
+    const barInner = this._overlay?.querySelector(".gradient-bar-inner");
+    if (!barInner) return;
+    barInner.style.background = this._buildGradientCSS(this._ballStyle.gradient);
+  }
+
+  // ═══ Image Processing ════════════════════════════════════
 
   /**
    * Load an image element from a source
@@ -421,19 +672,12 @@ export class WallpaperSettings {
    * Process a raw image source into a Blob (for IndexedDB) and a
    * small data-URL thumbnail (for metadata).
    *
-   * Memory flow:
-   *   File → Object URL → HTMLImageElement (decoded bitmap)
-   *         → canvas.toBlob() → Blob (binary, stored in IDB)
-   *         → canvas.toDataURL() → small thumbnail string
-   *         → img.src = "" → hint GC to free decoded bitmap
-   *
    * @param {string} src - original data URL, object URL, or remote URL
    * @returns {Promise<{full: Blob, thumb: string}>}
    */
   async _processImage(src) {
     const img = await this._loadImage(src);
 
-    // Full image → Blob (stored in IndexedDB, never inflated to base64)
     const full = await this._resizeToBlob(
       img,
       WallpaperSettings.MAX_IMAGE_DIM,
@@ -441,7 +685,6 @@ export class WallpaperSettings {
       WallpaperSettings.IMAGE_QUALITY,
     );
 
-    // Thumbnail → small data URL (stored in metadata, ~5-15 KB)
     const thumb = this._resizeToDataUrl(
       img,
       WallpaperSettings.THUMB_W,
@@ -449,15 +692,12 @@ export class WallpaperSettings {
       WallpaperSettings.THUMB_QUALITY,
     );
 
-    // Dereference the HTMLImageElement so GC can collect the decoded bitmap
     img.src = "";
-
     return { full, thumb };
   }
 
   /**
    * Generate a thumbnail for a preset URL.
-   * Falls back to the URL itself if image loading fails.
    * @param {string} url
    * @returns {Promise<string>} thumbnail data URL
    */
@@ -478,21 +718,12 @@ export class WallpaperSettings {
   }
 
   /**
-   * Ensure a preset has a cached thumbnail. If not, generate one in the
-   * background and update the card's <img> when ready.
-   *
-   * Downloads the full image once, resizes to a tiny thumbnail (~5-15 KB),
-   * immediately releases the full bitmap, and caches the thumbnail in
-   * metadata so subsequent opens never re-download.
-   *
+   * Ensure a preset has a cached thumbnail.
    * @param {Object} preset - { id, name, url }
    * @param {HTMLElement} card - the card DOM element to update
    */
   async _ensurePresetThumbnail(preset, card) {
-    // Already cached?
     if (this._meta.presetThumbs?.[preset.id]) return;
-
-    // Already being generated?
     if (this._pendingPresetThumbs.has(preset.id)) return;
     this._pendingPresetThumbs.add(preset.id);
 
@@ -500,12 +731,10 @@ export class WallpaperSettings {
       const thumb = await this._generatePresetThumbnail(preset.url);
       if (!thumb) return;
 
-      // Cache in metadata
       if (!this._meta.presetThumbs) this._meta.presetThumbs = {};
       this._meta.presetThumbs[preset.id] = thumb;
       await this._saveMeta(this._meta);
 
-      // Update the card's img if it's still in the DOM
       const img = card.querySelector("img");
       const loading = card.querySelector(".wallpaper-card-loading");
       if (img) {
@@ -525,9 +754,8 @@ export class WallpaperSettings {
     }
   }
 
-  // ─── Wallpaper Application ───────────────────────────────
+  // ═══ Wallpaper Application ═══════════════════════════════
 
-  /** Revoke the currently held Object URL (if any) to free memory */
   _revokeActiveObjectUrl() {
     if (this._activeObjectUrl) {
       URL.revokeObjectURL(this._activeObjectUrl);
@@ -535,7 +763,6 @@ export class WallpaperSettings {
     }
   }
 
-  /** Apply shared background styles */
   _applyBackgroundStyles() {
     document.body.style.backgroundSize = "cover";
     document.body.style.backgroundPosition = "center";
@@ -543,20 +770,12 @@ export class WallpaperSettings {
     document.body.style.backgroundAttachment = "fixed";
   }
 
-  /** Apply a wallpaper from a URL (presets). Revokes any prior Object URL. */
   _applyWallpaperUrl(url) {
     this._revokeActiveObjectUrl();
     document.body.style.backgroundImage = `url("${url}")`;
     this._applyBackgroundStyles();
   }
 
-  /**
-   * Apply a wallpaper from a Blob (custom).
-   * Creates an Object URL — a lightweight pointer (~60 bytes) that lets
-   * the browser reference the Blob directly in native memory, without
-   * copying it into the JS heap as a multi-MB base64 string.
-   * @param {Blob} blob
-   */
   _applyWallpaperBlob(blob) {
     this._revokeActiveObjectUrl();
     this._activeObjectUrl = URL.createObjectURL(blob);
@@ -564,7 +783,6 @@ export class WallpaperSettings {
     this._applyBackgroundStyles();
   }
 
-  /** Remove any applied wallpaper and free Object URL */
   _clearWallpaper() {
     this._revokeActiveObjectUrl();
     document.body.style.backgroundImage = "";
@@ -574,12 +792,8 @@ export class WallpaperSettings {
     document.body.style.backgroundAttachment = "";
   }
 
-  // ─── Add / Remove Custom Wallpapers ──────────────────────
+  // ═══ Add / Remove Custom Wallpapers ═════════════════════
 
-  /**
-   * Add a custom wallpaper from a File object
-   * @param {File} file
-   */
   async _addFromFile(file) {
     if (!WallpaperSettings.SUPPORTED_TYPES.includes(file.type)) {
       this.showToast(
@@ -620,10 +834,6 @@ export class WallpaperSettings {
     }
   }
 
-  /**
-   * Add a custom wallpaper from a URL
-   * @param {string} url
-   */
   async _addFromUrl(url) {
     if (this._meta.custom.length >= WallpaperSettings.MAX_CUSTOM) {
       this.showToast(
@@ -632,7 +842,6 @@ export class WallpaperSettings {
       return;
     }
 
-    // Basic URL validation
     let parsedUrl;
     try {
       parsedUrl = new URL(url);
@@ -647,11 +856,10 @@ export class WallpaperSettings {
     try {
       this.showToast("Fetching image...");
 
-      // Try fetching via background script (handles CORS in extension context)
       let imgSrc = url;
       if (typeof chrome !== "undefined" && chrome.runtime?.sendMessage) {
         try {
-          const response = await new Promise((resolve, reject) => {
+          await new Promise((resolve, reject) => {
             chrome.runtime.sendMessage(
               { type: "FETCH_WEB", query: url },
               (resp) => {
@@ -663,15 +871,11 @@ export class WallpaperSettings {
               },
             );
           });
-
-          // Background returns HTML; for images we need a different approach
-          // Instead, we'll try loading the image directly with crossOrigin
         } catch {
           // Fallback to direct load
         }
       }
 
-      // Attempt direct image load (works for CORS-enabled sources)
       const { full, thumb } = await this._processImage(imgSrc);
 
       const id =
@@ -696,10 +900,6 @@ export class WallpaperSettings {
     }
   }
 
-  /**
-   * Delete custom wallpapers by IDs
-   * @param {Set<string>} ids
-   */
   async _deleteCustom(ids) {
     for (const id of ids) {
       await this._deleteImage(id);
@@ -716,12 +916,8 @@ export class WallpaperSettings {
     this.showToast(`Deleted ${ids.size} wallpaper${ids.size > 1 ? "s" : ""}`);
   }
 
-  /**
-   * Select a wallpaper as active
-   * @param {string|null} id - null to clear wallpaper
-   */
   async _selectWallpaper(id) {
-    if (this._editMode) return; // don't select in edit mode
+    if (this._editMode) return;
 
     this._meta.activeId = id;
     await this._saveMeta(this._meta);
@@ -755,7 +951,7 @@ export class WallpaperSettings {
     this._refreshGrid();
   }
 
-  // ─── UI Rendering ────────────────────────────────────────
+  // ═══ UI Rendering ════════════════════════════════════════
 
   _renderModal() {
     const existing = document.querySelector(".file-menu-modal-overlay");
@@ -772,6 +968,8 @@ export class WallpaperSettings {
           <button class="file-menu-modal-close">×</button>
         </div>
         <div class="file-menu-modal-content settings-content">
+
+          <!-- ─── Wallpaper Section ─── -->
           <div class="settings-section">
             <div class="settings-section-header">
               <h3 class="settings-section-title">Wallpaper</h3>
@@ -792,8 +990,7 @@ export class WallpaperSettings {
               </div>
             </div>
 
-            <div class="wallpaper-grid" id="wallpaper-grid">
-            </div>
+            <div class="wallpaper-grid" id="wallpaper-grid"></div>
 
             <div class="wallpaper-url-input-area" id="wallpaper-url-area" style="display:none">
               <input type="text" class="wallpaper-url-input" id="wallpaper-url-input"
@@ -811,6 +1008,110 @@ export class WallpaperSettings {
               </button>
             </div>
           </div>
+
+          <!-- ─── Floating Ball Section ─── -->
+          <div class="settings-section">
+            <div class="settings-section-header">
+              <h3 class="settings-section-title">Floating Ball</h3>
+            </div>
+            <div class="ball-style-editor" id="ball-style-editor">
+
+              <!-- Preview Ball -->
+              <div class="ball-style-editor-preview">
+                <div class="ball-preview-container">
+                  <div class="ball-preview-page-display">
+                    <span class="ball-preview-current">42</span>
+                    <span class="ball-preview-page-divider">—</span>
+                    <span class="ball-preview-total">87</span>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Controls -->
+              <div class="ball-style-editor-controls">
+
+                <!-- Gradient Editor -->
+                <div class="ball-control-group">
+                  <span class="ball-control-label">Ball Color</span>
+                  <div class="gradient-editor" id="gradient-editor">
+
+                    <!-- Gradient bar with stops -->
+                    <div class="gradient-bar-wrapper">
+                      <div class="gradient-bar" id="gradient-bar">
+                        <div class="gradient-bar-inner"></div>
+                        <!-- Stop markers inserted by JS -->
+                      </div>
+                    </div>
+
+                    <!-- Selected stop detail -->
+                    <div class="gradient-stop-detail" id="gradient-stop-detail">
+                      <!-- Populated by JS -->
+                    </div>
+
+                    <!-- Direction slider -->
+                    <div class="styled-slider-row">
+                      <span class="styled-slider-label">Direction</span>
+                      <input type="range" class="styled-slider" id="gradient-direction"
+                             min="0" max="360" step="1">
+                      <span class="styled-slider-value" id="gradient-direction-value">120°</span>
+                    </div>
+
+                    <!-- Actions -->
+                    <div class="gradient-actions">
+                      <button class="gradient-action-btn" id="gradient-add-stop" title="Add color stop">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                          <line x1="12" y1="5" x2="12" y2="19"/>
+                          <line x1="5" y1="12" x2="19" y2="12"/>
+                        </svg>
+                        Add Stop
+                      </button>
+                      <button class="gradient-action-btn" id="gradient-reset" title="Reset to default">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                          <polyline points="1 4 1 10 7 10"/>
+                          <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/>
+                        </svg>
+                        Reset
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Page Number Color -->
+                <div class="ball-control-group">
+                  <span class="ball-control-label">Page Number Color</span>
+                  <div class="page-color-row">
+                    <div class="page-color-swatch" id="page-color-swatch">
+                      <input type="color" class="page-color-native-input" id="page-color-input">
+                    </div>
+                    <input type="text" class="page-color-hex" id="page-color-hex"
+                           placeholder="#000000" spellcheck="false" maxlength="7">
+                  </div>
+                </div>
+
+              </div>
+            </div>
+          </div>
+
+          <!-- ─── Display Section ─── -->
+          <div class="settings-section">
+            <div class="settings-section-header">
+              <h3 class="settings-section-title">Display</h3>
+            </div>
+            <div class="settings-toggle-row">
+              <div class="settings-toggle-info">
+                <span class="settings-toggle-label">Progress Bar</span>
+                <span class="settings-toggle-description">Show reading progress on the side</span>
+              </div>
+              <label class="settings-toggle-switch">
+                <input type="checkbox" id="progress-bar-toggle">
+                <div class="settings-toggle-slider">
+                  <div class="settings-toggle-knob"></div>
+                </div>
+                <div class="settings-toggle-led"></div>
+              </label>
+            </div>
+          </div>
+
         </div>
       </div>
     `;
@@ -828,13 +1129,14 @@ export class WallpaperSettings {
 
     // Wire up events
     this._setupModalEvents(overlay);
+    this._setupBallStyleEvents(overlay);
 
-    // Populate the grid
+    // Populate grids & previews
     this._refreshGrid();
+    this._refreshBallEditor();
   }
 
   _setupModalEvents(overlay) {
-    // Close
     const close = () => {
       overlay.classList.remove("visible");
       setTimeout(() => {
@@ -903,16 +1205,429 @@ export class WallpaperSettings {
     });
 
     urlInput.addEventListener("keydown", (e) => {
-      if (e.key === "Enter") {
-        urlConfirm.click();
-      }
+      if (e.key === "Enter") urlConfirm.click();
     });
 
     urlCancel.addEventListener("click", () => {
       urlInput.value = "";
       urlArea.style.display = "none";
     });
+
+    const progressToggle = overlay.querySelector("#progress-bar-toggle");
+    if (progressToggle) {
+      progressToggle.checked = WallpaperSettings.isProgressBarEnabled();
+      progressToggle.addEventListener("change", () => {
+        WallpaperSettings.setProgressBarEnabled(progressToggle.checked);
+        if (this.wm.progressBar) {
+          if (progressToggle.checked) {
+            this.wm.progressBar.show();
+          } else {
+            this.wm.progressBar.hide();
+          }
+        }
+      });
+    }
   }
+
+  // ═══ Ball Style Editor Events ════════════════════════════
+
+  _setupBallStyleEvents(overlay) {
+    // ── Direction slider ──
+    const dirSlider = overlay.querySelector("#gradient-direction");
+    const dirValue = overlay.querySelector("#gradient-direction-value");
+
+    dirSlider.addEventListener("input", () => {
+      const deg = parseInt(dirSlider.value, 10);
+      dirValue.textContent = `${deg}°`;
+      this._ballStyle.gradient.direction = deg;
+      this._onBallStyleChanged();
+    });
+
+    // ── Add stop button ──
+    overlay.querySelector("#gradient-add-stop").addEventListener("click", () => {
+      const stops = this._ballStyle.gradient.stops;
+      if (stops.length >= WallpaperSettings.MAX_STOPS) {
+        this.showToast(`Maximum ${WallpaperSettings.MAX_STOPS} color stops`);
+        return;
+      }
+
+      // Insert a new stop at the midpoint of the largest gap
+      const sorted = [...stops].sort((a, b) => a.position - b.position);
+      let maxGap = 0;
+      let gapMid = 50;
+      for (let i = 0; i < sorted.length - 1; i++) {
+        const gap = sorted[i + 1].position - sorted[i].position;
+        if (gap > maxGap) {
+          maxGap = gap;
+          gapMid = Math.round(
+            (sorted[i].position + sorted[i + 1].position) / 2,
+          );
+        }
+      }
+      // Also consider edges
+      if (sorted[0].position > maxGap) {
+        gapMid = Math.round(sorted[0].position / 2);
+      }
+      if (100 - sorted[sorted.length - 1].position > maxGap) {
+        gapMid = Math.round(
+          (sorted[sorted.length - 1].position + 100) / 2,
+        );
+      }
+
+      stops.push({ color: "#999999", position: gapMid });
+      this._selectedStopIndex = stops.length - 1;
+      this._onBallStyleChanged();
+      this._refreshBallEditor();
+    });
+
+    // ── Reset button ──
+    overlay.querySelector("#gradient-reset").addEventListener("click", () => {
+      this._ballStyle = structuredClone(WallpaperSettings.DEFAULT_BALL_STYLE);
+      this._selectedStopIndex = 0;
+      this._onBallStyleChanged();
+      this._refreshBallEditor();
+      this.showToast("Ball style reset to default");
+    });
+
+    // ── Page color native input ──
+    const pageColorInput = overlay.querySelector("#page-color-input");
+    const pageColorSwatch = overlay.querySelector("#page-color-swatch");
+    const pageColorHex = overlay.querySelector("#page-color-hex");
+
+    pageColorInput.addEventListener("input", () => {
+      const color = pageColorInput.value;
+      pageColorSwatch.style.backgroundColor = color;
+      pageColorHex.value = color;
+      this._ballStyle.pageColor = color;
+      this._onBallStyleChanged();
+    });
+
+    pageColorHex.addEventListener("input", () => {
+      let val = pageColorHex.value.trim();
+      if (!val.startsWith("#")) val = "#" + val;
+      if (/^#[0-9a-fA-F]{6}$/.test(val)) {
+        pageColorInput.value = val;
+        pageColorSwatch.style.backgroundColor = val;
+        this._ballStyle.pageColor = val;
+        this._onBallStyleChanged();
+      }
+    });
+
+    pageColorHex.addEventListener("change", () => {
+      // Normalize on blur
+      let val = pageColorHex.value.trim();
+      if (!val.startsWith("#")) val = "#" + val;
+      if (/^#[0-9a-fA-F]{6}$/.test(val)) {
+        pageColorHex.value = val;
+      } else {
+        pageColorHex.value = this._ballStyle.pageColor;
+      }
+    });
+
+    // ── Gradient bar click to add stop ──
+    const gradientBar = overlay.querySelector("#gradient-bar");
+    gradientBar.addEventListener("click", (e) => {
+      // Only if clicking the bar itself, not a stop
+      if (e.target.closest(".gradient-stop")) return;
+
+      const stops = this._ballStyle.gradient.stops;
+      if (stops.length >= WallpaperSettings.MAX_STOPS) return;
+
+      const rect = gradientBar.getBoundingClientRect();
+      const pos = Math.round(
+        ((e.clientX - rect.left) / rect.width) * 100,
+      );
+
+      stops.push({ color: "#999999", position: Math.max(0, Math.min(100, pos)) });
+      this._selectedStopIndex = stops.length - 1;
+      this._onBallStyleChanged();
+      this._refreshBallEditor();
+    });
+  }
+
+  /**
+   * Called whenever any ball style property changes.
+   * Updates preview, live DOM, and debounce-saves.
+   */
+  _onBallStyleChanged() {
+    this._applyBallStyleToPreview(this._ballStyle);
+    this._applyBallStyleToDOM(this._ballStyle);
+    this._updateGradientBarPreview();
+    this._saveBallStyle(this._ballStyle);
+    this._updateAddStopButton();
+  }
+
+  /**
+   * Full refresh of the ball editor UI from current state.
+   */
+  _refreshBallEditor() {
+    if (!this._overlay || !this._ballStyle) return;
+
+    const style = this._ballStyle;
+
+    // Direction slider
+    const dirSlider = this._overlay.querySelector("#gradient-direction");
+    const dirValue = this._overlay.querySelector("#gradient-direction-value");
+    if (dirSlider) {
+      dirSlider.value = style.gradient.direction;
+      dirValue.textContent = `${style.gradient.direction}°`;
+    }
+
+    // Gradient bar preview
+    this._updateGradientBarPreview();
+
+    // Stop markers
+    this._refreshStopMarkers();
+
+    // Stop detail row
+    this._refreshStopDetail();
+
+    // Preview ball
+    this._applyBallStyleToPreview(style);
+
+    // Page color
+    const pageColorInput = this._overlay.querySelector("#page-color-input");
+    const pageColorSwatch = this._overlay.querySelector("#page-color-swatch");
+    const pageColorHex = this._overlay.querySelector("#page-color-hex");
+    if (pageColorInput) {
+      pageColorInput.value = style.pageColor;
+      pageColorSwatch.style.backgroundColor = style.pageColor;
+      pageColorHex.value = style.pageColor;
+    }
+
+    // Add stop button state
+    this._updateAddStopButton();
+  }
+
+  _updateAddStopButton() {
+    const btn = this._overlay?.querySelector("#gradient-add-stop");
+    if (!btn) return;
+    const atMax =
+      this._ballStyle.gradient.stops.length >= WallpaperSettings.MAX_STOPS;
+    btn.disabled = atMax;
+    btn.title = atMax
+      ? `Maximum ${WallpaperSettings.MAX_STOPS} color stops`
+      : "Add color stop";
+  }
+
+  /**
+   * Render stop markers on the gradient bar.
+   */
+  _refreshStopMarkers() {
+    const bar = this._overlay?.querySelector("#gradient-bar");
+    if (!bar) return;
+
+    // Remove existing stops
+    bar.querySelectorAll(".gradient-stop").forEach((el) => el.remove());
+
+    const stops = this._ballStyle.gradient.stops;
+
+    stops.forEach((stop, idx) => {
+      const marker = document.createElement("div");
+      marker.className =
+        "gradient-stop" + (idx === this._selectedStopIndex ? " selected" : "");
+      marker.style.left = `${stop.position}%`;
+      marker.style.backgroundColor = stop.color;
+      marker.dataset.index = idx;
+
+      // Remove button (only shown when selected, and only if >1 stop)
+      if (stops.length > 1) {
+        const removeBtn = document.createElement("button");
+        removeBtn.className = "gradient-stop-remove";
+        removeBtn.innerHTML = "×";
+        removeBtn.addEventListener("click", (e) => {
+          e.stopPropagation();
+          this._removeStop(idx);
+        });
+        marker.appendChild(removeBtn);
+      }
+
+      // Hidden color input for this stop
+      const colorInput = document.createElement("input");
+      colorInput.type = "color";
+      colorInput.className = "gradient-stop-color-input";
+      colorInput.value = stop.color;
+      colorInput.addEventListener("input", () => {
+        stop.color = colorInput.value;
+        marker.style.backgroundColor = colorInput.value;
+        this._onBallStyleChanged();
+        this._refreshStopDetail();
+      });
+      marker.appendChild(colorInput);
+
+      // Click to select
+      marker.addEventListener("click", (e) => {
+        e.stopPropagation();
+        this._selectedStopIndex = idx;
+        this._refreshStopMarkers();
+        this._refreshStopDetail();
+      });
+
+      // Double-click to open color picker
+      marker.addEventListener("dblclick", (e) => {
+        e.stopPropagation();
+        colorInput.click();
+      });
+
+      // Drag handling
+      this._setupStopDrag(marker, idx, bar);
+
+      bar.appendChild(marker);
+    });
+  }
+
+  /**
+   * Set up drag behavior for a gradient stop marker.
+   * Avoids any DOM rebuild during drag — only mutates style.left
+   * on the existing marker and updates the data model + previews.
+   */
+  _setupStopDrag(marker, idx, bar) {
+    const onMove = (e) => {
+      e.preventDefault();
+      const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+      const rect = bar.getBoundingClientRect();
+      const clamped = Math.max(
+        0,
+        Math.min(100, Math.round(((clientX - rect.left) / rect.width) * 100)),
+      );
+
+      this._ballStyle.gradient.stops[idx].position = clamped;
+      marker.style.left = `${clamped}%`;
+
+      // Live-update previews & gradient bar without rebuilding stop markers
+      this._applyBallStyleToPreview(this._ballStyle);
+      this._applyBallStyleToDOM(this._ballStyle);
+      this._updateGradientBarPreview();
+      this._saveBallStyle(this._ballStyle);
+
+      // Update the detail row position readout if this stop is selected
+      const posLabel = this._overlay?.querySelector(".stop-position-label");
+      if (posLabel && this._selectedStopIndex === idx) {
+        posLabel.textContent = `${clamped}%`;
+      }
+    };
+
+    const onUp = () => {
+      marker.classList.remove("dragging");
+      this._isDraggingStop = false;
+      document.removeEventListener("mousemove", onMove);
+      document.removeEventListener("mouseup", onUp);
+      document.removeEventListener("touchmove", onMove);
+      document.removeEventListener("touchend", onUp);
+
+      // Final detail refresh now that drag is done
+      this._refreshStopDetail();
+    };
+
+    const onDown = (e) => {
+      // Don't start drag on the remove button or color input
+      if (e.target.closest(".gradient-stop-remove")) return;
+      if (e.target.closest(".gradient-stop-color-input")) return;
+
+      e.preventDefault();
+      e.stopPropagation();
+
+      // Select this stop — update classes directly instead of rebuilding
+      this._selectedStopIndex = idx;
+      bar.querySelectorAll(".gradient-stop").forEach((el) => {
+        el.classList.toggle("selected", el.dataset.index === String(idx));
+      });
+      this._refreshStopDetail();
+
+      this._isDraggingStop = true;
+      marker.classList.add("dragging");
+
+      document.addEventListener("mousemove", onMove);
+      document.addEventListener("mouseup", onUp);
+      document.addEventListener("touchmove", onMove, { passive: false });
+      document.addEventListener("touchend", onUp);
+    };
+
+    marker.addEventListener("mousedown", onDown);
+    marker.addEventListener("touchstart", onDown, { passive: false });
+  }
+
+  /**
+   * Remove a gradient stop.
+   */
+  _removeStop(idx) {
+    const stops = this._ballStyle.gradient.stops;
+    if (stops.length <= 1) return;
+
+    stops.splice(idx, 1);
+
+    // Adjust selected index
+    if (this._selectedStopIndex >= stops.length) {
+      this._selectedStopIndex = stops.length - 1;
+    }
+    if (this._selectedStopIndex === idx) {
+      this._selectedStopIndex = Math.max(0, idx - 1);
+    }
+
+    this._onBallStyleChanged();
+    this._refreshBallEditor();
+  }
+
+  /**
+   * Render the selected stop detail row (swatch + hex + position).
+   */
+  _refreshStopDetail() {
+    const container = this._overlay?.querySelector("#gradient-stop-detail");
+    if (!container) return;
+
+    const stops = this._ballStyle.gradient.stops;
+    const stop = stops[this._selectedStopIndex];
+
+    if (!stop) {
+      container.innerHTML = `<span class="empty">No stop selected</span>`;
+      container.classList.add("empty");
+      return;
+    }
+
+    container.classList.remove("empty");
+    container.innerHTML = `
+      <div class="stop-color-swatch" id="stop-detail-swatch"
+           style="background-color: ${stop.color}" title="Click to change color"></div>
+      <input type="text" class="stop-hex-input" id="stop-detail-hex"
+             value="${stop.color}" spellcheck="false" maxlength="7">
+      <span class="stop-position-label">${stop.position}%</span>
+    `;
+
+    // Hidden color input for the swatch
+    const swatch = container.querySelector("#stop-detail-swatch");
+    const hexInput = container.querySelector("#stop-detail-hex");
+
+    swatch.addEventListener("click", () => {
+      // Find the stop marker's color input and click it
+      const marker = this._overlay?.querySelector(
+        `.gradient-stop[data-index="${this._selectedStopIndex}"] .gradient-stop-color-input`,
+      );
+      if (marker) marker.click();
+    });
+
+    hexInput.addEventListener("input", () => {
+      let val = hexInput.value.trim();
+      if (!val.startsWith("#")) val = "#" + val;
+      if (/^#[0-9a-fA-F]{6}$/.test(val)) {
+        stop.color = val;
+        swatch.style.backgroundColor = val;
+        this._onBallStyleChanged();
+        this._refreshStopMarkers();
+      }
+    });
+
+    hexInput.addEventListener("change", () => {
+      let val = hexInput.value.trim();
+      if (!val.startsWith("#")) val = "#" + val;
+      if (/^#[0-9a-fA-F]{6}$/.test(val)) {
+        hexInput.value = val;
+      } else {
+        hexInput.value = stop.color;
+      }
+    });
+  }
+
+  // ═══ Wallpaper Grid (unchanged logic) ════════════════════
 
   _toggleEditMode() {
     this._editMode = !this._editMode;
@@ -943,11 +1658,9 @@ export class WallpaperSettings {
     grid.innerHTML = "";
     const activeId = this._meta?.activeId;
 
-    // 1. "None" card
     const noneCard = this._createCardNone(activeId === null);
     grid.appendChild(noneCard);
 
-    // 2. Preset cards — use cached thumbnails, generate lazily if missing
     for (const preset of WallpaperSettings.PRESETS) {
       const card = this._createCardPreset(preset, activeId === preset.id);
       grid.appendChild(card);
@@ -957,19 +1670,16 @@ export class WallpaperSettings {
       }
     }
 
-    // 3. Custom cards
     for (const entry of this._meta?.custom || []) {
       const card = this._createCardCustom(entry, activeId === entry.id);
       grid.appendChild(card);
     }
 
-    // 4. Add button (only if not in edit mode)
     if (!this._editMode) {
       const addCard = this._createCardAdd();
       grid.appendChild(addCard);
     }
 
-    // Update delete count
     this._updateDeleteCount();
   }
 
@@ -990,15 +1700,11 @@ export class WallpaperSettings {
     return card;
   }
 
-  /**
-   * Create a preset card.
-   */
   _createCardPreset(preset, isActive) {
     const card = document.createElement("div");
     card.className = "wallpaper-card" + (isActive ? " selected" : "");
     card.dataset.id = preset.id;
 
-    // Use cached thumbnail if available, otherwise show spinner
     const cachedThumb = this._meta.presetThumbs?.[preset.id] || "";
 
     card.innerHTML = `
@@ -1017,7 +1723,6 @@ export class WallpaperSettings {
     const img = card.querySelector("img");
     const loading = card.querySelector(".wallpaper-card-loading");
 
-    // Hide spinner and show the thumbnail
     img.addEventListener("load", () => {
       img.style.display = "";
       if (loading) loading.style.display = "none";
@@ -1075,7 +1780,6 @@ export class WallpaperSettings {
 
     card.addEventListener("click", () => {
       if (this._editMode) {
-        // Toggle delete selection
         if (this._deleteSet.has(entry.id)) {
           this._deleteSet.delete(entry.id);
           card.classList.remove("marked-delete");
@@ -1112,7 +1816,6 @@ export class WallpaperSettings {
       <span class="wallpaper-card-label">Add</span>
     `;
 
-    // Click shows a small popover with two options
     card.addEventListener("click", (e) => {
       e.stopPropagation();
       this._showAddPopover(card);
@@ -1122,11 +1825,10 @@ export class WallpaperSettings {
   }
 
   _showAddPopover(anchorCard) {
-    // Remove existing popover
     const existing = this._overlay?.querySelector(".wallpaper-add-popover");
     if (existing) {
       existing.remove();
-      return; // toggle off
+      return;
     }
 
     const popover = document.createElement("div");
@@ -1149,14 +1851,11 @@ export class WallpaperSettings {
       </button>
     `;
 
-    // Position relative to the add card
     anchorCard.style.position = "relative";
     anchorCard.appendChild(popover);
 
-    // Animate in
     requestAnimationFrame(() => popover.classList.add("visible"));
 
-    // Handle choices
     popover
       .querySelector('[data-type="file"]')
       .addEventListener("click", (e) => {
@@ -1177,14 +1876,12 @@ export class WallpaperSettings {
         }
       });
 
-    // Close popover on outside click
     const closePopover = (e) => {
       if (!popover.contains(e.target) && e.target !== anchorCard) {
         popover.remove();
         document.removeEventListener("click", closePopover);
       }
     };
-    // Delay to avoid catching the current click
     setTimeout(() => document.addEventListener("click", closePopover), 0);
   }
 
@@ -1199,7 +1896,7 @@ export class WallpaperSettings {
     btn.style.pointerEvents = count > 0 ? "auto" : "none";
   }
 
-  // ─── Utilities ───────────────────────────────────────────
+  // ═══ Utilities ═══════════════════════════════════════════
 
   _escapeHtml(str) {
     if (!str) return "";

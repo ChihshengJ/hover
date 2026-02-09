@@ -19,6 +19,14 @@
   --color-success-light: rgba(34, 197, 94, 0.15);
 
   /* ─────────────────────────────────────────
+     Floating Tool bar
+     ───────────────────────────────────────── */
+
+  --ball-body: linear-gradient(120deg, #ffffff 10%, #fafafa 25%, #bebebe 85%);
+  --goo-body: 255, 255, 255;
+  --page-color: #000000;
+
+  /* ─────────────────────────────────────────
      Theme Colors (Light Mode Defaults)
      ───────────────────────────────────────── */
 

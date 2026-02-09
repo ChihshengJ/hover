@@ -285,7 +285,6 @@ export class TextSelectionManager {
 
         const clientRects = Array.from(range.getClientRects());
 
-        // Filter rects that overlap with this text layer, then clip to layer bounds
         let rects = clientRects
           .filter((rect) => {
             const overlaps =
@@ -299,7 +298,6 @@ export class TextSelectionManager {
             return true;
           })
           .map((rect) => {
-            // Clip rect to text layer bounds
             const clippedLeft = Math.max(rect.left, layerRect.left);
             const clippedTop = Math.max(rect.top, layerRect.top);
             const clippedRight = Math.min(rect.right, layerRect.right);
@@ -314,14 +312,12 @@ export class TextSelectionManager {
           })
           .filter((rect) => {
             const isExist = rect.width > 0 && rect.height > 0;
-            // Get rid of the selection on the entire page
-            const isWholePage = rect.left * rect.top === 0;
             // Get rid of the Arxiv banner and page numbers
             const isNearEdge =
               rect.top < layerRect.height * 0.07 ||
               rect.top > layerRect.height * 0.92 ||
               rect.left < layerRect.width * 0.06;
-            if (isExist && !isWholePage && !isNearEdge) return true;
+            if (isExist && !isNearEdge) return true;
             return false;
           });
 

@@ -95,6 +95,9 @@ export class ProgressBar {
 
     this.#initialized = true;
 
+    // Check saved preference
+    this.#applyVisibilityPreference();
+
     // Initial update
     requestAnimationFrame(() => {
       this.#updateProgress();
@@ -360,13 +363,40 @@ export class ProgressBar {
   }
 
   /**
+   * Apply the saved visibility preference from localStorage.
+   */
+  #applyVisibilityPreference() {
+    try {
+      const val = localStorage.getItem("hover_progress_bar_enabled");
+      const enabled = val === null ? true : val === "true";
+      if (!enabled) {
+        this.container.style.display = "none";
+      }
+    } catch {
+      // default visible
+    }
+  }
+
+  hide() {
+    if (!this.container) return;
+    this.container.style.display = "none";
+    this.activePane?.controls.offScroll(this.#scrollCallback);
+  }
+
+  show() {
+    if (!this.container) return;
+    this.container.style.display = "";
+    this.activePane?.controls.onScroll(this.#scrollCallback);
+    this.#recalculateSections();
+    this.#updateProgress();
+  }
+
+  /**
    * Cleanup
    */
   destroy() {
-    // Unregister scroll callback
     this.activePane?.controls.offScroll(this.#scrollCallback);
 
-    // Remove resize listener
     if (this.#resizeHandler) {
       window.removeEventListener("resize", this.#resizeHandler);
     }

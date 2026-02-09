@@ -1,6 +1,6 @@
 .ball-style-editor {
   display: flex;
-  gap: 24px;
+  gap: 28px;
   align-items: flex-start;
   padding: 4px 0;
 }
@@ -65,6 +65,7 @@
 }
 
 .ball-control-label {
+  margin-left: -8px;
   font-size: 11px;
   font-weight: 600;
   text-transform: uppercase;
@@ -81,7 +82,6 @@
 .gradient-bar-wrapper {
   position: relative;
   height: 36px;
-  padding: 0 10px;
 }
 
 .gradient-bar {
@@ -93,7 +93,7 @@
   box-shadow:
     var(--shadow-inset),
     0 1px 3px rgba(0, 0, 0, 0.1);
-  cursor: crosshair;
+  cursor: pointer;
   overflow: visible;
   top: 5px;
 }
@@ -251,7 +251,7 @@
 .stop-position-label {
   font-size: 11px;
   color: var(--text-tertiary);
-  min-width: 28px;
+  min-width: 14px;
   text-align: right;
 }
 
@@ -326,7 +326,7 @@
 
 .gradient-actions {
   display: flex;
-  gap: 8px;
+  gap: 32px;
   align-items: center;
 }
 
@@ -372,8 +372,8 @@
 }
 
 .page-color-swatch {
-  width: 28px;
-  height: 28px;
+  width: 24px;
+  height: 24px;
   border-radius: 6px;
   border: 2px solid var(--border-color-strong);
   cursor: pointer;

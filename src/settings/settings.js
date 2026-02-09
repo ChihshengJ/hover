@@ -3,8 +3,7 @@
  *
  * Storage strategy:
  *   - Full images stored in IndexedDB as Blobs (binary, no base64 inflation)
- *   - Metadata + thumbnails stored in chrome.storage.local (extension) or localStorage (dev)
- *   - Preset wallpapers referenced by URL, fetched on demand
+ *   - Metadata + thumbnails stored in chrome.storage.local (extension) or localStorage (dev) - Preset wallpapers referenced by URL, fetched on demand
  *   - Active custom wallpaper applied via Object URL (tiny pointer, not data URL)
  *
  * @typedef {import('./window_manager.js').SplitWindowManager} SplitWindowManager
@@ -450,11 +449,12 @@ export class WallpaperSettings {
       gradient: {
         direction: saved.gradient?.direction ?? fallback.gradient.direction,
         stops:
-          Array.isArray(saved.gradient?.stops) && saved.gradient.stops.length > 0
+          Array.isArray(saved.gradient?.stops) &&
+            saved.gradient.stops.length > 0
             ? saved.gradient.stops.map((s) => ({
-                color: s.color || "#ffffff",
-                position: typeof s.position === "number" ? s.position : 50,
-              }))
+              color: s.color || "#ffffff",
+              position: typeof s.position === "number" ? s.position : 50,
+            }))
             : fallback.gradient.stops,
       },
       pageColor: saved.pageColor || fallback.pageColor,
@@ -536,7 +536,10 @@ export class WallpaperSettings {
    */
   _applyBallStyleToDOM(style) {
     const root = document.documentElement;
-    root.style.setProperty("--ball-body", this._buildGradientCSS(style.gradient));
+    root.style.setProperty(
+      "--ball-body",
+      this._buildGradientCSS(style.gradient),
+    );
 
     // Use middle stop for goo color
     const midIdx = Math.floor(style.gradient.stops.length / 2);
@@ -572,7 +575,9 @@ export class WallpaperSettings {
   _updateGradientBarPreview() {
     const barInner = this._overlay?.querySelector(".gradient-bar-inner");
     if (!barInner) return;
-    barInner.style.background = this._buildGradientCSS(this._ballStyle.gradient);
+    barInner.style.background = this._buildGradientCSS(
+      this._ballStyle.gradient,
+    );
   }
 
   // ═══ Image Processing ════════════════════════════════════
@@ -1043,21 +1048,12 @@ export class WallpaperSettings {
                       </div>
                     </div>
 
-                    <!-- Selected stop detail -->
-                    <div class="gradient-stop-detail" id="gradient-stop-detail">
-                      <!-- Populated by JS -->
-                    </div>
-
-                    <!-- Direction slider -->
-                    <div class="styled-slider-row">
-                      <span class="styled-slider-label">Direction</span>
-                      <input type="range" class="styled-slider" id="gradient-direction"
-                             min="0" max="360" step="1">
-                      <span class="styled-slider-value" id="gradient-direction-value">120°</span>
-                    </div>
-
                     <!-- Actions -->
                     <div class="gradient-actions">
+                      <!-- Selected stop detail -->
+                      <div class="gradient-stop-detail" id="gradient-stop-detail">
+                        <!-- Populated by JS -->
+                      </div>
                       <button class="gradient-action-btn" id="gradient-add-stop" title="Add color stop">
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                           <line x1="12" y1="5" x2="12" y2="19"/>
@@ -1073,6 +1069,17 @@ export class WallpaperSettings {
                         Reset
                       </button>
                     </div>
+
+
+                    <!-- Direction slider -->
+                    <div class="styled-slider-row">
+                      <span class="styled-slider-label">Direction</span>
+                      <input type="range" class="styled-slider" id="gradient-direction"
+                             min="0" max="360" step="1">
+                      <span class="styled-slider-value" id="gradient-direction-value">120°</span>
+                    </div>
+
+
                   </div>
                 </div>
 
@@ -1244,41 +1251,41 @@ export class WallpaperSettings {
     });
 
     // ── Add stop button ──
-    overlay.querySelector("#gradient-add-stop").addEventListener("click", () => {
-      const stops = this._ballStyle.gradient.stops;
-      if (stops.length >= WallpaperSettings.MAX_STOPS) {
-        this.showToast(`Maximum ${WallpaperSettings.MAX_STOPS} color stops`);
-        return;
-      }
-
-      // Insert a new stop at the midpoint of the largest gap
-      const sorted = [...stops].sort((a, b) => a.position - b.position);
-      let maxGap = 0;
-      let gapMid = 50;
-      for (let i = 0; i < sorted.length - 1; i++) {
-        const gap = sorted[i + 1].position - sorted[i].position;
-        if (gap > maxGap) {
-          maxGap = gap;
-          gapMid = Math.round(
-            (sorted[i].position + sorted[i + 1].position) / 2,
-          );
+    overlay
+      .querySelector("#gradient-add-stop")
+      .addEventListener("click", () => {
+        const stops = this._ballStyle.gradient.stops;
+        if (stops.length >= WallpaperSettings.MAX_STOPS) {
+          this.showToast(`Maximum ${WallpaperSettings.MAX_STOPS} color stops`);
+          return;
         }
-      }
-      // Also consider edges
-      if (sorted[0].position > maxGap) {
-        gapMid = Math.round(sorted[0].position / 2);
-      }
-      if (100 - sorted[sorted.length - 1].position > maxGap) {
-        gapMid = Math.round(
-          (sorted[sorted.length - 1].position + 100) / 2,
-        );
-      }
 
-      stops.push({ color: "#999999", position: gapMid });
-      this._selectedStopIndex = stops.length - 1;
-      this._onBallStyleChanged();
-      this._refreshBallEditor();
-    });
+        // Insert a new stop at the midpoint of the largest gap
+        const sorted = [...stops].sort((a, b) => a.position - b.position);
+        let maxGap = 0;
+        let gapMid = 50;
+        for (let i = 0; i < sorted.length - 1; i++) {
+          const gap = sorted[i + 1].position - sorted[i].position;
+          if (gap > maxGap) {
+            maxGap = gap;
+            gapMid = Math.round(
+              (sorted[i].position + sorted[i + 1].position) / 2,
+            );
+          }
+        }
+        // Also consider edges
+        if (sorted[0].position > maxGap) {
+          gapMid = Math.round(sorted[0].position / 2);
+        }
+        if (100 - sorted[sorted.length - 1].position > maxGap) {
+          gapMid = Math.round((sorted[sorted.length - 1].position + 100) / 2);
+        }
+
+        stops.push({ color: "#999999", position: gapMid });
+        this._selectedStopIndex = stops.length - 1;
+        this._onBallStyleChanged();
+        this._refreshBallEditor();
+      });
 
     // ── Reset button ──
     overlay.querySelector("#gradient-reset").addEventListener("click", () => {
@@ -1334,11 +1341,12 @@ export class WallpaperSettings {
       if (stops.length >= WallpaperSettings.MAX_STOPS) return;
 
       const rect = gradientBar.getBoundingClientRect();
-      const pos = Math.round(
-        ((e.clientX - rect.left) / rect.width) * 100,
-      );
+      const pos = Math.round(((e.clientX - rect.left) / rect.width) * 100);
 
-      stops.push({ color: "#999999", position: Math.max(0, Math.min(100, pos)) });
+      stops.push({
+        color: "#999999",
+        position: Math.max(0, Math.min(100, pos)),
+      });
       this._selectedStopIndex = stops.length - 1;
       this._onBallStyleChanged();
       this._refreshBallEditor();

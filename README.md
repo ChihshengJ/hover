@@ -12,8 +12,9 @@ Every action and command revolves around the single controller, and everything i
 
 **Currently the main functionalities only works on LaTeX compiled PDF documents. But heuristic parsing will be supported later for all kinds of papers.**
 
-The project is built with Vanilla JS and is dependent on [PDF.js](https://github.com/mozilla/pdf.js), which means that you can also directly access the texts as HTML elements,
-if you're interested in taking advantage of this feature, feel free to fork this project!
+The project is built with Vanilla JS and is dependent on [Embed PDF](https://www.embedpdf.com/)'s engine and Pdfium.
+
+<small>\*A significant portion of the codebase was developed with AI assistance; however, the author has 100% audited the code.</small>
 
 ---
 
@@ -109,7 +110,15 @@ Get bibtex and citations in other formats with just one click of a button.
 <img src="assets/cite_demo.png" width="800" alt="Hover Banner"/>
 </p>
 
-### 8. VIM Motion
+### 8. Appearance Customization
+
+Customize wallpaper from image files or URLs and pick the color of the navigation ball to create your own themed PDF reading experience.
+
+<p align="center">
+<img src="assets/customize_demo.png" width="800" alt="Hover Banner"/>
+</p>
+
+### 9. VIM Motion
 
 Full vim motion support for reading, highlighting, and citation preview (under development, currently only support HJKL).
 

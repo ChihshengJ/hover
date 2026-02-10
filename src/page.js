@@ -208,24 +208,17 @@ export class PageView {
         continue;
       }
 
-      const fontFamily =
-        line.font?.family || line.font?.famliy || "sans-serif";
+      const fontFamily = line.font?.family || line.font?.famliy || "sans-serif";
       const cleanFontFamily =
         fontFamily.replace(/['"]/g, "").trim() || "sans-serif";
 
       const span = document.createElement("span");
       span.textContent = content;
       span.style.cssText = `
-        position: absolute;
         left: ${x.toFixed(2)}px;
         top: ${y.toFixed(2)}px;
         font-size: ${fontSize.toFixed(2)}px;
         font-family: "${cleanFontFamily}", sans-serif;
-        line-height: 1;
-        transform-origin: 0% 0%;
-        white-space: pre;
-        pointer-events: all;
-        color: transparent;
       `;
 
       span._visualWidth = visualWidth;
@@ -380,6 +373,7 @@ export class PageView {
     this.annotationLayer.innerHTML = "";
     const ctx = this.canvas.getContext("2d");
     ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+    this._delegatedListenersAttached = false;
 
     this.page = null;
     this.endOfContent = null;
@@ -599,100 +593,7 @@ export class PageView {
       }
     }
 
-    return await this.#heuristicFindCiteText(left, pageIndex, top);
-  }
-
-  async #heuristicFindCiteText(left, pageIndex, top) {
-    const { native, pdfDoc } = this.doc;
-    if (!native || !pdfDoc) return null;
-
-    const page = this.doc.getPage(pageIndex + 1);
-    if (!page) return null;
-
-    try {
-      const textSlices = this.doc.pdfDoc.pages
-        .map((p) => this.doc.textIndex?.getRawSlices(p.index + 1))
-        .flat();
-      if (!textSlices || textSlices.length === 0) return null;
-
-      let startIndex = -1;
-      let minDistance = Infinity;
-
-      for (let i = 0; i < textSlices.length; i++) {
-        const slice = textSlices[i];
-        const dist = Math.hypot(
-          slice.rect.origin.x - left,
-          slice.rect.origin.y - top,
-        );
-        if (dist < minDistance) {
-          startIndex = i;
-          minDistance = dist;
-        }
-      }
-
-      if (startIndex === -1) return null;
-
-      const reference = [];
-      const refNumberPattern = /^\s*[\[\(]?\d{1,3}[\]\)\.\,]?\s+\S/;
-
-      const firstSlice = textSlices[startIndex];
-      let currentLineY = firstSlice.rect.origin.y;
-      let firstLineX = firstSlice.rect.origin.x;
-      let baselineGap = null;
-      let prevYDirection = null;
-      let lineCount = 0;
-
-      for (let i = startIndex; i < textSlices.length; i++) {
-        const slice = textSlices[i];
-        const text = slice.content || "";
-        const sliceY = slice.rect.origin.y;
-        const sliceX = slice.rect.origin.x;
-
-        const yDelta = sliceY - currentLineY;
-        const absYDelta = Math.abs(yDelta);
-        const isNewLine = absYDelta > 3;
-
-        if (isNewLine) {
-          lineCount++;
-          const yDirection = Math.sign(yDelta);
-
-          if (baselineGap === null && absYDelta < 50) {
-            baselineGap = absYDelta;
-          }
-
-          const isColumnBreak =
-            prevYDirection !== null &&
-            yDirection !== prevYDirection &&
-            absYDelta > 20;
-          if (isColumnBreak) {
-            if (sliceX <= firstLineX + 5 && refNumberPattern.test(text)) break;
-          } else {
-            if (baselineGap && absYDelta > baselineGap * 1.8) break;
-          }
-
-          let lineStartText = text;
-          if (i + 1 < textSlices.length) {
-            const nextSlice = textSlices[i + 1];
-            if (Math.abs(nextSlice.rect.origin.y - sliceY) < 3) {
-              lineStartText = text + (nextSlice.content || "");
-            }
-          }
-
-          if (refNumberPattern.test(lineStartText)) break;
-          if (sliceX < firstLineX - 8 && lineCount > 1) break;
-
-          currentLineY = sliceY;
-          if (!isColumnBreak) prevYDirection = yDirection;
-        }
-
-        reference.push(text);
-      }
-
-      return reference.join("");
-    } catch (err) {
-      console.error("[PageView] Heuristic extraction failed:", err);
-      return null;
-    }
+    return null;
   }
 
   #initLayer(layerType) {

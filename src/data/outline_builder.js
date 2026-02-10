@@ -123,42 +123,6 @@ function buildHeuristicOutline(textIndex) {
 }
 
 /**
- * @typedef {Object} DocInfo
- * @property {number} fontSize
- * @property {number} fontStyle
- * @property {Map<number, {lines: Array}>} pageData
- */
-
-export function getDocInfo(textIndex) {
-  const numPages = textIndex.getPageCount?.() || 60;
-  const pageData = new Map();
-
-  for (let pageNum = 1; pageNum <= numPages; pageNum++) {
-    const data = textIndex.getPageData?.(pageNum);
-    if (!data || data.lines.length === 0) continue;
-
-    const lines = data.lines.filter((line) => !line.text.startsWith("arXiv:"));
-    if (lines.length === 0) continue;
-
-    pageData.set(pageNum, {
-      lines,
-      pageWidth: data.pageWidth,
-      pageHeight: data.pageHeight,
-      marginLeft: data.marginLeft,
-      marginBottom: data.marginBottom,
-    });
-  }
-
-  return {
-    fontSize: textIndex.getBodyFontSize(),
-    fontStyle: textIndex.getBodyFontStyle(),
-    lineHeight: textIndex.getBodyLineHeight(),
-    marginBottom: textIndex.getBodyMarginBottom(),
-    pageData,
-  };
-}
-
-/**
  * @typedef {Object} HeadingCandidate
  * @property {string} text
  * @property {string} title
@@ -181,7 +145,7 @@ function collectHeadingCandidates(textIndex) {
     fontStyle: bodyFontStyle,
     lineHeight: bodyLineHeight,
     pageData,
-  } = getDocInfo(textIndex);
+  } = textIndex.getDocumentData();
 
   let abstractLine = null;
   let startPage = 0;

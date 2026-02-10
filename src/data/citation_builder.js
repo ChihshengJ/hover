@@ -13,9 +13,7 @@
  * @property {string} author - First author surname
  * @property {string|null} secondAuthor - Second author surname (for two-author citations)
  * @property {string} year - Year string
- * @property {boolean} isRange - Whether this is a year range (e.g., 1996-2004)
- *
- * @typedef {Object} Citation
+ * @property {boolean} isRange - Whether this is a year range (e.g., 1996-2004) @typedef {Object} Citation
  * @property {string} type - 'numeric' | 'author-year' | 'superscript'
  * @property {string} text - The matched text
  * @property {number} pageNumber - 1-based page number
@@ -129,10 +127,8 @@ export class CitationBuilder {
         // Check if link points to reference section
         if (destPageIndex + 1 < this.#refSectionStartPage) continue;
 
-        // Check if destination has valid coordinates
-        const hasValidDest = destX !== 0 && destY !== 0;
+        const hasValidDest = destX * destY !== 0;
 
-        // Try to match to a reference anchor by position or by proximity
         let matchedRef = null;
         if (hasValidDest) {
           matchedRef = this.#findReferenceAtLocation(
@@ -141,9 +137,6 @@ export class CitationBuilder {
             destY,
           );
         }
-
-        // If no match by position, we'll handle this link as needing text-based matching
-        // during the merge phase
 
         const key = this.#makePositionKey(
           pageNum,
@@ -182,7 +175,6 @@ export class CitationBuilder {
     for (const anchor of this.#signatures) {
       if (anchor.pageNumber !== pageNumber) continue;
 
-      // Calculate distance (y is more important for vertical position)
       const dist =
         Math.abs(anchor.startCoord.y - y) + Math.abs(anchor.startCoord.x - x);
 
@@ -295,6 +287,8 @@ export class CitationBuilder {
       // Check if any extracted citation overlaps with this native link
       for (const [citKey, citation] of merged) {
         if (citation.pageNumber !== nativeLink.pageNumber) continue;
+        if (nativeLink.pageNumber === 2 && nativeLink.destPageIndex === 11)
+          console.log(nativeLink);
 
         if (this.#rectsOverlap(citation.rects, nativeLink.rect)) {
           foundOverlap = true;
@@ -303,12 +297,10 @@ export class CitationBuilder {
           if (nativeLink.hasValidDest && nativeLink.matchedRefIndex !== null) {
             // Check if they agree on the reference
             if (citation.refIndices?.includes(nativeLink.matchedRefIndex)) {
-              // Boost confidence and set confirmation flags
               citation.confidence = Math.min(1.0, citation.confidence + 0.2);
               citation.flags |= CitationFlags.NATIVE_CONFIRMED;
               citation.flags |= CitationFlags.DEST_CONFIRMED;
 
-              // Use native destination for navigation (more reliable)
               citation.targetLocation = {
                 pageIndex: nativeLink.destPageIndex,
                 x: nativeLink.destX,
@@ -327,13 +319,29 @@ export class CitationBuilder {
                 };
               }
             } else {
-              // Different reference - still confirm existence
+              // Different reference - use native
+              const targetLocation = {
+                pageIndex: nativeLink.destPageIndex,
+                x: nativeLink.destX,
+                y: nativeLink.destY,
+              };
+              citation.targetLocation = targetLocation;
+              citation.refIndices = [nativeLink.matchedRefIndex];
+              citation.refKeys = null;
+              citation.allTargets = [
+                {
+                  refIndex: nativeLink.matchedRefIndex,
+                  refKey: null,
+                  location: targetLocation,
+                },
+              ];
               citation.flags |= CitationFlags.NATIVE_CONFIRMED;
             }
           } else {
-            // Native link exists but has invalid destination
-            // Just confirm existence
-            citation.flags |= CitationFlags.NATIVE_CONFIRMED;
+            if (nativeLink.pageNumber === 2 && nativeLink.destPageIndex === 11)
+              // Native link exists but has invalid destination
+              // Just confirm existence
+              citation.flags |= CitationFlags.NATIVE_CONFIRMED;
           }
           break;
         }
@@ -352,14 +360,14 @@ export class CitationBuilder {
         };
 
         const citation = {
-          type: "numeric", // Default to numeric for native-only
+          type: "imported",
           text: `[${nativeLink.matchedRefIndex}]`,
           pageNumber: nativeLink.pageNumber,
           rects: [nativeLink.rect],
           refIndices: [nativeLink.matchedRefIndex],
           refRanges: [],
           refKeys: null,
-          confidence: 0.85, // Slightly lower than extracted + confirmed
+          confidence: 0.85,
           flags: CitationFlags.NATIVE_CONFIRMED | CitationFlags.DEST_CONFIRMED,
           targetLocation,
           allTargets: [
@@ -382,7 +390,7 @@ export class CitationBuilder {
    * Check if citation rects overlap with a native link rect
    */
   #rectsOverlap(citRects, nativeRect) {
-    const tolerance = 0;
+    const tolerance = -5;
 
     for (const rect of citRects) {
       const overlapX =

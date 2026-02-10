@@ -12,7 +12,6 @@
  * @property {Array<{pageNumber: number, rects: Array}>} pageRanges
  */
 
-import { getDocInfo } from "./outline_builder.js";
 import { FontStyle } from "./text_index.js";
 import {
   REFERENCE_SECTION_PATTERN,
@@ -72,7 +71,7 @@ export async function buildReferenceIndex(textIndex) {
 }
 
 function findReferenceSection(textIndex) {
-  const docInfo = getDocInfo(textIndex);
+  const docInfo = textIndex.getDocumentData();
   if (!docInfo?.pageData) return null;
 
   const {
@@ -156,24 +155,28 @@ function findReferenceSectionEnd(
 
     for (let i = startIdx; i < lines.length; i++) {
       const line = lines[i];
-      const isColumnBreak = lastValidLine?.y - line.y < 0;
-      const isWeirdPosition =
+      const text = line.text.trim();
+
+      if (text.length <= 3 && /^\d+/.test(text)) continue;
+      const isPageBreak = lastValidLine?.pageNumber !== pageNum;
+      const isHeaderFooter =
         line.y >= pageHeight * 0.95 ||
         line.y <= pageHeight * 0.05 ||
-        (isColumnBreak && line.x < pageWidth / 2 && line.x > marginLeft + 30);
-      if (isWeirdPosition) continue;
-      const strippedText = line.text
+        (isPageBreak && line.x > marginLeft + 30);
+      if (isHeaderFooter) continue;
+      const isPageNumber =
+        new RegExp(`page\\s+${pageNum}`, "i").test(text) && text.length < 10;
+      if (isPageNumber) continue;
+
+      const strippedText = text
         .replace(SECTION_NUMBER_STRIP, "")
         .replace(/\s+/g, "")
-        .trim()
         .toLowerCase();
 
       const isBoldAndLarge =
         line.fontSize > bodyFontSize * 1.5 && line.fontStyle === FontStyle.BOLD;
       const isAllCapital =
-        line.text === line.text.toUpperCase() &&
-        /\d+/.test(line) &&
-        line.text.length > 3;
+        text === text.toUpperCase() && /\d+/.test(line) && line.text.length > 3;
       const isDirectIndicator =
         POST_REFERENCE_SECTION_PATTERN.test(strippedText);
       const isBigJump =
@@ -189,7 +192,7 @@ function findReferenceSectionEnd(
         };
       }
 
-      if (line.text.trim().length > 0) {
+      if (text.length > 0) {
         lastValidLine = { pageNumber: pageNum, lineIndex: i, y: line.y };
       }
     }
@@ -246,7 +249,7 @@ function detectReferenceFormat(lines) {
 
   const sampleLines = lines
     .filter((l) => l.text.trim().length > 10)
-    .slice(0, 30);
+    .slice(0, 50);
   if (sampleLines.length === 0) return "unknown";
 
   const formatCounts = {};

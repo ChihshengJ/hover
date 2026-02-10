@@ -485,80 +485,72 @@ export class InlineExtractor {
     return citations;
   }
 
-  /**
-   * Find superscript citations by examining text slices with small bounding boxes.
-   * Handles single numbers (e.g., "1"), comma-separated lists ("1,2,3"),
-   * and ranges ("1-3", "1,2-5,7").
-   *
-   * Slice content is cleaned first since word-based extraction may attach
-   * trailing punctuation and whitespace (e.g., "7, 18. " → "7, 18").
-   */
   #findSuperscriptCitations(pageNumber, pageHeight, bodyLineHeight) {
     const citations = [];
-    const rawSlices = this.#textIndex?.getRawSlices(pageNumber);
+    const lines = this.#textIndex?.getPageLines(pageNumber);
 
-    if (!rawSlices) return citations;
+    if (!lines?.length) return citations;
 
-    for (const slice of rawSlices) {
-      // Clean slice content: strip trailing/leading punctuation and whitespace
-      // that gets attached during word-based extraction.
-      // e.g., "7, 18. " → "7,18", "1-3, " → "1-3"
-      const cleaned = slice.content
-        .replace(/^[^\d]+/, "") // strip leading non-digits
-        .replace(/[^\d]+$/, "") // strip trailing non-digits
-        .replace(/\s+/g, ""); // collapse internal whitespace
+    for (const line of lines) {
+      for (const item of line.items) {
+        // Must be significantly smaller than body text
+        if (item.height >= bodyLineHeight * 0.7) continue;
 
-      if (!cleaned) continue;
+        // Clean item content: strip trailing/leading punctuation and whitespace
+        // that gets attached during word-based extraction.
+        // e.g., "7, 18. " → "7,18", "1-3, " → "1-3"
+        const cleaned = item.str
+          .replace(/^[^\d]+/, "")
+          .replace(/[^\d]+$/, "")
+          .replace(/\s+/g, "");
 
-      // Must be significantly smaller than body text
-      if (slice.rect.size.height >= bodyLineHeight * 0.7) {
-        continue;
+        if (!cleaned) continue;
+
+        // Match against the multi-number superscript pattern
+        if (!INLINE_CITATION_PATTERNS.superscriptCitation.test(cleaned)) {
+          continue;
+        }
+
+        // Parse using the shared numeric content parser
+        const { indices, ranges } = parseNumericCitationContent(cleaned);
+
+        // Validate against known references
+        const validIndices = indices.filter((idx) =>
+          this.#signatures.some((anchor) => anchor.index === idx),
+        );
+
+        if (validIndices.length === 0) continue;
+
+        // Determine flags
+        let flags = CitationFlags.NONE;
+        if (ranges.length > 0) {
+          flags |= CitationFlags.RANGE_NOTATION;
+        }
+        if (validIndices.length > 1) {
+          flags |= CitationFlags.MULTI_REF;
+        }
+
+        citations.push({
+          type: "superscript",
+          text: cleaned,
+          pageNumber,
+          charIndex: 0,
+          charCount: cleaned.length,
+          rects: [
+            {
+              x: item.x,
+              y: pageHeight - item.y,
+              width: item.width,
+              height: item.height,
+            },
+          ],
+          refIndices: validIndices,
+          refRanges: ranges,
+          refKeys: null,
+          confidence: validIndices.length / indices.length,
+          flags,
+        });
       }
-
-      // Match against the multi-number superscript pattern
-      if (!INLINE_CITATION_PATTERNS.superscriptCitation.test(cleaned)) {
-        continue;
-      }
-
-      // Parse using the shared numeric content parser (handles "1", "1,2,3", "1-3", etc.)
-      const { indices, ranges } = parseNumericCitationContent(cleaned);
-
-      // Validate against known references
-      const validIndices = indices.filter((idx) =>
-        this.#signatures.some((anchor) => anchor.index === idx),
-      );
-
-      if (validIndices.length === 0) continue;
-
-      // Determine flags
-      let flags = CitationFlags.NONE;
-      if (ranges.length > 0) {
-        flags |= CitationFlags.RANGE_NOTATION;
-      }
-      if (validIndices.length > 1) {
-        flags |= CitationFlags.MULTI_REF;
-      }
-
-      citations.push({
-        type: "superscript",
-        text: cleaned,
-        pageNumber,
-        charIndex: 0,
-        charCount: cleaned.length,
-        rects: [
-          {
-            x: slice.rect.origin.x,
-            y: pageHeight - slice.rect.origin.y,
-            width: slice.rect.size.width,
-            height: slice.rect.size.height,
-          },
-        ],
-        refIndices: validIndices,
-        refRanges: ranges,
-        refKeys: null,
-        confidence: validIndices.length / indices.length,
-        flags,
-      });
     }
 
     return citations;

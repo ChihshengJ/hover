@@ -339,7 +339,6 @@ export class PdfiumTextExtractor {
         right,
         bottom,
         top,
-        // Convert to top-left origin
         x: left,
         y: top,
         width: right - left,
@@ -378,7 +377,6 @@ export class PdfiumTextExtractor {
       const char = String.fromCodePoint(charCode);
       const box = this.#getCharBox(textPagePtr, i, pageHeight);
 
-      // Classify character type
       const isWhitespace = charCode === 32; // space
       const isNewline = charCode === 10 || charCode === 13; // LF or CR
       const isControlChar = charCode < 32 && !isNewline; // other control chars
@@ -396,7 +394,6 @@ export class PdfiumTextExtractor {
       });
     }
 
-    // Get font info for representative characters (cache by position)
     const getFontInfo = (charIndex) => {
       const fontSize = pdfium.FPDFText_GetFontSize(textPagePtr, charIndex);
 
@@ -436,8 +433,6 @@ export class PdfiumTextExtractor {
       }
     };
 
-    // Group characters into text runs based on spatial proximity
-    // IMPORTANT: Include trailing whitespace in each run for accurate text reconstruction
     let currentRun = null;
     const LINE_TOLERANCE_FACTOR = 1.2; // Y tolerance for same line
     const WORD_GAP_FACTOR = 2; // Gap threshold as fraction of char height
@@ -498,13 +493,23 @@ export class PdfiumTextExtractor {
 
       const lastCode = currentRun.lastVisibleCharCode;
       const lastIsDigit = lastCode >= 48 && lastCode <= 57;
-      const lastIsAlpha = (lastCode >= 65 && lastCode <= 90) || (lastCode >= 97 && lastCode <= 122) || lastCode > 127;
-      const currentIsAlpha = (charCode >= 65 && charCode <= 90) || (charCode >= 97 && charCode <= 122) || charCode > 127;
-      const digitAlphaBoundary = (isDigit && lastIsAlpha) || (currentIsAlpha && lastIsDigit);
+      const lastIsAlpha =
+        (lastCode >= 65 && lastCode <= 90) ||
+        (lastCode >= 97 && lastCode <= 122) ||
+        lastCode > 127;
+      const currentIsAlpha =
+        (charCode >= 65 && charCode <= 90) ||
+        (charCode >= 97 && charCode <= 122) ||
+        charCode > 127;
+      const digitAlphaBoundary =
+        (isDigit && lastIsAlpha) || (currentIsAlpha && lastIsDigit);
 
-      // If there was trailing whitespace, we should start a new run (word break)
-      if (hasTrailingWhitespace || !sameLine || !isAdjacent || digitAlphaBoundary) {
-        // Finalize current run and start new one
+      if (
+        hasTrailingWhitespace ||
+        !sameLine ||
+        !isAdjacent ||
+        digitAlphaBoundary
+      ) {
         this.#finalizeRun(currentRun, textSlices, getFontInfo);
         currentRun = {
           startIndex: i,
@@ -548,25 +553,22 @@ export class PdfiumTextExtractor {
    * @param {Function} getFontInfo - Function to get font info for a char index
    */
   #finalizeRun(run, textSlices, getFontInfo) {
-    // Build content: visible chars + trailing whitespace/control chars
     const visibleContent = run.chars.join("");
     const trailingContent = (run.trailingChars || []).join("");
     const content = visibleContent + trailingContent;
 
-    // Skip if no visible content (whitespace-only slices aren't useful)
     if (!visibleContent || /^\s*$/.test(visibleContent)) return;
 
     const width = run.right - run.left;
     const height = run.avgHeight;
 
-    // Skip invalid dimensions
     if (width < 0 && height < 0) return;
     if (height > 100 || width > 200) return;
 
     const fontInfo = getFontInfo(run.startIndex);
 
     textSlices.push({
-      content, // Now includes trailing whitespace for proper text reconstruction
+      content,
       rect: {
         origin: { x: run.left, y: run.top },
         size: { width, height },
@@ -576,84 +578,8 @@ export class PdfiumTextExtractor {
         family: fontInfo.family,
       },
       // Store char indices for potential future use (selection, search highlighting)
-      _charRange: { start: run.startIndex, end: run.endIndex },
+      // _charRange: { start: run.startIndex, end: run.endIndex },
     });
-  }
-
-  /**
-   * DEPRECATED: Old character-by-character extraction
-   * Kept for reference but not used - has ligature duplication issues
-   */
-  #extractTextSlices_OLD(textPagePtr, totalChars, pageHeight) {
-    const pdfium = this.#pdfium;
-    const textSlices = [];
-
-    const rectCount = pdfium.FPDFText_CountRects(textPagePtr, 0, totalChars);
-    if (rectCount <= 0) return textSlices;
-
-    const leftPtr = pdfium.pdfium.wasmExports.malloc(8);
-    const topPtr = pdfium.pdfium.wasmExports.malloc(8);
-    const rightPtr = pdfium.pdfium.wasmExports.malloc(8);
-    const bottomPtr = pdfium.pdfium.wasmExports.malloc(8);
-
-    try {
-      for (let i = 0; i < rectCount; i++) {
-        const success = pdfium.FPDFText_GetRect(
-          textPagePtr,
-          i,
-          leftPtr,
-          topPtr,
-          rightPtr,
-          bottomPtr,
-        );
-
-        if (!success) continue;
-
-        const left = pdfium.pdfium.HEAPF64[leftPtr >> 3];
-        const top = pdfium.pdfium.HEAPF64[topPtr >> 3];
-        const right = pdfium.pdfium.HEAPF64[rightPtr >> 3];
-        const bottom = pdfium.pdfium.HEAPF64[bottomPtr >> 3];
-
-        const content = this.#extractBoundedText(
-          textPagePtr,
-          left,
-          top,
-          right,
-          bottom,
-        );
-
-        if (content && content.trim()) {
-          const height = top - bottom;
-          const y = pageHeight - top;
-
-          const fontInfo = this.#extractFontInfo(
-            textPagePtr,
-            left,
-            top,
-            height,
-          );
-
-          textSlices.push({
-            content,
-            rect: {
-              origin: { x: left, y },
-              size: { width: right - left, height },
-            },
-            font: {
-              size: fontInfo.size,
-              family: fontInfo.family,
-            },
-          });
-        }
-      }
-    } finally {
-      pdfium.pdfium.wasmExports.free(leftPtr);
-      pdfium.pdfium.wasmExports.free(topPtr);
-      pdfium.pdfium.wasmExports.free(rightPtr);
-      pdfium.pdfium.wasmExports.free(bottomPtr);
-    }
-
-    return textSlices;
   }
 
   /**
@@ -717,55 +643,6 @@ export class PdfiumTextExtractor {
     } finally {
       pdfium.pdfium.wasmExports.free(textBufferPtr);
       pdfium.pdfium.wasmExports.free(flagsPtr);
-    }
-  }
-
-  /**
-   * Extract text within a bounding rectangle
-   * NOTE: This method has ligature issues and is deprecated
-   *
-   * @param {number} textPagePtr - Text page pointer
-   * @param {number} left - Left bound
-   * @param {number} top - Top bound (PDF coordinates)
-   * @param {number} right - Right bound
-   * @param {number} bottom - Bottom bound (PDF coordinates)
-   * @returns {string}
-   */
-  #extractBoundedText(textPagePtr, left, top, right, bottom) {
-    const pdfium = this.#pdfium;
-
-    // First get the required buffer size
-    const charCount = pdfium.FPDFText_GetBoundedText(
-      textPagePtr,
-      left,
-      top,
-      right,
-      bottom,
-      0, // null buffer to get count
-      0,
-    );
-
-    if (charCount <= 0) return "";
-
-    // Allocate buffer (UTF-16 = 2 bytes per char)
-    const bufferSize = (charCount + 1) * 2;
-    const bufferPtr = pdfium.pdfium.wasmExports.malloc(bufferSize);
-
-    try {
-      pdfium.FPDFText_GetBoundedText(
-        textPagePtr,
-        left,
-        top,
-        right,
-        bottom,
-        bufferPtr,
-        charCount + 1,
-      );
-
-      // Convert UTF-16LE to JS string
-      return pdfium.pdfium.UTF16ToString(bufferPtr);
-    } finally {
-      pdfium.pdfium.wasmExports.free(bufferPtr);
     }
   }
 }

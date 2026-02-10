@@ -259,6 +259,8 @@ export class PDFDocumentModel {
       reportProgress(55, 100, "setting up text extraction engine");
       this.#setupLowLevelAccess(pdfiumModule);
 
+      this.pdfData = null;
+
       reportProgress(58, 100, "processing");
       await this.#cachePageDimensions();
 
@@ -276,6 +278,7 @@ export class PDFDocumentModel {
 
       reportProgress(75, 100, "indexing references");
       this.referenceIndex = await buildReferenceIndex(this.textIndex);
+      console.log(this.referenceIndex);
 
       reportProgress(80, 100, "building outline");
       await this.#buildOutline();
@@ -1267,7 +1270,6 @@ export class PDFDocumentModel {
       }
     }
     this.pdfDoc = null;
-    this.pdfData = null;
     this.nativeAnnotationsByPage.clear();
     this.annotations.clear();
     this.annotationsByPage.clear();

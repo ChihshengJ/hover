@@ -68,6 +68,17 @@ export class DocumentTextIndex {
     return this.#pageData.get(pageNumber) || null;
   }
 
+  getDocumentData() {
+    const info = {
+      fontSize: this.getBodyFontSize(),
+      fontStyle: this.getBodyFontStyle(),
+      lineHeight: this.getBodyLineHeight(),
+      marginBottom: this.getBodyMarginBottom(),
+      pageData: this.#pageData,
+    };
+    return info;
+  }
+
   getPageLines(pageNumber) {
     return this.#pageData.get(pageNumber)?.lines || null;
   }
@@ -82,10 +93,6 @@ export class DocumentTextIndex {
       return { width: page.size.width, height: page.size.height };
     }
     return null;
-  }
-
-  getRawSlices(pageNumber) {
-    return this.#pageData.get(pageNumber)?.rawSlices || null;
   }
 
   getBodyFontSize() {
@@ -150,17 +157,14 @@ export class DocumentTextIndex {
 
     try {
       let textSlices = [];
-      let fullText = "";
 
       if (this.#lowLevelHandle) {
         const result = this.#lowLevelHandle.extractPageText(pageNumber - 1);
         textSlices = result.textSlices || [];
-        fullText = result.fullText || "";
       } else {
         const { native, pdfDoc } = this.#doc;
         if (native && pdfDoc) {
           textSlices = await native.getPageTextRects(pdfDoc, page).toPromise();
-          fullText = textSlices.map((s) => s.content || "").join(" ");
         }
       }
 
@@ -178,8 +182,6 @@ export class DocumentTextIndex {
         marginLeft,
         marginBottom,
         lines,
-        fullText: fullText || lines.map((l) => l.text).join(" "),
-        rawSlices: textSlices,
       });
       this.#indexedPages.add(pageNumber);
     } catch (error) {
@@ -333,7 +335,6 @@ export class DocumentTextIndex {
       marginLeft: 0,
       marginBottom: 0,
       lines: [],
-      fullText: "",
     });
     this.#indexedPages.add(pageNumber);
   }

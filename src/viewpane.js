@@ -334,6 +334,7 @@ export class ViewerPane {
   //*******************
   // Viewer controls
   // ******************
+
   getCurrentPage() {
     const viewRect = this.scroller.getBoundingClientRect();
     const viewportMidY = viewRect.top + viewRect.height / 2;
@@ -349,25 +350,40 @@ export class ViewerPane {
 
   zoomAt(scale, focusX, focusY) {
     const scroller = this.scroller;
-    const prevScale = this.scale;
+    const prevScale = this._pendingScale ?? this.scale;
+    if (scale === prevScale) return;
 
-    const docX = (scroller.scrollLeft + focusX) / prevScale;
-    const docY = (scroller.scrollTop + focusY) / prevScale;
-    this.scale = scale;
-    this.resizeAllCanvases(scale);
+    this._pendingScale = scale;
+    const ratio = scale / this.scale;
 
-    // restore scroll position after resizing
-    const targetLeft = docX * scale - focusX;
-    const targetTop = docY * scale - focusY;
-    const maxLeft = Math.max(0, scroller.scrollWidth - scroller.clientWidth);
-    const maxTop = Math.max(0, scroller.scrollHeight - scroller.clientHeight);
-    scroller.scrollLeft = Math.min(Math.max(0, targetLeft), maxLeft);
-    scroller.scrollTop = Math.min(Math.max(0, targetTop), maxTop);
+    this.stage.style.transformOrigin = `${scroller.scrollLeft + focusX}px ${scroller.scrollTop + focusY}px`;
+    this.stage.style.transform = `scale(${ratio})`;
 
-    this.#renderVisiblePages();
+    if (this._zoomRAF) cancelAnimationFrame(this._zoomRAF);
+    this._zoomRAF = requestAnimationFrame(() => {
+      this._zoomRAF = null;
+      const finalScale = this._pendingScale;
+      this._pendingScale = null;
 
-    // Refresh annotations after layout changes
-    this.annotationManager?.refresh();
+      this.stage.style.transform = "";
+      this.stage.style.transformOrigin = "";
+
+      const docX = (scroller.scrollLeft + focusX) / this.scale;
+      const docY = (scroller.scrollTop + focusY) / this.scale;
+
+      this.scale = finalScale;
+      this.resizeAllCanvases(finalScale);
+
+      const targetLeft = docX * finalScale - focusX;
+      const targetTop = docY * finalScale - focusY;
+      const maxLeft = Math.max(0, scroller.scrollWidth - scroller.clientWidth);
+      const maxTop = Math.max(0, scroller.scrollHeight - scroller.clientHeight);
+      scroller.scrollLeft = Math.min(Math.max(0, targetLeft), maxLeft);
+      scroller.scrollTop = Math.min(Math.max(0, targetTop), maxTop);
+
+      this.#renderVisiblePages();
+      this.annotationManager?.refresh();
+    });
   }
 
   zoom(delta) {
@@ -431,13 +447,17 @@ export class ViewerPane {
   async resizeAllCanvases(scale) {
     const outputScale = window.devicePixelRatio || 1;
     const MAX_RENDER_SCALE = 7.0;
-
     const effectiveScale = Math.min(scale, MAX_RENDER_SCALE);
 
     for (let i = 0; i < this.pages.length; i++) {
       const page = this.pages[i];
       const dims = this.document.pageDimensions[i];
-      page.canvas.dataset.rendered = "false";
+
+      if (this.visiblePages.has(page)) {
+        page.canvas.dataset.rendered = "false";
+      } else {
+        page.release();
+      }
 
       const visualWidth = Math.round(dims.width * effectiveScale);
       const aspectRatio = dims.height / dims.width;

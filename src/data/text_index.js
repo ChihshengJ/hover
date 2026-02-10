@@ -170,8 +170,7 @@ export class DocumentTextIndex {
 
       const items = this.#convertSlices(textSlices, pageHeight);
       const lines = this.#groupIntoLines(items, pageHeight);
-      const marginLeft =
-        lines.length > 0 ? Math.min(...lines.map((l) => l.x)) : 0;
+      const marginLeft = this.#estimateMarginLeft(lines, pageWidth);
       const marginBottom =
         lines.length > 0 ? Math.min(...lines.map((l) => l.y)) : 0;
 
@@ -248,7 +247,7 @@ export class DocumentTextIndex {
 
     const lineHeight = this.#findMedian(items.map((i) => i.height));
     const lineWidth = items.at(-1).x + items.at(-1).width - items[0].x;
-    const lineBottom = Math.max(...items.map((i) => i.originalY));
+    const lineBottom = this.#findMedian(items.map((i) => i.originalY));
 
     const lineItems = items.map((it) => ({
       str: it.str,
@@ -318,6 +317,45 @@ export class DocumentTextIndex {
     if (hasBold) return FontStyle.BOLD;
     if (hasItalic) return FontStyle.ITALIC;
     return FontStyle.REGULAR;
+  }
+
+  /**
+   * Estimate the true body-text left margin using mode of x positions,
+   * filtering out outlier lines (short page numbers, wide banners, etc.).
+   */
+  #estimateMarginLeft(lines, pageWidth) {
+    if (lines.length === 0) return 0;
+
+    const quantize = (v) => Math.round(v * 2) / 2;
+    const xCounts = new Map();
+
+    for (const line of lines.slice(0, 10)) {
+      if (line.text.length < 10) continue;
+      if (line.lineWidth > pageWidth * 0.9) continue;
+
+      const qx = quantize(line.x);
+      xCounts.set(qx, (xCounts.get(qx) || 0) + 1);
+    }
+
+    if (xCounts.size === 0) {
+      for (const line of lines) {
+        const qx = quantize(line.x);
+        xCounts.set(qx, (xCounts.get(qx) || 0) + 1);
+      }
+    }
+
+    if (xCounts.size === 0) return 0;
+
+    let bestX = 0;
+    let bestCount = 0;
+    for (const [x, count] of xCounts) {
+      if (count > bestCount) {
+        bestCount = count;
+        bestX = x;
+      }
+    }
+
+    return bestX;
   }
 
   #storeEmpty(pageNumber, pageWidth = 0, pageHeight = 0) {

@@ -36,6 +36,8 @@ export class PageView {
     this.renderTask = null;
     this.scale = 1;
 
+    this._cachedSpans = null;
+    this._lastTextScale = null;
     this._showTimer = null;
     this._delegatedListenersAttached = false;
   }
@@ -138,18 +140,21 @@ export class PageView {
       const cssWidth = parseFloat(this.canvas.style.width);
       const cssHeight = parseFloat(this.canvas.style.height);
       const textScale = cssWidth / pageWidth;
-
-      if (this.pane.textSelectionManager) {
-        this.pane.textSelectionManager.unregister(this.textLayer);
-      }
-
-      this.textLayer.innerHTML = "";
+      
       this.annotationLayer.innerHTML = "";
-
       this.#renderUrlLinks(page, textScale, cssWidth, cssHeight);
       this.#renderCitationOverlays(page, textScale, cssWidth, cssHeight);
       this.#renderCrossRefOverlays(page, textScale, cssWidth, cssHeight);
-      this.#renderTextLayer(page, textScale, pageHeight);
+
+      if (this._cachedSpans) {
+        this.#rescaleTextLayer(textScale);
+      } else {
+        if (this.pane.textSelectionManager) {
+          this.pane.textSelectionManager.unregister(this.textLayer);
+        }
+        this.textLayer.innerHTML = "";
+        this.#buildTextLayer(page, textScale, pageHeight);
+      }
 
       this.textLayer.style.setProperty("--total-scale-factor", `${this.scale}`);
       this.#ensureEndOfContent();
@@ -177,11 +182,11 @@ export class PageView {
     return true;
   }
 
-  #renderTextLayer(page, scale, pageHeight) {
+  #buildTextLayer(page, scale, pageHeight) {
     if (!this.textSlices || this.textSlices.length === 0) return;
 
     const fragment = document.createDocumentFragment();
-    const spansToMeasure = [];
+    const pending = [];
 
     for (const line of this.textSlices) {
       const content = line.text || "";
@@ -192,8 +197,6 @@ export class PageView {
       const rectWidth = line.lineWidth;
       const rectHeight = line.lineHeight;
 
-      const x = rectX * scale;
-      const y = rectY * scale;
       const visualWidth = rectWidth * scale;
       const visualHeight = rectHeight * scale;
       let fontSize = visualHeight * 0.9;
@@ -215,36 +218,68 @@ export class PageView {
       const span = document.createElement("span");
       span.textContent = content;
       span.style.cssText = `
-        left: ${x.toFixed(2)}px;
-        top: ${y.toFixed(2)}px;
+        left: ${(rectX * scale).toFixed(2)}px;
+        top: ${(rectY * scale).toFixed(2)}px;
         font-size: ${fontSize.toFixed(2)}px;
         font-family: "${cleanFontFamily}", sans-serif;
       `;
 
-      span._visualWidth = visualWidth;
       fragment.appendChild(span);
-      spansToMeasure.push(span);
-    }
-
-    this.textLayer.appendChild(fragment);
-    const measurements = [];
-    for (const span of spansToMeasure) {
-      measurements.push({
+      pending.push({
         span,
-        measuredWidth: span.offsetWidth,
-        visualWidth: span._visualWidth,
+        pdfX: rectX,
+        pdfY: rectY,
+        pdfW: rectWidth,
+        pdfH: rectHeight,
+        fontFamily: cleanFontFamily,
+        visualWidth,
       });
     }
 
-    for (const { span, measuredWidth, visualWidth } of measurements) {
+    this.textLayer.appendChild(fragment);
+
+    const measured = [];
+    for (const entry of pending) {
+      measured.push(entry.span.offsetWidth);
+    }
+
+    const cached = [];
+    for (let i = 0; i < pending.length; i++) {
+      const { span, pdfX, pdfY, pdfH, fontFamily, visualWidth } = pending[i];
+      const measuredWidth = measured[i];
+
+      let computedScaleX = 1;
       if (measuredWidth > 0 && visualWidth > 0) {
-        const scaleX = visualWidth / measuredWidth;
-        if (scaleX >= 0.1 && scaleX <= 5.0) {
-          span.style.transform = `scaleX(${scaleX.toFixed(4)})`;
+        computedScaleX = visualWidth / measuredWidth;
+        if (computedScaleX < 0.1 || computedScaleX > 5.0) {
+          computedScaleX = 1;
         }
       }
-      delete span._visualWidth;
+
+      if (computedScaleX !== 1) {
+        span.style.transform = `scaleX(${computedScaleX.toFixed(4)})`;
+      }
+
+      cached.push({ span, pdfX, pdfY, pdfH, fontFamily, scaleX: computedScaleX });
     }
+
+    this._cachedSpans = cached;
+    this._lastTextScale = scale;
+  }
+
+  #rescaleTextLayer(newScale) {
+    for (const entry of this._cachedSpans) {
+      const { span, pdfX, pdfY, pdfH, scaleX } = entry;
+
+      span.style.left = `${(pdfX * newScale).toFixed(2)}px`;
+      span.style.top = `${(pdfY * newScale).toFixed(2)}px`;
+      span.style.fontSize = `${(pdfH * newScale * 0.9).toFixed(2)}px`;
+      // scaleX is constant across zoom levels — no re-measurement needed
+      if (scaleX !== 1) {
+        span.style.transform = `scaleX(${scaleX.toFixed(4)})`;
+      }
+    }
+    this._lastTextScale = newScale;
   }
 
   // ============================================
@@ -298,10 +333,10 @@ export class PageView {
 
     const fragment = document.createDocumentFragment();
 
-    for (const citation of citations) {
-      if (!citation.rects || citation.rects.length === 0) continue;
+    for (const citRef of citations) {
+      if (!citRef.rects || citRef.rects.length === 0) continue;
 
-      for (const rect of citation.rects) {
+      for (const rect of citRef.rects) {
         if (rect.height < 3 || rect.width < 3) continue;
         const el = document.createElement("span");
         el.className = "citation-rect";
@@ -314,7 +349,7 @@ export class PageView {
           pointer-events: auto;
           cursor: pointer;
         `;
-        el._citationData = citation;
+        el.dataset.citationId = citRef.citationId;
         fragment.appendChild(el);
       }
     }
@@ -374,6 +409,8 @@ export class PageView {
     const ctx = this.canvas.getContext("2d");
     ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
     this._delegatedListenersAttached = false;
+    this._cachedSpans = null;
+    this._lastTextScale = null;
 
     this.page = null;
     this.endOfContent = null;
@@ -449,13 +486,18 @@ export class PageView {
   // Citation Handlers
   // ============================================
 
+  #getCitationFromElement(el) {
+    const id = Number(el.dataset.citationId);
+    return this.doc.getCitationDetails(id);
+  }
+
   async #handleCitationEnter(el, citationPopup) {
     if (this.wrapper.classList.contains("text-selecting")) return;
 
     if (this._showTimer) clearTimeout(this._showTimer);
     citationPopup.onAnchorEnter();
 
-    const citation = el._citationData;
+    const citation = this.#getCitationFromElement(el);
     if (!citation) return;
 
     this._showTimer = setTimeout(async () => {
@@ -487,12 +529,10 @@ export class PageView {
   }
 
   async #handleCitationClick(el) {
-    const citation = el._citationData;
-    console.log(citation);
+    const citation = this.#getCitationFromElement(el);
     if (!citation) return;
 
     if (citation.targetLocation) {
-      console.log(citation.targetLocation);
       await this.pane.scrollToPoint(
         citation.targetLocation.pageIndex,
         citation.targetLocation.x,
@@ -503,7 +543,6 @@ export class PageView {
 
     if (citation.refIndices?.length) {
       const refAnchor = this.doc.getReferenceByIndex(citation.refIndices[0]);
-      console.log(console.log(refAnchor));
       if (refAnchor) {
         await this.pane.scrollToPoint(
           refAnchor.pageNumber - 1,

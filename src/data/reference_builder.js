@@ -157,13 +157,15 @@ function findReferenceSectionEnd(
       const line = lines[i];
       const text = line.text.trim();
 
-      if (text.length <= 3 && /^\d+/.test(text)) continue;
+      if (text.length <= 3) continue;
       const isPageBreak = lastValidLine?.pageNumber !== pageNum;
       const isHeaderFooter =
         line.y >= pageHeight * 0.95 ||
         line.y <= pageHeight * 0.05 ||
-        (isPageBreak && line.x > marginLeft + 30);
+        (isPageBreak && line.x > marginLeft + 20);
       if (isHeaderFooter) continue;
+      const isOnMargin = line.x + line.lineWidth <= marginLeft || line.x >= pageWidth - marginLeft;
+      if (isOnMargin) continue;
       const isPageNumber =
         new RegExp(`page\\s+${pageNum}`, "i").test(text) && text.length < 10;
       if (isPageNumber) continue;
@@ -215,7 +217,7 @@ function collectSectionLines(pageData, start, end) {
     if (pageNum < start.pageNumber || pageNum > end.pageNumber) continue;
 
     const data = pageData.get(pageNum);
-    const { lines: pageLines, pageWidth, pageHeight } = data;
+    const { lines: pageLines, pageWidth, pageHeight, marginBottom, marginLeft } = data;
 
     let startIdx = 0;
     let endIdx = pageLines.length - 1;
@@ -225,12 +227,16 @@ function collectSectionLines(pageData, start, end) {
 
     for (let i = startIdx; i <= endIdx && i < pageLines.length; i++) {
       if (
-        pageLines[i].y >= pageHeight * 0.92 ||
+        pageLines[i].y >= pageHeight * 0.95 ||
         pageLines[i].y <= pageHeight * 0.05
       )
         continue;
-      if (pageLines[i].width / 2 + pageLines[i].x)
-        if (pageLines[i].text.length < 3) continue;
+      if (pageLines[i].text.length <= 3) continue;
+      if (pageLines[i].x + pageLines[i].lineWidth <= marginLeft || pageLines[i].x >= pageWidth - marginLeft) continue;
+      if (pageLines[i].x >= marginLeft + 20 && pageLines[i].x + pageLines[i].lineWidth <= pageWidth - marginLeft - 20) continue;
+      const isPageNumber =
+        new RegExp(`page\\s+${pageNum}`, "i").test(pageLines[i].text) && pageLines[i].text.length < 10;
+      if (isPageNumber) continue;
       lines.push({
         ...pageLines[i],
         pageNumber: pageNum,

@@ -59,32 +59,35 @@ export class CitationBuilder {
       referenceIndex?.sectionStart?.pageNumber || Infinity;
   }
 
-  /**
-   * Build merged citations from extracted and native sources
-   *
-   * @param {Array} extractedCitations - Raw citations from InlineExtractor
-   * @returns {Map<number, Citation[]>} Citations organized by page number
-   */
   build(extractedCitations) {
     console.log("[CitationBuilder] Starting citation merge...");
-
-    // Phase 1: Index native citation links
     const nativeIndex = this.#indexNativeCitationLinks();
     console.log(`[CitationBuilder] Indexed ${nativeIndex.size} native links`);
-
-    // Phase 2: Build merged citation map by position
     const mergedMap = this.#mergeCitations(extractedCitations, nativeIndex);
     console.log(`[CitationBuilder] Merged into ${mergedMap.size} citations`);
 
-    // Phase 3: Organize by page for lazy rendering
-    const byPage = this.#organizeByPage(mergedMap);
+    const byPage = new Map();
+    const details = new Map();
+    let nextId = 0;
 
-    // Phase 4: Filter by confidence
-    for (const [pageNum, citations] of byPage) {
-      byPage.set(
-        pageNum,
-        citations.filter((c) => c.confidence >= 0.3),
-      );
+    for (const [key, citation] of mergedMap) {
+      if (citation.confidence < 0.3) continue;
+
+      const citationId = nextId++;
+      details.set(citationId, citation);
+
+      const ref = {
+        citationId,
+        rects: citation.rects,
+        flags: citation.flags,
+      };
+
+      const arr = byPage.get(citation.pageNumber);
+      if (arr) {
+        arr.push(ref);
+      } else {
+        byPage.set(citation.pageNumber, [ref]);
+      }
     }
 
     const totalCount = Array.from(byPage.values()).reduce(
@@ -93,7 +96,7 @@ export class CitationBuilder {
     );
     console.log(`[CitationBuilder] Final: ${totalCount} citations`);
 
-    return byPage;
+    return { byPage, details };
   }
 
   /**
@@ -287,8 +290,6 @@ export class CitationBuilder {
       // Check if any extracted citation overlaps with this native link
       for (const [citKey, citation] of merged) {
         if (citation.pageNumber !== nativeLink.pageNumber) continue;
-        if (nativeLink.pageNumber === 2 && nativeLink.destPageIndex === 11)
-          console.log(nativeLink);
 
         if (this.#rectsOverlap(citation.rects, nativeLink.rect)) {
           foundOverlap = true;
@@ -319,22 +320,24 @@ export class CitationBuilder {
                 };
               }
             } else {
-              // Different reference - use native
-              const targetLocation = {
-                pageIndex: nativeLink.destPageIndex,
-                x: nativeLink.destX,
-                y: nativeLink.destY,
-              };
-              citation.targetLocation = targetLocation;
-              citation.refIndices = [nativeLink.matchedRefIndex];
-              citation.refKeys = null;
-              citation.allTargets = [
-                {
-                  refIndex: nativeLink.matchedRefIndex,
-                  refKey: null,
-                  location: targetLocation,
-                },
-              ];
+              if (citation.type !== "numeric") {
+                // Different reference - use native
+                const targetLocation = {
+                  pageIndex: nativeLink.destPageIndex,
+                  x: nativeLink.destX,
+                  y: nativeLink.destY,
+                };
+                citation.targetLocation = targetLocation;
+                citation.refIndices = [nativeLink.matchedRefIndex];
+                citation.refKeys = null;
+                citation.allTargets = [
+                  {
+                    refIndex: nativeLink.matchedRefIndex,
+                    refKey: null,
+                    location: targetLocation,
+                  },
+                ];
+              }
               citation.flags |= CitationFlags.NATIVE_CONFIRMED;
             }
           } else {
@@ -390,7 +393,7 @@ export class CitationBuilder {
    * Check if citation rects overlap with a native link rect
    */
   #rectsOverlap(citRects, nativeRect) {
-    const tolerance = -5;
+    const tolerance = 0;
 
     for (const rect of citRects) {
       const overlapX =

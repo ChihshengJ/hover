@@ -1,9 +1,4 @@
 /**
- * PDFDocumentModel - Refactored for @embedpdf/engines (PDFium)
- *
- * Annotation system fully integrated with embedPDF's engine APIs.
- * Changes are applied to the engine immediately and saveAsCopy() persists them.
- *
  * @typedef {import('@embedpdf/engines/pdfium').PdfEngine} PdfEngine
  * @typedef {import('@embedpdf/engines/pdfium').PdfiumNative} PdfiumNative
  * @typedef {import('@embedpdf/engines').PdfDocumentObject} PdfDocumentObject
@@ -150,7 +145,8 @@ export class PDFDocumentModel {
      */
     this.annotationsByPage = new Map();
 
-    this.citationsByPage = new Map(); // Map<pageNum, Citation[]>
+    this.citationsByPage = new Map(); // Map<pageNum, CitationRef[]>
+    this.citationDetails = new Map(); //Map<citationId, Citation>
     this.crossRefsByPage = new Map(); // Map<pageNum, CrossReference[]>
     this.crossRefTargets = new Map(); // Map<string, CrossRefTarget>
     this.urlsByPage = new Map(); // Map<pageNum, UrlLink[]>
@@ -173,9 +169,6 @@ export class PDFDocumentModel {
     this.nativeAnnotationsByPage = new Map();
 
     this.anchors = null;
-
-    /** @type {Map<number, Array>} - Citation anchors by page for fast lookup */
-    this.citationsByPage = null;
 
     /** @type {Array<{id: string, title: string, pageIndex: number, left: number, top: number, children: Array}>} */
     this.outline = [];
@@ -649,12 +642,15 @@ export class PDFDocumentModel {
 
     // Build merged citations
     const citationBuilder = createCitationBuilder(this);
-    this.citationsByPage = citationBuilder.build(citations);
+    const { byPage: byPageCitations, details } = citationBuilder.build(citations);
+    this.citationsByPage = byPageCitations;
+    this.citationDetails = details;
 
     // Build merged cross-references
     const crossRefBuilder = createCrossReferenceBuilder(this);
-    const { byPage, targets } = crossRefBuilder.build(crossRefs);
-    this.crossRefsByPage = byPage;
+    const { byPage: byPageCrossRefs, targets } =
+      crossRefBuilder.build(crossRefs);
+    this.crossRefsByPage = byPageCrossRefs;
     this.crossRefTargets = targets;
 
     // Extract URLs from native annotations
@@ -1251,6 +1247,10 @@ export class PDFDocumentModel {
     };
   }
 
+  getCitationDetails(citationId) {
+    return this.citationDetails?.get(citationId) || null;
+  }
+
   // ============================================================================
   // Cleanup
   // ============================================================================
@@ -1277,6 +1277,8 @@ export class PDFDocumentModel {
     this.#linkedComments.clear();
     this.citationsByPage?.clear();
     this.citationsByPage = null;
+    this.citationDetails?.clear();
+    this.citationDetails = null;
     this.anchors = null;
     this.textIndex?.destroy();
     this.textIndex = null;

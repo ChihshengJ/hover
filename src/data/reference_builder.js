@@ -151,6 +151,7 @@ function findReferenceSectionEnd(
 
     const { lines, pageWidth, pageHeight, marginLeft, marginBottom } =
       pageData.get(pageNum);
+    // console.log(pageNum, pageWidth, pageHeight, marginBottom, marginLeft);
     const startIdx = pageNum === start.pageNumber ? start.lineIndex + 1 : 0;
 
     for (let i = startIdx; i < lines.length; i++) {
@@ -164,7 +165,9 @@ function findReferenceSectionEnd(
         line.y <= pageHeight * 0.05 ||
         (isPageBreak && line.x > marginLeft + 20);
       if (isHeaderFooter) continue;
-      const isOnMargin = line.x + line.lineWidth <= marginLeft || line.x >= pageWidth - marginLeft;
+      const isOnMargin =
+        line.x + line.lineWidth <= marginLeft ||
+        line.x >= pageWidth - marginLeft;
       if (isOnMargin) continue;
       const isPageNumber =
         new RegExp(`page\\s+${pageNum}`, "i").test(text) && text.length < 10;
@@ -217,7 +220,13 @@ function collectSectionLines(pageData, start, end) {
     if (pageNum < start.pageNumber || pageNum > end.pageNumber) continue;
 
     const data = pageData.get(pageNum);
-    const { lines: pageLines, pageWidth, pageHeight, marginBottom, marginLeft } = data;
+    const {
+      lines: pageLines,
+      pageWidth,
+      pageHeight,
+      marginBottom,
+      marginLeft,
+    } = data;
 
     let startIdx = 0;
     let endIdx = pageLines.length - 1;
@@ -226,16 +235,25 @@ function collectSectionLines(pageData, start, end) {
     if (pageNum === end.pageNumber) endIdx = end.lineIndex;
 
     for (let i = startIdx; i <= endIdx && i < pageLines.length; i++) {
+      const isHeaderFooter =
+        pageLines[i].y >= pageHeight * 0.92 ||
+        pageLines[i].y <= pageHeight * 0.08;
+      if (isHeaderFooter) continue;
+      if (pageLines[i].text.length <= 3) continue;
       if (
-        pageLines[i].y >= pageHeight * 0.95 ||
-        pageLines[i].y <= pageHeight * 0.05
+        pageLines[i].x + pageLines[i].lineWidth <= marginLeft ||
+        pageLines[i].x >= pageWidth - marginLeft
       )
         continue;
-      if (pageLines[i].text.length <= 3) continue;
-      if (pageLines[i].x + pageLines[i].lineWidth <= marginLeft || pageLines[i].x >= pageWidth - marginLeft) continue;
-      if (pageLines[i].x >= marginLeft + 20 && pageLines[i].x + pageLines[i].lineWidth <= pageWidth - marginLeft - 20) continue;
+      if (
+        isHeaderFooter &&
+        pageLines[i].x >= marginLeft + 20 &&
+        pageLines[i].x + pageLines[i].lineWidth <= pageWidth - marginLeft - 20
+      )
+        continue;
       const isPageNumber =
-        new RegExp(`page\\s+${pageNum}`, "i").test(pageLines[i].text) && pageLines[i].text.length < 10;
+        new RegExp(`page\\s+${pageNum}`, "i").test(pageLines[i].text) &&
+        pageLines[i].text.length < 10;
       if (isPageNumber) continue;
       lines.push({
         ...pageLines[i],
@@ -447,7 +465,7 @@ function detectBoundary(
   if (isLargeGap) {
     isNewReference = true;
   } else if (isBoundaryJump) {
-    if (isAfterShortLine || Math.floor(line.x) < Math.floor(nextLineX)) {
+    if (isAfterShortLine || Math.floor(nextLineX) - Math.floor(line.x) > 2) {
       isNewReference = true;
     }
   } else if (isAtFirstX && wasIndented) {

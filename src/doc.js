@@ -792,7 +792,7 @@ export class PDFDocumentModel {
     const firstRect = firstPageRange.rects[0];
     const highlightRight =
       (firstRect.leftRatio + firstRect.widthRatio) * pageWidth;
-    const highlightTop = (1 - firstRect.topRatio) * pageHeight;
+    const highlightTop = firstRect.topRatio * pageHeight;
 
     // Comment note icon size and position
     const noteSize = 20;

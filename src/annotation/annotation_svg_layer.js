@@ -159,7 +159,7 @@ export class AnnotationSVGLayer {
     } else {
       const underlineHeight = 2;
       element.setAttribute("x", rect.x);
-      element.setAttribute("y", rect.y + rect.height - underlineHeight);
+      element.setAttribute("y", rect.y + rect.height + underlineHeight);
       element.setAttribute("width", rect.width);
       element.setAttribute("height", underlineHeight);
       element.setAttribute("rx", 1);

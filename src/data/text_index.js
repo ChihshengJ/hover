@@ -223,7 +223,6 @@ export class DocumentTextIndex {
 
     for (let i = 1; i < items.length; i++) {
       const item = items[i];
-      if (item.str.startsWith("arXiv:")) continue;
       const threshold = Math.max(5, currentLine[0].height);
 
       if (Math.abs(item.y - currentY) <= threshold) {
@@ -328,8 +327,9 @@ export class DocumentTextIndex {
 
     const quantize = (v) => Math.round(v * 2) / 2;
     const xCounts = new Map();
+    const filteredLines = lines.filter((l) => l.text.length > 10).slice(0, 10);
 
-    for (const line of lines.slice(0, 10)) {
+    for (const line of filteredLines) {
       if (line.text.length < 10) continue;
       if (line.lineWidth > pageWidth * 0.9) continue;
 

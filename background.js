@@ -2,14 +2,137 @@
 // Hover PDF Viewer - Background Script
 // ============================================
 //
-// Content-type based PDF interception:
-// - Content script detects when Chrome displays a PDF natively
-// - Content script fetches PDF with credentials (same-origin)
-// - Background receives PDF data and opens in Hover viewer
+// Handles PDF interception via two mechanisms:
+// 1. Port-based transfer: content script fetches PDF with credentials
+//    on the original origin and streams raw bytes (no base64) via a
+//    chrome.runtime.connect() port.
+// 2. Pre-warm: webRequest.onHeadersReceived detects PDF responses and
+//    pre-fetches the WASM module so it's cached when the viewer opens.
 
 // Temporary storage for intercepted PDF data
 let pendingPdfData = null;
 let localPdfData = null;
+
+// ============================================
+// Port-based PDF Transfer (Phase 2)
+// ============================================
+
+chrome.runtime.onConnect.addListener((port) => {
+  if (port.name !== "pdf-transfer") return;
+
+  let meta = null;
+  const chunks = [];
+  let receivedBytes = 0;
+
+  port.onMessage.addListener((msg) => {
+    if (msg.type === "meta") {
+      meta = msg;
+      console.log(
+        `[Hover BG] PDF transfer started: ${meta.filename} (${formatBytes(meta.size)})`,
+      );
+    } else if (msg.type === "chunk") {
+      // msg.data is a Uint8Array (structured cloning in MV3)
+      const chunk = new Uint8Array(msg.data);
+      chunks.push(chunk);
+      receivedBytes += chunk.length;
+    } else if (msg.type === "done") {
+      if (!meta) {
+        console.error("[Hover BG] Received 'done' without metadata");
+        return;
+      }
+
+      console.log(
+        `[Hover BG] Transfer complete: ${receivedBytes} bytes in ${chunks.length} chunks`,
+      );
+
+      // Reassemble chunks into a single Uint8Array
+      const assembled = new Uint8Array(meta.size);
+      let offset = 0;
+      for (const chunk of chunks) {
+        assembled.set(chunk, offset);
+        offset += chunk.length;
+      }
+
+      // Store for viewer retrieval — raw bytes, no base64
+      pendingPdfData = {
+        data: assembled,
+        url: meta.url,
+        name: meta.filename,
+      };
+
+      // Redirect the sender tab to the viewer
+      const viewerUrl =
+        chrome.runtime.getURL("index.html") + "?source=intercepted";
+
+      if (port.sender?.tab?.id) {
+        chrome.tabs
+          .update(port.sender.tab.id, { url: viewerUrl })
+          .then(() => {
+            // Confirm redirect to content script (it may already be navigating away)
+            try {
+              port.postMessage({ type: "redirect" });
+            } catch {
+              // Port may have disconnected — that's fine
+            }
+          })
+          .catch((err) => {
+            console.error("[Hover BG] Failed to redirect tab:", err);
+          });
+      }
+    }
+  });
+
+  port.onDisconnect.addListener(() => {
+    // Normal — tab navigated to viewer, port disconnects
+    // If we never got 'done', something went wrong
+    if (meta && receivedBytes < meta.size) {
+      console.warn(
+        `[Hover BG] Port disconnected before transfer complete (${receivedBytes}/${meta.size} bytes)`,
+      );
+    }
+  });
+});
+
+// ============================================
+// Pre-warm: Cache WASM on PDF Detection (Phase 3)
+// ============================================
+
+// When we see a PDF response header on a main_frame navigation,
+// pre-fetch the WASM binary so it's in the HTTP cache when the
+// viewer loads. This runs in parallel with the content script's
+// fetch, shaving ~200-500ms off WASM init.
+
+try {
+  chrome.webRequest.onHeadersReceived.addListener(
+    (details) => {
+      if (details.type !== "main_frame") return;
+
+      const contentTypeHeader = details.responseHeaders?.find(
+        (h) => h.name.toLowerCase() === "content-type",
+      );
+      const contentType = contentTypeHeader?.value || "";
+
+      if (
+        contentType.includes("application/pdf") ||
+        contentType.includes("application/x-pdf")
+      ) {
+        console.log("[Hover BG] PDF response detected, pre-warming WASM cache");
+
+        // Fire-and-forget: pre-fetch WASM binary into HTTP cache.
+        // The viewer will hit the cache when it loads.
+        fetch(chrome.runtime.getURL("pdfium.wasm")).catch(() => {
+          // Ignore errors — this is just an optimization
+        });
+      }
+    },
+    { urls: ["<all_urls>"], types: ["main_frame"] },
+    ["responseHeaders"],
+  );
+} catch (error) {
+  // webRequest may not be available if permissions aren't granted yet.
+  // The extension still works — just without pre-warming.
+  console.warn("[Hover BG] webRequest listener not available:", error.message);
+}
 
 // ============================================
 // Message Handlers
@@ -23,7 +146,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true;
   }
 
-  // Content script detected a PDF page
+  // Legacy: Content script detected a PDF page (kept for backward compat)
   if (message.type === "PDF_PAGE_DETECTED") {
     handlePdfPageDetected(message, sender)
       .then((result) => sendResponse(result))
@@ -31,7 +154,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true;
   }
 
-  // Content script sending PDF data after fetching with credentials
+  // Legacy: Content script sending base64 PDF data (kept for backward compat)
   if (message.type === "PDF_DATA_READY") {
     handlePdfDataReady(message, sender)
       .then((result) => sendResponse(result))
@@ -95,7 +218,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 });
 
 // ============================================
-// PDF Page Detection Handlers
+// PDF Page Detection Handlers (Legacy)
 // ============================================
 
 async function handlePdfPageDetected(message, sender) {
@@ -106,21 +229,32 @@ async function handlePdfPageDetected(message, sender) {
     return { action: "none", reason: "disabled" };
   }
 
-  // Tell content script to fetch the PDF with credentials and send it back
   return { action: "fetch_and_send" };
 }
 
 async function handlePdfDataReady(message, sender) {
   const { url, data, filename } = message;
 
-  // Store the PDF data temporarily
+  // Legacy path: base64 data from old content script.
+  // Convert to Uint8Array for consistency with new path.
+  let pdfBytes;
+  if (typeof data === "string") {
+    // base64 encoded
+    const binary = atob(data);
+    pdfBytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) {
+      pdfBytes[i] = binary.charCodeAt(i);
+    }
+  } else {
+    pdfBytes = new Uint8Array(data);
+  }
+
   pendingPdfData = {
-    data: data, // Base64 encoded
+    data: pdfBytes,
     url: url,
     name: filename || extractFilename(url),
   };
 
-  // Open the viewer in the same tab
   const viewerUrl = chrome.runtime.getURL("index.html") + "?source=intercepted";
 
   await chrome.tabs.update(sender.tab.id, { url: viewerUrl });
@@ -241,4 +375,14 @@ async function fetchWebsite(query) {
 
   const html = await response.text();
   return { html, query };
+}
+
+// ============================================
+// Utilities
+// ============================================
+
+function formatBytes(bytes) {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }

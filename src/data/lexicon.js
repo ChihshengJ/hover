@@ -545,7 +545,8 @@ export const INLINE_CITATION_PATTERNS = {
    * Examples: "1", "1,2,3", "1-3", "1,2-5,7", "1–3"
    * Applied AFTER stripping trailing punctuation/whitespace from slice content.
    */
-  superscriptCitation: /^\d+(?:\s*[-\u2013\u2014]\s*\d+)?(?:\s*,\s*\d+(?:\s*[-\u2013\u2014]\s*\d+)?)*$/,
+  superscriptCitation:
+    /^\d+(?:\s*[-\u2013\u2014]\s*\d+)?(?:\s*,\s*\d+(?:\s*[-\u2013\u2014]\s*\d+)?)*$/,
 };
 
 // ============================================
@@ -591,21 +592,6 @@ export const AUTHOR_YEAR_BLOCKS = {
  */
 export const AUTHOR_YEAR_PATTERNS = {
   /**
-   * Single author with year(s) OUTSIDE parentheses, year(s) IN parentheses
-   * Examples: Smith (2020), Smith et al. (2020), Müller (2019, 2020)
-   */
-  authorThenYear: {
-    pattern: new RegExp(
-      `(${AUTHOR_YEAR_BLOCKS.authorSurname}${AUTHOR_YEAR_BLOCKS.etAl}?)` +
-      `,?\\s*\\((${AUTHOR_YEAR_BLOCKS.multipleYears})\\)`,
-      "gu",
-    ),
-    extractAuthor: (match) => match[1].replace(/\s+et\s+al\.?/i, "").trim(),
-    extractYears: (match) => parseYearsFromString(match[2]),
-    isTwoAuthor: false,
-  },
-
-  /**
    * Two authors with year(s) OUTSIDE parentheses
    * Examples: Garza and Williamson (2001), Smith & Jones (2020, 2021)
    */
@@ -621,22 +607,6 @@ export const AUTHOR_YEAR_PATTERNS = {
     extractSecondAuthor: (match) => match[2].trim(),
     extractYears: (match) => parseYearsFromString(match[3]),
     isTwoAuthor: true,
-  },
-
-  /**
-   * Single citation inside parentheses: (Author, Year) or (Author et al., Year)
-   * Examples: (Smith, 2020), (Smith et al., 2020), (Müller, 2019, 2020)
-   */
-  parenAuthorYear: {
-    pattern: new RegExp(
-      `\\((?:${AUTHOR_YEAR_BLOCKS.prefixPhrases})?` +
-      `(${AUTHOR_YEAR_BLOCKS.authorSurname}${AUTHOR_YEAR_BLOCKS.etAl}?)` +
-      `\\s*,?\\s*(${AUTHOR_YEAR_BLOCKS.multipleYears})\\)`,
-      "gu",
-    ),
-    extractAuthor: (match) => match[1].replace(/\s+et\s+al\.?/i, "").trim(),
-    extractYears: (match) => parseYearsFromString(match[2]),
-    isTwoAuthor: false,
   },
 
   /**
@@ -656,6 +626,37 @@ export const AUTHOR_YEAR_PATTERNS = {
     extractSecondAuthor: (match) => match[2].trim(),
     extractYears: (match) => parseYearsFromString(match[3]),
     isTwoAuthor: true,
+  },
+
+  /**
+   * Single author with year(s) OUTSIDE parentheses, year(s) IN parentheses
+   * Examples: Smith (2020), Smith et al. (2020), Müller (2019, 2020)
+   */
+  authorThenYear: {
+    pattern: new RegExp(
+      `(${AUTHOR_YEAR_BLOCKS.authorSurname}${AUTHOR_YEAR_BLOCKS.etAl}?)` +
+      `,?\\s*\\((${AUTHOR_YEAR_BLOCKS.multipleYears})\\)`,
+      "gu",
+    ),
+    extractAuthor: (match) => match[1].replace(/\s+et\s+al\.?/i, "").trim(),
+    extractYears: (match) => parseYearsFromString(match[2]),
+    isTwoAuthor: false,
+  },
+
+  /**
+   * Single citation inside parentheses: (Author, Year) or (Author et al., Year)
+   * Examples: (Smith, 2020), (Smith et al., 2020), (Müller, 2019, 2020)
+   */
+  parenAuthorYear: {
+    pattern: new RegExp(
+      `\\((?:${AUTHOR_YEAR_BLOCKS.prefixPhrases})?` +
+      `(${AUTHOR_YEAR_BLOCKS.authorSurname}${AUTHOR_YEAR_BLOCKS.etAl}?)` +
+      `\\s*,?\\s*(${AUTHOR_YEAR_BLOCKS.multipleYears})\\)`,
+      "gu",
+    ),
+    extractAuthor: (match) => match[1].replace(/\s+et\s+al\.?/i, "").trim(),
+    extractYears: (match) => parseYearsFromString(match[2]),
+    isTwoAuthor: false,
   },
 };
 

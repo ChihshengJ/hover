@@ -656,6 +656,8 @@ export class InlineExtractor {
       const parsed = parseCitationChunk(chunk.text);
       if (!parsed) continue;
 
+      if (pageNumber === 15) console.log(parsed);
+
       // Validate each year against signatures
       const validRefIndices = [];
       const validRefKeys = [];
@@ -755,6 +757,7 @@ export class InlineExtractor {
         const validRefKeys = [];
         let totalConfidence = 0;
 
+
         for (const yearInfo of years) {
           const matchResult = this.#matchAuthorYearToSignature(
             author,
@@ -781,6 +784,7 @@ export class InlineExtractor {
           startIndex,
           match[0].length,
         );
+
 
         if (rects.length === 0) continue;
 
@@ -845,25 +849,18 @@ export class InlineExtractor {
     const yearMatches = this.#signatures.filter((a) => a.year === yearToMatch);
     if (yearMatches.length === 0) return null;
 
-    // Find anchor where author appears in authorSearchText
     for (const anchor of yearMatches) {
       if (!anchor.authorSearchText) continue;
-
       const hasFirstAuthor = anchor.authorSearchText.includes(authorClean);
       if (!hasFirstAuthor) continue;
-
-      // For two-author citations, check second author too
       if (secondAuthor) {
         const secondClean = secondAuthor.trim().toLowerCase();
         const hasSecondAuthor = anchor.authorSearchText.includes(secondClean);
-
         if (hasSecondAuthor) {
           return { index: anchor.index, confidence: 1.0 };
         }
-        // First author matched but second didn't - lower confidence
         return { index: anchor.index, confidence: 0.7 };
       }
-
       return { index: anchor.index, confidence: 1.0 };
     }
 

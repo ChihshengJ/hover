@@ -140,7 +140,7 @@ export class PageView {
       const cssWidth = parseFloat(this.canvas.style.width);
       const cssHeight = parseFloat(this.canvas.style.height);
       const textScale = cssWidth / pageWidth;
-      
+
       this.annotationLayer.innerHTML = "";
       this.#renderUrlLinks(page, textScale, cssWidth, cssHeight);
       this.#renderCitationOverlays(page, textScale, cssWidth, cssHeight);
@@ -260,7 +260,14 @@ export class PageView {
         span.style.transform = `scaleX(${computedScaleX.toFixed(4)})`;
       }
 
-      cached.push({ span, pdfX, pdfY, pdfH, fontFamily, scaleX: computedScaleX });
+      cached.push({
+        span,
+        pdfX,
+        pdfY,
+        pdfH,
+        fontFamily,
+        scaleX: computedScaleX,
+      });
     }
 
     this._cachedSpans = cached;
@@ -499,22 +506,15 @@ export class PageView {
 
     const citation = this.#getCitationFromElement(el);
     if (!citation) return;
+    // console.log(citation);
 
     this._showTimer = setTimeout(async () => {
       const findTextForTarget = async (target) => {
-        if (target?.location) {
-          const { x, pageIndex, y } = target.location;
-          const text = await this.#findCiteText(x, pageIndex, y);
-          if (text) return text;
-        }
-
-        // Fallback: try to find reference by index
         if (target?.refIndex != null) {
           const refAnchor = this.doc.getReferenceByIndex(target.refIndex);
           if (refAnchor?.cachedText) return refAnchor.cachedText;
         }
 
-        // Fallback: try to match by author-year key
         if (target?.refKey) {
           const matched = this.doc.matchCitationToReference(
             target.refKey.author,

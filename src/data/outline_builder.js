@@ -655,7 +655,9 @@ function detectTitle(allLines, bodyFontSize) {
 
   const pageHeight = page1Lines[0]?.pageHeight || 792;
   const topThreshold = pageHeight * 0.4;
-  const titleCandidates = page1Lines.filter((line) => line.y > topThreshold);
+  const titleCandidates = page1Lines.filter(
+    (line) => line.originalY < topThreshold,
+  );
   if (titleCandidates.length === 0) return null;
 
   const largeFontThreshold = bodyFontSize * 1.2;
@@ -674,17 +676,17 @@ function detectTitle(allLines, bodyFontSize) {
   }
 
   largeFontLines.sort((a, b) => {
-    const posDiff = a.y - b.y;
+    const posDiff = a.originalY - b.originalY;
     if (Math.abs(posDiff) > 5) return posDiff;
     return (b.fontSize || 0) - (a.fontSize || 0);
   });
 
-  const maxFontSize = Math.max(...largeFontLines.map((l) => l.fontSize || 0));
+  const maxFontSize = Math.max(...largeFontLines.map((l) => l.lineHeight || 0));
   const titleLines = [];
   let foundTitleBlock = false;
 
   for (const line of largeFontLines) {
-    const isMaxFont = Math.abs(line.fontSize - maxFontSize) < 0.5;
+    const isMaxFont = Math.abs(line.lineHeight - maxFontSize) < 0.5;
     if (isMaxFont) {
       if (/^\d+\.?\s*$/.test(line.text.trim())) continue;
       const lowerText = line.text.toLowerCase().trim();

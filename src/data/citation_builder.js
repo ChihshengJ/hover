@@ -43,6 +43,7 @@ export class CitationBuilder {
 
   // Reference section bounds
   #refSectionStartPage = Infinity;
+  #refSectionEndPage = -1;
 
   /**
    * @param {Object} referenceIndex - Reference index from buildReferenceIndex
@@ -57,6 +58,7 @@ export class CitationBuilder {
     this.#signatures = referenceIndex?.anchors || [];
     this.#refSectionStartPage =
       referenceIndex?.sectionStart?.pageNumber || Infinity;
+    this.#refSectionEndPage = referenceIndex?.sectionEnd?.pageNumber || -1;
   }
 
   build(extractedCitations) {
@@ -110,7 +112,11 @@ export class CitationBuilder {
 
     for (const [pageNum, annotations] of this.#nativeAnnotationsByPage) {
       // Skip pages in reference section
-      if (pageNum >= this.#refSectionStartPage) continue;
+      if (
+        pageNum > this.#refSectionStartPage &&
+        pageNum <= this.#refSectionEndPage
+      )
+        continue;
       const { height: pageHeight } = this.#textIndex.getPageDimensions(pageNum);
 
       for (const annot of annotations) {
@@ -177,6 +183,7 @@ export class CitationBuilder {
 
     for (const anchor of this.#signatures) {
       if (anchor.pageNumber !== pageNumber) continue;
+      if (anchor.startCoord.y > y) continue;
 
       const dist =
         Math.abs(anchor.startCoord.y - y) + Math.abs(anchor.startCoord.x - x);
@@ -287,7 +294,6 @@ export class CitationBuilder {
     for (const [nativeKey, nativeLink] of nativeIndex) {
       let foundOverlap = false;
 
-      // Check if any extracted citation overlaps with this native link
       for (const [citKey, citation] of merged) {
         if (citation.pageNumber !== nativeLink.pageNumber) continue;
 
@@ -320,8 +326,8 @@ export class CitationBuilder {
                 };
               }
             } else {
+              // Different reference - use native for author-year
               if (citation.type !== "numeric") {
-                // Different reference - use native
                 const targetLocation = {
                   pageIndex: nativeLink.destPageIndex,
                   x: nativeLink.destX,
@@ -341,10 +347,8 @@ export class CitationBuilder {
               citation.flags |= CitationFlags.NATIVE_CONFIRMED;
             }
           } else {
-            if (nativeLink.pageNumber === 2 && nativeLink.destPageIndex === 11)
-              // Native link exists but has invalid destination
-              // Just confirm existence
-              citation.flags |= CitationFlags.NATIVE_CONFIRMED;
+            // Native link exists but has invalid destination
+            citation.flags |= CitationFlags.NATIVE_CONFIRMED;
           }
           break;
         }

@@ -2,130 +2,248 @@
 // Hover PDF Viewer - Content Script
 // ============================================
 //
-// Detects when Chrome displays a PDF natively (via content-type),
-// fetches the PDF with credentials, and sends to background script
-// to open in Hover viewer.
+// Runs at document_start to intercept Chrome's native PDF viewer
+// BEFORE it renders. Hides the native viewer, shows a branded
+// loading overlay, fetches the PDF with full credentials on the
+// original origin, and sends base64-encoded data to background
+// via the proven sendMessage path.
+//
+// Manifest requirement: "run_at": "document_start"
 
-(async function() {
+(function () {
   // Only run in main frame
   if (window !== window.top) return;
 
-  // Check if this is a PDF displayed by Chrome's native viewer
-  // Chrome sets document.contentType to 'application/pdf' for PDF files
-  // Also check for the embed element Chrome uses
-  const isPdfPage =
-    document.contentType === "application/pdf" ||
-    document.body?.querySelector('embed[type="application/pdf"]') !== null;
-
-  if (!isPdfPage) {
-    return;
-  }
-
-  console.log("[Hover] PDF page detected:", window.location.href);
+  // document.contentType is available at document_start,
+  // set from the response headers before any DOM rendering
+  const isPdf = document.contentType === "application/pdf";
+  if (!isPdf) return;
 
   // Don't intercept if we're already in the Hover viewer
-  if (window.location.href.includes(chrome.runtime.id)) {
-    return;
+  if (window.location.href.includes(chrome.runtime.id)) return;
+
+  console.log("[Hover] PDF detected at document_start:", window.location.href);
+
+  // ===========================================================
+  // Phase 1: Immediately hide native viewer, show loading overlay
+  // ===========================================================
+
+  const hideStyle = document.createElement("style");
+  hideStyle.textContent = `
+    body, embed[type="application/pdf"] {
+      display: none !important;
+      visibility: hidden !important;
+    }
+    #hover-loading-overlay {
+      position: fixed;
+      top: 0; left: 0;
+      width: 100vw; height: 100vh;
+      background: #1C1C1E;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      z-index: 2147483647;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      color: #E5E5EA;
+      margin: 0;
+      padding: 0;
+      overflow: hidden;
+    }
+    #hover-loading-overlay .hover-spinner {
+      width: 32px;
+      height: 32px;
+      border: 3px solid rgba(255, 255, 255, 0.12);
+      border-top-color: #A0A0B0;
+      border-radius: 50%;
+      animation: hover-spin 0.8s linear infinite;
+      margin-bottom: 20px;
+    }
+    #hover-loading-overlay .hover-title {
+      font-size: 15px;
+      font-weight: 500;
+      color: #E5E5EA;
+      margin-bottom: 6px;
+      letter-spacing: 0.01em;
+    }
+    #hover-loading-overlay .hover-status {
+      font-size: 13px;
+      color: #8E8E93;
+      transition: opacity 0.2s ease;
+    }
+    #hover-loading-overlay .hover-progress-track {
+      width: 200px;
+      height: 3px;
+      background: rgba(255, 255, 255, 0.08);
+      border-radius: 2px;
+      margin-top: 16px;
+      overflow: hidden;
+    }
+    #hover-loading-overlay .hover-progress-bar {
+      height: 100%;
+      width: 0%;
+      background: #A0A0B0;
+      border-radius: 2px;
+      transition: width 0.3s ease;
+    }
+    @keyframes hover-spin {
+      to { transform: rotate(360deg); }
+    }
+  `;
+  document.documentElement.appendChild(hideStyle);
+
+  const overlay = document.createElement("div");
+  overlay.id = "hover-loading-overlay";
+  overlay.innerHTML = `
+    <div class="hover-spinner"></div>
+    <div class="hover-title">Hover</div>
+    <div class="hover-status" id="hover-status-text">Preparing document…</div>
+    <div class="hover-progress-track">
+      <div class="hover-progress-bar" id="hover-progress-bar"></div>
+    </div>
+  `;
+  document.documentElement.appendChild(overlay);
+
+  function updateStatus(text, progress) {
+    const statusEl = document.getElementById("hover-status-text");
+    const progressBar = document.getElementById("hover-progress-bar");
+    if (statusEl) statusEl.textContent = text;
+    if (progressBar && progress !== undefined) {
+      progressBar.style.width = `${Math.min(100, Math.round(progress))}%`;
+    }
   }
 
-  try {
-    // Check if Hover is enabled
-    const statusResponse = await chrome.runtime.sendMessage({
-      type: "GET_HOVER_STATUS",
-    });
-    if (!statusResponse?.enabled) {
-      console.log("[Hover] Extension disabled, not intercepting");
-      return;
-    }
+  // ===========================================================
+  // Phase 2: Check status, fetch PDF, send via sendMessage
+  // ===========================================================
 
-    // Ask background if we should intercept
-    const detectResponse = await chrome.runtime.sendMessage({
-      type: "PDF_PAGE_DETECTED",
-      url: window.location.href,
-    });
+  (async function intercept() {
+    try {
+      // Check if Hover is enabled
+      const statusResponse = await chrome.runtime.sendMessage({
+        type: "GET_HOVER_STATUS",
+      });
 
-    if (detectResponse?.action !== "fetch_and_send") {
+      if (!statusResponse?.enabled) {
+        console.log("[Hover] Extension disabled, restoring native viewer");
+        restoreNativeViewer();
+        return;
+      }
+
+      // Ask background if we should intercept
+      const detectResponse = await chrome.runtime.sendMessage({
+        type: "PDF_PAGE_DETECTED",
+        url: window.location.href,
+      });
+
+      if (detectResponse?.action !== "fetch_and_send") {
+        console.log(
+          "[Hover] Background declined interception:",
+          detectResponse?.reason,
+        );
+        restoreNativeViewer();
+        return;
+      }
+
+      updateStatus("Downloading PDF…", 15);
+
+      // Fetch the PDF on the original origin with full credentials
+      const pdfResponse = await fetch(window.location.href, {
+        credentials: "include",
+        cache: "force-cache",
+      });
+
+      if (!pdfResponse.ok) {
+        console.error(
+          "[Hover] Failed to fetch PDF:",
+          pdfResponse.status,
+          pdfResponse.statusText,
+        );
+        restoreNativeViewer();
+        return;
+      }
+
+      // Verify content type
+      const contentType = pdfResponse.headers.get("content-type") || "";
+      if (
+        !contentType.includes("application/pdf") &&
+        !contentType.includes("octet-stream")
+      ) {
+        console.log(
+          "[Hover] Response is not a PDF, content-type:",
+          contentType,
+        );
+        restoreNativeViewer();
+        return;
+      }
+
+      updateStatus("Reading PDF data…", 35);
+
+      const arrayBuffer = await pdfResponse.arrayBuffer();
+
+      // Verify PDF magic bytes
+      const header = new Uint8Array(arrayBuffer.slice(0, 5));
+      const pdfMagic = String.fromCharCode(...header);
+      if (!pdfMagic.startsWith("%PDF-")) {
+        console.log("[Hover] Response does not have PDF magic bytes");
+        restoreNativeViewer();
+        return;
+      }
+
       console.log(
-        "[Hover] Background declined interception:",
-        detectResponse?.reason,
+        "[Hover] PDF fetched successfully, size:",
+        arrayBuffer.byteLength,
       );
-      return;
+
+      updateStatus("Preparing for viewer…", 55);
+
+      // Convert to base64 for message passing
+      const bytes = new Uint8Array(arrayBuffer);
+      let binary = "";
+      const chunkSize = 8192;
+      for (let i = 0; i < bytes.length; i += chunkSize) {
+        const chunk = bytes.subarray(i, Math.min(i + chunkSize, bytes.length));
+        binary += String.fromCharCode.apply(null, chunk);
+      }
+      const base64 = btoa(binary);
+
+      updateStatus("Opening viewer…", 80);
+
+      // Send to background script
+      const result = await chrome.runtime.sendMessage({
+        type: "PDF_DATA_READY",
+        url: window.location.href,
+        data: base64,
+        filename: extractFilename(window.location.href),
+      });
+
+      if (result?.success) {
+        updateStatus("Opening viewer…", 100);
+        console.log("[Hover] PDF sent to viewer successfully");
+      } else {
+        console.error("[Hover] Failed to send PDF to viewer:", result?.error);
+        restoreNativeViewer();
+      }
+    } catch (error) {
+      console.error("[Hover] Error intercepting PDF:", error);
+      restoreNativeViewer();
     }
+  })();
 
-    console.log("[Hover] Fetching PDF with credentials...");
+  // ===========================================================
+  // Helpers
+  // ===========================================================
 
-    const pdfResponse = await fetch(window.location.href, {
-      credentials: "include", // Include cookies for authenticated access
-      cache: "force-cache", // Use cached version if available
-    });
-
-    if (!pdfResponse.ok) {
-      console.error(
-        "[Hover] Failed to fetch PDF:",
-        pdfResponse.status,
-        pdfResponse.statusText,
-      );
-      return;
-    }
-
-    // Verify it's actually a PDF
-    const contentType = pdfResponse.headers.get("content-type") || "";
-    if (
-      !contentType.includes("application/pdf") &&
-      !contentType.includes("octet-stream")
-    ) {
-      console.log("[Hover] Response is not a PDF, content-type:", contentType);
-      return;
-    }
-
-    const arrayBuffer = await pdfResponse.arrayBuffer();
-
-    // Verify PDF magic bytes
-    const header = new Uint8Array(arrayBuffer.slice(0, 5));
-    const pdfMagic = String.fromCharCode(...header);
-    if (!pdfMagic.startsWith("%PDF-")) {
-      console.log("[Hover] Response does not have PDF magic bytes");
-      return;
-    }
-
-    console.log(
-      "[Hover] PDF fetched successfully, size:",
-      arrayBuffer.byteLength,
-    );
-
-    // Convert to base64 for message passing (chrome.runtime.sendMessage has size limits,
-    // but for most PDFs this should be fine. For very large PDFs, we might need chunking)
-    const bytes = new Uint8Array(arrayBuffer);
-    let binary = "";
-    const chunkSize = 8192;
-    for (let i = 0; i < bytes.length; i += chunkSize) {
-      const chunk = bytes.subarray(i, Math.min(i + chunkSize, bytes.length));
-      binary += String.fromCharCode.apply(null, chunk);
-    }
-    const base64 = btoa(binary);
-
-    // Send to background script
-    const result = await chrome.runtime.sendMessage({
-      type: "PDF_DATA_READY",
-      url: window.location.href,
-      data: base64,
-      filename: extractFilename(window.location.href),
-    });
-
-    if (result?.success) {
-      console.log("[Hover] PDF sent to viewer successfully");
-    } else {
-      console.error("[Hover] Failed to send PDF to viewer:", result?.error);
-    }
-  } catch (error) {
-    console.error("[Hover] Error intercepting PDF:", error);
+  function restoreNativeViewer() {
+    const overlayEl = document.getElementById("hover-loading-overlay");
+    if (overlayEl) overlayEl.remove();
+    if (hideStyle.parentNode) hideStyle.remove();
   }
 
   function extractFilename(url) {
     try {
       const pathname = new URL(url).pathname;
       const filename = pathname.split("/").pop() || "document.pdf";
-      // Clean up query params from filename
       const cleanName = filename.split("?")[0];
       return cleanName.endsWith(".pdf") ? cleanName : cleanName + ".pdf";
     } catch {

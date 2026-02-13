@@ -453,7 +453,7 @@ export const SECTION_NUMBER_STRIP =
  * Tested against line text after stripping section numbers
  */
 export const REFERENCE_SECTION_PATTERN =
-  /^(?:references?|bibliography|works\s+cited|citations?|literature\s+cited|cited\s+literature|参考文献|參考文獻)$/i;
+  /^(?:references?|references\+sand\+snotes\bibliography|works\s+cited|citations?|literature\s+cited|cited\s+literature|参考文献|參考文獻)$/i;
 
 /**
  * Patterns that indicate the end of references (next section)

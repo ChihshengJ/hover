@@ -93,6 +93,7 @@ function findReferenceSection(textIndex) {
         .replace(/\s+/g, "")
         .trim()
         .toLowerCase();
+      if (pageNum === 14) console.log(strippedText);
 
       if (REFERENCE_SECTION_PATTERN.test(strippedText)) {
         const isWeirdPosition =

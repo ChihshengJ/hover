@@ -112,9 +112,6 @@ async function fetchPdfFromUrl(url, onProgress) {
   }
 }
 
-/**
- * Get intercepted PDF from background script
- */
 async function getInterceptedPdf() {
   const urlParams = new URLSearchParams(window.location.search);
   if (urlParams.get("source") !== "intercepted") {
@@ -138,11 +135,25 @@ async function getInterceptedPdf() {
 
       if (response?.success && response?.data?.data) {
         try {
-          const binary = atob(response.data.data);
-          const bytes = new Uint8Array(binary.length);
-          for (let i = 0; i < binary.length; i++) {
-            bytes[i] = binary.charCodeAt(i);
+          const raw = response.data.data;
+          let bytes;
+          if (raw instanceof Uint8Array) {
+            bytes = raw;
+          } else if (raw instanceof ArrayBuffer) {
+            bytes = new Uint8Array(raw);
+          } else if (raw?.buffer) {
+            bytes = new Uint8Array(raw.buffer, raw.byteOffset, raw.byteLength);
+          } else if (typeof raw === "object") {
+            bytes = new Uint8Array(Object.values(raw));
+          } else {
+            // Fallback: assume base64 string (legacy path)
+            const binary = atob(raw);
+            bytes = new Uint8Array(binary.length);
+            for (let i = 0; i < binary.length; i++) {
+              bytes[i] = binary.charCodeAt(i);
+            }
           }
+
           resolve({
             data: bytes.buffer,
             name: response.data.name || "document.pdf",
@@ -159,9 +170,6 @@ async function getInterceptedPdf() {
   });
 }
 
-/**
- * Get local PDF from background script (for popup-initiated loads)
- */
 async function getLocalPdfFromBackground() {
   if (typeof chrome === "undefined" || !chrome.runtime?.sendMessage) {
     return null;
@@ -176,11 +184,11 @@ async function getLocalPdfFromBackground() {
 
       if (response?.success && response?.data?.data) {
         try {
-          const binary = atob(response.data.data);
-          const bytes = new Uint8Array(binary.length);
-          for (let i = 0; i < binary.length; i++) {
-            bytes[i] = binary.charCodeAt(i);
-          }
+          const bytes =
+            response.data.data instanceof Uint8Array
+              ? response.data.data
+              : new Uint8Array(response.data.data);
+
           resolve({
             data: bytes.buffer,
             name: response.data.name || "document.pdf",

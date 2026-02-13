@@ -8,7 +8,9 @@
   pointer-events: none;
   opacity: 0;
   transform: scale(0.8);
-  transition: opacity var(--transition-fast), transform var(--transition-fast);
+  transition:
+    opacity var(--transition-fast),
+    transform var(--transition-fast);
 }
 
 .annotation-toolbar-container.visible {
@@ -60,8 +62,14 @@
   width: 28px;
   height: 28px;
   border-radius: 50%;
-  transition: background var(--transition-normal), box-shadow var(--transition-normal);
-  background: linear-gradient(135deg, var(--anno-primary) 0%, var(--anno-secondary) 100%);
+  transition:
+    background var(--transition-normal),
+    box-shadow var(--transition-normal);
+  background: linear-gradient(
+    135deg,
+    var(--anno-primary) 0%,
+    var(--anno-secondary) 100%
+  );
   box-shadow: 0 2px 8px var(--anno-shadow);
 }
 
@@ -106,7 +114,9 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: transform var(--transition-fast), background-color var(--transition-fast);
+  transition:
+    transform var(--transition-fast),
+    background-color var(--transition-fast);
 }
 
 .color-btn:hover {
@@ -118,7 +128,9 @@
   height: 26px;
   border-radius: 50%;
   box-shadow: 1px 2px 4px 1px rgba(0, 0, 0, 0.2);
-  transition: transform var(--transition-fast), box-shadow var(--transition-fast);
+  transition:
+    transform var(--transition-fast),
+    box-shadow var(--transition-fast);
 }
 
 .color-circle.yellow {
@@ -197,7 +209,9 @@
   pointer-events: none;
   opacity: 0;
   transform: scale(0.9) translateY(-10px);
-  transition: opacity var(--transition-normal), transform var(--transition-normal);
+  transition:
+    opacity var(--transition-normal),
+    transform var(--transition-normal);
 }
 
 .comment-input-container.visible {
@@ -217,9 +231,11 @@
 
 /* Color theming for comment input - uses CSS variables */
 .comment-input-container .comment-input-header {
-  background: linear-gradient(135deg, 
-    color-mix(in srgb, var(--anno-primary) 90%, transparent) 0%, 
-    color-mix(in srgb, var(--anno-secondary) 70%, transparent) 100%);
+  background: linear-gradient(
+    135deg,
+    color-mix(in srgb, var(--anno-primary) 90%, transparent) 0%,
+    color-mix(in srgb, var(--anno-secondary) 70%, transparent) 100%
+  );
 }
 
 .comment-input-header {
@@ -365,7 +381,9 @@
   display: none;
 }
 
-.comments-container.collapsed-mode .comment-card.force-expanded .comment-expanded-content {
+.comments-container.collapsed-mode
+  .comment-card.force-expanded
+  .comment-expanded-content {
   display: block;
   position: absolute;
   right: 40px;
@@ -373,11 +391,16 @@
   width: 220px;
 }
 
-.comments-container.collapsed-mode .comment-card.force-expanded .comment-collapsed-indicator {
+.comments-container.collapsed-mode
+  .comment-card.force-expanded
+  .comment-collapsed-indicator {
   background: rgba(255, 255, 255, 1) !important;
 }
 
-.comments-container.collapsed-mode .comment-card.force-expanded .comment-collapsed-indicator svg {
+.comments-container.collapsed-mode
+  .comment-card.force-expanded
+  .comment-collapsed-indicator
+  svg {
   color: #5c5c5c;
 }
 
@@ -496,10 +519,11 @@
 .annotation-mark {
   pointer-events: auto;
   cursor: pointer;
-  transition: fill var(--transition-fast), opacity var(--transition-fast);
+  transition:
+    fill var(--transition-fast),
+    opacity var(--transition-fast);
 }
 
-/* Highlight colors - uses CSS variables */
 .annotation-mark.highlight {
   fill: var(--anno-fill, rgba(255, 235, 59, 0.35));
 }

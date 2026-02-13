@@ -5,6 +5,7 @@
 
 import { OnboardingWalkthrough } from "../settings/onboarding.js";
 import { WallpaperSettings } from "../settings/settings.js";
+import { requestThrottle } from "./request_throttle.js";
 
 const VERSION = "0.1.0 (Alpha)";
 
@@ -19,6 +20,9 @@ export class FileMenu {
     this.isNearHitBox = false;
 
     this.fileInput = null;
+
+    /** @type {boolean} Guard against concurrent cite fetches */
+    this.isFetchingCitation = false;
 
     /** @type {OnboardingWalkthrough|null} */
     this.onboarding = null;
@@ -89,6 +93,15 @@ export class FileMenu {
           <path d="M14 5h6v6a6 6 0 0 1-6 6v-2a4 4 0 0 0 4-4h-4z"/>
         </svg>
         <span>Cite</span>
+      </button>
+      <button class="file-menu-item" data-action="view-original">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+        <!-- <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"> -->
+        <!--   <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/> -->
+        <!--   <polyline points="15 3 21 3 21 9"/> -->
+        <!--   <line x1="10" y1="14" x2="21" y2="3"/> -->
+        <!-- </svg> -->
+        <span>View Original</span>
       </button>
       <button class="file-menu-item" data-action="metadata">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
@@ -305,6 +318,9 @@ export class FileMenu {
       case "about":
         this.#showAbout();
         break;
+      case "view-original":
+        this.#viewOriginal();
+        break;
     }
     if (!["import"].includes(action)) {
       this.#closeMenu();
@@ -338,7 +354,6 @@ export class FileMenu {
   }
 
   /**
-   * Read file as ArrayBuffer
    * @param {File} file
    * @returns {Promise<ArrayBuffer>}
    */
@@ -352,7 +367,6 @@ export class FileMenu {
   }
 
   /**
-   * Convert ArrayBuffer to base64 string
    * @param {ArrayBuffer} buffer
    * @returns {string}
    */
@@ -387,7 +401,6 @@ export class FileMenu {
           iframe.contentWindow?.focus();
           iframe.contentWindow?.print();
 
-          // Clean up after print dialog closes
           setTimeout(() => {
             document.body.removeChild(iframe);
             URL.revokeObjectURL(url);
@@ -428,6 +441,9 @@ export class FileMenu {
   }
 
   async #showCitation() {
+    // Guard against spamming the Cite button
+    if (this.isFetchingCitation) return;
+
     const docModel = this.wm.document;
     if (!docModel?.pdfDoc) {
       this.#showToast("No document loaded");
@@ -435,7 +451,6 @@ export class FileMenu {
     }
 
     try {
-      // Use document model's method which falls back to detected title
       const title = await docModel.getDocumentTitle();
 
       if (!title) {
@@ -443,9 +458,12 @@ export class FileMenu {
         return;
       }
 
+      this.isFetchingCitation = true;
       this.#showToast("Fetching citation data...");
 
-      const citationData = await this.#fetchCitation(title);
+      const citationData = await requestThrottle.fetch(`cite:${title}`, () =>
+        this.#fetchCitation(title),
+      );
 
       if (citationData) {
         this.#showCitationModal(citationData, title);
@@ -455,11 +473,28 @@ export class FileMenu {
     } catch (error) {
       console.error("Citation fetch error:", error);
       this.#showToast(error.message || "Error fetching citation");
+    } finally {
+      this.isFetchingCitation = false;
     }
   }
 
   #showSettings() {
     this.wallpaperSettings.open();
+  }
+
+  #viewOriginal() {
+    const url =
+      document.documentElement.dataset.hoverOriginalUrl ||
+      new URLSearchParams(window.location.search).get("url");
+
+    if (!url) {
+      this.#showToast("No source URL available for this document");
+      return;
+    }
+
+    chrome.runtime.sendMessage({ type: "BYPASS_NEXT", url }, () => {
+      window.open(url, "_blank");
+    });
   }
 
   /**
@@ -519,8 +554,6 @@ export class FileMenu {
     const parser = new DOMParser();
     const doc = parser.parseFromString(html, "text/html");
 
-    // Google Scholar results have data-cid attribute on result containers
-    // or we can find it in the cite link
     const firstResult = doc.querySelector(".gs_r[data-cid]");
     if (firstResult) {
       return firstResult.getAttribute("data-cid");
@@ -544,7 +577,6 @@ export class FileMenu {
   }
 
   /**
-   * Parse citation page HTML to extract formatted citations and BibTeX
    * @param {string} html - Citation popup HTML
    * @returns {Promise<Object>} Parsed citation data
    */
@@ -736,7 +768,6 @@ export class FileMenu {
   }
 
   /**
-   * Truncate text with ellipsis
    * @param {string} text
    * @param {number} maxLength
    * @returns {string}
@@ -747,7 +778,6 @@ export class FileMenu {
   }
 
   /**
-   * Escape HTML special characters
    * @param {string} str
    * @returns {string}
    */
@@ -819,7 +849,6 @@ export class FileMenu {
   }
 
   #showMetadataModal(data) {
-    // Remove existing modal if any
     const existing = document.querySelector(".file-menu-modal-overlay");
     if (existing) existing.remove();
 
@@ -997,24 +1026,10 @@ export class FileMenu {
   }
 
   async #startTutorial() {
-    // Close the menu first
     this.#closeMenu();
-
     // Small delay for menu close animation
     await new Promise((resolve) => setTimeout(resolve, 300));
-
-    // Create and start onboarding
     this.onboarding = new OnboardingWalkthrough(this.wm, this);
-
-    // Configure citation link position
-    // You may want to dynamically find a citation link here
-    this.onboarding.setCitationLinkPosition(
-      770, // x
-      580, // y
-      60, // width
-      18, // height
-    );
-
     await this.onboarding.start();
   }
 

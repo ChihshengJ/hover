@@ -606,25 +606,6 @@ export class OnboardingWalkthrough {
   }
 
   /**
-   * Set citation link coordinates (convenience method)
-   * @param {number} x
-   * @param {number} y
-   * @param {number} width
-   * @param {number} height
-   */
-  setCitationLinkPosition(x, y, width, height) {
-    this.setStepSpotlight("citation-link", {
-      x,
-      y,
-      width,
-      height,
-      borderRadius: 4,
-    });
-  }
-
-  // DOM Creation
-
-  /**
    * Create all DOM elements for the onboarding UI
    */
   #createDOM() {

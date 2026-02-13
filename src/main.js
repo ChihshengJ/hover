@@ -49,25 +49,27 @@ function getDevUrl() {
  */
 function getStatusMessage(phase) {
   const messages = {
-    "loading-wasm": "Loading PDF engine...",
-    "downloading-wasm": "Downloading PDF engine...",
-    "parsing-wasm": "Parsing PDF engine...",
-    "initializing-pdfium": "Initializing PDFium...",
-    "creating-engine": "Creating engine...",
+    "loading-wasm": "Loading PDF engine…",
+    "downloading-wasm": "Downloading PDF engine…",
+    "parsing-wasm": "Parsing PDF engine…",
+    "initializing-pdfium": "Initializing PDFium…",
+    "creating-engine": "Creating engine…",
     ready: "Engine ready",
-    "initializing engine": "Initializing PDF engine...",
-    downloading: "Downloading document...",
-    parsing: "Parsing PDF...",
-    processing: "Processing document...",
-    caching: "Caching pages...",
-    "loading bookmarks": "Loading bookmarks...",
-    "loading annotations": "Loading annotations...",
-    "building outline": "Building outline...",
-    "initializing search": "Initializing search...",
-    "indexing references": "Indexing references...",
+    "initializing engine": "Initializing PDF engine…",
+    "setting up text extraction engine": "Setting up text extraction…",
+    downloading: "Downloading document…",
+    parsing: "Parsing PDF…",
+    processing: "Processing document…",
+    caching: "Caching pages…",
+    "loading bookmarks": "Loading bookmarks…",
+    "loading annotations": "Loading annotations…",
+    "building outline": "Building outline…",
+    "initializing search": "Initializing search…",
+    "indexing text": "Indexing text…",
+    "indexing references": "Indexing references…",
     complete: "Complete",
   };
-  return messages[phase] || "Loading...";
+  return messages[phase] || "Loading…";
 }
 
 /**
@@ -112,9 +114,29 @@ async function fetchPdfFromUrl(url, onProgress) {
   }
 }
 
+/**
+ * Decode a base64-encoded PDF string to ArrayBuffer.
+ * Handles both raw base64 and data-URI prefixed strings.
+ * @param {string} base64 
+ * @returns {ArrayBuffer}
+ */
+function base64ToArrayBuffer(base64) {
+  // Strip data URI prefix if present
+  const raw = base64.includes(",") ? base64.split(",")[1] : base64;
+  const binary = atob(raw);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) {
+    bytes[i] = binary.charCodeAt(i);
+  }
+  return bytes.buffer;
+}
+
 async function getInterceptedPdf() {
   const urlParams = new URLSearchParams(window.location.search);
-  if (urlParams.get("source") !== "intercepted") {
+  // The background script now encodes the original URL as ?url=...
+  // Also support legacy ?source=intercepted for backward compat
+  const originalUrl = urlParams.get("url");
+  if (!originalUrl && urlParams.get("source") !== "intercepted") {
     return null;
   }
 
@@ -136,28 +158,31 @@ async function getInterceptedPdf() {
       if (response?.success && response?.data?.data) {
         try {
           const raw = response.data.data;
-          let bytes;
-          if (raw instanceof Uint8Array) {
-            bytes = raw;
-          } else if (raw instanceof ArrayBuffer) {
-            bytes = new Uint8Array(raw);
-          } else if (raw?.buffer) {
-            bytes = new Uint8Array(raw.buffer, raw.byteOffset, raw.byteLength);
+          let arrayBuffer;
+
+          if (raw instanceof ArrayBuffer) {
+            arrayBuffer = raw;
+          } else if (raw instanceof Uint8Array) {
+            arrayBuffer = raw.buffer;
+          } else if (raw?.buffer instanceof ArrayBuffer) {
+            arrayBuffer = raw.buffer;
+          } else if (typeof raw === "string") {
+            // Base64 string — decode properly
+            arrayBuffer = base64ToArrayBuffer(raw);
           } else if (typeof raw === "object") {
-            bytes = new Uint8Array(Object.values(raw));
+            // Serialized Uint8Array (e.g. {0: 37, 1: 80, ...})
+            const bytes = new Uint8Array(Object.values(raw));
+            arrayBuffer = bytes.buffer;
           } else {
-            // Fallback: assume base64 string (legacy path)
-            const binary = atob(raw);
-            bytes = new Uint8Array(binary.length);
-            for (let i = 0; i < binary.length; i++) {
-              bytes[i] = binary.charCodeAt(i);
-            }
+            console.error("[Main] Unknown PDF data format:", typeof raw);
+            resolve(null);
+            return;
           }
 
           resolve({
-            data: bytes.buffer,
+            data: arrayBuffer,
             name: response.data.name || "document.pdf",
-            url: response.data.url || null,
+            url: response.data.url || originalUrl || null,
           });
         } catch (error) {
           console.error("[Main] Error parsing intercepted PDF:", error);
@@ -184,13 +209,28 @@ async function getLocalPdfFromBackground() {
 
       if (response?.success && response?.data?.data) {
         try {
-          const bytes =
-            response.data.data instanceof Uint8Array
-              ? response.data.data
-              : new Uint8Array(response.data.data);
+          const raw = response.data.data;
+          let arrayBuffer;
+
+          if (raw instanceof ArrayBuffer) {
+            arrayBuffer = raw;
+          } else if (raw instanceof Uint8Array) {
+            arrayBuffer = raw.buffer;
+          } else if (typeof raw === "string") {
+            // Base64 string from popup.js — decode properly
+            arrayBuffer = base64ToArrayBuffer(raw);
+          } else if (typeof raw === "object" && raw !== null) {
+            // Serialized Uint8Array
+            const bytes = new Uint8Array(Object.values(raw));
+            arrayBuffer = bytes.buffer;
+          } else {
+            console.error("[Main] Unknown local PDF data format:", typeof raw);
+            resolve(null);
+            return;
+          }
 
           resolve({
-            data: bytes.buffer,
+            data: arrayBuffer,
             name: response.data.name || "document.pdf",
           });
         } catch (error) {
@@ -208,9 +248,65 @@ async function getLocalPdfFromBackground() {
 }
 
 /**
+ * Try to take over the content.js loading overlay so the user
+ * sees a seamless transition instead of two separate loading screens.
+ * Returns true if we adopted an existing overlay.
+ */
+function adoptContentScriptOverlay() {
+  const existing = document.getElementById("hover-loading-overlay");
+  if (!existing) return false;
+
+  // The content script overlay exists — remove it, our LoadingOverlay takes over
+  existing.remove();
+
+  // Also remove the content script's hide-style if lingering
+  const styles = document.querySelectorAll("style");
+  for (const s of styles) {
+    if (s.textContent?.includes("hover-loading-overlay")) {
+      s.remove();
+    }
+  }
+  return true;
+}
+
+/**
+ * Expose the original PDF URL so other extensions (e.g. Zotero) can discover it.
+ * Sets a <meta> tag and a data attribute on the document element.
+ */
+function exposeOriginalUrl(url) {
+  if (!url) return;
+
+  // 1. <meta name="citation_pdf_url"> — Zotero and other tools look for this
+  let meta = document.querySelector('meta[name="citation_pdf_url"]');
+  if (!meta) {
+    meta = document.createElement("meta");
+    meta.setAttribute("name", "citation_pdf_url");
+    document.head.appendChild(meta);
+  }
+  meta.setAttribute("content", url);
+
+  // 2. Data attribute on <html> for easy programmatic access
+  document.documentElement.dataset.hoverOriginalUrl = url;
+
+  // 3. Also set the canonical link
+  let canonical = document.querySelector('link[rel="canonical"]');
+  if (!canonical) {
+    canonical = document.createElement("link");
+    canonical.setAttribute("rel", "canonical");
+    document.head.appendChild(canonical);
+  }
+  canonical.setAttribute("href", url);
+
+  console.log("[Main] Exposed original PDF URL:", url);
+}
+
+/**
  * Load PDF - handles both extension and dev contexts
  */
 async function loadPdf(isFirstLaunch = false) {
+  // Adopt the content.js overlay if present for seamless transition
+  const hadContentOverlay = adoptContentScriptOverlay();
+
   const loadingOverlay = new LoadingOverlay();
   loadingOverlay.show();
 
@@ -228,12 +324,12 @@ async function loadPdf(isFirstLaunch = false) {
 
     // For first launch, load the default onboarding paper
     if (isFirstLaunch) {
-      loadingOverlay.setProgress(0.1, "Fetching tutorial document...");
+      loadingOverlay.setProgress(0.1, "Fetching tutorial document…");
       const url = OnboardingWalkthrough.getDefaultPaperUrl();
       const defaultPdfData = await fetchPdfFromUrl(url, onProgress);
 
       await pdfmodel.load(defaultPdfData, onProgress);
-      loadingOverlay.setProgress(0.95, "Initializing viewer...");
+      loadingOverlay.setProgress(0.95, "Initializing viewer…");
 
       const wm = new SplitWindowManager(el.wd, pdfmodel);
       await wm.initialize();
@@ -252,6 +348,7 @@ async function loadPdf(isFirstLaunch = false) {
 
     let pdfSource = null;
     let pdfName = "document.pdf";
+    let originalUrl = null;
 
     if (inExtension) {
       // 1. Check for intercepted PDF (from content script)
@@ -259,6 +356,7 @@ async function loadPdf(isFirstLaunch = false) {
       if (interceptedPdf) {
         pdfSource = interceptedPdf.data;
         pdfName = interceptedPdf.name;
+        originalUrl = interceptedPdf.url || null;
         console.log("[Main] Loading intercepted PDF:", pdfName);
       }
 
@@ -285,9 +383,10 @@ async function loadPdf(isFirstLaunch = false) {
       const devUrl = getDevUrl();
       if (devUrl) {
         console.log("[Main] DEV MODE - Loading from URL:", devUrl);
-        loadingOverlay.setIndeterminate("Downloading document...");
+        loadingOverlay.setIndeterminate("Downloading document…");
         pdfSource = await fetchPdfFromUrl(devUrl, onProgress);
         pdfName = devUrl.split("/").pop()?.split("?")[0] || "document.pdf";
+        originalUrl = devUrl;
       }
 
       if (!pdfSource && PDFDocumentModel.hasLocalPdf()) {
@@ -308,6 +407,7 @@ async function loadPdf(isFirstLaunch = false) {
       const defaultUrl = "https://arxiv.org/pdf/2501.19393";
       pdfSource = await fetchPdfFromUrl(defaultUrl, onProgress);
       pdfName = "default.pdf";
+      originalUrl = defaultUrl;
     }
 
     if (!pdfSource) {
@@ -316,9 +416,9 @@ async function loadPdf(isFirstLaunch = false) {
       );
     }
 
-    loadingOverlay.setProgress(0.1, "Loading document...");
+    loadingOverlay.setProgress(0.1, "Loading document…");
     await pdfmodel.load(pdfSource, onProgress);
-    loadingOverlay.setProgress(0.95, "Initializing viewer...");
+    loadingOverlay.setProgress(0.95, "Initializing viewer…");
 
     const wm = new SplitWindowManager(el.wd, pdfmodel);
     await wm.initialize();
@@ -327,6 +427,11 @@ async function loadPdf(isFirstLaunch = false) {
     const detectedTitle = await pdfmodel.getDocumentTitle();
     const fileName = pdfName.replace(/\.pdf$/i, "");
     document.title = (detectedTitle || fileName) + " - Hover PDF";
+
+    // Expose original URL for other extensions (Zotero, etc.)
+    if (originalUrl) {
+      exposeOriginalUrl(originalUrl);
+    }
 
     PDFDocumentModel.clearLocalPdf();
 

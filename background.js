@@ -1,21 +1,13 @@
 // ============================================
 // Hover PDF Viewer - Background Script
 // ============================================
-//
-// Content-type based PDF interception:
-// - Content script detects when Chrome displays a PDF natively
-// - Content script fetches PDF with credentials (same-origin)
-// - Background receives PDF data and opens in Hover viewer
-//
-// Optional optimization:
-// - webRequest.onHeadersReceived pre-caches WASM on PDF detection
 
-// Temporary storage for intercepted PDF data
 let pendingPdfData = null;
 let localPdfData = null;
+let bypassUrls = new Set();
 
 // ============================================
-// Optional: Pre-warm WASM cache on PDF detection
+// Pre-warm WASM cache on PDF detection
 // ============================================
 
 try {
@@ -42,7 +34,7 @@ try {
   );
 } catch (error) {
   // webRequest may not be available — extension still works without it
-  console.warn("[Hover BG] webRequest listener not available:", error.message);
+  console.warn("[Hover BG] webRequest listener error:", error.message);
 }
 
 // ============================================
@@ -50,6 +42,13 @@ try {
 // ============================================
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (message.type === "BYPASS_NEXT") {
+    bypassUrls.add(message.url);
+    setTimeout(() => bypassUrls.delete(message.url), 5000);
+    sendResponse({ success: true });
+    return true;
+  }
+
   if (message.type === "TOGGLE_HOVER") {
     handleToggle(message.enabled)
       .then((result) => sendResponse(result))
@@ -135,28 +134,27 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 async function handlePdfPageDetected(message, sender) {
   const { hoverEnabled = true } =
     await chrome.storage.local.get("hoverEnabled");
-
   if (!hoverEnabled) {
     return { action: "none", reason: "disabled" };
   }
-
-  // Tell content script to fetch the PDF with credentials and send it back
+  if (bypassUrls.has(message.url)) {
+    bypassUrls.delete(message.url);
+    return { action: "none", reason: "bypass" };
+  }
   return { action: "fetch_and_send" };
 }
 
 async function handlePdfDataReady(message, sender) {
   const { url, data, filename } = message;
 
-  // Store the PDF data temporarily
   pendingPdfData = {
     data: data, // Base64 encoded
     url: url,
     name: filename || extractFilename(url),
   };
 
-  // Open the viewer in the same tab
-  const viewerUrl = chrome.runtime.getURL("index.html") + "?source=intercepted";
-
+  const viewerUrl =
+    chrome.runtime.getURL("index.html") + "?url=" + encodeURIComponent(url);
   await chrome.tabs.update(sender.tab.id, { url: viewerUrl });
 
   return { success: true };
@@ -180,14 +178,25 @@ function extractFilename(url) {
 async function handleToggle(enabled) {
   await chrome.storage.local.set({ hoverEnabled: enabled });
 
-  const viewerUrl = chrome.runtime.getURL("index.html");
+  // Find the original PDF URL from any open Hover viewer tab
+  const viewerBase = chrome.runtime.getURL("index.html");
   const tabs = await chrome.tabs.query({});
 
-  let currentPdfUrl = null;
+  let originalPdfUrl = null;
+  let viewerTabId = null;
+
   for (const tab of tabs) {
-    if (tab.url && tab.url.startsWith(viewerUrl)) {
-      const url = new URL(tab.url);
-      currentPdfUrl = url.searchParams.get("file");
+    if (tab.url && tab.url.startsWith(viewerBase)) {
+      try {
+        const parsed = new URL(tab.url);
+        originalPdfUrl =
+          parsed.searchParams.get("url") ||
+          parsed.searchParams.get("file") ||
+          null;
+        viewerTabId = tab.id;
+      } catch {
+        // ignore parse errors
+      }
       break;
     }
   }
@@ -195,7 +204,8 @@ async function handleToggle(enabled) {
   return {
     success: true,
     enabled,
-    currentPdfUrl,
+    currentPdfUrl: originalPdfUrl,
+    viewerTabId,
   };
 }
 

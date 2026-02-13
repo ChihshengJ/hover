@@ -1,32 +1,19 @@
 // ============================================
 // Hover PDF Viewer - Content Script
 // ============================================
-//
-// Runs at document_start to intercept Chrome's native PDF viewer
-// BEFORE it renders. Hides the native viewer, shows a branded
-// loading overlay, fetches the PDF with full credentials on the
-// original origin, and sends base64-encoded data to background
-// via the proven sendMessage path.
-//
-// Manifest requirement: "run_at": "document_start"
 
-(function () {
-  // Only run in main frame
+(function() {
+  // Only run in the mainframe
   if (window !== window.top) return;
 
-  // document.contentType is available at document_start,
-  // set from the response headers before any DOM rendering
   const isPdf = document.contentType === "application/pdf";
   if (!isPdf) return;
 
-  // Don't intercept if we're already in the Hover viewer
   if (window.location.href.includes(chrome.runtime.id)) return;
 
   console.log("[Hover] PDF detected at document_start:", window.location.href);
 
-  // ===========================================================
-  // Phase 1: Immediately hide native viewer, show loading overlay
-  // ===========================================================
+  // Hide default PDF viewer and show downloading overlay
 
   const hideStyle = document.createElement("style");
   hideStyle.textContent = `
@@ -113,13 +100,10 @@
     }
   }
 
-  // ===========================================================
-  // Phase 2: Check status, fetch PDF, send via sendMessage
-  // ===========================================================
+  // Check status, fetch PDF and send message to background
 
   (async function intercept() {
     try {
-      // Check if Hover is enabled
       const statusResponse = await chrome.runtime.sendMessage({
         type: "GET_HOVER_STATUS",
       });
@@ -130,7 +114,6 @@
         return;
       }
 
-      // Ask background if we should intercept
       const detectResponse = await chrome.runtime.sendMessage({
         type: "PDF_PAGE_DETECTED",
         url: window.location.href,

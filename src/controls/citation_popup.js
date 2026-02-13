@@ -1,3 +1,5 @@
+import { requestThrottle } from "./request_throttle.js";
+
 export class CitationPopup {
   constructor() {
     this.popup = null;
@@ -451,7 +453,7 @@ export class CitationPopup {
   #updateTextDisplay(data, textElement, toggleBtn, callback) {
     if (this.isExpanded) {
       callback(textElement, data);
-      toggleBtn.textContent = "−";
+      toggleBtn.textContent = "-";
       toggleBtn.title = "Show less";
       toggleBtn.classList.add("expanded");
     } else {
@@ -487,10 +489,16 @@ export class CitationPopup {
       try {
         // Check if we're in extension context
         if (typeof chrome !== "undefined" && chrome.runtime?.sendMessage) {
-          const response = await chrome.runtime.sendMessage({
-            type: "FETCH_SCHOLAR",
-            query: this.reference,
-          });
+          // Use requestThrottle to deduplicate and rate-limit requests
+          const response = await requestThrottle.fetch(
+            `abstract:${this.reference}`,
+            async () => {
+              return chrome.runtime.sendMessage({
+                type: "FETCH_SCHOLAR",
+                query: this.reference,
+              });
+            },
+          );
 
           if (response.success && response.data) {
             const parsed = this.#parseScholarResult(

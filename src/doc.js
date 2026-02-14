@@ -154,15 +154,18 @@ export class PDFDocumentModel {
 
       this.detectedMetadata = detectDocumentMetadata(this.textIndex);
 
-      reportProgress(65, "indexing references");
-      this.referenceIndex = await buildReferenceIndex(this.textIndex);
+      reportProgress(65, "building outline");
+      await this.#buildOutline();
+
+      reportProgress(72, "indexing references");
+      this.referenceIndex = await buildReferenceIndex(
+        this.textIndex,
+        this.outline,
+      );
       console.log(this.referenceIndex);
 
       const hasUsableIndex =
         (this.referenceIndex?.anchors?.length || 0) >= MIN_USABLE_REFERENCES;
-
-      reportProgress(75, "building outline");
-      await this.#buildOutline();
 
       reportProgress(80, "loading annotations");
       await this.annotationStore.loadFromDocument();
@@ -223,7 +226,7 @@ export class PDFDocumentModel {
         for (let i = 0; i < items.length; i++) {
           const bookmark = items[i];
 
-          if (bookmark.target.type === "action") {
+          if (bookmark.target?.type === "action") {
             const destName = bookmark.title || `${prefix}bookmark_${i}`;
             this.allNamedDests.set(destName, {
               pageIndex: bookmark.target.action.destination.pageIndex ?? 0,

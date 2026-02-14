@@ -376,6 +376,7 @@ export class PageView {
 
     for (const crossRef of crossRefs) {
       if (!crossRef.rects || crossRef.rects.length === 0) continue;
+      if (crossRef.isDefinition) continue;
 
       for (const rect of crossRef.rects) {
         const el = document.createElement("span");

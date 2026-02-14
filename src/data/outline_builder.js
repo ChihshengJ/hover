@@ -13,7 +13,8 @@ import { FontStyle } from "./text_index.js";
 
 const NUMBERED_SECTION_PATTERN =
   /^(\d+(?:\.\d+)*\.?|[A-Z]\.|[IVXLCDM]+\.)\s+\S/;
-const SECTION_NUMBER_EXTRACT = /^(\d+(?:\.\d+)*\.?|[A-Z]\.|[IVXLCDM]+\.)\s*/;
+export const SECTION_NUMBER_EXTRACT =
+  /^(\d+(?:\.\d+)*\.?|[A-Z]\.|[IVXLCDM]+\.)\s*/;
 
 /**
  * Build document outline from PDF metadata or heuristic analysis
@@ -22,17 +23,22 @@ export async function buildOutline(pdfDoc, native, textIndex, allNamedDests) {
   const nativeOutline = await extractPdfOutline(pdfDoc, native, allNamedDests);
 
   if (nativeOutline && nativeOutline.length > 0) {
+    let result;
     if (nativeOutline.length === 1 && nativeOutline[0].children.length > 1) {
       console.log("[Outline]Use Embeded Outline's root");
-      return nativeOutline[0].children;
+      result = nativeOutline[0].children;
     } else if (
       nativeOutline.length === 1 &&
       nativeOutline[0].children.length <= 1
     ) {
       return buildHeuristicOutline(textIndex);
+    } else {
+      console.log("[Outline]Use Embeded Outlines");
+      result = nativeOutline;
     }
-    console.log("[Outline]Use Embeded Outlines");
-    return nativeOutline;
+
+    resolveCoords(result, textIndex);
+    return result;
   }
 
   return buildHeuristicOutline(textIndex);
@@ -80,9 +86,9 @@ function processBookmarks(bookmarks, allNamedDests) {
 
 function resolveBookmarkDestination(bookmark, allNamedDests) {
   let dest = null;
-  if (bookmark.target.type === "action") {
+  if (bookmark.target?.type === "action") {
     dest = bookmark.target.action.destination;
-  } else if (bookmark.target.type === "destination") {
+  } else if (bookmark.target?.type === "destination") {
     dest = bookmark.target.destination;
   }
   if (!dest) return null;
@@ -108,6 +114,134 @@ function resolveBookmarkDestination(bookmark, allNamedDests) {
 
   return null;
 }
+
+// ============================================
+// Bookmark Coordinate Resolution
+// ============================================
+
+/**
+ * Fix outline items whose bookmark destinations had no coordinate data.
+ * Scans all document lines to find matching heading text.
+ */
+function resolveCoords(outline, textIndex) {
+  if (!textIndex) return;
+
+  // Collect items with empty coordinates
+  const unresolved = [];
+  const walk = (items) => {
+    for (const item of items) {
+      if (item.left === 0 && item.top === 0) {
+        unresolved.push(item);
+      }
+      if (item.children?.length) walk(item.children);
+    }
+  };
+  walk(outline);
+
+  if (unresolved.length === 0) return;
+  console.log(
+    `[Outline] Resolving ${unresolved.length} bookmark(s) with empty coordinates`,
+  );
+
+  // Build search entries for each unresolved item
+  const entries = unresolved.map((item) => ({
+    item,
+    textKey: normalizeForMatch(item.title),
+    appLetter: extractAppendixLetter(item.title),
+  }));
+
+  // Scan all lines across all pages
+  const numPages = textIndex.getPageCount();
+  for (let p = 1; p <= numPages; p++) {
+    const pageData = textIndex.getPageData(p);
+    if (!pageData?.lines) continue;
+
+    for (const line of pageData.lines) {
+      if (!line.text || line.text.length < 2) continue;
+
+      const lineKey = normalizeForMatch(line.text);
+      const lineText = line.text.trim();
+
+      for (const entry of entries) {
+        // Skip already-resolved items
+        if (entry.item.left !== 0 || entry.item.top !== 0) continue;
+
+        let matched = false;
+
+        // Appendix matching: "A." at line start or "Appendix A" in line
+        if (entry.appLetter) {
+          const letterRe = new RegExp(`^${entry.appLetter}\\.\\s`, "i");
+          const appendixRe = new RegExp(
+            `\\bappendix\\s+${entry.appLetter}\\b`,
+            "i",
+          );
+          if (letterRe.test(lineText) || appendixRe.test(lineText)) {
+            matched = true;
+          }
+        }
+
+        // Text-based matching (strip numbers, compare core text)
+        if (!matched && entry.textKey && lineKey && entry.textKey === lineKey) {
+          matched = true;
+        }
+
+        if (matched) {
+          entry.item.pageIndex = p - 1;
+          entry.item.left = line.x || 0;
+          entry.item.top = line.y || 0;
+          console.log(
+            `[Outline] Resolved "${entry.item.title}" → page ${p}, y=${line.y}`,
+          );
+        }
+      }
+    }
+  }
+
+  const remaining = unresolved.filter((i) => i.left === 0 && i.top === 0);
+  if (remaining.length > 0) {
+    console.warn(
+      `[Outline] Could not resolve ${remaining.length} bookmark(s):`,
+      remaining.map((i) => i.title),
+    );
+  }
+}
+
+/**
+ * Normalize title text for matching: strip section numbers,
+ * "appendix" prefix, punctuation, and lowercase.
+ */
+function normalizeForMatch(text) {
+  return text
+    .replace(SECTION_NUMBER_STRIP, "")
+    .replace(/^appendix\s*/i, "")
+    .replace(/[^a-z0-9\s]/gi, "")
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, " ");
+}
+
+/**
+ * Extract appendix letter from a title if it is an appendix heading.
+ * Returns uppercase letter or null.
+ */
+function extractAppendixLetter(title) {
+  // Explicit: "Appendix A", "Appendix A: Proofs"
+  const explicit = title.match(/appendix\s+([A-Z])/i);
+  if (explicit) return explicit[1].toUpperCase();
+
+  // Implicit: title prefix is a single letter ("A.", "B.")
+  const prefixMatch = title.match(SECTION_NUMBER_EXTRACT);
+  if (prefixMatch) {
+    const raw = prefixMatch[1].replace(/\.$/, "").trim();
+    if (/^[A-Z]$/i.test(raw)) return raw.toUpperCase();
+  }
+
+  return null;
+}
+
+// ============================================
+// Heuristic Outline Building
+// ============================================
 
 function buildHeuristicOutline(textIndex) {
   if (!textIndex) return [];
@@ -400,7 +534,7 @@ function clusterSizes(sortedSizes) {
   return sizeToTier;
 }
 
-const ROMAN_NUMERAL_MAP = {
+export const ROMAN_NUMERAL_MAP = {
   I: 1,
   II: 2,
   III: 3,
@@ -432,7 +566,7 @@ const ROMAN_NUMERAL_MAP = {
   M: 1000,
 };
 
-function parseRomanNumeral(str) {
+export function parseRomanNumeral(str) {
   const upper = str.toUpperCase();
   if (ROMAN_NUMERAL_MAP[upper] !== undefined) {
     return ROMAN_NUMERAL_MAP[upper];
@@ -744,7 +878,7 @@ function detectAbstract(allLines, bodyFontSize) {
       lowerStripped === "abstract" ||
       lowerStripped === "abstract:" ||
       lowerStripped === "abstract." ||
-      /^abstract\s*[-—]\s*/i.test(stripped)
+      /^abstract\s*[-–]\s*/i.test(stripped)
     ) {
       for (const item of line.items) {
         const isLarger = item.fontSize > bodyFontSize * 1.05;

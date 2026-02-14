@@ -656,8 +656,6 @@ export class InlineExtractor {
       const parsed = parseCitationChunk(chunk.text);
       if (!parsed) continue;
 
-      if (pageNumber === 15) console.log(parsed);
-
       // Validate each year against signatures
       const validRefIndices = [];
       const validRefKeys = [];
@@ -902,6 +900,7 @@ export class InlineExtractor {
 
         crossRefs.push({
           type,
+          isDefinition: false,
           text: match[0],
           targetId,
           pageNumber,

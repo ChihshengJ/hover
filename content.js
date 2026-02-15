@@ -101,7 +101,6 @@
   }
 
   // Check status, fetch PDF and send message to background
-
   (async function intercept() {
     try {
       const statusResponse = await chrome.runtime.sendMessage({
@@ -114,55 +113,70 @@
         return;
       }
 
-      const detectResponse = await chrome.runtime.sendMessage({
-        type: "PDF_PAGE_DETECTED",
-        url: window.location.href,
-      });
+      const isLocalFile = window.location.protocol === "file:";
+      let arrayBuffer = null;
 
-      if (detectResponse?.action !== "fetch_and_send") {
-        console.log(
-          "[Hover] Background declined interception:",
-          detectResponse?.reason,
-        );
-        restoreNativeViewer();
-        return;
+      if (isLocalFile) {
+        updateStatus("Reading local file…", 15);
+
+        const response = await chrome.runtime.sendMessage({
+          type: "FETCH_LOCAL_FILE",
+          url: window.location.href,
+        });
+
+        if (!response?.success) {
+          throw new Error(response?.error || "FILE_ACCESS_DENIED");
+        }
+
+        const binary = atob(response.data);
+        arrayBuffer = Uint8Array.from(binary, c => c.charCodeAt(0)).buffer;
+      } else {
+        const detectResponse = await chrome.runtime.sendMessage({
+          type: "PDF_PAGE_DETECTED",
+          url: window.location.href,
+        });
+
+        if (detectResponse?.action !== "fetch_and_send") {
+          console.log(
+            "[Hover] Background declined interception:",
+            detectResponse?.reason,
+          );
+          restoreNativeViewer();
+          return;
+        }
+
+        updateStatus("Downloading PDF…", 15);
+        const pdfResponse = await fetch(window.location.href, {
+          credentials: "include",
+          cache: "force-cache",
+        });
+
+        if (!pdfResponse.ok) {
+          console.error(
+            "[Hover] Failed to fetch PDF:",
+            pdfResponse.status,
+            pdfResponse.statusText,
+          );
+          restoreNativeViewer();
+          return;
+        }
+
+        // Verify content type
+        const contentType = pdfResponse.headers.get("content-type") || "";
+        if (
+          !contentType.includes("application/pdf") &&
+          !contentType.includes("octet-stream")
+        ) {
+          console.log(
+            "[Hover] Response is not a PDF, content-type:",
+            contentType,
+          );
+          restoreNativeViewer();
+          return;
+        }
+        updateStatus("Reading PDF data…", 35);
+        arrayBuffer = await pdfResponse.arrayBuffer();
       }
-
-      updateStatus("Downloading PDF…", 15);
-
-      // Fetch the PDF on the original origin with full credentials
-      const pdfResponse = await fetch(window.location.href, {
-        credentials: "include",
-        cache: "force-cache",
-      });
-
-      if (!pdfResponse.ok) {
-        console.error(
-          "[Hover] Failed to fetch PDF:",
-          pdfResponse.status,
-          pdfResponse.statusText,
-        );
-        restoreNativeViewer();
-        return;
-      }
-
-      // Verify content type
-      const contentType = pdfResponse.headers.get("content-type") || "";
-      if (
-        !contentType.includes("application/pdf") &&
-        !contentType.includes("octet-stream")
-      ) {
-        console.log(
-          "[Hover] Response is not a PDF, content-type:",
-          contentType,
-        );
-        restoreNativeViewer();
-        return;
-      }
-
-      updateStatus("Reading PDF data…", 35);
-
-      const arrayBuffer = await pdfResponse.arrayBuffer();
 
       // Verify PDF magic bytes
       const header = new Uint8Array(arrayBuffer.slice(0, 5));
@@ -208,6 +222,10 @@
         restoreNativeViewer();
       }
     } catch (error) {
+      if (error.message === "FILE_ACCESS_DENIED") {
+        showFileAccessPrompt();
+        return;
+      }
       console.error("[Hover] Error intercepting PDF:", error);
       restoreNativeViewer();
     }
@@ -233,4 +251,48 @@
       return "document.pdf";
     }
   }
+
+  function showFileAccessPrompt() {
+    const overlay = document.getElementById("hover-loading-overlay");
+    if (!overlay) return;
+
+    const extensionId = chrome.runtime.id;
+    const settingsUrl = `chrome://extensions/?id=${extensionId}`;
+
+    overlay.innerHTML = `
+      <div style="max-width: 400px; text-align: center; padding: 24px;">
+        <div style="font-size: 28px; margin-bottom: 16px;">📄</div>
+        <div style="font-size: 15px; font-weight: 600; color: #E5E5EA; margin-bottom: 8px;">
+          Local File Access Required
+        </div>
+        <div style="font-size: 13px; color: #8E8E93; line-height: 1.6; margin-bottom: 20px;">
+          To open local PDF files, Hover needs file access permission.
+          Enable <strong style="color: #E5E5EA;">"Allow access to file URLs"</strong>
+          in your extension settings.
+        </div>
+        <div style="display: flex; gap: 10px; justify-content: center;">
+          <button id="hover-open-settings" style="
+            background: #3A3A3C; color: #E5E5EA; border: none;
+            padding: 8px 16px; border-radius: 8px; font-size: 13px;
+            cursor: pointer; font-weight: 500;
+          ">Open Extension Settings</button>
+          <button id="hover-use-native" style="
+            background: transparent; color: #8E8E93; border: 1px solid #3A3A3C;
+            padding: 8px 16px; border-radius: 8px; font-size: 13px;
+            cursor: pointer;
+          ">Use Default Viewer</button>
+        </div>
+      </div>
+    `;
+
+    document.getElementById("hover-open-settings")?.addEventListener("click", () => {
+      // Can't navigate to chrome:// URLs directly, so open via background
+      chrome.runtime.sendMessage({ type: "OPEN_EXTENSION_SETTINGS" });
+    });
+
+    document.getElementById("hover-use-native")?.addEventListener("click", () => {
+      restoreNativeViewer();
+    });
+  }
 })();
+

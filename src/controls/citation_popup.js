@@ -185,7 +185,7 @@ export class CitationPopup {
   async showWithText(anchor, text) {
     // Create a minimal citation object for backward compatibility
     const fakeCitation = {
-      allTargets: [{ refIndex: 0, refKey: null, location: null }]
+      allTargets: [{ refIndex: 0, refKey: null, location: null }],
     };
     await this.show(anchor, fakeCitation, async () => text);
   }
@@ -692,7 +692,6 @@ export class CitationPopup {
   #parseScholarResult(html, query) {
     const parser = new DOMParser();
     const doc = parser.parseFromString(html, "text/html");
-    console.log("start parsing");
 
     // Find first result
     const firstResult = doc.querySelector(".gs_ri");

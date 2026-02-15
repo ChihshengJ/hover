@@ -234,7 +234,7 @@ export class OnboardingWalkthrough {
         spotlight: null,
         tooltip: {
           text: "Hello, welcome to Hover!",
-          subtext: "Let's take a quick tour of the features",
+          subtext: "Let's take a quick tour of the core features",
           position: "center",
           showNextButton: true,
           nextButtonText: "Get Started",
@@ -280,7 +280,7 @@ export class OnboardingWalkthrough {
         spotlight: null,
         tooltip: {
           text: "Access file management tools like import, print, save, and more",
-          subtext: "You can also find this tutorial here anytime",
+          subtext: "You can also start this tutorial from here anytime",
           position: "top",
           showNextButton: true,
         },
@@ -341,7 +341,7 @@ export class OnboardingWalkthrough {
         type: "action",
         spotlight: null,
         tooltip: {
-          text: "This is the floating control ball",
+          text: "This is the navigation ball",
           subtext: "Drag it vertically to scroll the document",
           position: "left",
         },
@@ -763,9 +763,16 @@ export class OnboardingWalkthrough {
   #handlePostOnboarding() {
     const intendedUrl = OnboardingWalkthrough.getAndClearIntendedUrl();
     if (intendedUrl) {
-      // Reload with the user's intended URL
-      window.location.href =
-        window.location.pathname + "?file=" + encodeURIComponent(intendedUrl);
+      if (window.location.protocol === "chrome-extension:") {
+        // In extension context, navigate to the original PDF URL.
+        // The extension's interception will kick in and reload the viewer
+        // with the correct PDF data.
+        window.location.href = intendedUrl;
+      } else {
+        // Dev mode â€" use the ?file= parameter
+        window.location.href =
+          window.location.pathname + "?file=" + encodeURIComponent(intendedUrl);
+      }
     }
   }
 
@@ -1448,17 +1455,14 @@ export class OnboardingWalkthrough {
   }
   #onFileMenuExpandedExit() {
     // Close file menu
-    if (this.fileMenu.isOpen) {
-      this.fileMenu.container.classList.remove("open");
-      this.fileMenu.button.classList.remove("open");
-      this.fileMenu.isOpen = false;
-    }
+    this.fileMenu.closeMenu();
   }
 
   // --- Step 4: Citation Link ---
   #onCitationLinkEnter() {
     const step = this.steps[4];
-    const link = document.querySelectorAll("a")[9];
+    const link = document.querySelectorAll("span.citation-rect")[3];
+    console.log(link);
     link.scrollIntoView({
       top: link.style.top,
       block: "center",

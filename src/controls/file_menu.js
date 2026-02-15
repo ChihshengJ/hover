@@ -4,7 +4,7 @@
  */
 
 import { OnboardingWalkthrough } from "../settings/onboarding.js";
-import { WallpaperSettings } from "../settings/settings.js";
+import { Settings } from "../settings/settings.js";
 import { requestThrottle } from "./request_throttle.js";
 
 const VERSION = "0.1.0 (Alpha)";
@@ -27,16 +27,14 @@ export class FileMenu {
     /** @type {OnboardingWalkthrough|null} */
     this.onboarding = null;
 
-    /** @type {WallpaperSettings} */
-    this.wallpaperSettings = new WallpaperSettings(wm, (msg) =>
-      this.#showToast(msg),
-    );
+    /** @type {Settings} */
+    this.settings = new Settings(wm, (msg) => this.#showToast(msg));
 
     this.#createDOM();
     this.#setupEventListeners();
 
     // Apply saved wallpaper on startup
-    this.wallpaperSettings.applyOnStartup();
+    this.settings.applyOnStartup();
   }
 
   #createDOM() {
@@ -222,14 +220,14 @@ export class FileMenu {
         !this.container.contains(e.target) &&
         !this.hitArea.contains(e.target)
       ) {
-        this.#closeMenu();
+        this.closeMenu();
       }
     });
 
     // Close on escape
     document.addEventListener("keydown", (e) => {
       if (e.key === "Escape" && this.isOpen) {
-        this.#closeMenu();
+        this.closeMenu();
       }
     });
 
@@ -256,7 +254,7 @@ export class FileMenu {
 
   #toggleMenu() {
     if (this.isOpen) {
-      this.#closeMenu();
+      this.closeMenu();
     } else {
       this.#openMenu();
     }
@@ -278,7 +276,7 @@ export class FileMenu {
     });
   }
 
-  #closeMenu() {
+  closeMenu() {
     if (!this.isOpen) return;
     this.isOpen = false;
 
@@ -291,7 +289,7 @@ export class FileMenu {
   }
 
   #handleAction(action) {
-    this.#closeMenu();
+    this.closeMenu();
 
     switch (action) {
       case "import":
@@ -323,7 +321,7 @@ export class FileMenu {
         break;
     }
     if (!["import"].includes(action)) {
-      this.#closeMenu();
+      this.closeMenu();
     }
   }
 
@@ -479,7 +477,7 @@ export class FileMenu {
   }
 
   #showSettings() {
-    this.wallpaperSettings.open();
+    this.settings.open();
   }
 
   #viewOriginal() {
@@ -498,7 +496,6 @@ export class FileMenu {
   }
 
   /**
-   * Send message to background script
    * @param {Object} message
    * @returns {Promise<Object>}
    */
@@ -519,7 +516,6 @@ export class FileMenu {
   }
 
   /**
-   * Fetch citation data from Google Scholar
    * @param {string} title - Document title to search
    * @returns {Promise<Object|null>} Citation data or null if not found
    */
@@ -546,7 +542,6 @@ export class FileMenu {
   }
 
   /**
-   * Extract paper ID from Google Scholar search results HTML
    * @param {string} html - Search results HTML
    * @returns {string|null} Paper ID or null if not found
    */
@@ -630,7 +625,6 @@ export class FileMenu {
   }
 
   /**
-   * Show citation modal with citation formats
    * @param {Object} data - Citation data { citations: [{format, citation}], bibtex: string }
    * @param {string} query - Original search query (document title)
    */
@@ -1026,7 +1020,7 @@ export class FileMenu {
   }
 
   async #startTutorial() {
-    this.#closeMenu();
+    this.closeMenu();
     // Small delay for menu close animation
     await new Promise((resolve) => setTimeout(resolve, 300));
     this.onboarding = new OnboardingWalkthrough(this.wm, this);

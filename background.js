@@ -33,7 +33,6 @@ try {
     ["responseHeaders"],
   );
 } catch (error) {
-  // webRequest may not be available — extension still works without it
   console.warn("[Hover BG] webRequest listener error:", error.message);
 }
 
@@ -77,6 +76,14 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     const data = pendingPdfData;
     pendingPdfData = null; // Clear after retrieval
     sendResponse({ success: true, data });
+    return true;
+  }
+
+  // Fetch local document
+  if (message.type === "FETCH_LOCAL_FILE") {
+    fetchLocalFile(message.url)
+      .then((result) => sendResponse(result))
+      .catch((error) => sendResponse({ success: false, error: error.message }));
     return true;
   }
 
@@ -125,6 +132,21 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     });
     return true;
   }
+
+  if (message.type === "OPEN_EXTENSION_SETTINGS") {
+    chrome.tabs.create({
+      url: `chrome://extensions/?id=${chrome.runtime.id}`,
+    });
+    sendResponse({ success: true });
+    return true;
+  }
+
+  if (message.type === "CHECK_FILE_ACCESS") {
+    chrome.extension.isAllowedFileSchemeAccess().then((allowed) => {
+      sendResponse({ allowed });
+    });
+    return true;
+  }
 });
 
 // ============================================
@@ -148,7 +170,7 @@ async function handlePdfDataReady(message, sender) {
   const { url, data, filename } = message;
 
   pendingPdfData = {
-    data: data, // Base64 encoded
+    data: data, // Base64
     url: url,
     name: filename || extractFilename(url),
   };
@@ -228,6 +250,23 @@ chrome.runtime.onStartup.addListener(async () => {
 // ============================================
 // Scholar Fetch Functions
 // ============================================
+
+async function fetchLocalFile(fileUrl) {
+  try {
+    const response = await fetch(fileUrl);
+    const arrayBuffer = await response.arrayBuffer();
+    const bytes = new Uint8Array(arrayBuffer);
+    let binary = "";
+    const chunkSize = 8192;
+    for (let i = 0; i < bytes.length; i += chunkSize) {
+      const chunk = bytes.subarray(i, Math.min(i + chunkSize, bytes.length));
+      binary += String.fromCharCode.apply(null, chunk);
+    }
+    return { success: true, data: btoa(binary) };
+  } catch (error) {
+    return { success: false, error: "FILE_ACCESS_DENIED" };
+  }
+}
 
 async function fetchGoogleScholar(query) {
   const searchUrl = `https://scholar.google.com/scholar?q=${encodeURIComponent(query)}&hl=en`;

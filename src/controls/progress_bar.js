@@ -107,8 +107,6 @@ export class ProgressBar {
   async #waitForSections() {
     const toolbar = this.wm.toolbar;
     if (!toolbar?.navigationTree) return;
-
-    // Initialize the navigation popup if not already done
     await toolbar.navigationTree.initialize();
   }
 
@@ -217,7 +215,6 @@ export class ProgressBar {
     const scrollTop = scroller.scrollTop;
     const scrollHeight = scroller.scrollHeight - scroller.clientHeight;
 
-    // Calculate progress (0-1)
     this.currentProgress =
       scrollHeight > 0 ? Math.min(1, scrollTop / scrollHeight) : 0;
 
@@ -263,9 +260,6 @@ export class ProgressBar {
     }, 600);
   }
 
-  /**
-   * Check if we've reached the end of the document
-   */
   #checkEndCompletion() {
     const wasAtEnd = this.hasReachedEnd;
     this.hasReachedEnd = this.currentProgress >= 0.99;
@@ -278,9 +272,6 @@ export class ProgressBar {
     this.endMarker.classList.toggle("reached", this.hasReachedEnd);
   }
 
-  /**
-   * Celebrate completing the document
-   */
   #celebrateCompletion() {
     this.container.classList.add("completion-celebration");
     this.endMarker.classList.add("celebrating");
@@ -295,9 +286,6 @@ export class ProgressBar {
     }, 1000);
   }
 
-  /**
-   * Recalculate section positions after resize
-   */
   #recalculateSections() {
     if (this.sectionMarks.length === 0) return;
 
@@ -354,9 +342,6 @@ export class ProgressBar {
     this.#updateProgress();
   }
 
-  /**
-   * Refresh after zoom/resize
-   */
   refresh() {
     this.#recalculateSections();
     this.#updateProgress();

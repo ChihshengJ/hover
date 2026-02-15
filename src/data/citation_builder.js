@@ -117,7 +117,8 @@ export class CitationBuilder {
         pageNum <= this.#refSectionEndPage
       )
         continue;
-      const { height: pageHeight } = this.#textIndex.getPageDimensions(pageNum);
+      const { width: pageWidth, height: pageHeight } =
+        this.#textIndex.getPageDimensions(pageNum);
 
       for (const annot of annotations) {
         // Only process destination links (not URLs)
@@ -136,7 +137,10 @@ export class CitationBuilder {
         // Check if link points to reference section
         if (destPageIndex + 1 < this.#refSectionStartPage) continue;
 
-        const hasValidDest = destX * destY !== 0;
+        const hasValidDest =
+          destX * destY !== 0 &&
+          rect.origin.x < pageWidth &&
+          rect.origin.y < pageHeight;
 
         let matchedRef = null;
         if (hasValidDest) {

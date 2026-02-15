@@ -57,7 +57,7 @@ export class PDFDocumentModel {
     /** @type {import('./reference_builder.js').ReferenceIndex|null} */
     this.referenceIndex = null;
     /** @type {{title: string|null, abstractInfo: Object|null}} */
-    this.detectedMetadata = { title: null, abstractInfo: null };
+    this.detectedMetadata = { title: null, lines: null, abstractInfo: null };
 
     /** @type {Uint8Array|null} */
     this.pdfData = null;
@@ -511,6 +511,7 @@ export class PDFDocumentModel {
       this.native,
       this.textIndex,
       this.allNamedDests,
+      this.detectedMetadata,
     );
 
     this.#injectAbstractIntoOutline();

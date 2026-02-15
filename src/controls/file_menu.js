@@ -33,7 +33,7 @@ export class FileMenu {
     this.#createDOM();
     this.#setupEventListeners();
 
-    // Apply saved wallpaper on startup
+    // Apply saved config on startup
     this.settings.applyOnStartup();
   }
 

@@ -19,7 +19,7 @@ export const SECTION_NUMBER_EXTRACT =
 /**
  * Build document outline from PDF metadata or heuristic analysis
  */
-export async function buildOutline(pdfDoc, native, textIndex, allNamedDests) {
+export async function buildOutline(pdfDoc, native, textIndex, allNamedDests, metadata) {
   const nativeOutline = await extractPdfOutline(pdfDoc, native, allNamedDests);
 
   if (nativeOutline && nativeOutline.length > 0) {
@@ -31,7 +31,7 @@ export async function buildOutline(pdfDoc, native, textIndex, allNamedDests) {
       nativeOutline.length === 1 &&
       nativeOutline[0].children.length <= 1
     ) {
-      return buildHeuristicOutline(textIndex);
+      return buildHeuristicOutline(textIndex, metadata);
     } else {
       console.log("[Outline]Use Embeded Outlines");
       result = nativeOutline;
@@ -41,7 +41,7 @@ export async function buildOutline(pdfDoc, native, textIndex, allNamedDests) {
     return result;
   }
 
-  return buildHeuristicOutline(textIndex);
+  return buildHeuristicOutline(textIndex, metadata);
 }
 
 async function extractPdfOutline(pdfDoc, native, allNamedDests) {
@@ -243,10 +243,10 @@ function extractAppendixLetter(title) {
 // Heuristic Outline Building
 // ============================================
 
-function buildHeuristicOutline(textIndex) {
+function buildHeuristicOutline(textIndex, titleInfo) {
   if (!textIndex) return [];
 
-  const candidates = collectHeadingCandidates(textIndex);
+  const candidates = collectHeadingCandidates(textIndex, titleInfo);
   if (candidates.length === 0) return [];
 
   const leveledCandidates = assignHeadingLevels(candidates);
@@ -272,47 +272,40 @@ function buildHeuristicOutline(textIndex) {
  * @property {boolean} isNumbered
  */
 
-function collectHeadingCandidates(textIndex) {
+function collectHeadingCandidates(textIndex, titleInfo) {
   const candidates = [];
   const {
     fontSize: bodyFontSize,
     fontStyle: bodyFontStyle,
     lineHeight: bodyLineHeight,
+    lineWidth: bodyLineWidth,
     pageData,
   } = textIndex.getDocumentData();
 
-  let abstractLine = null;
-  let startPage = 0;
-  for (const [pageNum, data] of pageData) {
-    if (pageNum > 2) break;
-    const { lines, pageHeight, pageWidth } = data;
+  let abstractLine = titleInfo.abstractInfo?.top || null;
+  let startPage = titleInfo.abstractInfo?.pageIndex + 1 || 1;
+  const titleLast = titleInfo.lines?.at(-1);
 
-    abstractLine = lines.find((line) => {
-      const text = line.text
-        .replace(/\s+/, "")
-        .replace(SECTION_NUMBER_STRIP, "")
-        .trim();
-      return /^(?:\d+\.?\s+)?abstract/i.test(text);
-    });
-    if (abstractLine) startPage = pageNum;
-  }
+  const titleLine = titleLast ? Math.floor(titleLast.y) - 3*titleLast.lineHeight : 0;
+  const titlePage = titleLast ? titleLast.pageNum : 1;
 
   for (const [pageNum, data] of pageData) {
     if (pageNum < startPage) continue;
     const { lines, pageHeight, pageWidth } = data;
     const pageData = { pageHeight, pageWidth };
 
-    const skipThresholdY = abstractLine ? abstractLine.y : pageHeight * 0.3;
+    const skipThresholdY = titleLine != 0 ? titleLine : abstractLine ? abstractLine : pageHeight * 0.3;
+    startPage = titlePage ? titlePage : startPage;
 
     for (const line of lines) {
-      if (abstractLine && line.y > skipThresholdY) continue;
-      if (pageNum === 1 && line.y > skipThresholdY) continue;
+      if (pageNum <= startPage && line.y > skipThresholdY) continue;
 
       const candidate = analyzeLineAsHeading(
         line,
         pageNum,
         bodyFontSize,
         bodyLineHeight,
+        bodyLineWidth,
         pageData,
       );
       if (candidate) candidates.push(candidate);
@@ -337,6 +330,7 @@ function analyzeLineAsHeading(
   pageNum,
   bodyFontSize,
   bodyLineHeight,
+  bodyLineWidth,
   page,
 ) {
   const text = line.text?.trim();
@@ -362,12 +356,12 @@ function analyzeLineAsHeading(
   const fontSize = line.items[0].fontSize ?? 0;
   const fontStyle = line.items[0].fontStyle ?? FontStyle.REGULAR;
 
-  const isSmallerFont = lineHeight < bodyLineHeight * 0.92;
+  const isSmallerFont = Math.floor(lineHeight * 100) < Math.floor(bodyLineHeight * 100);
   const isLargerFont = lineHeight > bodyLineHeight * 1.4;
   const isStyled =
     fontStyle === FontStyle.BOLD || fontStyle === FontStyle.BOLD_ITALIC;
 
-  const isShortLine = line.lineWidth < page.pageWidth * 0.4;
+  const isShortLine = line.lineWidth < bodyLineWidth;
   const isAllCapital = line.text === line.text.toUpperCase();
 
   if (isNumbered) {
@@ -378,6 +372,7 @@ function analyzeLineAsHeading(
     if (!/[A-Z]/.test(strippedText[0])) return null;
     if (!isShortLine) return null;
     if (!isStyled && !isAllCapital) return null;
+    if (isSmallerFont) return null;
   }
 
   const isNonNumberedHeading =
@@ -739,7 +734,7 @@ function purgeReferenceChildren(outline) {
 export function detectDocumentMetadata(textIndex) {
   if (!textIndex) return { title: null, abstractInfo: null };
 
-  const result = { title: null, abstractInfo: null };
+  const result = { title: null, lines: null, abstractInfo: null };
   const pagesToScan = Math.min(3, textIndex.getPageCount?.() || 2);
   const allLines = [];
   const allFontSizes = [];
@@ -760,7 +755,7 @@ export function detectDocumentMetadata(textIndex) {
   if (allLines.length === 0) return result;
 
   const bodyFontSize = findMostCommonFontSize(allFontSizes);
-  result.title = detectTitle(allLines, bodyFontSize);
+  Object.assign(result, detectTitle(allLines, bodyFontSize));
   result.abstractInfo = detectAbstract(allLines, bodyFontSize);
 
   return result;
@@ -788,13 +783,13 @@ function detectTitle(allLines, bodyFontSize) {
   if (page1Lines.length === 0) return null;
 
   const pageHeight = page1Lines[0]?.pageHeight || 792;
-  const topThreshold = pageHeight * 0.4;
+  const topThreshold = pageHeight * 0.3;
   const titleCandidates = page1Lines.filter(
     (line) => line.originalY < topThreshold,
   );
   if (titleCandidates.length === 0) return null;
 
-  const largeFontThreshold = bodyFontSize * 1.2;
+  const largeFontThreshold = bodyFontSize * 1.1;
   const largeFontLines = titleCandidates.filter(
     (line) => line.fontSize >= largeFontThreshold,
   );
@@ -812,7 +807,7 @@ function detectTitle(allLines, bodyFontSize) {
   largeFontLines.sort((a, b) => {
     const posDiff = a.originalY - b.originalY;
     if (Math.abs(posDiff) > 5) return posDiff;
-    return (b.fontSize || 0) - (a.fontSize || 0);
+    return (b.lineHeight || 0) - (a.lineHeight || 0);
   });
 
   const maxFontSize = Math.max(...largeFontLines.map((l) => l.lineHeight || 0));
@@ -853,7 +848,7 @@ function detectTitle(allLines, bodyFontSize) {
     }
   }
 
-  return cleanTitleText(title);
+  return { title: cleanTitleText(title), lines: titleLines };
 }
 
 function cleanTitleText(text) {

@@ -583,7 +583,9 @@ export const AUTHOR_YEAR_BLOCKS = {
   multipleYears: `\\d{4}[a-z]?(?:,[a-z])*(?:\\s*,\\s*\\d{4}[a-z]?(?:,[a-z])*)*`,
 
   // Prefix phrases that may appear before citations in parentheses
-  prefixPhrases: `(?:e\\.g\\.,?|i\\.e\\.,?|see|see also|cf\\.|compare)\\s*`,
+  prefixPhrases: `(?:e\\.g\\.,?|i\\.e\\.,?|see|see also|cf\\.|compare|inter alia:)\\s*`,
+
+  pages: `(?:,\\s*\\d+(?:[–-]\\d+)?)?`,
 };
 
 /**
@@ -600,7 +602,8 @@ export const AUTHOR_YEAR_PATTERNS = {
       `(${AUTHOR_YEAR_BLOCKS.authorSurname})` +
       `\\s+${AUTHOR_YEAR_BLOCKS.andConnector}\\s*` +
       `(${AUTHOR_YEAR_BLOCKS.authorSurname})` +
-      `\\s*\\((${AUTHOR_YEAR_BLOCKS.multipleYears})\\)`,
+      `\\s*\\((${AUTHOR_YEAR_BLOCKS.multipleYears})` +
+      `${AUTHOR_YEAR_BLOCKS.pages}\\)`,
       "gu",
     ),
     extractAuthor: (match) => match[1].trim(),
@@ -619,7 +622,8 @@ export const AUTHOR_YEAR_PATTERNS = {
       `(${AUTHOR_YEAR_BLOCKS.authorSurname})` +
       `\\s+${AUTHOR_YEAR_BLOCKS.andConnector}\\s+` +
       `(${AUTHOR_YEAR_BLOCKS.authorSurname})` +
-      `\\s*,?\\s*(${AUTHOR_YEAR_BLOCKS.multipleYears})\\)`,
+      `\\s*,?\\s*(${AUTHOR_YEAR_BLOCKS.multipleYears})` +
+      `${AUTHOR_YEAR_BLOCKS.pages}\\)`,
       "gu",
     ),
     extractAuthor: (match) => match[1].trim(),
@@ -635,7 +639,8 @@ export const AUTHOR_YEAR_PATTERNS = {
   authorThenYear: {
     pattern: new RegExp(
       `(${AUTHOR_YEAR_BLOCKS.authorSurname}${AUTHOR_YEAR_BLOCKS.etAl}?)` +
-      `,?\\s*\\((${AUTHOR_YEAR_BLOCKS.multipleYears})\\)`,
+      `,?\\s*\\((${AUTHOR_YEAR_BLOCKS.multipleYears})` +
+      `${AUTHOR_YEAR_BLOCKS.pages}\\)`,
       "gu",
     ),
     extractAuthor: (match) => match[1].replace(/\s+et\s+al\.?/i, "").trim(),
@@ -651,7 +656,8 @@ export const AUTHOR_YEAR_PATTERNS = {
     pattern: new RegExp(
       `\\((?:${AUTHOR_YEAR_BLOCKS.prefixPhrases})?` +
       `(${AUTHOR_YEAR_BLOCKS.authorSurname}${AUTHOR_YEAR_BLOCKS.etAl}?)` +
-      `\\s*,?\\s*(${AUTHOR_YEAR_BLOCKS.multipleYears})\\)`,
+      `\\s*,?\\s*(${AUTHOR_YEAR_BLOCKS.multipleYears})` +
+      `${AUTHOR_YEAR_BLOCKS.pages}\\)`,
       "gu",
     ),
     extractAuthor: (match) => match[1].replace(/\s+et\s+al\.?/i, "").trim(),
@@ -679,6 +685,7 @@ export const PARENTHETICAL_CITATION_BLOCK = new RegExp(
   `${AUTHOR_YEAR_BLOCKS.etAl}?` +
   `\\s*,?\\s*` +
   `${AUTHOR_YEAR_BLOCKS.multipleYears}` +
+  `${AUTHOR_YEAR_BLOCKS.pages}` +
   // Additional semicolon-separated citations (zero or more)
   `(?:` +
   `\\s*;\\s*` +
@@ -687,6 +694,7 @@ export const PARENTHETICAL_CITATION_BLOCK = new RegExp(
   `${AUTHOR_YEAR_BLOCKS.etAl}?` +
   `\\s*,?\\s*` +
   `${AUTHOR_YEAR_BLOCKS.multipleYears}` +
+  `${AUTHOR_YEAR_BLOCKS.pages}` +
   `)*` +
   `\\)`,
   "gu",
@@ -720,6 +728,7 @@ export const CITATION_CHUNK_PARSER = new RegExp(
   `\\s*,?\\s*` +
   // Years
   `(${AUTHOR_YEAR_BLOCKS.multipleYears})` +
+  `${AUTHOR_YEAR_BLOCKS.pages}` +
   `\\s*$`,
   "u",
 );

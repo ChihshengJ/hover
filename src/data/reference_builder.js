@@ -519,7 +519,7 @@ function findReferenceSectionEnd(
         POST_REFERENCE_SECTION_PATTERN.test(strippedText);
       const isBigJump =
         line.y === marginBottom &&
-        marginBottom > bodyMarginBottom + 20 &&
+        marginBottom > bodyMarginBottom + 0.4 * pageHeight &&
         i === lines.length - 1;
 
       if (isDirectIndicator || isAllCapital || isBoldAndLarge || isBigJump) {

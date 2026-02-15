@@ -55,13 +55,6 @@ export class Settings {
    */
   async applyOnStartup() {
     await this.wallpaper.applyOnStartup();
-  }
-
-  /**
-   * Apply saved ball style on app startup.
-   * Call this once after the viewer is initialized.
-   */
-  async applyBallStyleOnStartup() {
     await this.ballStyle.applyOnStartup();
   }
 

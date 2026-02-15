@@ -44,6 +44,7 @@ export class DocumentTextIndex {
   #lowLevelHandle = null;
   #bodyFontSize = null;
   #bodyLineHeight = null;
+  #bodyLineWidth = null;
   #bodyMarginBottom = null;
   #bodyFontStyle = null;
   #bodyFontAnalyzed = false;
@@ -73,6 +74,7 @@ export class DocumentTextIndex {
       fontSize: this.getBodyFontSize(),
       fontStyle: this.getBodyFontStyle(),
       lineHeight: this.getBodyLineHeight(),
+      lineWidth: this.getBodyLineWidth(),
       marginBottom: this.getBodyMarginBottom(),
       pageData: this.#pageData,
     };
@@ -108,6 +110,11 @@ export class DocumentTextIndex {
   getBodyLineHeight() {
     this.#ensureBodyFontAnalyzed();
     return this.#bodyLineHeight ?? 10;
+  }
+
+  getBodyLineWidth() {
+    this.#ensureBodyFontAnalyzed();
+    return this.#bodyLineWidth ?? 200;
   }
 
   getBodyMarginBottom() {
@@ -244,7 +251,9 @@ export class DocumentTextIndex {
     const fontStyle = this.#extractFontStyle(items);
     const fontSize = this.#findMedian(items.map((i) => i.fontSize));
 
-    const lineHeight = this.#findMedian(items.map((i) => i.height));
+    const lineHeights = items.map((i) => i.height);
+    const lineHeight =
+      lineHeights.reduce((a, cur) => a + cur, 0) / lineHeights.length;
     const lineWidth = items.at(-1).x + items.at(-1).width - items[0].x;
     const lineBottom = this.#findMedian(items.map((i) => i.originalY));
 
@@ -384,13 +393,15 @@ export class DocumentTextIndex {
     const fontSizes = [];
     const fontStyles = [];
     const lineHeights = [];
+    const lineWidths = [];
     const marginBottoms = [];
 
     for (const [, data] of this.#pageData) {
       if (data.marginBottom > 0) marginBottoms.push(data.marginBottom);
-      for (const line of data.lines) {
+      for (const line of data.lines.slice(0, 500)) {
         if (line.fontSize > 0) fontSizes.push(line.fontSize);
         if (line.lineHeight > 0) lineHeights.push(line.lineHeight);
+        if (line.lineWidth > 0) lineWidths.push(Math.floor(line.lineWidth));
         fontStyles.push(line.fontStyle);
       }
     }
@@ -402,6 +413,7 @@ export class DocumentTextIndex {
     );
     this.#bodyFontStyle = this.#findMostCommon(fontStyles);
     this.#bodyLineHeight = this.#findMedian(lineHeights);
+    this.#bodyLineWidth = this.#findMostCommon(lineWidths);
     this.#bodyMarginBottom = this.#findMostCommon(marginBottoms);
   }
 

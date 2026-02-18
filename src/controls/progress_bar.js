@@ -90,8 +90,10 @@ export class ProgressBar {
     this.createProgressBar();
     this.#setupEventListeners();
 
-    await this.#waitForSections();
-    this.#createSectionMarks();
+    if (this.doc.indexingState === "complete") {
+      await this.#waitForSections();
+      this.#createSectionMarks();
+    }
 
     this.#initialized = true;
 
@@ -344,6 +346,13 @@ export class ProgressBar {
 
   refresh() {
     this.#recalculateSections();
+    this.#updateProgress();
+  }
+
+  async buildSectionMarks() {
+    if (this.sectionMarks.length > 0) return;
+    await this.#waitForSections();
+    this.#createSectionMarks();
     this.#updateProgress();
   }
 

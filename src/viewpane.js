@@ -671,6 +671,11 @@ export class ViewerPane {
     if (event.startsWith("annotation-")) {
       this.annotationManager?.onDocumentChange(event, data);
     }
+    if (event === "index-ready") {
+      for (const pageView of this.visiblePages) {
+        pageView.refreshOverlays();
+      }
+    }
   }
 
   getSelection() {

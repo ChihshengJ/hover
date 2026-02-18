@@ -65,6 +65,8 @@ export class PDFDocumentModel {
     this.lowLevelHandle = null;
     /** @type {import('./data/text_extractor.js').PdfiumTextExtractor|null} */
     this.textExtractor = null;
+    /** @type {'pending'|'running'|'complete'} */
+    this.indexingState = 'pending';
   }
 
   /** @returns {Map<number, Array>} */
@@ -144,8 +146,33 @@ export class PDFDocumentModel {
 
       reportProgress(45, "loading bookmarks");
       await this.#loadBookmarksAndDestinations();
+      reportProgress(80, "loading annotations");
+      await this.annotationStore.loadFromDocument();
+      this.#indexUrls();
+      reportProgress(95, "complete");
+      return this.pdfDoc;
+    } catch (error) {
+      console.error("Error loading PDF:", error);
+      throw error;
+    }
+  }
 
-      reportProgress(50, "indexing text");
+  /**
+   * Phase 2: Build text index, outline, references, and inline elements.
+   * @param {(p: {percent: number, phase: string}) => void} [onProgress]
+   */
+  async buildIndex(onProgress) {
+    if (this.indexingState !== 'pending') return;
+    this.indexingState = 'running';
+
+    const reportProgress = (percent, phase) => {
+      if (onProgress) {
+        onProgress({ percent, phase });
+      }
+    };
+
+    try {
+      reportProgress(10, "indexing text");
       this.textIndex = new DocumentTextIndex(this);
       if (this.lowLevelHandle) {
         this.textIndex.setLowLevelHandle(this.lowLevelHandle);
@@ -154,10 +181,10 @@ export class PDFDocumentModel {
 
       this.detectedMetadata = detectDocumentMetadata(this.textIndex);
 
-      reportProgress(65, "building outline");
+      reportProgress(50, "building outline");
       await this.#buildOutline();
 
-      reportProgress(72, "indexing references");
+      reportProgress(65, "indexing references");
       this.referenceIndex = await buildReferenceIndex(
         this.textIndex,
         this.outline,
@@ -167,10 +194,7 @@ export class PDFDocumentModel {
       const hasUsableIndex =
         (this.referenceIndex?.anchors?.length || 0) >= MIN_USABLE_REFERENCES;
 
-      reportProgress(80, "loading annotations");
-      await this.annotationStore.loadFromDocument();
-
-      reportProgress(88, "processing");
+      reportProgress(80, "processing");
       if (hasUsableIndex) {
         console.log("[Doc] Parsing full text for inline links...");
         await this.#buildInlineElements();
@@ -181,11 +205,13 @@ export class PDFDocumentModel {
         this.#buildNativeFallback();
       }
 
-      reportProgress(95, "complete");
-      return this.pdfDoc;
+      this.indexingState = 'complete';
+      reportProgress(100, "complete");
+      this.notify('index-ready');
     } catch (error) {
-      console.error("Error loading PDF:", error);
-      throw error;
+      console.error("[Doc] Error during background indexing:", error);
+      this.indexingState = 'complete';
+      this.notify('index-ready');
     }
   }
 

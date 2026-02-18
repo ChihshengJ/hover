@@ -89,10 +89,10 @@ export class NavigationTree {
 
   async initialize() {
     if (this.treeBuilt) return;
-    
+
     // Cache page dimensions for coordinate conversion
     await this.#cachePageDimensions();
-    
+
     const docOutline = this.doc.outline;
 
     if (docOutline && docOutline.length > 0) {
@@ -100,12 +100,13 @@ export class NavigationTree {
       this.flatSections = this.#flattenSections(this.tree);
 
       const destCache = this.#buildDestCacheFromOutline(docOutline);
-      const figureTableItems = await this.#extractFigureTableAnnotations(destCache);
+      const figureTableItems =
+        await this.#extractFigureTableAnnotations(destCache);
       this.#insertFiguresIntoTree(figureTableItems);
     }
     this.treeBuilt = true;
   }
-  
+
   /**
    * Cache page dimensions from the document model
    */
@@ -115,11 +116,11 @@ export class NavigationTree {
       this.pageDimensions = this.doc.pageDimensions;
       return;
     }
-    
+
     // Fallback: compute dimensions ourselves
     const pdfDoc = this.doc.pdfDoc;
     if (!pdfDoc) return;
-    
+
     this.pageDimensions = [];
     for (let i = 1; i <= pdfDoc.numPages; i++) {
       const page = await pdfDoc.getPage(i);
@@ -130,7 +131,7 @@ export class NavigationTree {
       });
     }
   }
-  
+
   /**
    * Get page height for a given page index
    * @param {number} pageIndex - 0-based page index
@@ -139,7 +140,7 @@ export class NavigationTree {
   #getPageHeight(pageIndex) {
     return this.pageDimensions[pageIndex]?.height ?? 792;
   }
-  
+
   /**
    * Get page width for a given page index
    * @param {number} pageIndex - 0-based page index
@@ -198,7 +199,7 @@ export class NavigationTree {
   }
 
   // Tree Building
-  
+
   /**
    * Transform doc.outline nodes to TreeNode format
    * Preserves columnIndex from outline_builder for column-aware placement
@@ -206,17 +207,18 @@ export class NavigationTree {
    * @returns {TreeNode[]}
    */
   #convertOutlineToTreeNodes(outlineItems) {
-    return outlineItems.map(item => ({
+    return outlineItems.map((item) => ({
       id: item.id,
       title: item.title,
-      type: 'section',
+      type: "section",
       pageIndex: item.pageIndex,
       left: item.left,
-      top: item.top,  // PDF coordinates (origin bottom-left)
-      columnIndex: item.columnIndex ?? -1,  // Preserve column info, default to full-width
-      children: item.children.length > 0 
-        ? this.#convertOutlineToTreeNodes(item.children) 
-        : [],
+      top: item.top, // PDF coordinates (origin bottom-left)
+      columnIndex: item.columnIndex ?? -1, // Preserve column info, default to full-width
+      children:
+        item.children.length > 0
+          ? this.#convertOutlineToTreeNodes(item.children)
+          : [],
       expanded: false,
     }));
   }
@@ -272,7 +274,7 @@ export class NavigationTree {
    */
   #buildDestCacheFromOutline(outlineItems) {
     const cache = new Map();
-    
+
     const addToCache = (items) => {
       for (const item of items) {
         // We can't recover the original dest key, but the cache will still
@@ -282,7 +284,7 @@ export class NavigationTree {
         }
       }
     };
-    
+
     addToCache(outlineItems);
     return cache;
   }
@@ -303,40 +305,40 @@ export class NavigationTree {
         }
       }
     }
-    
+
     // Sort by reading order: page → column → Y (descending for PDF coords)
     result.sort((a, b) => {
       // Different pages: earlier page first
       if (a.pageIndex !== b.pageIndex) return a.pageIndex - b.pageIndex;
-      
+
       const colA = a.columnIndex ?? -1;
       const colB = b.columnIndex ?? -1;
-      
+
       // Handle full-width vs column items on same page
       if (colA === -1 && colB === -1) {
         // Both full-width: higher Y (top of page in PDF coords) comes first
         return b.top - a.top;
       }
-      
+
       if (colA === -1) {
         // a is full-width, b is in a column
         // Full-width comes before column content if it's above (higher Y)
         // Use a slight bias toward full-width being "earlier" when close
         return b.top > a.top ? 1 : -1;
       }
-      
+
       if (colB === -1) {
         // b is full-width, a is in a column
         return a.top > b.top ? -1 : 1;
       }
-      
+
       // Both in columns: lower column index first (left column before right)
       if (colA !== colB) return colA - colB;
-      
+
       // Same column: higher Y (top of page) comes first in reading order
       return b.top - a.top;
     });
-    
+
     return result;
   }
 
@@ -377,7 +379,10 @@ export class NavigationTree {
           : "figure";
 
         // Estimate column from left position
-        const columnIndex = this.#estimateColumnFromLeft(position.left, position.pageIndex);
+        const columnIndex = this.#estimateColumnFromLeft(
+          position.left,
+          position.pageIndex,
+        );
 
         items.push({
           id: crypto.randomUUID(),
@@ -398,15 +403,15 @@ export class NavigationTree {
     // Sort by reading order: page → column → Y
     items.sort((a, b) => {
       if (a.pageIndex !== b.pageIndex) return a.pageIndex - b.pageIndex;
-      
+
       const colA = a.columnIndex ?? -1;
       const colB = b.columnIndex ?? -1;
-      
+
       if (colA !== colB && colA !== -1 && colB !== -1) {
-        return colA - colB;  // Earlier column first
+        return colA - colB; // Earlier column first
       }
-      
-      return b.top - a.top;  // Higher Y (top of page) first
+
+      return b.top - a.top; // Higher Y (top of page) first
     });
 
     return items;
@@ -462,7 +467,11 @@ export class NavigationTree {
 
     for (const fig of figureItems) {
       // Use the columnIndex already computed during extraction
-      const section = this.#findContainingSection(fig.pageIndex, fig.top, fig.columnIndex);
+      const section = this.#findContainingSection(
+        fig.pageIndex,
+        fig.top,
+        fig.columnIndex,
+      );
       if (section) {
         section.children.push(fig);
       } else {
@@ -473,13 +482,13 @@ export class NavigationTree {
 
   /**
    * Find the section that contains the given position using column-aware reading order
-   * 
+   *
    * Reading order in multi-column documents:
    * - Page N before Page N+1
    * - Column 0 (left) before Column 1 (right) on same page
    * - Higher Y (top) before lower Y within same column
    * - Full-width content (-1) ordered by Y position relative to column content
-   * 
+   *
    * @param {number} pageIndex - 0-based page index
    * @param {number} pdfY - Y position in PDF coordinates (higher = higher on page)
    * @param {number} columnIndex - Column index: -1 for full-width, 0+ for columns
@@ -507,7 +516,7 @@ export class NavigationTree {
 
   /**
    * Determine if a section comes before a given position in reading order
-   * 
+   *
    * @param {TreeNode} section - The section to check
    * @param {number} targetPageIndex - Target page index
    * @param {number} targetPdfY - Target Y in PDF coordinates
@@ -521,19 +530,19 @@ export class NavigationTree {
 
     // Same page - need column-aware comparison
     const sectionCol = section.columnIndex ?? -1;
-    
+
     // Both full-width: compare Y (higher Y = earlier in reading order for PDF coords)
     if (sectionCol === -1 && targetColumn === -1) {
       return section.top >= targetPdfY;
     }
-    
+
     // Section is full-width, target is in a column
     if (sectionCol === -1) {
       // Full-width section is "before" if it's above the target position
       // (or at same level - full-width typically precedes column content)
       return section.top >= targetPdfY;
     }
-    
+
     // Target is full-width, section is in a column
     if (targetColumn === -1) {
       // Section in column is "before" full-width target only if section is above
@@ -541,16 +550,16 @@ export class NavigationTree {
     }
 
     // Both in columns
-    if (sectionCol < targetColumn) return true;  // Earlier column = before
+    if (sectionCol < targetColumn) return true; // Earlier column = before
     if (sectionCol > targetColumn) return false; // Later column = after
 
     // Same column: section is before if it has higher or equal Y (higher = earlier in PDF coords)
     return section.top >= targetPdfY;
   }
-  
+
   /**
    * Estimate which column a position belongs to based on X coordinate
-   * 
+   *
    * @param {number} leftX - X position in PDF coordinates
    * @param {number} pageIndex - 0-based page index
    * @returns {number} Column index: -1 for ambiguous/full-width, 0 for left, 1 for right
@@ -558,19 +567,19 @@ export class NavigationTree {
   #estimateColumnFromLeft(leftX, pageIndex) {
     const pageWidth = this.#getPageWidth(pageIndex);
     const leftRatio = leftX / pageWidth;
-    
+
     // Heuristic thresholds for two-column layout
     // Left margin to ~45% = column 0
     // ~55% to right margin = column 1
     // Middle zone (45-55%) = ambiguous, treat as full-width
     if (leftRatio < 0.45) return 0;
     if (leftRatio > 0.55) return 1;
-    return -1;  // Ambiguous, treat as full-width
+    return -1; // Ambiguous, treat as full-width
   }
-  
+
   /**
    * Estimate column from a ratio (0-1) left position
-   * 
+   *
    * @param {number} leftRatio - Left position as ratio (0 = left edge, 1 = right edge)
    * @returns {number} Column index: -1 for ambiguous/full-width, 0 for left, 1 for right
    */
@@ -613,16 +622,16 @@ export class NavigationTree {
       const bLeftRatio = b.pageRanges[0]?.rects[0]?.leftRatio ?? 0;
       const aTopRatio = a.pageRanges[0]?.rects[0]?.topRatio ?? 0;
       const bTopRatio = b.pageRanges[0]?.rects[0]?.topRatio ?? 0;
-      
+
       // Estimate columns
       const aCol = this.#estimateColumnFromLeftRatio(aLeftRatio);
       const bCol = this.#estimateColumnFromLeftRatio(bLeftRatio);
-      
+
       // Sort by column first (left column before right)
       if (aCol !== bCol && aCol !== -1 && bCol !== -1) {
         return aCol - bCol;
       }
-      
+
       // Then by vertical position (smaller topRatio = higher on page = earlier)
       return aTopRatio - bTopRatio;
     });
@@ -631,7 +640,7 @@ export class NavigationTree {
   /**
    * Create a TreeNode for an annotation
    * Converts annotation's ratio-based coordinates to PDF coordinates for proper placement
-   * 
+   *
    * @param {Object} annotation - The annotation object
    * @param {number} counter - Annotation counter for display
    * @returns {TreeNode}
@@ -649,19 +658,21 @@ export class NavigationTree {
     const typeName =
       annotation.type === "highlight" ? "Highlight" : "Underline";
 
-    const title = annotation.comment ? `Cmt: ${annotation.comment}` : `${typeName} ${counter}`;
+    const title = annotation.comment
+      ? `Cmt: ${annotation.comment}`
+      : `${typeName} ${counter}`;
 
     // Convert topRatio to PDF Y coordinate
     // topRatio: 0 = top of page, 1 = bottom of page
     // PDF Y: 0 = bottom of page, pageHeight = top of page
     const topRatio = firstPage?.rects[0]?.topRatio ?? 0;
     const pageHeight = this.#getPageHeight(pageIndex);
-    const pdfY = pageHeight * (1 - topRatio);  // Convert to PDF coords
-    
+    const pdfY = pageHeight * (1 - topRatio); // Convert to PDF coords
+
     // Estimate column from left position
     const leftRatio = firstPage?.rects[0]?.leftRatio ?? 0;
     const columnIndex = this.#estimateColumnFromLeftRatio(leftRatio);
-    
+
     // Store original topRatio for navigation (used in #navigateTo)
     const originalTopRatio = topRatio;
 
@@ -673,10 +684,10 @@ export class NavigationTree {
       color: annotation.color,
       annotationId: annotation.id,
       pageIndex: pageIndex,
-      left: leftRatio * this.#getPageWidth(pageIndex),  // Convert to PDF X coordinate
-      top: pdfY,  // Now in PDF coordinates
-      columnIndex: columnIndex,  // Column-aware placement
-      originalTopRatio: originalTopRatio,  // Keep for navigation
+      left: leftRatio * this.#getPageWidth(pageIndex), // Convert to PDF X coordinate
+      top: pdfY, // Now in PDF coordinates
+      columnIndex: columnIndex, // Column-aware placement
+      originalTopRatio: originalTopRatio, // Keep for navigation
       children: [],
       expanded: false,
       pageRange: pageRange,
@@ -686,14 +697,14 @@ export class NavigationTree {
   /**
    * Insert an annotation node into the appropriate section of the tree
    * Uses column-aware placement to correctly handle multi-column documents
-   * 
+   *
    * @param {TreeNode} annotationNode - The annotation node to insert
    */
   #insertAnnotationIntoTree(annotationNode) {
     const section = this.#findContainingSection(
       annotationNode.pageIndex,
-      annotationNode.top,  // Now in PDF coordinates
-      annotationNode.columnIndex
+      annotationNode.top, // Now in PDF coordinates
+      annotationNode.columnIndex,
     );
 
     if (section) {
@@ -792,7 +803,7 @@ export class NavigationTree {
     const row = document.createElement("div");
     row.className = `nav-tree-row nav-tree-row--${node.type}`;
     // Add INDENT to leave room for branch line at each level
-    row.style.marginLeft = `${(1+depth) * this.INDENT}px`;
+    row.style.marginLeft = `${(1 + depth) * this.INDENT}px`;
 
     // Chevron
     const hasChildren = node.children.length > 0;
@@ -801,7 +812,7 @@ export class NavigationTree {
     if (hasChildren) {
       chevron.innerHTML = node.expanded ? downSvg : rightSvg;
       chevron.addEventListener("click", (e) => {
-        e.stopPropagation400
+        e.stopPropagation400;
         this.#togglePin(node, item, path);
       });
     }
@@ -1069,7 +1080,7 @@ export class NavigationTree {
       // Sections and figures already use PDF coordinates
       this.pane.scrollToPoint(node.pageIndex, node.left, node.top);
     }
- 
+
     if (this.pinnedPath.length === 0) {
       this.hide();
     }
@@ -1209,11 +1220,13 @@ export class NavigationTree {
 
     this.onCloseCallback = onClose;
 
-    if (!this.treeBuilt) {
+    if (!this.treeBuilt && this.doc.indexingState === "complete") {
       await this.initialize();
     }
 
-    this.refreshAnnotations();
+    if (this.treeBuilt) {
+      this.refreshAnnotations();
+    }
 
     // Store ball position for centering
     this.ballRightX = ballRightX;
@@ -1238,11 +1251,45 @@ export class NavigationTree {
 
     // Render after a brief delay
     setTimeout(() => {
-      this.#render();
+      if (this.treeBuilt) {
+        this.#render();
+      } else {
+        this.#renderBuildingState();
+      }
       this.#centerOnBall();
     }, 100);
 
     this.isVisible = true;
+  }
+
+  #renderBuildingState() {
+    this.container.innerHTML = "";
+    const wrapper = document.createElement("div");
+    wrapper.className = "nav-tree-wrapper";
+    wrapper.style.display = "flex";
+    wrapper.style.alignItems = "center";
+    wrapper.style.justifyContent = "center";
+    wrapper.style.padding = "40px 20px";
+    wrapper.innerHTML = `
+      <div style="text-align: center; color: #888; font-size: 13px;">
+        <div style="margin-bottom: 8px; opacity: 0.6;">Building outline…</div>
+      </div>
+    `;
+    this.container.appendChild(wrapper);
+  }
+
+  /**
+   * Reinitialize the tree after background indexing completes.
+   * If the tree is currently visible, refreshes it in-place.
+   */
+  async reinitialize() {
+    this.treeBuilt = false;
+    await this.initialize();
+    if (this.isVisible) {
+      this.refreshAnnotations();
+      this.#render();
+      this.#centerOnBall();
+    }
   }
 
   #centerOnBall() {

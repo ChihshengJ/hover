@@ -117,7 +117,7 @@ async function fetchPdfFromUrl(url, onProgress) {
 /**
  * Decode a base64-encoded PDF string to ArrayBuffer.
  * Handles both raw base64 and data-URI prefixed strings.
- * @param {string} base64 
+ * @param {string} base64
  * @returns {ArrayBuffer}
  */
 function base64ToArrayBuffer(base64) {
@@ -260,37 +260,6 @@ function adoptContentScriptOverlay() {
 }
 
 /**
- * Expose the original PDF URL so other extensions (e.g. Zotero) can discover it.
- * Sets a <meta> tag and a data attribute on the document element.
- */
-function exposeOriginalUrl(url) {
-  if (!url) return;
-
-  // 1. <meta name="citation_pdf_url"> as Zotero and other tools look for this
-  let meta = document.querySelector('meta[name="citation_pdf_url"]');
-  if (!meta) {
-    meta = document.createElement("meta");
-    meta.setAttribute("name", "citation_pdf_url");
-    document.head.appendChild(meta);
-  }
-  meta.setAttribute("content", url);
-
-  // 2. Data attribute on <html> for easy programmatic access
-  document.documentElement.dataset.hoverOriginalUrl = url;
-
-  // 3. Also set the canonical link
-  let canonical = document.querySelector('link[rel="canonical"]');
-  if (!canonical) {
-    canonical = document.createElement("link");
-    canonical.setAttribute("rel", "canonical");
-    document.head.appendChild(canonical);
-  }
-  canonical.setAttribute("href", url);
-
-  console.log("[Main] Exposed original PDF URL:", url);
-}
-
-/**
  * Load PDF - handles both extension and dev contexts
  */
 async function loadPdf(isFirstLaunch = false) {
@@ -318,7 +287,7 @@ async function loadPdf(isFirstLaunch = false) {
     const intendedUrl = inExtension ? urlParams.get("url") : getDevUrl();
 
     if (isFirstLaunch && intendedUrl) {
-      // URL-based first launch â€" show onboarding with default paper,
+      // URL-based first launch, show onboarding with default paper,
       // then reload with the user's intended URL afterwards.
       OnboardingWalkthrough.saveIntendedUrl(intendedUrl);
 
@@ -337,6 +306,10 @@ async function loadPdf(isFirstLaunch = false) {
 
       document.title = "Welcome to Hover - Tutorial";
       await loadingOverlay.hide();
+
+      await pdfmodel.buildIndex();
+      wm.toolbar?.navigationTree?.reinitialize();
+      wm.progressBar?.buildSectionMarks();
 
       setTimeout(async () => {
         const onboarding = new OnboardingWalkthrough(wm, fileMenu);
@@ -428,18 +401,25 @@ async function loadPdf(isFirstLaunch = false) {
     await wm.initialize();
     const fileMenu = new FileMenu(wm);
 
-    const detectedTitle = await pdfmodel.getDocumentTitle();
     const fileName = pdfName.replace(/\.pdf$/i, "");
-    document.title = (detectedTitle || fileName) + " - Hover PDF";
-
-    // Expose original URL for other extensions (Zotero, etc.)
-    // if (originalUrl) {
-    //   exposeOriginalUrl(originalUrl);
-    // }
+    document.title = fileName + " - Hover PDF";
 
     PDFDocumentModel.clearLocalPdf();
 
     await loadingOverlay.hide();
+
+    // Add a RAF to make sure the indexing start after the rendering
+    await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+
+    // Start indexing
+    await pdfmodel.buildIndex();
+    wm.toolbar?.navigationTree?.reinitialize();
+    wm.progressBar?.buildSectionMarks();
+
+    const detectedTitle = await pdfmodel.getDocumentTitle();
+    if (detectedTitle) {
+      document.title = detectedTitle + " - Hover PDF";
+    }
   } catch (error) {
     console.error("[Main] Error loading PDF:", error);
     PDFDocumentModel.clearLocalPdf();

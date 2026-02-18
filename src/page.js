@@ -440,6 +440,27 @@ export class PageView {
     await this.render();
   }
 
+  /**
+   * Re-render only the annotation overlay layer (citations, cross-refs, URLs)
+   * for pages that are already rendered. Called when background indexing completes.
+   */
+  refreshOverlays() {
+    if (this.canvas.dataset.rendered !== "true") return;
+
+    const page = this.#getPage();
+    if (!page) return;
+
+    const cssWidth = parseFloat(this.canvas.style.width);
+    const cssHeight = parseFloat(this.canvas.style.height);
+    const textScale = cssWidth / page.size.width;
+
+    this.annotationLayer.innerHTML = "";
+    this.#renderUrlLinks(page, textScale, cssWidth, cssHeight);
+    this.#renderCitationOverlays(page, textScale, cssWidth, cssHeight);
+    this.#renderCrossRefOverlays(page, textScale, cssWidth, cssHeight);
+    // Delegated listeners on annotationLayer survive innerHTML clear — no re-setup needed
+  }
+
   // ============================================
   // Event Handling
   // ============================================

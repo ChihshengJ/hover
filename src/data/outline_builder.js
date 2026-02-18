@@ -12,14 +12,20 @@ import { COMMON_SECTION_NAMES, SECTION_NUMBER_STRIP } from "./lexicon.js";
 import { FontStyle } from "./text_index.js";
 
 const NUMBERED_SECTION_PATTERN =
-  /^(\d+(?:\.\d+)*\.?|[A-Z]\.|[IVXLCDM]+\.)\s+\S/;
+  /^(\d+(?:\.\d+)*\.?|[A-Z](\.\d)?\.?|[IVXLCDM]+\.?)\s+\S/;
 export const SECTION_NUMBER_EXTRACT =
-  /^(\d+(?:\.\d+)*\.?|[A-Z]\.|[IVXLCDM]+\.)\s*/;
+  /^(\d+(?:\.\d+)*\.?|[A-Z](\.\d)?\.?|[IVXLCDM]+\.?)\s*/;
 
 /**
  * Build document outline from PDF metadata or heuristic analysis
  */
-export async function buildOutline(pdfDoc, native, textIndex, allNamedDests, metadata) {
+export async function buildOutline(
+  pdfDoc,
+  native,
+  textIndex,
+  allNamedDests,
+  metadata,
+) {
   const nativeOutline = await extractPdfOutline(pdfDoc, native, allNamedDests);
 
   if (nativeOutline && nativeOutline.length > 0) {
@@ -286,7 +292,9 @@ function collectHeadingCandidates(textIndex, titleInfo) {
   let startPage = titleInfo.abstractInfo?.pageIndex + 1 || 1;
   const titleLast = titleInfo.lines?.at(-1);
 
-  const titleLine = titleLast ? Math.floor(titleLast.y) - 3*titleLast.lineHeight : 0;
+  const titleLine = titleLast
+    ? Math.floor(titleLast.y) - 3 * titleLast.lineHeight
+    : 0;
   const titlePage = titleLast ? titleLast.pageNum : 1;
 
   for (const [pageNum, data] of pageData) {
@@ -294,7 +302,12 @@ function collectHeadingCandidates(textIndex, titleInfo) {
     const { lines, pageHeight, pageWidth } = data;
     const pageData = { pageHeight, pageWidth };
 
-    const skipThresholdY = titleLine != 0 ? titleLine : abstractLine ? abstractLine : pageHeight * 0.3;
+    const skipThresholdY =
+      titleLine != 0
+        ? titleLine
+        : abstractLine
+          ? abstractLine
+          : pageHeight * 0.3;
     startPage = titlePage ? titlePage : startPage;
 
     for (const line of lines) {
@@ -356,7 +369,8 @@ function analyzeLineAsHeading(
   const fontSize = line.items[0].fontSize ?? 0;
   const fontStyle = line.items[0].fontStyle ?? FontStyle.REGULAR;
 
-  const isSmallerFont = Math.floor(lineHeight * 100) < Math.floor(bodyLineHeight * 100);
+  const isSmallerFont =
+    Math.floor(lineHeight * 100) < Math.floor(bodyLineHeight * 100);
   const isLargerFont = lineHeight > bodyLineHeight * 1.4;
   const isStyled =
     fontStyle === FontStyle.BOLD || fontStyle === FontStyle.BOLD_ITALIC;
@@ -555,10 +569,6 @@ export const ROMAN_NUMERAL_MAP = {
   XXIII: 23,
   XXIV: 24,
   XXV: 25,
-  L: 50,
-  C: 100,
-  D: 500,
-  M: 1000,
 };
 
 export function parseRomanNumeral(str) {
@@ -638,7 +648,12 @@ function buildOutlineTree(candidates) {
   const filtered = candidates.filter((c) => {
     if (!c.numberPrefix) return true;
     const components = parsePrefix(c.numberPrefix);
-    if (components.length > 0 && components[0] >= 1000) return false;
+    if (
+      components.length > 0 &&
+      /\d+/.test(components[0]) &&
+      components[0] >= 500
+    )
+      return false;
     return true;
   });
 

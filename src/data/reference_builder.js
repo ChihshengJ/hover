@@ -174,7 +174,7 @@ function findClosestLineIndex(lines, targetY) {
   let bestDist = Infinity;
 
   for (let i = 0; i < lines.length; i++) {
-    const d = Math.abs(lines[i].y - targetY);
+    const d = Math.abs(lines[i].y - targetY) + lines[i].x;
     if (d < bestDist) {
       bestDist = d;
       best = i;
@@ -185,7 +185,7 @@ function findClosestLineIndex(lines, targetY) {
 }
 
 // ============================================
-// Tier 2: Heading-Based Detection (original)
+// Tier 2: Heading-Based Detection
 // ============================================
 
 function findReferenceSectionByHeading(textIndex) {
@@ -665,7 +665,7 @@ function extractReferenceAnchors(lines, format, textIndex) {
   if (format.startsWith("numbered-")) {
     return extractNumberedReferences(lines, format);
   }
-  const metrics = textIndex.getDocumentMetrics()
+  const metrics = textIndex.getDocumentMetrics();
   return extractStructuralReferences(lines, format, metrics);
 }
 
@@ -735,6 +735,7 @@ function extractStructuralReferences(lines, format, metrics) {
         prevYDirection,
         baselineLineGap,
         typicalLineWidth,
+        format,
       );
       isNewReference = result.isNewReference;
 
@@ -774,20 +775,20 @@ function detectBoundary(
   prevYDirection,
   baselineLineGap,
   typicalLineWidth,
+  format,
 ) {
   const yDelta = line.y - prevLine.y;
   const yDirection = Math.sign(yDelta);
   const absYDelta = Math.abs(yDelta);
 
-  const prevLineWidth = calculateLineWidth(prevLine);
-  const isAfterShortLine = prevLineWidth < typicalLineWidth * 0.8;
-
   const lineHeight = line.lineHeight || 10;
   const tolerance = lineHeight;
+  const prevLineWidth = calculateLineWidth(prevLine);
+  const isAfterShortLine = prevLineWidth < typicalLineWidth - tolerance * 5;
 
   const isIndented = line.x > currentRef.firstLineX + tolerance;
   const isAtFirstX = line.x <= currentRef.firstLineX + tolerance;
-  const wasIndented = prevLine.x >= currentRef.firstLineX;
+  const wasIndented = prevLine.x >= currentRef.firstLineX + tolerance;
 
   const isColumnBreak =
     prevYDirection !== null &&
@@ -798,10 +799,18 @@ function detectBoundary(
   const isPageBreak = line.pageNumber !== prevLine.pageNumber;
   const isBoundaryJump = isColumnBreak || isPageBreak;
 
-  const isLargeGap =
-    !isBoundaryJump && absYDelta > baselineLineGap * 1.5;
+  const isLargeGap = !isBoundaryJump && absYDelta > baselineLineGap * 1.5;
 
   let isNewReference = false;
+
+  // console.log(
+  //   line,
+  //   isLargeGap,
+  //   isIndented,
+  //   wasIndented,
+  //   isAtFirstX,
+  //   isAfterShortLine,
+  // );
 
   if (isLargeGap) {
     isNewReference = true;
@@ -815,6 +824,8 @@ function detectBoundary(
     } else {
       isNewReference = looksLikeReferenceStart(line.text);
     }
+  } else if (isAfterShortLine) {
+    isNewReference = true;
   }
 
   return { isNewReference, yDirection, isBoundaryJump };

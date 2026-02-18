@@ -319,6 +319,7 @@ export class CrossReferenceBuilder {
           bodyFontSize,
           bodyFontStyle,
           pageData.pageWidth,
+          match,
         )
       ) {
         continue;
@@ -362,13 +363,12 @@ export class CrossReferenceBuilder {
   /**
    * Validate that a line is a definition (caption/header)
    */
-  #isDefinition(line, type, bodyFontSize, bodyFontStyle, pageWidth) {
+  #isDefinition(line, type, bodyFontSize, bodyFontStyle, pageWidth, match) {
     const firstItem = line.items?.[0];
     if (!firstItem) return false;
 
     const itemFontStyle = firstItem.fontStyle ?? FontStyle.REGULAR;
     const itemFontSize = firstItem.fontSize ?? bodyFontSize;
-
     const isBold =
       itemFontStyle === FontStyle.ITALIC ||
       itemFontStyle === FontStyle.BOLD ||
@@ -376,17 +376,19 @@ export class CrossReferenceBuilder {
     const isLarger = itemFontSize > bodyFontSize * 1.05;
     const isAllCapital = firstItem.str === firstItem.str.toUpperCase();
 
-    if (type === "sectionMark") return true;
+    const trailingPunc = match
+      ? /^[:\.]/.test(match[0].at(-1))
+      : false;
 
+    if (type === "sectionMark") return true;
     if (type === "figure" || type === "table") {
+      if (trailingPunc) return true;
       const isShortCaption = firstItem.str.length < 15;
       return (isBold || isAllCapital) && isShortCaption;
     }
-
-    if (type === "theorem") return isBold || isLarger;
-    if (type === "algorithm") return isBold || isLarger;
-
-    return isBold || isLarger || isAllCapital;
+    if (type === "theorem") return isBold || isLarger || trailingPunc;
+    if (type === "algorithm") return isBold || isLarger || trailingPunc;
+    return isBold || isLarger || isAllCapital || trailingPunc;
   }
 
   // ============================================

@@ -5,7 +5,7 @@
  * - Numeric citations: [1], [1,2,3], [1-8]
  * - Author-year citations: Smith (2020), (Smith et al., 2020), (A; B; C)
  * - Superscript citations: detected via font metrics
- * - Cross-references: Figure 1, Table 2, §3, Eq. 4, etc.
+ * - Cross-references: Figure 1, Table 2, Â§3, Eq. 4, etc.
  *
  * The extracted data is then used by:
  * - citation_builder.js for merging with native citation links
@@ -55,6 +55,13 @@ class InlineTextAdapter {
   #docPtr = null;
 
   /**
+   * Sparse removal maps per page — stores original indices of stripped chars.
+   * Only populated for pages that actually contain \uFFFE.
+   * @type {Map<number, number[]>}
+   */
+  #pageRemovals = new Map();
+
+  /**
    * @param {import('./text_extractor.js').PdfiumTextExtractor} extractor
    * @param {number} docPtr
    */
@@ -68,7 +75,42 @@ class InlineTextAdapter {
    * @returns {{fullText: string, charCount: number, pageWidth: number, pageHeight: number}}
    */
   getPageFullText(pageIndex) {
-    return this.#extractor.getPageFullText(this.#docPtr, pageIndex);
+    const result = this.#extractor.getPageFullText(this.#docPtr, pageIndex);
+    const text = result.fullText;
+
+    if (!text) return result;
+
+    // Scan for \uFFFE continuation hyphens (and optional trailing \n)
+    const removals = [];
+    for (let i = 0; i < text.length; i++) {
+      if (text.charCodeAt(i) === 0xfffe) {
+        removals.push(i);
+        // Also strip the line-break that follows the continuation hyphen
+        if (i + 1 < text.length && text.charCodeAt(i + 1) === 0x0a) {
+          removals.push(++i);
+        }
+      }
+    }
+
+    if (removals.length === 0) return result;
+
+    // Build clean text by slicing around removed positions
+    this.#pageRemovals.set(pageIndex, removals);
+    const parts = [];
+    let prev = 0;
+    for (const r of removals) {
+      if (r > prev) parts.push(text.slice(prev, r));
+      prev = r + 1;
+    }
+    if (prev < text.length) parts.push(text.slice(prev));
+    const clean = parts.join("");
+
+    return {
+      fullText: clean,
+      charCount: clean.length,
+      pageWidth: result.pageWidth,
+      pageHeight: result.pageHeight,
+    };
   }
 
   /**
@@ -78,12 +120,48 @@ class InlineTextAdapter {
    * @returns {Array<{x: number, y: number, width: number, height: number}>}
    */
   getRectsForCharRange(pageIndex, startCharIndex, charCount) {
+    const removals = this.#pageRemovals.get(pageIndex);
+    if (removals) {
+      const origStart = this.#toOriginal(startCharIndex, removals);
+      const origEnd = this.#toOriginal(
+        startCharIndex + charCount - 1,
+        removals,
+      );
+      return this.#extractor.getRectsForCharRangeOnPage(
+        this.#docPtr,
+        pageIndex,
+        origStart,
+        origEnd - origStart + 1,
+      );
+    }
     return this.#extractor.getRectsForCharRangeOnPage(
       this.#docPtr,
       pageIndex,
       startCharIndex,
       charCount,
     );
+  }
+
+  /**
+   * Convert a clean-text index back to the original PDFium char index.
+   * Binary-style scan over the sparse removal list.
+   *
+   * @param {number} cleanIdx
+   * @param {number[]} removals - sorted original indices of stripped chars
+   * @returns {number}
+   */
+  #toOriginal(cleanIdx, removals) {
+    let offset = 0;
+    for (const r of removals) {
+      if (r <= cleanIdx + offset) offset++;
+      else break;
+    }
+    return cleanIdx + offset;
+  }
+
+  /** Free all cached removal maps */
+  destroy() {
+    this.#pageRemovals.clear();
   }
 }
 
@@ -188,6 +266,9 @@ export class InlineExtractor {
     console.log(
       `[InlineExtractor] Found ${allCitations.length} citations, ${allCrossRefs.length} cross-references`,
     );
+
+    // Free adapter index-remapping data — no longer needed after extraction
+    this.#textExtractor.destroy?.();
 
     return {
       citations: allCitations,
@@ -493,7 +574,7 @@ export class InlineExtractor {
 
         // Clean item content: strip trailing/leading punctuation and whitespace
         // that gets attached during word-based extraction.
-        // e.g., "7, 18. " → "7,18", "1-3, " → "1-3"
+        // e.g., "7, 18. " â†’ "7,18", "1-3, " â†’ "1-3"
         const cleaned = item.str
           .replace(/^[^\d]+/, "")
           .replace(/[^\d]+$/, "")
@@ -823,7 +904,7 @@ export class InlineExtractor {
 
     // Handle year ranges - extract start year
     let yearToMatch = year;
-    const rangeMatch = year.match(/^(\d{4}[a-z]?)\s*[-–—]\s*\d{4}$/);
+    const rangeMatch = year.match(/^(\d{4}[a-z]?)\s*[-â€“â€”]\s*\d{4}$/);
     if (rangeMatch) {
       yearToMatch = rangeMatch[1];
     }

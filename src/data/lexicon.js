@@ -862,7 +862,8 @@ export const CROSS_REFERENCE_PATTERNS = {
 
   // Section 1, Sec. 1.2, Sec 3, Section D.1, Sec. A.2 (in-text references, not headers)
   // Note: § symbol in headers is handled by SECTION_MARK_HEADER_PATTERN
-  section: /\b(?:Sec(?:tion|s)?\.?\s*)((?:[A-Z]|\d+)(?:\.\d+)*)/gi,
+  section: /\b(?:Sec(?:tion|s)?\.?\s+)((?:[A-Z]|\d+)(?:\.\d+)*)/gi,
+
   // §1, §1.2.3, §A.2, § D.1 (section mark - always a reference, never a header by itself)
   sectionMark: /§\s*((?:[A-Z]|\d+)(?:\.\d+)*)/gi,
 

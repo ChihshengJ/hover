@@ -28,8 +28,8 @@
 
 .floating-toolbar-hit-area {
   position: fixed;
-  width: 130px;
-  height: 400px;
+  width: 120px;
+  height: 380px;
   right: 0;
   pointer-events: none;
   z-index: 0;
@@ -58,8 +58,8 @@
   content: "";
   position: absolute;
   border-radius: 50%;
-  inset: -20px;
-  filter: url(#goo) drop-shadow(0 0.3em 0.2em #00000099) brightness(var(--brt));
+  inset: -18px;
+  filter: url(#goo) drop-shadow(0 0.2em 0.2em #00000099) brightness(var(--brt));
   background:
     var(--ball-body) content-box,
     radial-gradient(
@@ -129,7 +129,7 @@
 
 .page-divider {
   font-size: 15px;
-  opacity: 0.8;
+  opacity: 0.7;
   transform: scaleX(4);
 }
 
@@ -157,15 +157,13 @@
   --btn-scale: 1;
   --btn-delay: 0ms;
   --btn-y: 0px;
-  width: 45px;
-  height: 45px;
+  width: 40px;
+  height: 40px;
   border-radius: 50%;
   border: none;
   background: rgba(255, 255, 255, 0.8);
   backdrop-filter: blur(5px) saturate(180%);
   color: var(--text-primary);
-  font-size: 20px;
-  font-weight: 300;
   cursor: pointer;
   box-shadow:
     inset 2px 2px 5px #00000033,

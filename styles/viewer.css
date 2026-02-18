@@ -156,7 +156,6 @@ body {
   transform: translateX(-50%);
   z-index: var(--z-dropdown);
   background: var(--bg-glass-solid);
-  backdrop-filter: blur(5px);
   border-radius: var(--radius-2xl);
   box-shadow: var(--shadow-elevated);
   padding: 6px 16px;

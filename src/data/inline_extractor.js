@@ -125,13 +125,8 @@ export class InlineExtractor {
    * @returns {ExtractionResult}
    */
   extract() {
-    console.log("[InlineExtractor] Starting extraction...");
-
     // Build reference signatures for citation validation
     this.#signatures = this.#referenceIndex?.anchors || [];
-    console.log(
-      `[InlineExtractor] Using ${this.#signatures.length} reference signatures`,
-    );
 
     // Detect citation format from reference section
     this.#detectedFormat = this.#detectCitationFormat();
@@ -755,7 +750,6 @@ export class InlineExtractor {
         const validRefKeys = [];
         let totalConfidence = 0;
 
-
         for (const yearInfo of years) {
           const matchResult = this.#matchAuthorYearToSignature(
             author,
@@ -782,7 +776,6 @@ export class InlineExtractor {
           startIndex,
           match[0].length,
         );
-
 
         if (rects.length === 0) continue;
 

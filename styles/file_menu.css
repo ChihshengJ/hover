@@ -10,8 +10,8 @@
 
 .file-menu-container {
   position: fixed;
-  bottom: 48px;
-  right: 48px;
+  bottom: 40px;
+  right: 40px;
   z-index: var(--z-modal);
   display: flex;
   flex-direction: row-reverse;
@@ -124,7 +124,7 @@ input[type="file"] {
   align-items: center;
   gap: 12px;
   width: 100%;
-  padding: 10px 16px;
+  padding: 8px 18px;
   border: none;
   background: transparent;
   cursor: pointer;
@@ -148,7 +148,6 @@ input[type="file"] {
 
 .file-menu-item:hover {
   background: var(--bg-hover);
-  color: var(--text-primary);
 }
 
 .file-menu-item:active {

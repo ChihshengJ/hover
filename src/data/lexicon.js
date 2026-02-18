@@ -854,17 +854,17 @@ export const NUMERIC_INDEX_RANGE_PATTERN = /(\d+)\s*[-–—]\s*(\d+)/;
 export const CROSS_REFERENCE_PATTERNS = {
   // Figure 1, Fig. 1, Fig 1, Figs. 1-3, Figure 1a
   figure:
-    /\b(?:Fig(?:ure|s)?\.?\s*)(\d+[a-z]?(?:\s*[-–—]\s*\d+[a-z]?)?(?:\s*[,&]\s*\d+[a-z]?)*)/gi,
+    /\b(?:Fig(?:ure|s)?\.?\s*)([A-Z]?\d+[a-z]?(?:\s*[-–—]\s*[A-Z]?\d+[a-z]?)?(?:\s*[,&]\s*[A-Z]?\d+[a-z]?)*)/gi,
 
   // Table 1, Tab. 1, Tables 1-3
-  table: /\bTab(?:le|s)?\.?\s+(\d+[a-z]?(?:\s*[–—,-]\s*\d+[a-z]?)*)/gi,
+  table:
+    /\bTab(?:le|s)?\.?\s+([A-Z]?\d+[a-z]?(?:\s*[–—,-]\s*[A-Z]?\d+[a-z]?)*)/gi,
 
-  // Section 1, Sec. 1.2, Sec 3 (in-text references, not headers)
+  // Section 1, Sec. 1.2, Sec 3, Section D.1, Sec. A.2 (in-text references, not headers)
   // Note: § symbol in headers is handled by SECTION_MARK_HEADER_PATTERN
-  section: /\b(?:Sec(?:tion|s)?\.?\s*)(\d+(?:\.\d+)*)/gi,
-
-  // §1, §1.2.3, §A.2 (section mark - always a reference, never a header by itself)
-  sectionMark: /§\s*(([A-Z]|\d+)(?:\.\d+)*)/gi,
+  section: /\b(?:Sec(?:tion|s)?\.?\s*)((?:[A-Z]|\d+)(?:\.\d+)*)/gi,
+  // §1, §1.2.3, §A.2, § D.1 (section mark - always a reference, never a header by itself)
+  sectionMark: /§\s*((?:[A-Z]|\d+)(?:\.\d+)*)/gi,
 
   // Equation 1, Eq. 1, Eqs. 1-3, Eqn. (1)
   equation: /\b(?:Eq(?:uation|n|s)?\.?\s*)\(?(\d+(?:\.\d+)?)\)?/gi,

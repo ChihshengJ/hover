@@ -58,7 +58,6 @@ export default defineConfig({
     {
       name: "copy-wasm-to-public",
       buildStart() {
-        // Copy pdfium.wasm from node_modules to public/ so it gets included in dist
         const wasmSrc = resolve(
           __dirname,
           "node_modules/@embedpdf/pdfium/dist/pdfium.wasm",

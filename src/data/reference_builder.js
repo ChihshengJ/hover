@@ -72,7 +72,7 @@ export async function buildReferenceIndex(textIndex, outline) {
     const format = detectReferenceFormat(section.lines);
     console.log(`[Reference] Format: ${format}`);
 
-    const anchors = extractReferenceAnchors(section.lines, format);
+    const anchors = extractReferenceAnchors(section.lines, format, textIndex);
     console.log(`[Reference] Extracted ${anchors.length} anchors`);
 
     return {
@@ -660,14 +660,13 @@ function detectHangingIndent(lines) {
 // Structural Reference Extraction
 // ============================================
 
-function extractReferenceAnchors(lines, format) {
+function extractReferenceAnchors(lines, format, textIndex) {
   if (lines.length === 0) return [];
-
   if (format.startsWith("numbered-")) {
     return extractNumberedReferences(lines, format);
   }
-
-  return extractStructuralReferences(lines, format);
+  const metrics = textIndex.getDocumentMetrics()
+  return extractStructuralReferences(lines, format, metrics);
 }
 
 function extractNumberedReferences(lines, format) {
@@ -701,11 +700,12 @@ function extractNumberedReferences(lines, format) {
   return anchors;
 }
 
-function extractStructuralReferences(lines, format) {
+function extractStructuralReferences(lines, format, metrics) {
   if (lines.length === 0) return [];
 
-  const metrics = computeSectionMetrics(lines);
-  console.log("[Reference] Metrics:", metrics);
+  const baselineLineGap = computeSectionLineGap(lines);
+  const typicalLineWidth = metrics.lineWidth;
+  console.log("[Reference] Metrics:", { baselineLineGap, typicalLineWidth });
 
   const anchors = [];
   let currentRef = { firstLineX: null, lines: [] };
@@ -733,7 +733,8 @@ function extractStructuralReferences(lines, format) {
         nextLineX,
         currentRef,
         prevYDirection,
-        metrics,
+        baselineLineGap,
+        typicalLineWidth,
       );
       isNewReference = result.isNewReference;
 
@@ -771,14 +772,15 @@ function detectBoundary(
   nextLineX,
   currentRef,
   prevYDirection,
-  metrics,
+  baselineLineGap,
+  typicalLineWidth,
 ) {
   const yDelta = line.y - prevLine.y;
   const yDirection = Math.sign(yDelta);
   const absYDelta = Math.abs(yDelta);
 
   const prevLineWidth = calculateLineWidth(prevLine);
-  const isAfterShortLine = prevLineWidth < metrics.typicalLineWidth * 0.75;
+  const isAfterShortLine = prevLineWidth < typicalLineWidth * 0.8;
 
   const lineHeight = line.lineHeight || 10;
   const tolerance = lineHeight;
@@ -791,13 +793,13 @@ function detectBoundary(
     prevYDirection !== null &&
     yDirection !== 0 &&
     yDirection !== prevYDirection &&
-    absYDelta > metrics.baselineLineGap;
+    absYDelta > baselineLineGap;
 
   const isPageBreak = line.pageNumber !== prevLine.pageNumber;
   const isBoundaryJump = isColumnBreak || isPageBreak;
 
   const isLargeGap =
-    !isBoundaryJump && absYDelta > metrics.baselineLineGap * 1.5;
+    !isBoundaryJump && absYDelta > baselineLineGap * 1.5;
 
   let isNewReference = false;
 
@@ -831,10 +833,7 @@ function looksLikeReferenceStart(text) {
   return false;
 }
 
-function computeSectionMetrics(lines) {
-  const widths = lines.map((l) => calculateLineWidth(l)).filter((w) => w > 0);
-  const typicalLineWidth = percentile(widths, 75);
-
+function computeSectionLineGap(lines) {
   const gaps = [];
   for (let i = 1; i < lines.length; i++) {
     if (lines[i].pageNumber === lines[i - 1].pageNumber) {
@@ -847,7 +846,7 @@ function computeSectionMetrics(lines) {
   }
   const baselineLineGap = median(gaps);
 
-  return { typicalLineWidth, baselineLineGap };
+  return baselineLineGap;
 }
 
 function calculateLineWidth(line) {

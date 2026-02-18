@@ -41,7 +41,7 @@
   --bg-secondary: rgba(240, 240, 240, 1);
   --bg-tertiary: rgba(0, 0, 0, 0.1);
   --bg-glass: rgba(255, 255, 255, 0.5);
-  --bg-glass-solid: rgba(255, 255, 255, 0.9);
+  --bg-glass-solid: rgba(255, 255, 255, 1);
   --bg-hover: rgba(0, 0, 0, 0.06);
   --bg-active: rgba(0, 0, 0, 0.2);
 

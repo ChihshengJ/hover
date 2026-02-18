@@ -81,6 +81,17 @@ export class DocumentTextIndex {
     return info;
   }
 
+  getDocumentMetrics() {
+    const info = {
+      fontSize: this.getBodyFontSize(),
+      fontStyle: this.getBodyFontStyle(),
+      lineHeight: this.getBodyLineHeight(),
+      lineWidth: this.getBodyLineWidth(),
+      marginBottom: this.getBodyMarginBottom(),
+    };
+    return info;
+  }
+
   getPageLines(pageNumber) {
     return this.#pageData.get(pageNumber)?.lines || null;
   }

@@ -17,8 +17,6 @@
  * @property {number} originalY
  * @property {number} fontSize
  * @property {number} fontStyle - FontStyle enum value
- * @property {number} isCommonFont - 0 or 1
- * @property {boolean} isAtLineStart
  * @property {TextItem[]} items
  *
  * @typedef {Object} PageTextData
@@ -226,7 +224,7 @@ export class DocumentTextIndex {
         height: slice.rect.size.height,
         fontName: slice.font?.family || slice.font?.famliy || null,
         fontSize: slice.font.size || slice.rect.size.height,
-        originalY: pageHeight - slice.rect.origin.y,
+        originalY: pageHeight - slice.rect.origin.y + 1,
       });
     }
     return items;
@@ -287,8 +285,6 @@ export class DocumentTextIndex {
       lineWidth,
       fontSize,
       fontStyle,
-      isCommonFont: 0,
-      isAtLineStart: false,
       items: lineItems,
     };
   }

@@ -1,13 +1,3 @@
-/**
- * PageView - Renders individual PDF pages using PDFium.
- *
- * Overlay rendering order:
- *   1. URL links (from doc.urlsByPage)
- *   2. Citations (from doc.citationsByPage)
- *   3. Cross-references (from doc.crossRefsByPage)
- *   4. Text layer
- */
-
 import { CitationPopup } from "./controls/citation_popup.js";
 import { CitationFlags } from "./data/lexicon.js";
 
@@ -95,26 +85,6 @@ export class PageView {
     try {
       if (!this.textSlices) {
         this.textSlices = this.doc.textIndex?.getPageLines(this.pageNumber);
-
-        if (!this.textSlices) {
-          if (this.doc.lowLevelHandle) {
-            try {
-              this.textSlices = this.doc.extractPageText(
-                page.index,
-              )?.textSlices;
-            } catch (err) {
-              console.warn(
-                `[PageRender] Low-level extraction failed for page ${page.index}:`,
-                err.message,
-              );
-            }
-          }
-          if (!this.textSlices) {
-            this.textSlices = await native
-              .getPageTextRects(pdfDoc, page)
-              .toPromise();
-          }
-        }
       }
 
       const pageData = await native
@@ -145,22 +115,21 @@ export class PageView {
       this.#renderUrlLinks(page, textScale, cssWidth, cssHeight);
       this.#renderCitationOverlays(page, textScale, cssWidth, cssHeight);
       this.#renderCrossRefOverlays(page, textScale, cssWidth, cssHeight);
-
-      if (this._cachedSpans) {
-        this.#rescaleTextLayer(textScale);
-      } else {
-        if (this.pane.textSelectionManager) {
-          this.pane.textSelectionManager.unregister(this.textLayer);
-        }
-        this.textLayer.innerHTML = "";
-        this.#buildTextLayer(page, textScale, pageHeight);
+      if (this.textSlices) {
+        if (this._cachedSpans) {
+          this.#rescaleTextLayer(textScale);
+        } else {
+          if (this.pane.textSelectionManager) {
+            this.pane.textSelectionManager.unregister(this.textLayer);
+          }
+          this.textLayer.innerHTML = "";
+          this.#buildTextLayer(page, textScale, pageHeight);
+         }
       }
-
       this.textLayer.style.setProperty("--total-scale-factor", `${this.scale}`);
       this.#ensureEndOfContent();
       this.textLayer.style.width = `${cssWidth}px`;
       this.textLayer.style.height = `${cssHeight}px`;
-
       this.#setupAnnotationLayerEvents();
 
       this.canvas.dataset.rendered = "true";
@@ -458,7 +427,22 @@ export class PageView {
     this.#renderUrlLinks(page, textScale, cssWidth, cssHeight);
     this.#renderCitationOverlays(page, textScale, cssWidth, cssHeight);
     this.#renderCrossRefOverlays(page, textScale, cssWidth, cssHeight);
-    // Delegated listeners on annotationLayer survive innerHTML clear — no re-setup needed
+
+    if (!this._cachedSpans && this.doc.textIndex) {
+      this.textSlices = this.doc.textIndex.getPageLines(this.pageNumber);
+      if (this.textSlices) {
+        const pageHeight = page.size.height;
+        if (this.pane.textSelectionManager) {
+          this.pane.textSelectionManager.unregister(this.textLayer);
+        }
+        this.textLayer.innerHTML = "";
+        this.#buildTextLayer(page, textScale, pageHeight);
+        this.textLayer.style.setProperty("--total-scale-factor", `${this.scale}`);
+        this.#ensureEndOfContent();
+        this.textLayer.style.width = `${cssWidth}px`;
+        this.textLayer.style.height = `${cssHeight}px`;
+      }
+    }
   }
 
   // ============================================
@@ -544,6 +528,16 @@ export class PageView {
           );
           if (matched?.cachedText) return matched.cachedText;
         }
+
+        // Heuristic fallback: extract text at the destination coordinate
+        if (target?.location) {
+          return await this.#heuristicFindCiteText(
+            target.location.x,
+            target.location.pageIndex,
+            target.location.y,
+          );
+        }
+
         return null;
       };
       await citationPopup.show(el, citation, findTextForTarget);
@@ -638,23 +632,101 @@ export class PageView {
   // ============================================
   // Citation Text Finding
   // ============================================
-
-  async #findCiteText(left, pageIndex, top) {
+  /**
+   * @param {number} left - X position in PDF coordinates
+   * @param {number} pageIndex - 0-based page index
+   * @param {number} top - Y position in PDF coordinates
+   * @returns {Promise<string|null>}
+   */
+  async #heuristicFindCiteText(left, pageIndex, top) {
     const pageNumber = pageIndex + 1;
+    const lines = this.doc.textIndex?.getPageLines(pageNumber);
+    if (!lines?.length) return null;
 
-    if (this.doc.hasReferenceIndex()) {
-      const bounds = this.doc.findBoundingReferenceAnchors(
-        pageNumber,
-        left,
-        top,
-      );
+    // Find the closest line to the target position
+    let startLineIdx = -1;
+    let minDist = Infinity;
 
-      if (bounds.current?.cachedText) {
-        return bounds.current.cachedText;
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+      const dist = Math.abs(line.y - top) + Math.abs(line.x - left) * 0.5;
+      if (dist < minDist) {
+        minDist = dist;
+        startLineIdx = i;
       }
     }
 
-    return null;
+    if (startLineIdx === -1) return null;
+
+    const refNumberPattern = /^\s*[\[\(]?\d{1,3}[\]\)\.\,]?\s+\S/;
+
+    const reference = [];
+    const firstLine = lines[startLineIdx];
+    const firstLineX = firstLine.x;
+    let baselineLineGap = null;
+    let continuationLineX = null;
+    let lineCount = 0;
+    let prevLineY = firstLine.y;
+
+    for (let i = startLineIdx; i < lines.length; i++) {
+      const line = lines[i];
+      const text = line.text;
+      if (!text || text.trim().length === 0) continue;
+
+      if (i > startLineIdx) {
+        // Check vertical gap between consecutive lines
+        const gap = Math.abs(line.y - prevLineY);
+
+        if (gap > 3) {
+          lineCount++;
+
+          if (baselineLineGap === null) {
+            baselineLineGap = gap;
+          } else if (gap > baselineLineGap * 1.5) {
+            break;
+          }
+
+          // Check reference number at start of new line
+          // Peek ahead to include next span if on same line
+          let lineStartText = text;
+          if (i + 1 < lines.length) {
+            const nextGap = Math.abs(lines[i + 1].y - line.y);
+            if (nextGap < 3) {
+              lineStartText = text + (lines[i + 1].text || "");
+            }
+          }
+
+          if (refNumberPattern.test(lineStartText)) {
+            break;
+          }
+
+          // Check indentation
+          if (lineCount === 1) {
+            continuationLineX = line.x;
+          } else if (continuationLineX !== null) {
+            const hasHangingIndent = continuationLineX > firstLineX + 6;
+            if (hasHangingIndent) {
+              if (line.x < continuationLineX - 10) {
+                break;
+              }
+            } else {
+              const minX = Math.min(firstLineX, continuationLineX);
+              if (line.x < minX - 10) {
+                break;
+              }
+            }
+          }
+        }
+      }
+
+      reference.push(text);
+      prevLineY = line.y;
+
+      if (reference.length > 35) break;
+    }
+
+    const result = reference.join("").trim();
+    return result.length > 0 ? result : null;
   }
 
   #initLayer(layerType) {

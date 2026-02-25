@@ -47,7 +47,12 @@ export class TextSelectionManager {
 
     const copyHandler = (e) => {
       const selection = document.getSelection();
-      const text = this.#normalizeText(selection.toString());
+      const text = selection
+        .toString()
+        .replace(/\x00/g, "")
+        .replace(/[\r\n]+/g, " ")
+        .replace(/-\s/g, "")
+        .normalize("NFC");
       e.clipboardData.setData("text/plain", text);
       e.preventDefault();
     };
@@ -86,19 +91,6 @@ export class TextSelectionManager {
       this.#abortController.abort();
       this.#abortController = null;
     }
-  }
-
-  /**
-   * Normalize selected text (remove null chars, normalize whitespace, handle hyphenation)
-   * @param {string} text
-   * @returns {string}
-   */
-  #normalizeText(text) {
-    return text
-      .replace(/\x00/g, "")
-      .replace(/[\r\n]+/g, " ")
-      .replace(/-\s/g, "")
-      .normalize("NFC");
   }
 
   /**

@@ -114,7 +114,7 @@ function findReferenceSectionFromOutline(textIndex, outline) {
   if (!pageEntry) return null;
   if (match.top >= pageEntry.pageHeight || match.top <= 0) return null;
 
-  const closestIdx = findClosestLineIndex(pageEntry.lines, match.top);
+  const closestIdx = findClosestLineIndex(pageEntry.lines, match.top, match.left);
   if (closestIdx < 0) return null;
 
   console.log(
@@ -169,12 +169,12 @@ function findOutlineReferenceEntry(items) {
   return null;
 }
 
-function findClosestLineIndex(lines, targetY) {
+function findClosestLineIndex(lines, targetY, targetX) {
   let best = -1;
   let bestDist = Infinity;
 
   for (let i = 0; i < lines.length; i++) {
-    const d = Math.abs(lines[i].y - targetY) + lines[i].x;
+    const d = Math.abs(lines[i].y - targetY) + Math.abs(lines[i].x - targetX);
     if (d < bestDist) {
       bestDist = d;
       best = i;
@@ -625,7 +625,9 @@ function detectReferenceFormat(lines) {
   const bestNumbered = Object.entries(formatCounts).sort(
     (a, b) => b[1] - a[1],
   )[0];
-  if (bestNumbered && bestNumbered[1] >= sampleLines.length * 0.15) {
+
+  // Be careful there is a threshold for minimal lines to match the pattern
+  if (bestNumbered && bestNumbered[1] >= sampleLines.length * 0.1) {
     return bestNumbered[0];
   }
 

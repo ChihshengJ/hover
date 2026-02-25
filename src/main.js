@@ -409,7 +409,9 @@ async function loadPdf(isFirstLaunch = false) {
     await loadingOverlay.hide();
 
     // Add a RAF to make sure the indexing start after the rendering
-    await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    await new Promise((resolve) =>
+      requestAnimationFrame(() => requestAnimationFrame(resolve)),
+    );
 
     // Start indexing
     await pdfmodel.buildIndex();
@@ -440,6 +442,20 @@ async function loadPdf(isFirstLaunch = false) {
 }
 
 async function main() {
+  console.log(`
+                                  
+ _____                 _         
+|  |  |___ _ _ ___ ___|_|___ ___ 
+|     | . | | | -_|  _| |   | . |
+|__|__|___|\\_/|___|_| |_|_|_|_  |
+                            |___|
+                                 
+                                 
+ ___ ___ ___ ___ ___ ___ ___     
+|___|___|___|___|___|___|___|    
+                                 
+                                                               
+  `);
   const isFirstLaunch = await OnboardingWalkthrough.isFirstLaunch();
 
   await loadPdf(isFirstLaunch);

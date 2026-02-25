@@ -336,11 +336,24 @@ export class FileMenu {
     try {
       const arrayBuffer = await this.#readFileAsArrayBuffer(file);
 
-      // Store in sessionStorage for persistence across reload
-      // Convert ArrayBuffer to base64 for storage
-      const base64 = this.#arrayBufferToBase64(arrayBuffer);
-      sessionStorage.setItem("hover_pdf_data", base64);
-      sessionStorage.setItem("hover_pdf_name", file.name);
+      // Clear any old PDF data first
+      sessionStorage.removeItem("hover_pdf_data");
+      sessionStorage.removeItem("hover_pdf_name");
+
+      if (typeof chrome !== "undefined" && chrome.runtime?.sendMessage) {
+        const base64 = this.#arrayBufferToBase64(arrayBuffer);
+        await new Promise((resolve) => {
+          chrome.runtime.sendMessage(
+            { type: "STORE_LOCAL_PDF", data: base64, name: file.name },
+            () => resolve(),
+          );
+        });
+      } else {
+        // Dev mode fallback: try sessionStorage
+        const base64 = this.#arrayBufferToBase64(arrayBuffer);
+        sessionStorage.setItem("hover_pdf_data", base64);
+        sessionStorage.setItem("hover_pdf_name", file.name);
+      }
 
       // Reload the page to reinitialize with new PDF
       // main.js checks sessionStorage first on load

@@ -66,7 +66,7 @@ export class PDFDocumentModel {
     /** @type {import('./data/text_extractor.js').PdfiumTextExtractor|null} */
     this.textExtractor = null;
     /** @type {'pending'|'running'|'complete'} */
-    this.indexingState = 'pending';
+    this.indexingState = "pending";
   }
 
   /** @returns {Map<number, Array>} */
@@ -162,8 +162,8 @@ export class PDFDocumentModel {
    * @param {(p: {percent: number, phase: string}) => void} [onProgress]
    */
   async buildIndex(onProgress) {
-    if (this.indexingState !== 'pending') return;
-    this.indexingState = 'running';
+    if (this.indexingState !== "pending") return;
+    this.indexingState = "running";
 
     const reportProgress = (percent, phase) => {
       if (onProgress) {
@@ -205,13 +205,13 @@ export class PDFDocumentModel {
         this.#buildNativeFallback();
       }
 
-      this.indexingState = 'complete';
+      this.indexingState = "complete";
       reportProgress(100, "complete");
-      this.notify('index-ready');
+      this.notify("index-ready");
     } catch (error) {
       console.error("[Doc] Error during background indexing:", error);
-      this.indexingState = 'complete';
-      this.notify('index-ready');
+      this.indexingState = "complete";
+      this.notify("index-ready");
     }
   }
 

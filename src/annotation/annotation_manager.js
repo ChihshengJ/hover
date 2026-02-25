@@ -81,7 +81,6 @@ export class AnnotationManager {
 
         // Hide toolbar if visible
         if (this.#toolbar.isVisible) {
-          // Small delay to allow selection to complete
           setTimeout(() => {
             if (!this.#hasActiveSelection()) {
               this.#toolbar.hide();
@@ -132,6 +131,7 @@ export class AnnotationManager {
 
   #hasActiveSelection() {
     const selection = document.getSelection();
+    console.log(selection);
     return selection && selection.rangeCount > 0 && !selection.isCollapsed;
   }
 
@@ -140,6 +140,7 @@ export class AnnotationManager {
     if (!this.#hasActiveSelection()) return;
 
     const selectionData = this.#pane.textSelectionManager.getSelection();
+    console.log(selectionData);
     if (selectionData.length === 0) return;
 
     // Store the selection data
@@ -174,9 +175,7 @@ export class AnnotationManager {
     const viewportHeight = window.innerHeight;
     const viewportWidth = window.innerWidth;
 
-    // Filter to rects that are at least partially visible in the viewport
     const visibleRects = clientRects.filter((rect) => {
-      // Skip suspiciously large rects (likely container elements)
       if (
         rect.width > viewportWidth * 0.95 &&
         rect.height > viewportHeight * 0.3

@@ -1,8 +1,3 @@
-/**
- * Bit flags for citation metadata storage
- * Use bitwise operations: flags |= CitationFlags.NATIVE_CONFIRMED
- * Check with: (flags & CitationFlags.NATIVE_CONFIRMED) !== 0
- */
 export const CitationFlags = Object.freeze({
   NONE: 0,
   NATIVE_CONFIRMED: 1 << 0, // Overlapped with native PDF annotation
@@ -613,6 +608,52 @@ export const AUTHOR_YEAR_PATTERNS = {
   },
 
   /**
+   * Three authors with year(s) OUTSIDE parentheses
+   * Examples: Winton, Bishop, and Larsen (2020), Smith, Jones, & Lee (2021)
+   * Handles optional Oxford comma before "and"
+   */
+  threeAuthorsExternal: {
+    pattern: new RegExp(
+      `(${AUTHOR_YEAR_BLOCKS.authorSurname})` +
+      `,\\s+` +
+      `(${AUTHOR_YEAR_BLOCKS.authorSurname})` +
+      `,?\\s+${AUTHOR_YEAR_BLOCKS.andConnector}\\s+` +
+      `(${AUTHOR_YEAR_BLOCKS.authorSurname})` +
+      `\\s*\\((${AUTHOR_YEAR_BLOCKS.multipleYears})` +
+      `${AUTHOR_YEAR_BLOCKS.pages}\\)`,
+      "gu",
+    ),
+    extractAuthor: (match) => match[1].trim(),
+    extractSecondAuthor: (match) => match[2].trim(),
+    extractThirdAuthor: (match) => match[3].trim(),
+    extractYears: (match) => parseYearsFromString(match[4]),
+    isThreeAuthor: true,
+  },
+
+  /**
+   * Three authors inside parentheses: (Author1, Author2, and Author3, Year)
+   * Examples: (Winton, Bishop, and Larsen, 2020), (Smith, Jones, & Lee, 2021)
+   */
+  threeAuthorsInternal: {
+    pattern: new RegExp(
+      `\\((?:${AUTHOR_YEAR_BLOCKS.prefixPhrases})?` +
+      `(${AUTHOR_YEAR_BLOCKS.authorSurname})` +
+      `,\\s+` +
+      `(${AUTHOR_YEAR_BLOCKS.authorSurname})` +
+      `,?\\s+${AUTHOR_YEAR_BLOCKS.andConnector}\\s+` +
+      `(${AUTHOR_YEAR_BLOCKS.authorSurname})` +
+      `\\s*,?\\s*(${AUTHOR_YEAR_BLOCKS.multipleYears})` +
+      `${AUTHOR_YEAR_BLOCKS.pages}\\)`,
+      "gu",
+    ),
+    extractAuthor: (match) => match[1].trim(),
+    extractSecondAuthor: (match) => match[2].trim(),
+    extractThirdAuthor: (match) => match[3].trim(),
+    extractYears: (match) => parseYearsFromString(match[4]),
+    isThreeAuthor: true,
+  },
+
+  /**
    * Two authors inside parentheses: (Author1 and Author2, Year)
    * Examples: (Smith and Jones, 2020), (García & López, 2021)
    */
@@ -680,8 +721,12 @@ export const PARENTHETICAL_CITATION_BLOCK = new RegExp(
   `\\(` +
   `(?:${AUTHOR_YEAR_BLOCKS.prefixPhrases})?` +
   // First citation chunk (required)
+  // Supports: single author, two authors (A and B), three authors (A, B, and C), or et al.
   `(?:${AUTHOR_YEAR_BLOCKS.authorSurname})` +
-  `(?:\\s+${AUTHOR_YEAR_BLOCKS.andConnector}\\s+${AUTHOR_YEAR_BLOCKS.authorSurname})?` +
+  `(?:` +
+  `,\\s+${AUTHOR_YEAR_BLOCKS.authorSurname},?\\s+${AUTHOR_YEAR_BLOCKS.andConnector}\\s+${AUTHOR_YEAR_BLOCKS.authorSurname}` +
+  `|\\s+${AUTHOR_YEAR_BLOCKS.andConnector}\\s+${AUTHOR_YEAR_BLOCKS.authorSurname}` +
+  `)?` +
   `${AUTHOR_YEAR_BLOCKS.etAl}?` +
   `\\s*,?\\s*` +
   `${AUTHOR_YEAR_BLOCKS.multipleYears}` +
@@ -690,7 +735,10 @@ export const PARENTHETICAL_CITATION_BLOCK = new RegExp(
   `(?:` +
   `\\s*;\\s*` +
   `(?:${AUTHOR_YEAR_BLOCKS.authorSurname})` +
-  `(?:\\s+${AUTHOR_YEAR_BLOCKS.andConnector}\\s+${AUTHOR_YEAR_BLOCKS.authorSurname})?` +
+  `(?:` +
+  `,\\s+${AUTHOR_YEAR_BLOCKS.authorSurname},?\\s+${AUTHOR_YEAR_BLOCKS.andConnector}\\s+${AUTHOR_YEAR_BLOCKS.authorSurname}` +
+  `|\\s+${AUTHOR_YEAR_BLOCKS.andConnector}\\s+${AUTHOR_YEAR_BLOCKS.authorSurname}` +
+  `)?` +
   `${AUTHOR_YEAR_BLOCKS.etAl}?` +
   `\\s*,?\\s*` +
   `${AUTHOR_YEAR_BLOCKS.multipleYears}` +
@@ -711,10 +759,12 @@ export const CITATION_CHUNK_SPLITTER = /\s*;\s*/;
  * Used on each chunk after splitting by semicolon.
  *
  * Captures:
- * - Group 1: Full author part (including "et al." and second author if present)
+ * - Group 1: Full author part (including "et al." and additional authors if present)
  * - Group 2: First author surname
- * - Group 3: Second author surname (if two-author citation)
- * - Group 4: Years string
+ * - Group 3: Second author surname (if three-author citation, comma-separated)
+ * - Group 4: Third author surname (if three-author citation)
+ * - Group 5: Second author surname (if two-author citation, "and" connector only)
+ * - Group 6: Years string
  */
 export const CITATION_CHUNK_PARSER = new RegExp(
   `^\\s*` +
@@ -722,7 +772,12 @@ export const CITATION_CHUNK_PARSER = new RegExp(
   // Author part - capture the whole thing and components
   `(` +
   `(${AUTHOR_YEAR_BLOCKS.authorSurname})` +
-  `(?:\\s+${AUTHOR_YEAR_BLOCKS.andConnector}\\s+(${AUTHOR_YEAR_BLOCKS.authorSurname}))?` +
+  `(?:` +
+  // Three-author form: Author1, Author2, and Author3
+  `,\\s+(${AUTHOR_YEAR_BLOCKS.authorSurname}),?\\s+${AUTHOR_YEAR_BLOCKS.andConnector}\\s+(${AUTHOR_YEAR_BLOCKS.authorSurname})` +
+  // Two-author form: Author1 and Author2
+  `|\\s+${AUTHOR_YEAR_BLOCKS.andConnector}\\s+(${AUTHOR_YEAR_BLOCKS.authorSurname})` +
+  `)?` +
   `${AUTHOR_YEAR_BLOCKS.etAl}?` +
   `)` +
   `\\s*,?\\s*` +
@@ -789,8 +844,11 @@ export function parseCitationChunk(chunk) {
 
   const fullAuthorPart = match[1];
   const firstAuthor = match[2];
-  const secondAuthor = match[3] || null;
-  const yearsStr = match[4];
+  // Three-author form: groups 3 & 4; Two-author form: group 5
+  const isThreeAuthor = !!(match[3] && match[4]);
+  const secondAuthor = match[3] || match[5] || null;
+  const thirdAuthor = match[4] || null;
+  const yearsStr = match[6];
 
   const hasEtAl = /\s+et\s+al\.?/i.test(fullAuthorPart);
   const years = parseYearsFromString(yearsStr);
@@ -798,8 +856,10 @@ export function parseCitationChunk(chunk) {
   return {
     firstAuthor: firstAuthor.trim(),
     secondAuthor: secondAuthor?.trim() || null,
+    thirdAuthor: thirdAuthor?.trim() || null,
     hasEtAl,
-    isTwoAuthor: !!secondAuthor,
+    isThreeAuthor,
+    isTwoAuthor: !isThreeAuthor && !!secondAuthor,
     years,
     rawText: chunk,
   };

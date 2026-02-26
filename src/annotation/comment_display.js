@@ -8,9 +8,6 @@ export class CommentDisplay {
   /** @type {Map<string, HTMLElement>} */
   #commentElements = new Map();
 
-  /** @type {ResizeObserver} */
-  #resizeObserver = null;
-
   /** @type {boolean} */
   #isCollapsedMode = false;
 
@@ -23,37 +20,25 @@ export class CommentDisplay {
   constructor(pane) {
     this.#pane = pane;
     this.#createContainer();
-    this.#setupResizeObserver();
   }
 
   #createContainer() {
     this.#container = document.createElement("div");
     this.#container.className = "comments-container";
-    // Append to stage so comments scroll with document content
     this.#pane.stage.appendChild(this.#container);
-  }
-
-  #setupResizeObserver() {
-    this.#resizeObserver = new ResizeObserver(() => {
-      this.#checkCollapsedMode();
-      this.#updateAllPositions();
-    });
-
-    this.#resizeObserver.observe(this.#pane.scroller);
   }
 
   #checkCollapsedMode() {
     const scrollerWidth = this.#pane.scroller.clientWidth;
-    const stageWidth = this.#pane.stage.scrollWidth;
 
-    // If stage is wider than scroller (or nearly so), collapse comments
-    const shouldCollapse = stageWidth >= scrollerWidth - 50;
-
+    const firstPage = this.#pane.pages[0];
+    if (!firstPage) return;
+    const pageWidth = firstPage.wrapper.offsetWidth;
+    const shouldCollapse = pageWidth >= scrollerWidth - 150;
     if (shouldCollapse !== this.#isCollapsedMode) {
       this.#isCollapsedMode = shouldCollapse;
       this.#container.classList.toggle("collapsed-mode", shouldCollapse);
 
-      // Reset expanded state when switching modes
       if (shouldCollapse) {
         this.#expandedCommentId = null;
         this.#commentElements.forEach((el) =>
@@ -69,6 +54,8 @@ export class CommentDisplay {
    */
   addComment(annotation) {
     if (!annotation.comment) return;
+
+    this.#checkCollapsedMode();
 
     let element = this.#commentElements.get(annotation.id);
 
@@ -198,7 +185,6 @@ export class CommentDisplay {
       parseFloat(pageView.textLayer.style.height) ||
       pageView.wrapper.clientHeight;
 
-    // Get the top rect of the annotation (using topRatio now)
     const topRect = firstPageRange.rects.reduce(
       (min, rect) => (rect.topRatio < min.topRatio ? rect : min),
       firstPageRange.rects[0],
@@ -239,35 +225,25 @@ export class CommentDisplay {
   }
 
   /**
-   * Highlight a comment card
    * @param {string} annotationId
    */
   highlightComment(annotationId) {
-    // Remove highlight from all
     this.#commentElements.forEach((el) => el.classList.remove("highlighted"));
-
-    // Add to target
     const element = this.#commentElements.get(annotationId);
     if (element) {
       element.classList.add("highlighted");
     }
   }
 
-  /**
-   * Clear all comment displays
-   */
   clear() {
     this.#commentElements.forEach((el) => el.remove());
     this.#commentElements.clear();
     this.#expandedCommentId = null;
   }
 
-  /**
-   * Refresh all comments from document model
-   */
   refresh() {
+    this.#checkCollapsedMode();
     this.clear();
-
     const annotations = this.#pane.document.getAllAnnotations();
     for (const annotation of annotations) {
       if (annotation.comment) {
@@ -277,11 +253,6 @@ export class CommentDisplay {
   }
 
   destroy() {
-    if (this.#resizeObserver) {
-      this.#resizeObserver.unobserve(this.#pane.scroller);
-      this.#resizeObserver.disconnect();
-      this.#resizeObserver = null;
-    }
     this.clear();
     this.#container?.remove();
   }

@@ -21,6 +21,9 @@ export class WindowControls {
     this.#setupKeyboardShortcuts();
     this.#bindGestures();
     this.MAX_RENDER_SCALE = 7;
+
+    this._lastNavKey = null;
+    this._lastNavKeyTime = 0;
   }
 
   get activePane() {
@@ -32,7 +35,6 @@ export class WindowControls {
       for (const p of this.wm.panes) {
         await p.refreshAllPages();
       }
-      // Refresh search highlights after resize
       this.searchController?.refresh();
     });
 
@@ -59,7 +61,6 @@ export class WindowControls {
         return;
       }
 
-      // If in input and not a special key we handle, let it pass
       if (isInputActive) {
         return;
       }
@@ -88,16 +89,16 @@ export class WindowControls {
 
       if (["ArrowDown", "j"].includes(e.key)) {
         e.preventDefault();
-        scroller.scrollBy({ top: stepY, behavior: "smooth" });
+        scroller.scrollBy({ top: stepY, behavior: "instant" });
       } else if (["ArrowUp", "k"].includes(e.key)) {
         e.preventDefault();
-        scroller.scrollBy({ top: -stepY, behavior: "smooth" });
+        scroller.scrollBy({ top: -stepY, behavior: "instant" });
       } else if (e.key === "ArrowRight" || e.key === "l") {
         e.preventDefault();
-        scroller.scrollBy({ left: stepX, behavior: "smooth" });
+        scroller.scrollBy({ left: stepX, behavior: "instant" });
       } else if (e.key === "ArrowLeft" || e.key === "h") {
         e.preventDefault();
-        scroller.scrollBy({ left: -stepX, behavior: "smooth" });
+        scroller.scrollBy({ left: -stepX, behavior: "instant" });
       }
 
       if (e.shiftKey && e.key === "J") {
@@ -118,6 +119,29 @@ export class WindowControls {
         e.preventDefault();
         this.#switchActivePane();
       }
+
+      if (e.key === "G" && !e.metaKey && !e.ctrlKey) {
+        e.preventDefault();
+        pane.scrollToBottom();
+        this._lastNavKey = null;
+        return;
+      }
+
+      if (e.key === "g" && !e.shiftKey && !e.metaKey && !e.ctrlKey) {
+        const now = Date.now();
+        if (this._lastNavKey === "g" && now - this._lastNavKeyTime < 300) {
+          e.preventDefault();
+          pane.scrollToTop();
+          this._lastNavKey = null;
+          return;
+        }
+        this._lastNavKey = "g";
+        this._lastNavKeyTime = now;
+        return;
+      }
+
+      // Reset sequence tracker on any other key
+      this._lastNavKey = null;
     });
   }
 
@@ -225,7 +249,6 @@ export class WindowControls {
         pane.controls.updateZoomDisplay();
       }
 
-      // Refresh search highlights after pinch zoom
       this.searchController?.refresh();
     });
   }

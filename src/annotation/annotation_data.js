@@ -180,12 +180,14 @@ export class AnnotationStore {
     if (!annotation) return null;
 
     const oldComment = annotation.comment;
+    const oldType = annotation.type;
     if (updates.color !== undefined) annotation.color = updates.color;
     if (updates.type !== undefined) annotation.type = updates.type;
     if (updates.comment !== undefined) annotation.comment = updates.comment;
     annotation.updatedAt = new Date().toISOString();
 
-    await this.#updateInEngine(annotation, oldComment);
+    const typeChanged = oldType !== annotation.type;
+    await this.#updateInEngine(annotation, oldComment, typeChanged);
     this.#doc.notify("annotation-updated", { annotation });
     return annotation;
   }
@@ -302,12 +304,19 @@ export class AnnotationStore {
 
     if (rects.length === 0) return null;
 
+    // Determine type: prefer engine type, fall back to custom field
+    let annotationType;
+    if (annot.type === PdfAnnotationSubtype.UNDERLINE) {
+      annotationType = "underline";
+    } else if (annot.custom?.annotationType === "underline" || annot.custom?.annotationType === "highlight") {
+      annotationType = annot.custom.annotationType;
+    } else {
+      annotationType = "highlight";
+    }
+
     return {
       id: annot.id || crypto.randomUUID(),
-      type:
-        annot.type === PdfAnnotationSubtype.UNDERLINE
-          ? "underline"
-          : "highlight",
+      type: annotationType,
       color: hexToColorName(annot.color),
       pageRanges: [{ pageNumber: pageNum, rects, text: "" }],
       comment: annot.contents?.trim() || null,
@@ -323,17 +332,24 @@ export class AnnotationStore {
   #linkTextAnnotationsToMarkup(textAnnotations) {
     for (const { pdfAnnot, pageNum } of textAnnotations) {
       const linkedId = pdfAnnot.custom?.linkedAnnotationId;
+      const storedType = pdfAnnot.custom?.annotationType;
 
       if (linkedId && this.annotations.has(linkedId)) {
         const markup = this.annotations.get(linkedId);
         if (markup && pdfAnnot.contents) {
           markup.comment = pdfAnnot.contents.trim();
+          if (storedType && (storedType === "highlight" || storedType === "underline")) {
+            markup.type = storedType;
+          }
           this.#linkedComments.set(linkedId, pdfAnnot.id);
         }
       } else if (pdfAnnot.contents) {
         const nearby = this.#findNearbyMarkup(pdfAnnot, pageNum);
         if (nearby) {
           nearby.comment = pdfAnnot.contents.trim();
+          if (storedType && (storedType === "highlight" || storedType === "underline")) {
+            nearby.type = storedType;
+          }
           this.#linkedComments.set(nearby.id, pdfAnnot.id);
         }
       }
@@ -396,7 +412,7 @@ export class AnnotationStore {
         color: colorNameToHex(annotation.color),
         opacity: annotation.type === "highlight" ? 0.5 : 1.0,
         contents: annotation.comment || undefined,
-        custom: { colorName: annotation.color, text: pr.text || "" },
+        custom: { colorName: annotation.color, annotationType: annotation.type, text: pr.text || "" },
       };
 
       try {
@@ -448,7 +464,7 @@ export class AnnotationStore {
       color: colorNameToHex(annotation.color),
       opacity: 1.0,
       icon: "Comment",
-      custom: { linkedAnnotationId: annotation.id },
+      custom: { linkedAnnotationId: annotation.id, annotationType: annotation.type },
     };
 
     try {
@@ -461,8 +477,13 @@ export class AnnotationStore {
     }
   }
 
-  async #updateInEngine(annotation, oldComment) {
+  async #updateInEngine(annotation, oldComment, typeChanged = false) {
     if (!this.#pdfDoc || !this.#engine) return;
+    if (typeChanged) {
+      await this.#deleteFromEngine(annotation);
+      await this.#createInEngine(annotation);
+      return;
+    }
 
     const pdfId = this.#annotationIdToPdfId.get(annotation.id);
 
@@ -486,7 +507,7 @@ export class AnnotationStore {
         color: colorNameToHex(annotation.color),
         opacity: annotation.type === "highlight" ? 0.5 : 1.0,
         contents: annotation.comment || undefined,
-        custom: { colorName: annotation.color, text: pr.text || "" },
+        custom: { colorName: annotation.color, annotationType: annotation.type, text: pr.text || "" },
       };
 
       try {
@@ -527,6 +548,11 @@ export class AnnotationStore {
               ...existing,
               contents: annotation.comment,
               color: colorNameToHex(annotation.color),
+              custom: {
+                ...(existing.custom || {}),
+                linkedAnnotationId: annotation.id,
+                annotationType: annotation.type,
+              },
             })
             .toPromise();
         }

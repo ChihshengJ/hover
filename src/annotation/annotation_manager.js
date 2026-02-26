@@ -131,7 +131,6 @@ export class AnnotationManager {
 
   #hasActiveSelection() {
     const selection = document.getSelection();
-    console.log(selection);
     return selection && selection.rangeCount > 0 && !selection.isCollapsed;
   }
 
@@ -140,7 +139,6 @@ export class AnnotationManager {
     if (!this.#hasActiveSelection()) return;
 
     const selectionData = this.#pane.textSelectionManager.getSelection();
-    console.log(selectionData);
     if (selectionData.length === 0) return;
 
     // Store the selection data

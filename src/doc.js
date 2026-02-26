@@ -189,7 +189,6 @@ export class PDFDocumentModel {
         this.textIndex,
         this.outline,
       );
-      console.log(this.referenceIndex);
 
       const hasUsableIndex =
         (this.referenceIndex?.anchors?.length || 0) >= MIN_USABLE_REFERENCES;

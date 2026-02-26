@@ -326,8 +326,7 @@ body {
 .citation-rect {
   display: block;
   background-color: transparent;
-  border-radius: 2px;
-  border: 2px dotted rgba(0, 0, 255, 0.8);
+  border-bottom: 1px dotted rgb(0, 0, 255);
   pointer-events: auto;
   cursor: pointer;
 }
@@ -335,8 +334,7 @@ body {
 .crossref-rect {
   display: block;
   background-color: transparent;
-  border-radius: 2px;
-  border: 2px dotted rgba(0, 255, 0, 0.8);
+  border-bottom: 1px dotted rgb(0, 255, 0);
   pointer-events: auto;
   cursor: pointer;
 }
@@ -345,36 +343,8 @@ body {
   background-color: rgba(59, 130, 246, 0.15);
 }
 
-/* High confidence citations */
-.citation-overlay[data-confidence^="0.9"] .citation-rect:hover,
-.citation-overlay[data-confidence="1.00"] .citation-rect:hover {
-  background-color: rgba(0, 0, 255, 0.5);
-}
-
-/* Medium confidence citations */
-.citation-overlay[data-confidence^="0.7"] .citation-rect:hover,
-.citation-overlay[data-confidence^="0.8"] .citation-rect:hover {
-  background-color: rgba(0, 0, 255, 0.3);
-}
-
-/* Lower confidence citations */
-.citation-overlay[data-confidence^="0.3"] .citation-rect:hover,
-.citation-overlay[data-confidence^="0.4"] .citation-rect:hover,
-.citation-overlay[data-confidence^="0.5"] .citation-rect:hover,
-.citation-overlay[data-confidence^="0.6"] .citation-rect:hover {
-  background-color: rgba(0, 0, 255, 0.1);
-}
-
-/* Author-year citations - different color */
-.citation-overlay[data-citation-type="author-year"] .citation-rect:hover {
-  background-color: rgba(0, 255, 0, 0.1);
-}
-
-.citation-overlay[data-citation-type="author-year"][data-confidence^="0.9"]
-  .citation-rect:hover,
-.citation-overlay[data-citation-type="author-year"][data-confidence="1.00"]
-  .citation-rect:hover {
-  background-color: rgba(0, 255, 0, 0.5);
+.crossref-rect:hover {
+  background-color: rgba(86, 242, 70, 0.15);
 }
 
 /* ===========================================

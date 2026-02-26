@@ -390,7 +390,7 @@ export class OnboardingWalkthrough {
         spotlight: null,
         noOverlay: true,
         tooltip: {
-          text: "Hover over the sections and click arrows to pin expansions",
+          text: "Hover over the sections and click an arrow to pin the expansion",
           subtext:
             "This is the outline of the paper, you can also use it for quick navigation",
           position: "right",
@@ -456,7 +456,7 @@ export class OnboardingWalkthrough {
         noOverlay: true,
         tooltip: {
           text: "Tool Buttons",
-          subtext: "Click the split button to try split view",
+          subtext: "Click the split button to try split mode",
           position: "left",
         },
         waitFor: "splitModeEntered",
@@ -471,9 +471,9 @@ export class OnboardingWalkthrough {
         spotlight: null,
         noOverlay: true,
         tooltip: {
-          text: "You're now in split view!",
+          text: "You're now in split mode!",
           subtext:
-            "Expand the toolbar and click the split button again to exit",
+            "Expand the toolbar (right click the ball) and click the split button again to exit",
           position: "left",
         },
         waitFor: "splitModeExited",

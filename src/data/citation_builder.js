@@ -224,13 +224,14 @@ export class CitationBuilder {
 
   /**
    * Build all target locations for a citation
-   * Maps refIndices to their corresponding refKeys and locations
+   * Maps refIndices to their corresponding refKeys, locations, and per-number rects
    *
    * @param {number[]} refIndices - Array of reference indices
    * @param {RefKey[]|null} refKeys - Array of ref keys (for author-year)
-   * @returns {Array<{refIndex: number, refKey: RefKey|null, location: Object|null}>}
+   * @param {Array<{refIndex: number, rects: Array}>|null} subCitations - Per-number rects from extraction
+   * @returns {Array<{refIndex: number, refKey: RefKey|null, location: Object|null, rects: Array|null}>}
    */
-  #buildAllTargets(refIndices, refKeys) {
+  #buildAllTargets(refIndices, refKeys, subCitations) {
     const targets = [];
 
     for (let i = 0; i < refIndices.length; i++) {
@@ -238,10 +239,14 @@ export class CitationBuilder {
       const refKey = refKeys && refKeys[i] ? refKeys[i] : null;
       const location = this.#buildTargetLocation(refIndex);
 
+      // Find per-number rects for this refIndex from subCitations
+      const sub = subCitations?.find((s) => s.refIndex === refIndex);
+
       targets.push({
         refIndex,
         refKey,
         location,
+        rects: sub?.rects || null,
       });
     }
 
@@ -263,7 +268,11 @@ export class CitationBuilder {
       const key = this.#makePositionKey(cit.pageNumber, rect.x, rect.y);
 
       // Build all target locations
-      const allTargets = this.#buildAllTargets(cit.refIndices, cit.refKeys);
+      const allTargets = this.#buildAllTargets(
+        cit.refIndices,
+        cit.refKeys,
+        cit.subCitations,
+      );
 
       // Primary target is the first one with a valid location
       let targetLocation = null;

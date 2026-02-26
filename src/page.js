@@ -312,21 +312,59 @@ export class PageView {
     for (const citRef of citations) {
       if (!citRef.rects || citRef.rects.length === 0) continue;
 
-      for (const rect of citRef.rects) {
-        if (rect.height < 3 || rect.width < 3) continue;
-        const el = document.createElement("span");
-        el.className = "citation-rect";
-        el.style.cssText = `
-          position: absolute;
-          left: ${(rect.x * scale).toFixed(2)}px;
-          top: ${(rect.y * scale).toFixed(2)}px;
-          width: ${(rect.width * scale).toFixed(2)}px;
-          height: ${(rect.height * scale).toFixed(2)}px;
-          pointer-events: auto;
-          cursor: pointer;
-        `;
-        el.dataset.citationId = citRef.citationId;
-        fragment.appendChild(el);
+      // Check if this multi-ref citation has per-number sub-rects
+      const details = this.doc.getCitationDetails(citRef.citationId);
+      const hasSubRects =
+        details?.allTargets?.length > 1 &&
+        details.allTargets.some((t) => t.rects?.length > 0);
+
+      if (hasSubRects) {
+        // Render individual overlays for each target with its own rects
+        for (
+          let ti = 0;
+          ti < details.allTargets.length;
+          ti++
+        ) {
+          const target = details.allTargets[ti];
+          const targetRects = target.rects;
+          if (!targetRects?.length) continue;
+
+          for (const rect of targetRects) {
+            if (rect.height < 3 || rect.width < 3) continue;
+            const el = document.createElement("span");
+            el.className = "citation-rect";
+            el.style.cssText = `
+              position: absolute;
+              left: ${(rect.x * scale).toFixed(2)}px;
+              top: ${(rect.y * scale).toFixed(2)}px;
+              width: ${(rect.width * scale).toFixed(2)}px;
+              height: ${(rect.height * scale).toFixed(2)}px;
+              pointer-events: auto;
+              cursor: pointer;
+            `;
+            el.dataset.citationId = citRef.citationId;
+            el.dataset.targetIndex = ti;
+            fragment.appendChild(el);
+          }
+        }
+      } else {
+        // Original: single overlay for the whole citation
+        for (const rect of citRef.rects) {
+          if (rect.height < 3 || rect.width < 3) continue;
+          const el = document.createElement("span");
+          el.className = "citation-rect";
+          el.style.cssText = `
+            position: absolute;
+            left: ${(rect.x * scale).toFixed(2)}px;
+            top: ${(rect.y * scale).toFixed(2)}px;
+            width: ${(rect.width * scale).toFixed(2)}px;
+            height: ${(rect.height * scale).toFixed(2)}px;
+            pointer-events: auto;
+            cursor: pointer;
+          `;
+          el.dataset.citationId = citRef.citationId;
+          fragment.appendChild(el);
+        }
       }
     }
 
@@ -514,6 +552,12 @@ export class PageView {
     if (!citation) return;
     // console.log(citation);
 
+    // Check if a specific target index is specified (per-number overlays)
+    const targetIndex =
+      el.dataset.targetIndex !== undefined
+        ? Number(el.dataset.targetIndex)
+        : null;
+
     this._showTimer = setTimeout(async () => {
       const findTextForTarget = async (target) => {
         if (target?.refIndex != null) {
@@ -540,13 +584,33 @@ export class PageView {
 
         return null;
       };
-      await citationPopup.show(el, citation, findTextForTarget);
+      await citationPopup.show(
+        el,
+        citation,
+        findTextForTarget,
+        targetIndex,
+      );
     }, 200);
   }
 
   async #handleCitationClick(el) {
     const citation = this.#getCitationFromElement(el);
     if (!citation) return;
+
+    // If a specific target index is set (per-number overlay), navigate to that target
+    const targetIndex =
+      el.dataset.targetIndex !== undefined
+        ? Number(el.dataset.targetIndex)
+        : null;
+
+    if (
+      targetIndex !== null &&
+      citation.allTargets?.[targetIndex]?.location
+    ) {
+      const loc = citation.allTargets[targetIndex].location;
+      await this.pane.scrollToPoint(loc.pageIndex, loc.x, loc.y);
+      return;
+    }
 
     if (citation.targetLocation) {
       await this.pane.scrollToPoint(

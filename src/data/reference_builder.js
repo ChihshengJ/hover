@@ -114,7 +114,11 @@ function findReferenceSectionFromOutline(textIndex, outline) {
   if (!pageEntry) return null;
   if (match.top >= pageEntry.pageHeight || match.top <= 0) return null;
 
-  const closestIdx = findClosestLineIndex(pageEntry.lines, match.top, match.left);
+  const closestIdx = findClosestLineIndex(
+    pageEntry.lines,
+    match.top,
+    match.left,
+  );
   if (closestIdx < 0) return null;
 
   console.log(
@@ -786,7 +790,7 @@ function detectBoundary(
   const lineHeight = line.lineHeight || 10;
   const tolerance = lineHeight;
   const prevLineWidth = calculateLineWidth(prevLine);
-  const isAfterShortLine = prevLineWidth < typicalLineWidth - tolerance * 5;
+  const isAfterShortLine = prevLineWidth < typicalLineWidth - tolerance * 3;
 
   const isIndented = line.x > currentRef.firstLineX + tolerance;
   const isAtFirstX = line.x <= currentRef.firstLineX + tolerance;
@@ -801,7 +805,7 @@ function detectBoundary(
   const isPageBreak = line.pageNumber !== prevLine.pageNumber;
   const isBoundaryJump = isColumnBreak || isPageBreak;
 
-  const isLargeGap = !isBoundaryJump && absYDelta > baselineLineGap * 1.5;
+  const isLargeGap = !isBoundaryJump && absYDelta > baselineLineGap * 1.3;
 
   let isNewReference = false;
 

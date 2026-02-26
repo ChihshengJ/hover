@@ -11,7 +11,7 @@
 .file-menu-container {
   position: fixed;
   bottom: 40px;
-  right: 40px;
+  right: 53px;
   z-index: var(--z-modal);
   display: flex;
   flex-direction: row-reverse;

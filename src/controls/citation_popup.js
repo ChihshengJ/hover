@@ -58,8 +58,14 @@ export class CitationPopup {
    * @param {HTMLElement} anchor - The citation element being hovered
    * @param {Object} citation - Full citation object with allTargets
    * @param {Function} findCiteTextCallback - Callback to find reference text
+   * @param {number|null} initialTargetIndex - If set, start at this target (for per-number overlays)
    */
-  async show(anchor, citation, findCiteTextCallback) {
+  async show(
+    anchor,
+    citation,
+    findCiteTextCallback,
+    initialTargetIndex = null,
+  ) {
     if (this.currentAnchor === anchor && this.popup.style.display === "block") {
       this.cancelClose();
       return;
@@ -80,7 +86,7 @@ export class CitationPopup {
     // Store citation and range navigation state
     this.citation = citation;
     this.allTargets = citation?.allTargets || [];
-    this.currentTargetIndex = 0;
+    this.currentTargetIndex = initialTargetIndex ?? 0;
     this.findCiteTextCallback = findCiteTextCallback;
 
     this.cancelClose();
@@ -170,15 +176,15 @@ export class CitationPopup {
   }
 
   /**
-   * Update the dots indicator to reflect current position
+   * Update the indicator to reflect current position
    */
   #updateDotsIndicator() {
-    const dotsContainer = this.popup.querySelector(".citation-nav-dots");
-    if (!dotsContainer) return;
+    const container = this.popup.querySelector(".citation-nav-indicators");
+    if (!container) return;
 
-    const dots = dotsContainer.querySelectorAll(".citation-nav-dot");
-    dots.forEach((dot, index) => {
-      dot.classList.toggle("active", index === this.currentTargetIndex);
+    const indicators = container.querySelectorAll(".citation-nav-indicator");
+    indicators.forEach((ind, index) => {
+      ind.classList.toggle("active", index === this.currentTargetIndex);
     });
   }
 
@@ -357,19 +363,30 @@ export class CitationPopup {
       });
       navContainer.appendChild(prevArrow);
 
-      // Dots
-      const dotsContainer = document.createElement("div");
-      dotsContainer.className = "citation-nav-dots";
+      // Numbered indicators (replacing dots)
+      const indicatorsContainer = document.createElement("div");
+      indicatorsContainer.className = "citation-nav-indicators";
 
       for (let i = 0; i < this.allTargets.length; i++) {
-        const dot = document.createElement("span");
-        dot.className = "citation-nav-dot";
+        const target = this.allTargets[i];
+        const indicator = document.createElement("button");
+        indicator.className = "citation-nav-indicator";
         if (i === this.currentTargetIndex) {
-          dot.classList.add("active");
+          indicator.classList.add("active");
         }
-        dotsContainer.appendChild(dot);
+
+        // Show ref index if available, otherwise sequential number
+        indicator.textContent =
+          target.refIndex != null ? target.refIndex : i + 1;
+        indicator.title = `Reference ${indicator.textContent}`;
+        indicator.addEventListener("click", (e) => {
+          e.stopPropagation();
+          this.currentTargetIndex = i;
+          this.#onTargetChanged();
+        });
+        indicatorsContainer.appendChild(indicator);
       }
-      navContainer.appendChild(dotsContainer);
+      navContainer.appendChild(indicatorsContainer);
 
       // Next arrow
       const nextArrow = document.createElement("button");

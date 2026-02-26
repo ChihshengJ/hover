@@ -326,7 +326,7 @@ body {
 .citation-rect {
   display: block;
   background-color: transparent;
-  border-bottom: 1px dotted rgb(0, 0, 255);
+  border-bottom: 1px dotted var(--color-accent);
   pointer-events: auto;
   cursor: pointer;
 }

@@ -7,7 +7,7 @@ import { OnboardingWalkthrough } from "../settings/onboarding.js";
 import { Settings } from "../settings/settings.js";
 import { requestThrottle } from "./request_throttle.js";
 
-const VERSION = "0.1.0 (Alpha)";
+const VERSION = "0.9.0";
 
 export class FileMenu {
   /**
@@ -999,7 +999,7 @@ export class FileMenu {
           </div>
           <div class="metadata-row">
             <span class="metadata-label">Feedback</span>
-            <span class="metadata-value">If you have any issues or concerns while using this app, please feel free to raise an issue on <a href="https://github.com/ChihshengJ/hover">GitHub</a> or at the support hub.</span>
+            <span class="metadata-value">If you have any issues or concerns while using this app, please fill out this <a href="https://forms.gle/uP2oocQEF3WBc6DQA" target="_blank">form</a> or raise an issue on <a href="https://github.com/ChihshengJ/hover" target="_blank">GitHub</a>.</span>
           </div>
           <div class="metadata-row">
             <span class="metadata-label">Donate</span>

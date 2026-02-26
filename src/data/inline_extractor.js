@@ -466,10 +466,19 @@ export class InlineExtractor {
 
       if (rects.length === 0) continue;
 
-      // Inter-bracket ranges always have RANGE_NOTATION flag
       let flags = CitationFlags.RANGE_NOTATION;
       if (validIndices.length > 1) {
         flags |= CitationFlags.MULTI_REF;
+      }
+
+      let subCitations = null;
+      if (validIndices.length > 1) {
+        subCitations = this.#computeNumericSubRects(
+          match[0],
+          match.index,
+          pageIndex,
+          validIndices,
+        );
       }
 
       citations.push({
@@ -484,6 +493,7 @@ export class InlineExtractor {
         refKeys: null,
         confidence: validIndices.length / indices.length,
         flags,
+        subCitations: subCitations?.length > 0 ? subCitations : null,
       });
 
       // Mark this range as matched
@@ -536,6 +546,17 @@ export class InlineExtractor {
         flags |= CitationFlags.MULTI_REF;
       }
 
+      // Compute per-number sub-rects for multi-ref citations
+      let subCitations = null;
+      if (validIndices.length > 1) {
+        subCitations = this.#computeNumericSubRects(
+          match[0],
+          match.index,
+          pageIndex,
+          validIndices,
+        );
+      }
+
       citations.push({
         type: "numeric",
         text: match[0],
@@ -548,6 +569,7 @@ export class InlineExtractor {
         refKeys: null,
         confidence: validIndices.length / indices.length,
         flags,
+        subCitations: subCitations?.length > 0 ? subCitations : null,
       });
 
       // Mark this range as matched
@@ -942,6 +964,45 @@ export class InlineExtractor {
     }
 
     return null;
+  }
+
+  /**
+   * Compute per-number rectangles for multi-ref numeric citations.
+   * Scans the matched text for digit tokens, maps each to its refIndex,
+   * and fetches character-level rects so each number can be an independent overlay.
+   *
+   * @param {string} matchText - Full matched text (e.g. "[12, 15, 16, 24, 48]")
+   * @param {number} matchStart - Character index where matchText starts in page text
+   * @param {number} pageIndex - 0-based page index
+   * @param {number[]} validIndices - Validated reference indices
+   * @returns {Array<{refIndex: number, rects: Array}>}
+   */
+  #computeNumericSubRects(matchText, matchStart, pageIndex, validIndices) {
+    const subCitations = [];
+    const numberPattern = /\d+/g;
+    let numMatch;
+
+    while ((numMatch = numberPattern.exec(matchText)) !== null) {
+      const num = parseInt(numMatch[0], 10);
+      if (!validIndices.includes(num)) continue;
+
+      // Skip duplicates (same number appearing twice in text)
+      if (subCitations.some((s) => s.refIndex === num)) continue;
+
+      const charIndex = matchStart + numMatch.index;
+      const charCount = numMatch[0].length;
+      const rects = this.#textExtractor.getRectsForCharRange(
+        pageIndex,
+        charIndex,
+        charCount,
+      );
+
+      if (rects.length > 0) {
+        subCitations.push({ refIndex: num, rects });
+      }
+    }
+
+    return subCitations;
   }
 
   /**

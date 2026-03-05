@@ -14,7 +14,7 @@
  * @property {string|null} secondAuthor - Second author surname (for two-author citations)
  * @property {string} year - Year string
  * @property {boolean} isRange - Whether this is a year range (e.g., 1996-2004) @typedef {Object} Citation
- * @property {string} type - 'numeric' | 'author-year' | 'superscript'
+ * @property {string} type - 'numeric' | 'abbreviated' | 'author-year' | 'superscript'
  * @property {string} text - The matched text
  * @property {number} pageNumber - 1-based page number
  * @property {Array<{x: number, y: number, width: number, height: number}>} rects
@@ -339,8 +339,9 @@ export class CitationBuilder {
                 };
               }
             } else {
-              // Different reference - use native for author-year
-              if (citation.type !== "numeric") {
+              // Different reference - use native for author-year (but not for
+              // numeric or abbreviated which have explicit key/index matching)
+              if (citation.type !== "numeric" && citation.type !== "abbreviated") {
                 const targetLocation = {
                   pageIndex: nativeLink.destPageIndex,
                   x: nativeLink.destX,

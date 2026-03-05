@@ -74,11 +74,46 @@ export class PDFDocumentModel {
     return this.annotationStore.nativeAnnotationsByPage;
   }
 
-  static hasLocalPdf() {
-    return sessionStorage.getItem("hover_pdf_data") !== null;
-  }
+  /**
+   * Retrieve a locally-imported PDF from IndexedDB (dev mode) or sessionStorage (legacy).
+   * Returns { data: ArrayBuffer, name: string } or null.
+   */
+  static async getLocalPdf() {
+    // 1. Try IndexedDB first (new path — stores raw ArrayBuffer, no size limit issues)
+    try {
+      const result = await new Promise((resolve) => {
+        const req = indexedDB.open("hover_local_pdf", 1);
+        req.onupgradeneeded = () => req.result.createObjectStore("pdf");
+        req.onsuccess = () => {
+          const db = req.result;
+          const tx = db.transaction("pdf", "readonly");
+          const store = tx.objectStore("pdf");
+          const dataReq = store.get("data");
+          const nameReq = store.get("name");
+          tx.oncomplete = () => {
+            db.close();
+            if (dataReq.result) {
+              resolve({
+                data: dataReq.result,
+                name: nameReq.result || "document.pdf",
+              });
+            } else {
+              resolve(null);
+            }
+          };
+          tx.onerror = () => {
+            db.close();
+            resolve(null);
+          };
+        };
+        req.onerror = () => resolve(null);
+      });
+      if (result) return result;
+    } catch (e) {
+      console.warn("[Doc] IndexedDB read failed:", e);
+    }
 
-  static getLocalPdf() {
+    // 2. Legacy sessionStorage fallback (small files that were stored before the switch)
     const base64 = sessionStorage.getItem("hover_pdf_data");
     const name = sessionStorage.getItem("hover_pdf_name") || "document.pdf";
     if (!base64) return null;
@@ -96,9 +131,15 @@ export class PDFDocumentModel {
     }
   }
 
-  static clearLocalPdf() {
+  static async clearLocalPdf() {
+    // Clear both stores
     sessionStorage.removeItem("hover_pdf_data");
     sessionStorage.removeItem("hover_pdf_name");
+    try {
+      indexedDB.deleteDatabase("hover_local_pdf");
+    } catch (e) {
+      // ignore
+    }
   }
 
   /**
@@ -189,7 +230,7 @@ export class PDFDocumentModel {
         this.textIndex,
         this.outline,
       );
-      console.log(this.referenceIndex);
+      // console.log(this.referenceIndex);
 
       const hasUsableIndex =
         (this.referenceIndex?.anchors?.length || 0) >= MIN_USABLE_REFERENCES;

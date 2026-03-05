@@ -337,13 +337,13 @@ async function loadPdf(isFirstLaunch = false) {
         console.log("[Main] Loading intercepted PDF:", pdfName);
       }
 
-      // 2. Check for local PDF from sessionStorage
-      if (!pdfSource && PDFDocumentModel.hasLocalPdf()) {
-        const localPdf = PDFDocumentModel.getLocalPdf();
+      // 2. Check for local PDF from IndexedDB/sessionStorage
+      if (!pdfSource) {
+        const localPdf = await PDFDocumentModel.getLocalPdf();
         if (localPdf) {
           pdfSource = localPdf.data;
           pdfName = localPdf.name;
-          console.log("[Main] Loading local PDF from sessionStorage:", pdfName);
+          console.log("[Main] Loading local PDF:", pdfName);
         }
       }
 
@@ -366,15 +366,12 @@ async function loadPdf(isFirstLaunch = false) {
         originalUrl = devUrl;
       }
 
-      if (!pdfSource && PDFDocumentModel.hasLocalPdf()) {
-        const localPdf = PDFDocumentModel.getLocalPdf();
+      if (!pdfSource) {
+        const localPdf = await PDFDocumentModel.getLocalPdf();
         if (localPdf) {
           pdfSource = localPdf.data;
           pdfName = localPdf.name;
-          console.log(
-            "[Main] DEV MODE - Loading from sessionStorage:",
-            pdfName,
-          );
+          console.log("[Main] DEV MODE - Loading from local storage:", pdfName);
         }
       }
     }
@@ -404,7 +401,7 @@ async function loadPdf(isFirstLaunch = false) {
     const fileName = pdfName.replace(/\.pdf$/i, "");
     document.title = fileName + " - Hover PDF";
 
-    PDFDocumentModel.clearLocalPdf();
+    await PDFDocumentModel.clearLocalPdf();
 
     await loadingOverlay.hide();
 
@@ -424,7 +421,7 @@ async function loadPdf(isFirstLaunch = false) {
     }
   } catch (error) {
     console.error("[Main] Error loading PDF:", error);
-    PDFDocumentModel.clearLocalPdf();
+    await PDFDocumentModel.clearLocalPdf();
     loadingOverlay.destroy();
     el.wd.innerHTML = `
       <div style="color: red; text-align: center; padding: 50px;">

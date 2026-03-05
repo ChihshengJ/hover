@@ -13,8 +13,6 @@
 
   console.log("[Hover] PDF detected at document_start:", window.location.href);
 
-  // Hide default PDF viewer and show downloading overlay
-
   const hideStyle = document.createElement("style");
   hideStyle.textContent = `
     body, embed[type="application/pdf"] {
@@ -129,7 +127,7 @@
         }
 
         const binary = atob(response.data);
-        arrayBuffer = Uint8Array.from(binary, c => c.charCodeAt(0)).buffer;
+        arrayBuffer = Uint8Array.from(binary, (c) => c.charCodeAt(0)).buffer;
       } else {
         const detectResponse = await chrome.runtime.sendMessage({
           type: "PDF_PAGE_DETECTED",
@@ -285,14 +283,17 @@
       </div>
     `;
 
-    document.getElementById("hover-open-settings")?.addEventListener("click", () => {
-      // Can't navigate to chrome:// URLs directly, so open via background
-      chrome.runtime.sendMessage({ type: "OPEN_EXTENSION_SETTINGS" });
-    });
+    document
+      .getElementById("hover-open-settings")
+      ?.addEventListener("click", () => {
+        // Can't navigate to chrome:// URLs directly, so open via background
+        chrome.runtime.sendMessage({ type: "OPEN_EXTENSION_SETTINGS" });
+      });
 
-    document.getElementById("hover-use-native")?.addEventListener("click", () => {
-      restoreNativeViewer();
-    });
+    document
+      .getElementById("hover-use-native")
+      ?.addEventListener("click", () => {
+        restoreNativeViewer();
+      });
   }
 })();
-

@@ -96,6 +96,7 @@ export class AnnotationStore {
 
     const textAnnotations = [];
 
+
     for (let pageNum = 1; pageNum <= this.#doc.numPages; pageNum++) {
       const page = this.#doc.getPage(pageNum);
       if (!page) continue;
@@ -287,16 +288,16 @@ export class AnnotationStore {
     if (annot.segmentRects?.length > 0) {
       for (const seg of annot.segmentRects) {
         rects.push({
-          leftRatio: (seg.origin?.x ?? 0) / pageWidth,
-          topRatio: (seg.origin?.y ?? 0) / pageHeight,
+          leftRatio: ((seg.origin?.x ?? 0) - dx) / pageWidth,
+          topRatio: ((seg.origin?.y ?? 0) - dy) / pageHeight,
           widthRatio: (seg.size?.width ?? 0) / pageWidth,
           heightRatio: (seg.size?.height ?? 0) / pageHeight,
         });
       }
     } else if (annot.rect) {
       rects.push({
-        leftRatio: (annot.rect.origin?.x ?? 0) / pageWidth,
-        topRatio: (annot.rect.origin?.y ?? 0) / pageHeight,
+        leftRatio: ((annot.rect.origin?.x ?? 0) - dx) / pageWidth,
+        topRatio: ((annot.rect.origin?.y ?? 0) - dy) / pageHeight,
         widthRatio: (annot.rect.size?.width ?? 0) / pageWidth,
         heightRatio: (annot.rect.size?.height ?? 0) / pageHeight,
       });
@@ -372,8 +373,9 @@ export class AnnotationStore {
       if (!pr || pr.rects.length === 0) continue;
 
       const rect = pr.rects[0];
-      const markupX = rect.leftRatio * pageDims.width;
-      const markupY = (1 - rect.topRatio) * pageDims.height;
+      // Convert UI ratios back to MediaBox space for comparison with textAnnot
+      const markupX = rect.leftRatio * pageDims.width + dx;
+      const markupY = (1 - rect.topRatio) * pageDims.height + dy;
       const dist = Math.hypot(textX - markupX, textY - markupY);
 
       if (dist < threshold && dist < closestDist) {
@@ -397,7 +399,7 @@ export class AnnotationStore {
       if (!page) continue;
 
       const { width: pw, height: ph } = page.size;
-      const segmentRects = pr.rects.map((r) => this.#toEngineRect(r, pw, ph));
+      const segmentRects = pr.rects.map((r) => this.#toEngineRect(r, pw, ph, cropOffset));
       const boundingRect = this.#boundingRect(segmentRects);
 
       const pdfAnnotation = {
@@ -445,8 +447,8 @@ export class AnnotationStore {
 
     const { width: pw, height: ph } = page.size;
     const firstRect = firstPr.rects[0];
-    const highlightRight = (firstRect.leftRatio + firstRect.widthRatio) * pw;
-    const highlightTop = firstRect.topRatio * ph;
+    const highlightRight = (firstRect.leftRatio + firstRect.widthRatio) * pw + (cropOffset.dx);
+    const highlightTop = firstRect.topRatio * ph + (cropOffset.dy);
     const noteSize = 20;
     const noteX = Math.min(highlightRight + 5, pw - noteSize - 5);
     const noteY = highlightTop - noteSize / 2;
@@ -492,7 +494,7 @@ export class AnnotationStore {
       if (!page) continue;
 
       const { width: pw, height: ph } = page.size;
-      const segmentRects = pr.rects.map((r) => this.#toEngineRect(r, pw, ph));
+      const segmentRects = pr.rects.map((r) => this.#toEngineRect(r, pw, ph, cropOffset));
       const boundingRect = this.#boundingRect(segmentRects);
 
       const pdfAnnotation = {
@@ -612,11 +614,13 @@ export class AnnotationStore {
   // Coordinate Conversion
   // ============================================
 
-  #toEngineRect(uiRect, pageWidth, pageHeight) {
+  #toEngineRect(uiRect, pageWidth, pageHeight, cropOffset = null) {
+    const dx = cropOffset?.dx ?? 0;
+    const dy = cropOffset?.dy ?? 0;
     return {
       origin: {
-        x: uiRect.leftRatio * pageWidth,
-        y: uiRect.topRatio * pageHeight,
+        x: uiRect.leftRatio * pageWidth + dx,
+        y: uiRect.topRatio * pageHeight + dy,
       },
       size: {
         width: uiRect.widthRatio * pageWidth,

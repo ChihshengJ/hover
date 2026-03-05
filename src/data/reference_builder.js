@@ -34,9 +34,13 @@ const OUTLINE_REFERENCE_PATTERN =
   /^(?:\d+\.?\s+)?(?:references?|bibliography|works\s+cited|citations?|literature\s+cited|cited\s+literature)$/i;
 
 const NUMERIC_ENTRY_PATTERNS = [
-  { name: "numbered-bracket", pattern: /^\s*\[(\d+)\]\s*/ },
-  { name: "numbered-paren", pattern: /^\s*\((\d+)\)\s*/ },
-  { name: "numbered-dot", pattern: /^\s*(\d+)\.\s+/ },
+  { name: "numbered-bracket", pattern: /^\s*\[(\d{0,3})\]\s*/ },
+  { name: "numbered-paren", pattern: /^\s*\((\d{0,3})\)\s*/ },
+  { name: "numbered-dot", pattern: /^\s*(\d{0,3})\.\s+/ },
+  {
+    name: "numbered-abbr",
+    pattern: /^\s*\[([A-Z][a-zA-Z]+(?:\+)?\d{2}[a-z]?)\]/,
+  },
 ];
 
 const MIN_PROBE_CONFIRMATIONS = 3;
@@ -692,7 +696,11 @@ function extractNumberedReferences(lines, format) {
         anchors.push(createAnchor(currentLines, currentIndex, format));
         refCount++;
       }
-      currentIndex = parseInt(match[1], 10);
+      if (format === "numbered-abbr") {
+        currentIndex = match[1];
+      } else {
+        currentIndex = parseInt(match[1], 10);
+      }
       currentLines = [line];
     } else if (currentLines.length > 0) {
       currentLines.push(line);
@@ -711,7 +719,6 @@ function extractStructuralReferences(lines, format, metrics) {
 
   const baselineLineGap = computeSectionLineGap(lines);
   const typicalLineWidth = metrics.lineWidth;
-  console.log("[Reference] Metrics:", { baselineLineGap, typicalLineWidth });
 
   const anchors = [];
   let currentRef = { firstLineX: null, lines: [] };

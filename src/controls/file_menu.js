@@ -339,6 +339,7 @@ export class FileMenu {
       // Clear any old PDF data first
       sessionStorage.removeItem("hover_pdf_data");
       sessionStorage.removeItem("hover_pdf_name");
+      try { indexedDB.deleteDatabase("hover_local_pdf"); } catch (e) { /* ignore */ }
 
       if (typeof chrome !== "undefined" && chrome.runtime?.sendMessage) {
         const base64 = this.#arrayBufferToBase64(arrayBuffer);
@@ -349,14 +350,11 @@ export class FileMenu {
           );
         });
       } else {
-        // Dev mode fallback: try sessionStorage
-        const base64 = this.#arrayBufferToBase64(arrayBuffer);
-        sessionStorage.setItem("hover_pdf_data", base64);
-        sessionStorage.setItem("hover_pdf_name", file.name);
+        // Dev mode: store raw ArrayBuffer in IndexedDB (sessionStorage has ~5MB limit)
+        await this.#storeLocalPdf(arrayBuffer, file.name);
       }
 
       // Reload the page to reinitialize with new PDF
-      // main.js checks sessionStorage first on load
       window.location.href = window.location.pathname;
     } catch (error) {
       console.error("Error loading file:", error);
@@ -388,6 +386,33 @@ export class FileMenu {
       binary += String.fromCharCode(bytes[i]);
     }
     return btoa(binary);
+  }
+
+  /**
+   * Store PDF ArrayBuffer in IndexedDB for dev-mode local imports.
+   * @param {ArrayBuffer} arrayBuffer
+   * @param {string} name
+   */
+  #storeLocalPdf(arrayBuffer, name) {
+    return new Promise((resolve, reject) => {
+      const req = indexedDB.open("hover_local_pdf", 1);
+      req.onupgradeneeded = () => {
+        const db = req.result;
+        if (!db.objectStoreNames.contains("pdf")) {
+          db.createObjectStore("pdf");
+        }
+      };
+      req.onsuccess = () => {
+        const db = req.result;
+        const tx = db.transaction("pdf", "readwrite");
+        const store = tx.objectStore("pdf");
+        store.put(arrayBuffer, "data");
+        store.put(name, "name");
+        tx.oncomplete = () => { db.close(); resolve(); };
+        tx.onerror = () => { db.close(); reject(tx.error); };
+      };
+      req.onerror = () => reject(req.error);
+    });
   }
 
   async #print() {

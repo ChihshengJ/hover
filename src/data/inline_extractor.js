@@ -3,16 +3,17 @@
  *
  * This module scans all document pages once and extracts:
  * - Numeric citations: [1], [1,2,3], [1-8]
+ * - Abbreviated citations: [YYZS+23], [Min+15, Dua+16b, SL06]
  * - Author-year citations: Smith (2020), (Smith et al., 2020), (A; B; C)
  * - Superscript citations: detected via font metrics
- * - Cross-references: Figure 1, Table 2, Â§3, Eq. 4, etc.
+ * - Cross-references: Figure 1, Table 2, §3, Eq. 4, etc.
  *
  * The extracted data is then used by:
  * - citation_builder.js for merging with native citation links
  * - cross_reference_builder.js for merging with native cross-ref links
  *
  * @typedef {Object} RawCitation
- * @property {string} type - 'numeric' | 'author-year' | 'superscript'
+ * @property {string} type - 'numeric' | 'abbreviated' | 'author-year' | 'superscript'
  * @property {string} text - The matched text
  * @property {number} pageNumber - 1-based page number
  * @property {number} charIndex - Character index in full page text
@@ -44,6 +45,8 @@ import {
   CROSS_REFERENCE_PATTERNS,
   CitationFlags,
   parseNumericCitationContent,
+  parseAbbreviatedCitationContent,
+  REFERENCE_FORMAT_PATTERNS,
   parseCitationChunk,
   cloneRegex,
   AUTHOR_YEAR_BLOCKS,
@@ -114,7 +117,7 @@ class InlineTextAdapter {
   }
 
   /**
-   * @param {number} pageIndex - 0-based
+   * @param {number} pageIndex
    * @param {number} startCharIndex
    * @param {number} charCount
    * @returns {Array<{x: number, y: number, width: number, height: number}>}
@@ -183,6 +186,9 @@ export class InlineExtractor {
   // Track matched positions to avoid duplicates
   #matchedRanges = new Map(); // pageNumber -> Set of "start:end" strings
 
+  // Abbreviated key -> anchor index lookup (built lazily from signatures)
+  #abbrKeyIndex = null;
+
   /**
    * @param {InlineTextExtractor} textExtractor
    * @param {Object} textIndex - DocumentTextIndex instance
@@ -205,6 +211,9 @@ export class InlineExtractor {
   extract() {
     // Build reference signatures for citation validation
     this.#signatures = this.#referenceIndex?.anchors || [];
+
+    // Build abbreviated key index for fast lookup
+    this.#abbrKeyIndex = this.#buildAbbrKeyIndex();
 
     // Detect citation format from reference section
     this.#detectedFormat = this.#detectCitationFormat();
@@ -325,16 +334,19 @@ export class InlineExtractor {
     let numberedBracket = 0;
     let numberedParen = 0;
     let numberedDot = 0;
+    let numberedAbbr = 0;
     let authorYear = 0;
 
     const bracketPattern = /^\s*\[(\d+)\]\s*/;
     const parenPattern = /^\s*\((\d+)\)\s*/;
     const dotPattern = /^\s*(\d+)\.\s+/;
+    const abbrPattern = REFERENCE_FORMAT_PATTERNS["numbered-abbr"];
     const authorYearPattern =
       /^[A-Z][a-z\u00C0-\u00FF]+(?:[,\s]+[A-Z]\.?\s*)+.*?\(?(19|20)\d{2}[a-z]?\)?/;
 
     for (const text of sampleTexts) {
       if (bracketPattern.test(text)) numberedBracket++;
+      else if (abbrPattern.test(text)) numberedAbbr++;
       else if (parenPattern.test(text)) numberedParen++;
       else if (dotPattern.test(text)) numberedDot++;
       else if (authorYearPattern.test(text)) authorYear++;
@@ -345,6 +357,7 @@ export class InlineExtractor {
       { type: "numbered-bracket", count: numberedBracket, isAuthorYear: false },
       { type: "numbered-paren", count: numberedParen, isAuthorYear: false },
       { type: "numbered-dot", count: numberedDot, isAuthorYear: false },
+      { type: "numbered-abbr", count: numberedAbbr, isAuthorYear: false },
       { type: "author-year", count: authorYear, isAuthorYear: true },
     ];
 
@@ -377,6 +390,11 @@ export class InlineExtractor {
     if (!isInRefSection) {
       citations.push(
         ...this.#findNumericCitations(fullText, pageNumber, pageIndex),
+      );
+
+      // Find abbreviated bracket citations: [YYZS+23], [Min+15, Dua+16b]
+      citations.push(
+        ...this.#findAbbreviatedCitations(fullText, pageNumber, pageIndex),
       );
 
       // Find author-year citations (order matters for overlap detection)
@@ -583,6 +601,162 @@ export class InlineExtractor {
     return citations;
   }
 
+  /**
+   * Build a lookup map from abbreviated key -> anchor index.
+   * Extracts the abbreviated key from each anchor's cachedText using the
+   * reference format pattern (e.g., "[YYZS+23] ..." -> "YYZS+23").
+   *
+   * @returns {Map<string, number>} key (lowercase) -> anchor index
+   */
+  #buildAbbrKeyIndex() {
+    const index = new Map();
+    const abbrPattern = REFERENCE_FORMAT_PATTERNS["numbered-abbr"];
+
+    for (const anchor of this.#signatures) {
+      if (!anchor.cachedText) continue;
+      const m = anchor.cachedText.match(abbrPattern);
+      if (m) {
+        // Store lowercase for case-insensitive matching
+        index.set(m[1].toLowerCase(), anchor.index);
+      }
+    }
+
+    return index;
+  }
+
+  /**
+   * Find abbreviated bracket citations: [YYZS+23], [Min+15, Dua+16b, SL06]
+   * These use author-initial abbreviations + 2-digit year instead of numeric indices.
+   * Only comma/semicolon-separated lists exist — range notation is not used
+   * for abbreviated keys since the keys are non-ordinal identifiers.
+   */
+  #findAbbreviatedCitations(fullText, pageNumber, pageIndex) {
+    const citations = [];
+
+    if (!this.#abbrKeyIndex || this.#abbrKeyIndex.size === 0) {
+      return citations;
+    }
+
+    const pattern = cloneRegex(INLINE_CITATION_PATTERNS.abbreviatedBracket);
+    let match;
+
+    while ((match = pattern.exec(fullText)) !== null) {
+      const startIndex = match.index;
+      const endIndex = startIndex + match[0].length;
+
+      // Skip if this range was already matched (e.g. by numericBracket)
+      if (this.#isRangeMatched(pageNumber, startIndex, endIndex)) {
+        continue;
+      }
+
+      const content = match[1];
+      const keys = parseAbbreviatedCitationContent(content);
+
+      // Validate each key against the abbreviated key index
+      const validIndices = [];
+      const validKeys = [];
+
+      for (const key of keys) {
+        const refIndex = this.#abbrKeyIndex.get(key.toLowerCase());
+        if (refIndex !== undefined) {
+          validIndices.push(refIndex);
+          validKeys.push(key);
+        }
+      }
+
+      if (validIndices.length === 0) continue;
+
+      const rects = this.#textExtractor.getRectsForCharRange(
+        pageIndex,
+        startIndex,
+        match[0].length,
+      );
+
+      if (rects.length === 0) continue;
+
+      // Determine flags
+      let flags = CitationFlags.NONE;
+      if (validIndices.length > 1) {
+        flags |= CitationFlags.MULTI_REF;
+      }
+
+      // Compute per-key sub-rects for multi-ref citations
+      let subCitations = null;
+      if (validIndices.length > 1) {
+        subCitations = this.#computeAbbrSubRects(
+          content,
+          // offset: +1 for the opening bracket
+          startIndex + 1,
+          pageIndex,
+          validKeys,
+          validIndices,
+        );
+      }
+
+      citations.push({
+        type: "abbreviated",
+        text: match[0],
+        pageNumber,
+        charIndex: startIndex,
+        charCount: match[0].length,
+        rects,
+        refIndices: validIndices,
+        refRanges: [],
+        refKeys: null,
+        confidence: validIndices.length / keys.length,
+        flags,
+        subCitations: subCitations?.length > 0 ? subCitations : null,
+      });
+
+      this.#markRangeMatched(pageNumber, startIndex, endIndex);
+    }
+
+    return citations;
+  }
+
+  /**
+   * Compute per-key rectangles for multi-ref abbreviated citations.
+   * Scans the inner content for each abbreviated key, maps to its refIndex,
+   // * and fetches character-level rects so each key can be an independent overlay.
+   *
+   * @param {string} innerText - Inner bracket content (e.g. "Min+15, Dua+16b, SL06")
+   * @param {number} innerStart - Character index where innerText starts in page text
+   * @param {number} pageIndex - 0-based page index
+   * @param {string[]} validKeys - Validated abbreviated keys
+   * @param {number[]} validIndices - Corresponding anchor indices
+   * @returns {Array<{refIndex: number, rects: Array}>}
+   */
+  #computeAbbrSubRects(
+    innerText,
+    innerStart,
+    pageIndex,
+    validKeys,
+    validIndices,
+  ) {
+    const subCitations = [];
+
+    for (let i = 0; i < validKeys.length; i++) {
+      const key = validKeys[i];
+      const refIndex = validIndices[i];
+      const keyPos = innerText.indexOf(key);
+      if (keyPos === -1) continue;
+
+      const charIndex = innerStart + keyPos;
+      const charCount = key.length;
+      const rects = this.#textExtractor.getRectsForCharRange(
+        pageIndex,
+        charIndex,
+        charCount,
+      );
+
+      if (rects.length > 0) {
+        subCitations.push({ refIndex, rects });
+      }
+    }
+
+    return subCitations;
+  }
+
   #findSuperscriptCitations(pageNumber, pageHeight, bodyLineHeight) {
     const citations = [];
     const lines = this.#textIndex?.getPageLines(pageNumber);
@@ -593,10 +767,10 @@ export class InlineExtractor {
       for (const item of line.items) {
         // Must be significantly smaller than body text
         if (item.height >= bodyLineHeight * 0.7) continue;
+        if (pageNumber === 1) console.log(item); console.log(bodyLineHeight);
 
         // Clean item content: strip trailing/leading punctuation and whitespace
         // that gets attached during word-based extraction.
-        // e.g., "7, 18. " â†’ "7,18", "1-3, " â†’ "1-3"
         const cleaned = item.str
           .replace(/^[^\d]+/, "")
           .replace(/[^\d]+$/, "")
@@ -1053,6 +1227,7 @@ export class InlineExtractor {
    * Adjust citation confidence based on dominant format
    */
   #adjustConfidenceByFormat(citations) {
+    const isAbbr = this.#detectedFormat.type === "numbered-abbr";
     for (const cit of citations) {
       if (this.#detectedFormat.isAuthorYear && cit.type === "numeric") {
         cit.confidence *= 0.6;
@@ -1060,6 +1235,15 @@ export class InlineExtractor {
         !this.#detectedFormat.isAuthorYear &&
         cit.type === "author-year"
       ) {
+        cit.confidence *= 0.6;
+      }
+      // Boost abbreviated citations when format is abbreviated, penalize otherwise
+      if (cit.type === "abbreviated") {
+        if (!isAbbr) {
+          cit.confidence *= 0.6;
+        }
+      } else if (cit.type === "numeric" && isAbbr) {
+        // Penalize numeric citations when document uses abbreviated format
         cit.confidence *= 0.6;
       }
     }

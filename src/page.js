@@ -124,7 +124,7 @@ export class PageView {
           }
           this.textLayer.innerHTML = "";
           this.#buildTextLayer(page, textScale, pageHeight);
-         }
+        }
       }
       this.textLayer.style.setProperty("--total-scale-factor", `${this.scale}`);
       this.#ensureEndOfContent();
@@ -319,18 +319,13 @@ export class PageView {
         details.allTargets.some((t) => t.rects?.length > 0);
 
       if (hasSubRects) {
-        // Render individual overlays for each target with its own rects
-        for (
-          let ti = 0;
-          ti < details.allTargets.length;
-          ti++
-        ) {
+        for (let ti = 0; ti < details.allTargets.length; ti++) {
           const target = details.allTargets[ti];
           const targetRects = target.rects;
           if (!targetRects?.length) continue;
 
           for (const rect of targetRects) {
-            if (rect.height < 3 || rect.width < 3) continue;
+            if (rect.height < 1 || rect.width < 3) continue;
             const el = document.createElement("span");
             el.className = "citation-rect";
             el.style.cssText = `
@@ -350,7 +345,7 @@ export class PageView {
       } else {
         // Original: single overlay for the whole citation
         for (const rect of citRef.rects) {
-          if (rect.height < 3 || rect.width < 3) continue;
+          if (rect.height < 1 || rect.width < 3) continue;
           const el = document.createElement("span");
           el.className = "citation-rect";
           el.style.cssText = `
@@ -475,7 +470,10 @@ export class PageView {
         }
         this.textLayer.innerHTML = "";
         this.#buildTextLayer(page, textScale, pageHeight);
-        this.textLayer.style.setProperty("--total-scale-factor", `${this.scale}`);
+        this.textLayer.style.setProperty(
+          "--total-scale-factor",
+          `${this.scale}`,
+        );
         this.#ensureEndOfContent();
         this.textLayer.style.width = `${cssWidth}px`;
         this.textLayer.style.height = `${cssHeight}px`;
@@ -584,12 +582,7 @@ export class PageView {
 
         return null;
       };
-      await citationPopup.show(
-        el,
-        citation,
-        findTextForTarget,
-        targetIndex,
-      );
+      await citationPopup.show(el, citation, findTextForTarget, targetIndex);
     }, 200);
   }
 
@@ -603,10 +596,7 @@ export class PageView {
         ? Number(el.dataset.targetIndex)
         : null;
 
-    if (
-      targetIndex !== null &&
-      citation.allTargets?.[targetIndex]?.location
-    ) {
+    if (targetIndex !== null && citation.allTargets?.[targetIndex]?.location) {
       const loc = citation.allTargets[targetIndex].location;
       await this.pane.scrollToPoint(loc.pageIndex, loc.x, loc.y);
       return;
@@ -664,7 +654,6 @@ export class PageView {
 
   async #handleCrossRefClick(el) {
     const crossRef = el._crossRefData;
-    console.log(crossRef);
     if (!crossRef?.targetLocation) return;
     const scrollFlag = crossRef.flags === 3 ? false : true;
 

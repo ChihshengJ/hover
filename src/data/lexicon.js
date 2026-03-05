@@ -477,6 +477,9 @@ export const REFERENCE_FORMAT_PATTERNS = {
 
   // 1 Author, Title... (no punctuation, just number + space)
   "numbered-plain": /^\s*(\d+)\s+(?=[A-Z])/,
+
+  "numbered-abbr": /^\s*\[([A-Z][a-zA-Z]+(?:\+)?\d{2}[a-z]?)\]/,
+
 };
 
 /**
@@ -522,11 +525,11 @@ export const INLINE_CITATION_PATTERNS = {
   interBracketRange: /\[(\d+)\]\s*[-–—]\s*\[(\d+)\]/g,
 
   /**
-   * Abbreviated citations: [YYZS+23], [CHA21], [CHAN+21, ZZYD+24]
+   * Abbreviated citations: [YYZS+23], [CHA21], [CHAN+21, ZZYD+24],
    * Common in CS papers (first letters of authors + year)
    */
   abbreviatedBracket:
-    /\[([A-Z]{2,}(?:\+)?\d{2}(?:\s*[,;]\s*[A-Z]{2,}(?:\+)?\d{2})*)\]/g,
+    /\[([A-Z][a-zA-Z]+(?:\+)?\d{2}[a-z]?(?:\s*[,;]\s*[A-Z][a-zA-Z]+(?:\+)?\d{2}[a-z]?)*)\]/g,
 
   /**
    * Superscript number pattern (for validation after font-size detection)
@@ -1099,6 +1102,35 @@ export function parseNumericCitationContent(content) {
   }
 
   return { indices, ranges };
+}
+
+/**
+ * Pattern to match a single abbreviated citation key.
+ * Examples: YYZS+23, CHA21, Min+15, Dua+16b, SL06
+ * Used to extract the key from reference anchor cachedText.
+ */
+export const ABBREVIATED_SINGLE_KEY =
+  /[A-Z][a-zA-Z]+(?:\+)?\d{2}[a-z]?/;
+
+/**
+ * Parse abbreviated bracket citation content into individual keys.
+ * Handles: "YYZS+23", "Min+15, Dua+16b, SL06", "CHAN+21; ZZYD+24"
+ *
+ * @param {string} content - Inner bracket content (e.g., "Min+15, Dua+16b")
+ * @returns {string[]} Array of individual abbreviated keys
+ */
+export function parseAbbreviatedCitationContent(content) {
+  const keys = [];
+  const parts = content.split(/\s*[,;]\s*/);
+
+  for (const part of parts) {
+    const trimmed = part.trim();
+    if (ABBREVIATED_SINGLE_KEY.test(trimmed)) {
+      keys.push(trimmed);
+    }
+  }
+
+  return keys;
 }
 
 /**

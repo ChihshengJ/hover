@@ -10,31 +10,31 @@ let bypassUrls = new Set();
 // Pre-warm WASM cache on PDF detection
 // ============================================
 
-try {
-  chrome.webRequest.onHeadersReceived.addListener(
-    (details) => {
-      if (details.type !== "main_frame") return;
-
-      const contentTypeHeader = details.responseHeaders?.find(
-        (h) => h.name.toLowerCase() === "content-type",
-      );
-      const contentType = contentTypeHeader?.value || "";
-
-      if (
-        contentType.includes("application/pdf") ||
-        contentType.includes("application/x-pdf")
-      ) {
-        // Fire-and-forget: pre-fetch WASM binary into HTTP cache
-        // so it's ready when the viewer opens
-        fetch(chrome.runtime.getURL("pdfium.wasm")).catch(() => { });
-      }
-    },
-    { urls: ["<all_urls>"], types: ["main_frame"] },
-    ["responseHeaders"],
-  );
-} catch (error) {
-  console.warn("[Hover BG] webRequest listener error:", error.message);
-}
+// try {
+//   chrome.webRequest.onHeadersReceived.addListener(
+//     (details) => {
+//       if (details.type !== "main_frame") return;
+//
+//       const contentTypeHeader = details.responseHeaders?.find(
+//         (h) => h.name.toLowerCase() === "content-type",
+//       );
+//       const contentType = contentTypeHeader?.value || "";
+//
+//       if (
+//         contentType.includes("application/pdf") ||
+//         contentType.includes("application/x-pdf")
+//       ) {
+//         // Fire-and-forget: pre-fetch WASM binary into HTTP cache
+//         // so it's ready when the viewer opens
+//         fetch(chrome.runtime.getURL("pdfium.wasm")).catch(() => { });
+//       }
+//     },
+//     { urls: ["<all_urls>"], types: ["main_frame"] },
+//     ["responseHeaders"],
+//   );
+// } catch (error) {
+//   console.warn("[Hover BG] webRequest listener error:", error.message);
+// }
 
 // ============================================
 // Message Handlers

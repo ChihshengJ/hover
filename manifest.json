@@ -1,18 +1,17 @@
 {
   "manifest_version": 3,
   "name": "Hover PDF Reader",
-  "version": "0.1.0",
-  "description": "Enhanced PDF reader with citation previews",
+  "version": "0.9.0",
+  "description": "Enhanced PDF reader for immersive academic reading experience",
   "content_security_policy": {
     "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'"
   },
   "permissions": [
     "tabs",
-    "storage",
-    "webRequest"
+    "storage"
   ],
   "host_permissions": [
-    "<all_urls>"
+    "https://scholar.google.com/*"
   ],
   "action": {
     "default_popup": "popup.html",
@@ -22,7 +21,7 @@
       "48": "icon48.png",
       "128": "icon128.png"
     },
-    "default_title": "Hover PDF Viewer"
+    "default_title": "Hover PDF Reader"
   },
   "background": {
     "service_worker": "background.js"

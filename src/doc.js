@@ -74,12 +74,7 @@ export class PDFDocumentModel {
     return this.annotationStore.nativeAnnotationsByPage;
   }
 
-  /**
-   * Retrieve a locally-imported PDF from IndexedDB (dev mode) or sessionStorage (legacy).
-   * Returns { data: ArrayBuffer, name: string } or null.
-   */
   static async getLocalPdf() {
-    // 1. Try IndexedDB first (new path — stores raw ArrayBuffer, no size limit issues)
     try {
       const result = await new Promise((resolve) => {
         const req = indexedDB.open("hover_local_pdf", 1);
@@ -113,7 +108,6 @@ export class PDFDocumentModel {
       console.warn("[Doc] IndexedDB read failed:", e);
     }
 
-    // 2. Legacy sessionStorage fallback (small files that were stored before the switch)
     const base64 = sessionStorage.getItem("hover_pdf_data");
     const name = sessionStorage.getItem("hover_pdf_name") || "document.pdf";
     if (!base64) return null;

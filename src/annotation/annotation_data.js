@@ -96,7 +96,6 @@ export class AnnotationStore {
 
     const textAnnotations = [];
 
-
     for (let pageNum = 1; pageNum <= this.#doc.numPages; pageNum++) {
       const page = this.#doc.getPage(pageNum);
       if (!page) continue;
@@ -106,8 +105,9 @@ export class AnnotationStore {
           .getPageAnnotations(this.#pdfDoc, page)
           .toPromise();
 
-        this.nativeAnnotationsByPage.set(pageNum, annotations);
         const { width: pageWidth, height: pageHeight } = page.size;
+        this.#normalizeAnnotationRects(annotations, pageNum - 1, pageHeight);
+        this.nativeAnnotationsByPage.set(pageNum, annotations);
 
         for (const annot of annotations) {
           if (
@@ -288,16 +288,16 @@ export class AnnotationStore {
     if (annot.segmentRects?.length > 0) {
       for (const seg of annot.segmentRects) {
         rects.push({
-          leftRatio: ((seg.origin?.x ?? 0) - dx) / pageWidth,
-          topRatio: ((seg.origin?.y ?? 0) - dy) / pageHeight,
+          leftRatio: (seg.origin?.x ?? 0) / pageWidth,
+          topRatio: (seg.origin?.y ?? 0) / pageHeight,
           widthRatio: (seg.size?.width ?? 0) / pageWidth,
           heightRatio: (seg.size?.height ?? 0) / pageHeight,
         });
       }
     } else if (annot.rect) {
       rects.push({
-        leftRatio: ((annot.rect.origin?.x ?? 0) - dx) / pageWidth,
-        topRatio: ((annot.rect.origin?.y ?? 0) - dy) / pageHeight,
+        leftRatio: (annot.rect.origin?.x ?? 0) / pageWidth,
+        topRatio: (annot.rect.origin?.y ?? 0) / pageHeight,
         widthRatio: (annot.rect.size?.width ?? 0) / pageWidth,
         heightRatio: (annot.rect.size?.height ?? 0) / pageHeight,
       });
@@ -309,7 +309,10 @@ export class AnnotationStore {
     let annotationType;
     if (annot.type === PdfAnnotationSubtype.UNDERLINE) {
       annotationType = "underline";
-    } else if (annot.custom?.annotationType === "underline" || annot.custom?.annotationType === "highlight") {
+    } else if (
+      annot.custom?.annotationType === "underline" ||
+      annot.custom?.annotationType === "highlight"
+    ) {
       annotationType = annot.custom.annotationType;
     } else {
       annotationType = "highlight";
@@ -339,7 +342,10 @@ export class AnnotationStore {
         const markup = this.annotations.get(linkedId);
         if (markup && pdfAnnot.contents) {
           markup.comment = pdfAnnot.contents.trim();
-          if (storedType && (storedType === "highlight" || storedType === "underline")) {
+          if (
+            storedType &&
+            (storedType === "highlight" || storedType === "underline")
+          ) {
             markup.type = storedType;
           }
           this.#linkedComments.set(linkedId, pdfAnnot.id);
@@ -348,7 +354,10 @@ export class AnnotationStore {
         const nearby = this.#findNearbyMarkup(pdfAnnot, pageNum);
         if (nearby) {
           nearby.comment = pdfAnnot.contents.trim();
-          if (storedType && (storedType === "highlight" || storedType === "underline")) {
+          if (
+            storedType &&
+            (storedType === "highlight" || storedType === "underline")
+          ) {
             nearby.type = storedType;
           }
           this.#linkedComments.set(nearby.id, pdfAnnot.id);
@@ -373,9 +382,8 @@ export class AnnotationStore {
       if (!pr || pr.rects.length === 0) continue;
 
       const rect = pr.rects[0];
-      // Convert UI ratios back to MediaBox space for comparison with textAnnot
-      const markupX = rect.leftRatio * pageDims.width + dx;
-      const markupY = (1 - rect.topRatio) * pageDims.height + dy;
+      const markupX = rect.leftRatio * pageDims.width;
+      const markupY = (1 - rect.topRatio) * pageDims.height;
       const dist = Math.hypot(textX - markupX, textY - markupY);
 
       if (dist < threshold && dist < closestDist) {
@@ -399,7 +407,9 @@ export class AnnotationStore {
       if (!page) continue;
 
       const { width: pw, height: ph } = page.size;
-      const segmentRects = pr.rects.map((r) => this.#toEngineRect(r, pw, ph, cropOffset));
+      const segmentRects = pr.rects.map((r) =>
+        this.#toEngineRect(r, pw, ph),
+      );
       const boundingRect = this.#boundingRect(segmentRects);
 
       const pdfAnnotation = {
@@ -414,7 +424,11 @@ export class AnnotationStore {
         color: colorNameToHex(annotation.color),
         opacity: annotation.type === "highlight" ? 0.5 : 1.0,
         contents: annotation.comment || undefined,
-        custom: { colorName: annotation.color, annotationType: annotation.type, text: pr.text || "" },
+        custom: {
+          colorName: annotation.color,
+          annotationType: annotation.type,
+          text: pr.text || "",
+        },
       };
 
       try {
@@ -447,8 +461,9 @@ export class AnnotationStore {
 
     const { width: pw, height: ph } = page.size;
     const firstRect = firstPr.rects[0];
-    const highlightRight = (firstRect.leftRatio + firstRect.widthRatio) * pw + (cropOffset.dx);
-    const highlightTop = firstRect.topRatio * ph + (cropOffset.dy);
+    const highlightRight =
+      (firstRect.leftRatio + firstRect.widthRatio) * pw;
+    const highlightTop = firstRect.topRatio * ph;
     const noteSize = 20;
     const noteX = Math.min(highlightRight + 5, pw - noteSize - 5);
     const noteY = highlightTop - noteSize / 2;
@@ -466,7 +481,10 @@ export class AnnotationStore {
       color: colorNameToHex(annotation.color),
       opacity: 1.0,
       icon: "Comment",
-      custom: { linkedAnnotationId: annotation.id, annotationType: annotation.type },
+      custom: {
+        linkedAnnotationId: annotation.id,
+        annotationType: annotation.type,
+      },
     };
 
     try {
@@ -494,7 +512,9 @@ export class AnnotationStore {
       if (!page) continue;
 
       const { width: pw, height: ph } = page.size;
-      const segmentRects = pr.rects.map((r) => this.#toEngineRect(r, pw, ph, cropOffset));
+      const segmentRects = pr.rects.map((r) =>
+        this.#toEngineRect(r, pw, ph),
+      );
       const boundingRect = this.#boundingRect(segmentRects);
 
       const pdfAnnotation = {
@@ -509,7 +529,11 @@ export class AnnotationStore {
         color: colorNameToHex(annotation.color),
         opacity: annotation.type === "highlight" ? 0.5 : 1.0,
         contents: annotation.comment || undefined,
-        custom: { colorName: annotation.color, annotationType: annotation.type, text: pr.text || "" },
+        custom: {
+          colorName: annotation.color,
+          annotationType: annotation.type,
+          text: pr.text || "",
+        },
       };
 
       try {
@@ -611,16 +635,80 @@ export class AnnotationStore {
   }
 
   // ============================================
+  // Annotation Rect Normalization
+  // ============================================
+
+  /**
+   * Normalize engine annotation rects using raw Pdfium data.
+   * @param {Array} annotations - Engine annotation objects (mutated in place)
+   * @param {number} pageIndex - 0-based page index
+   * @param {number} pageHeight - Page height in PDF units
+   */
+  #normalizeAnnotationRects(annotations, pageIndex, pageHeight) {
+    if (!annotations || annotations.length === 0) return;
+
+    const handle = this.#doc.lowLevelHandle;
+    if (!handle) return;
+
+    const pdfium = handle.pdfium;
+    const docPtr = handle.docPtr;
+
+    const pagePtr = pdfium.FPDF_LoadPage(docPtr, pageIndex);
+    if (!pagePtr) return;
+
+    try {
+      const rawAnnotCount = pdfium.FPDFPage_GetAnnotCount(pagePtr);
+      if (rawAnnotCount === 0) return;
+
+      const rectPtr = pdfium.pdfium.wasmExports.malloc(16);
+      let needsCorrection = false;
+
+      try {
+        const samplesToCheck = Math.min(rawAnnotCount, 5);
+        for (let i = 0; i < samplesToCheck; i++) {
+          const annotPtr = pdfium.FPDFPage_GetAnnot(pagePtr, i);
+          if (!annotPtr) continue;
+
+          const success = pdfium.FPDFAnnot_GetRect(annotPtr, rectPtr);
+          pdfium.FPDFPage_CloseAnnot(annotPtr);
+
+          if (!success) continue;
+
+          const bottom = pdfium.pdfium.HEAPF32[(rectPtr + 4) >> 2];
+          const top    = pdfium.pdfium.HEAPF32[(rectPtr + 12) >> 2];
+
+          if (top > bottom) {
+            needsCorrection = true;
+            break;
+          }
+        }
+      } finally {
+        pdfium.pdfium.wasmExports.free(rectPtr);
+      }
+
+      if (!needsCorrection) return;
+
+      for (const annot of annotations) {
+        if (!annot.target) continue;
+
+        if (annot.rect?.origin && annot.rect?.size) {
+          annot.rect.origin.y -= annot.rect.size.height;
+        }
+      }
+    } finally {
+      pdfium.FPDF_ClosePage(pagePtr);
+    }
+  }
+
+  // ============================================
   // Coordinate Conversion
   // ============================================
 
-  #toEngineRect(uiRect, pageWidth, pageHeight, cropOffset = null) {
-    const dx = cropOffset?.dx ?? 0;
-    const dy = cropOffset?.dy ?? 0;
+  #toEngineRect(uiRect, pageWidth, pageHeight) {
     return {
       origin: {
-        x: uiRect.leftRatio * pageWidth + dx,
-        y: uiRect.topRatio * pageHeight + dy,
+        x: uiRect.leftRatio * pageWidth,
+        y: uiRect.topRatio * pageHeight,
       },
       size: {
         width: uiRect.widthRatio * pageWidth,

@@ -94,7 +94,6 @@ export class PdfiumTextExtractor {
     );
   }
 
-
   // ============================================================================
   // Convenience: full-text + rects using docPtr (opens/closes page internally)
   // ============================================================================

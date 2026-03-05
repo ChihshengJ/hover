@@ -341,7 +341,10 @@ export class CitationBuilder {
             } else {
               // Different reference - use native for author-year (but not for
               // numeric or abbreviated which have explicit key/index matching)
-              if (citation.type !== "numeric" && citation.type !== "abbreviated") {
+              if (
+                citation.type !== "numeric" &&
+                citation.type !== "abbreviated"
+              ) {
                 const targetLocation = {
                   pageIndex: nativeLink.destPageIndex,
                   x: nativeLink.destX,

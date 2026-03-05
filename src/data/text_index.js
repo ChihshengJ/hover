@@ -260,9 +260,9 @@ export class DocumentTextIndex {
     const fontStyle = this.#extractFontStyle(items);
     const fontSize = this.#findMedian(items.map((i) => i.fontSize));
 
-    const lineHeights = items.map((i) => i.height);
-    const lineHeight =
-      lineHeights.reduce((a, cur) => a + cur, 0) / lineHeights.length;
+    const lineHeight = this.#findMedian(
+      items.filter((i) => i.height > 2).map((i) => i.height),
+    );
     const lineWidth = items.at(-1).x + items.at(-1).width - items[0].x;
     const lineBottom = this.#findMedian(items.map((i) => i.originalY));
 
@@ -402,15 +402,18 @@ export class DocumentTextIndex {
     const lineHeights = [];
     const lineWidths = [];
     const marginBottoms = [];
+    let count = 0;
 
     for (const [, data] of this.#pageData) {
+      if (count > 5) break;
       if (data.marginBottom > 0) marginBottoms.push(data.marginBottom);
-      for (const line of data.lines.slice(0, 500)) {
+      for (const line of data.lines.slice(5, 25)) {
         if (line.fontSize > 0) fontSizes.push(line.fontSize);
         if (line.lineHeight > 0) lineHeights.push(line.lineHeight);
         if (line.lineWidth > 0) lineWidths.push(Math.floor(line.lineWidth));
         fontStyles.push(line.fontStyle);
       }
+      count++;
     }
 
     if (fontSizes.length === 0) return;

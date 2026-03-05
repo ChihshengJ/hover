@@ -32,9 +32,6 @@ export class PdfiumTextExtractor {
   // ============================================================================
 
   /**
-   * Open a page and text-page, run a callback, then close both.
-   * Centralises the load/close lifecycle that was duplicated everywhere.
-   *
    * @param {number} docPtr
    * @param {number} pageIndex - 0-based
    * @param {(ctx: {pagePtr: number, textPagePtr: number, pageWidth: number, pageHeight: number, charCount: number}) => T} fn
@@ -504,11 +501,20 @@ export class PdfiumTextExtractor {
       const digitAlphaBoundary =
         (isDigit && lastIsAlpha) || (currentIsAlpha && lastIsDigit);
 
+      // Break runs between punctuation and digits to prevent body-text
+      // punctuation (with full-size height) from being grouped with
+      // superscript numbers, which would inflate avgHeight and prevent
+      // superscript detection downstream.
+      const isPunct = (c) => c === 44 || c === 46 || c === 59 || c === 58; // , . ; :
+      const punctuationDigitBoundary =
+        (isDigit && isPunct(lastCode)) || (lastIsDigit && isPunct(charCode));
+
       if (
         hasTrailingWhitespace ||
         !sameLine ||
         !isAdjacent ||
-        digitAlphaBoundary
+        digitAlphaBoundary ||
+        punctuationDigitBoundary
       ) {
         this.#finalizeRun(currentRun, textSlices, getFontInfo);
         currentRun = {

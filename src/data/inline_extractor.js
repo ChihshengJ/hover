@@ -225,7 +225,7 @@ export class InlineExtractor {
     const allCrossRefs = [];
 
     // Get body line height for superscript detection
-    const bodyLineHeight = this.#textIndex?.getBodyLineHeight() || 12;
+    const bodyLineHeight = this.#textIndex?.getBodyLineHeight() || 10;
 
     // Reference section bounds (to skip scanning there)
     const refSectionStart =
@@ -763,15 +763,31 @@ export class InlineExtractor {
 
     if (!lines?.length) return citations;
 
-    for (const line of lines) {
-      for (const item of line.items) {
-        // Must be significantly smaller than body text
-        if (item.height >= bodyLineHeight * 0.7) continue;
-        if (pageNumber === 1) console.log(item); console.log(bodyLineHeight);
+    const heightThreshold = bodyLineHeight * 0.7;
 
-        // Clean item content: strip trailing/leading punctuation and whitespace
-        // that gets attached during word-based extraction.
-        const cleaned = item.str
+    for (const line of lines) {
+      const groups = []; // Array of Array<item>
+
+      for (const item of line.items) {
+        if (item.height >= heightThreshold) continue;
+
+        if (groups.length > 0) {
+          const lastGroup = groups[groups.length - 1];
+          const lastItem = lastGroup[lastGroup.length - 1];
+          const gap = item.x - (lastItem.x + lastItem.width);
+          if (gap < bodyLineHeight * 0.5 && gap >= -1) {
+            lastGroup.push(item);
+            continue;
+          }
+        }
+        groups.push([item]);
+      }
+
+      // --- Phase 2: Process each merged group ---
+      for (const group of groups) {
+        const combinedStr = group.map((g) => g.str).join("");
+
+        const cleaned = combinedStr
           .replace(/^[^\d]+/, "")
           .replace(/[^\d]+$/, "")
           .replace(/\s+/g, "");
@@ -783,10 +799,8 @@ export class InlineExtractor {
           continue;
         }
 
-        // Parse using the shared numeric content parser
         const { indices, ranges } = parseNumericCitationContent(cleaned);
 
-        // Validate against known references
         const validIndices = indices.filter((idx) =>
           this.#signatures.some((anchor) => anchor.index === idx),
         );
@@ -802,6 +816,14 @@ export class InlineExtractor {
           flags |= CitationFlags.MULTI_REF;
         }
 
+        // Compute a merged bounding rect from all items in the group
+        const firstItem = group[0];
+        const lastItem = group[group.length - 1];
+        const mergedX = firstItem.x;
+        const mergedY = Math.min(...group.map((g) => g.y));
+        const mergedRight = lastItem.x + lastItem.width;
+        const mergedTop = Math.max(...group.map((g) => g.y + g.height));
+
         citations.push({
           type: "superscript",
           text: cleaned,
@@ -810,10 +832,10 @@ export class InlineExtractor {
           charCount: cleaned.length,
           rects: [
             {
-              x: item.x,
-              y: pageHeight - item.y,
-              width: item.width,
-              height: item.height,
+              x: mergedX,
+              y: pageHeight - mergedTop,
+              width: mergedRight - mergedX,
+              height: mergedTop - mergedY,
             },
           ],
           refIndices: validIndices,

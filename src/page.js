@@ -325,7 +325,7 @@ export class PageView {
           if (!targetRects?.length) continue;
 
           for (const rect of targetRects) {
-            if (rect.height < 1 || rect.width < 3) continue;
+            if (rect.height < 1 || rect.width < 1) continue;
             const el = document.createElement("span");
             el.className = "citation-rect";
             el.style.cssText = `
@@ -345,7 +345,7 @@ export class PageView {
       } else {
         // Original: single overlay for the whole citation
         for (const rect of citRef.rects) {
-          if (rect.height < 1 || rect.width < 3) continue;
+          if (rect.height < 1 || rect.width < 1) continue;
           const el = document.createElement("span");
           el.className = "citation-rect";
           el.style.cssText = `

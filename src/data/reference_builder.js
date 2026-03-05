@@ -117,6 +117,7 @@ function findReferenceSectionFromOutline(textIndex, outline) {
   const pageEntry = pageData.get(pageNum);
   if (!pageEntry) return null;
   if (match.top >= pageEntry.pageHeight || match.top <= 0) return null;
+  if (match.left === 0) return null;
 
   const closestIdx = findClosestLineIndex(
     pageEntry.lines,

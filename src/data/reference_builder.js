@@ -31,7 +31,7 @@ const EMPTY_RESULT = {
 };
 
 const OUTLINE_REFERENCE_PATTERN =
-  /^(?:\d+\.?\s+)?(?:references?|bibliography|works\s+cited|citations?|literature\s+cited|cited\s+literature)$/i;
+  /^(?:\d+\.?\s+)?(?:references?|bibliography|works\s+cited|citations?|literature\s+cited|cited\s+literature|参考文献|參考文獻)$/i;
 
 const NUMERIC_ENTRY_PATTERNS = [
   { name: "numbered-bracket", pattern: /^\s*\[(\d{0,3})\]\s*/ },

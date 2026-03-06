@@ -198,11 +198,11 @@ function resolveCoords(outline, textIndex) {
         entry.item.top = line.y || 0;
         entry.resolved = true;
         scanStart = i; // next entry starts from this line onward
-        console.log(
-          `[Outline] Resolved "${entry.item.title}" → page ${pageNum}, y=${line.y}` +
-          (matchResult.fuzzy ? " (fuzzy)" : "") +
-          (matchResult.headingLike ? " [heading-like]" : ""),
-        );
+        // console.log(
+        //   `[Outline] Resolved "${entry.item.title}" → page ${pageNum}, y=${line.y}` +
+        //   (matchResult.fuzzy ? " (fuzzy)" : "") +
+        //   (matchResult.headingLike ? " [heading-like]" : ""),
+        // );
         break;
       }
     }

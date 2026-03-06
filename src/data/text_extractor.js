@@ -265,8 +265,6 @@ export class PdfiumTextExtractor {
   }
 
   /**
-   * Extract text from a character range.
-   *
    * @param {number} textPagePtr - Text page pointer
    * @param {number} startIndex - Starting character index
    * @param {number} count - Number of characters to extract
@@ -298,9 +296,6 @@ export class PdfiumTextExtractor {
   }
 
   /**
-   * Get character box for a single character (using FPDFText_GetCharBox)
-   * Returns null for whitespace/control characters that have no visual box
-   *
    * @param {number} textPagePtr
    * @param {number} charIndex
    * @param {number} pageHeight
@@ -351,11 +346,6 @@ export class PdfiumTextExtractor {
 
   /**
    * Extract text slices grouped by words/text runs instead of individual characters.
-   * This approach:
-   * 1. Uses character indices (not bounded text) to avoid ligature duplication
-   * 2. Groups adjacent characters into words/runs to reduce DOM elements
-   * 3. Uses FPDFText_GetCharBox for accurate per-character positioning
-   * 4. Preserves trailing whitespace/control characters for accurate text reconstruction
    *
    * @param {number} textPagePtr - Text page pointer
    * @param {number} totalChars - Total character count
@@ -429,6 +419,17 @@ export class PdfiumTextExtractor {
         pdfium.pdfium.wasmExports.free(flagsPtr);
       }
     };
+
+    const isCJK = (code) =>
+      (code >= 0x4e00 && code <= 0x9fff) || // CJK Unified Ideographs
+      (code >= 0x3400 && code <= 0x4dbf) || // CJK Extension A
+      (code >= 0x20000 && code <= 0x2a6df) || // CJK Extension B
+      (code >= 0xf900 && code <= 0xfaff) || // CJK Compatibility Ideographs
+      (code >= 0x3000 && code <= 0x303f) || // CJK Symbols and Punctuation
+      (code >= 0x3040 && code <= 0x309f) || // Hiragana
+      (code >= 0x30a0 && code <= 0x30ff) || // Katakana
+      (code >= 0xff00 && code <= 0xffef) || // Fullwidth Forms
+      (code >= 0xac00 && code <= 0xd7af); // Hangul Syllables
 
     let currentRun = null;
     const LINE_TOLERANCE_FACTOR = 1.2; // Y tolerance for same line
@@ -509,12 +510,18 @@ export class PdfiumTextExtractor {
       const punctuationDigitBoundary =
         (isDigit && isPunct(lastCode)) || (lastIsDigit && isPunct(charCode));
 
+      // CJK characters have no word separators — break at every character
+      // boundary to keep runs small (prevents width-based filtering from
+      // dropping entire lines, and enables per-character text selection).
+      const cjkBoundary = isCJK(charCode) || isCJK(lastCode);
+
       if (
         hasTrailingWhitespace ||
         !sameLine ||
         !isAdjacent ||
         digitAlphaBoundary ||
-        punctuationDigitBoundary
+        punctuationDigitBoundary ||
+        cjkBoundary
       ) {
         this.#finalizeRun(currentRun, textSlices, getFontInfo);
         currentRun = {
@@ -569,7 +576,7 @@ export class PdfiumTextExtractor {
     const height = run.avgHeight;
 
     if (width < 0 && height < 0) return;
-    if (height > 100 || width > 200) return;
+    if (height > 100) return;
 
     const fontInfo = getFontInfo(run.startIndex);
 

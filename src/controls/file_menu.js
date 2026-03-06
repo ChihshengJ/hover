@@ -7,7 +7,7 @@ import { OnboardingWalkthrough } from "../settings/onboarding.js";
 import { Settings } from "../settings/settings.js";
 import { requestThrottle } from "./request_throttle.js";
 
-const VERSION = "0.9.0";
+const VERSION = "0.9.1";
 
 export class FileMenu {
   /**
@@ -339,7 +339,11 @@ export class FileMenu {
       // Clear any old PDF data first
       sessionStorage.removeItem("hover_pdf_data");
       sessionStorage.removeItem("hover_pdf_name");
-      try { indexedDB.deleteDatabase("hover_local_pdf"); } catch (e) { /* ignore */ }
+      try {
+        indexedDB.deleteDatabase("hover_local_pdf");
+      } catch (e) {
+        /* ignore */
+      }
 
       if (typeof chrome !== "undefined" && chrome.runtime?.sendMessage) {
         const base64 = this.#arrayBufferToBase64(arrayBuffer);
@@ -408,8 +412,14 @@ export class FileMenu {
         const store = tx.objectStore("pdf");
         store.put(arrayBuffer, "data");
         store.put(name, "name");
-        tx.oncomplete = () => { db.close(); resolve(); };
-        tx.onerror = () => { db.close(); reject(tx.error); };
+        tx.oncomplete = () => {
+          db.close();
+          resolve();
+        };
+        tx.onerror = () => {
+          db.close();
+          reject(tx.error);
+        };
       };
       req.onerror = () => reject(req.error);
     });

@@ -14,7 +14,7 @@ import { FontStyle } from "./text_index.js";
 const NUMBERED_SECTION_PATTERN =
   /^(\d+(?:\.\d+)*\.?|[A-Z](\.\d)?\.?|[IVXLCDM]+\.?)\s+\S/;
 export const SECTION_NUMBER_EXTRACT =
-  /^(\d+(?:\.\d+)*\.?|[A-Z](\.\d)?\.?|[IVXLCDM]+\.?)\s*/;
+  /^(\d+(?:\.\d+)*\.?|[A-Z](\.\d)?\.?|[IVXLCDM]+\.?)\s+/;
 
 /**
  * Build document outline from PDF metadata or heuristic analysis
@@ -127,12 +127,18 @@ function resolveBookmarkDestination(bookmark, allNamedDests) {
 
 /**
  * Fix outline items whose bookmark destinations had no coordinate data.
- * Scans all document lines to find matching heading text.
+ * Scans document lines sequentially (in outline order) to find matching
+ * heading text. Each successive entry resumes scanning from where the
+ * previous entry matched, enforcing document-order resolution.
+ *
+ * @param {OutlineItem[]} outline
+ * @param {object} textIndex
  */
 function resolveCoords(outline, textIndex) {
   if (!textIndex) return;
 
-  // Collect items with empty coordinates
+  const { lineHeight: bodyLineHeight } = textIndex.getDocumentData();
+
   const unresolved = [];
   const walk = (items) => {
     for (const item of items) {
@@ -149,67 +155,132 @@ function resolveCoords(outline, textIndex) {
     `[Outline] Resolving ${unresolved.length} bookmark(s) with empty coordinates`,
   );
 
-  // Build search entries for each unresolved item
   const entries = unresolved.map((item) => ({
     item,
     textKey: normalizeForMatch(item.title),
+    words: normalizeForMatch(item.title).split(" ").filter(Boolean),
     appLetter: extractAppendixLetter(item.title),
+    resolved: false,
   }));
 
-  // Scan all lines across all pages
+  const allLines = [];
   const numPages = textIndex.getPageCount();
   for (let p = 1; p <= numPages; p++) {
     const pageData = textIndex.getPageData(p);
     if (!pageData?.lines) continue;
-
     for (const line of pageData.lines) {
       if (!line.text || line.text.length < 2) continue;
+      allLines.push({ line, pageNum: p });
+    }
+  }
 
-      const lineKey = normalizeForMatch(line.text);
+  let scanStart = 0;
+
+  for (const entry of entries) {
+    for (let i = scanStart; i < allLines.length; i++) {
+      const { line, pageNum } = allLines[i];
       const lineText = line.text.trim();
+      const lineKey = normalizeForMatch(lineText);
+      const lineWords = lineKey.split(" ").filter(Boolean);
 
-      for (const entry of entries) {
-        // Skip already-resolved items
-        if (entry.item.left !== 0 || entry.item.top !== 0) continue;
+      const matchResult = matchEntry(
+        entry,
+        lineText,
+        lineKey,
+        lineWords,
+        line,
+        bodyLineHeight,
+      );
 
-        let matched = false;
-
-        // Appendix matching: "A." at line start or "Appendix A" in line
-        if (entry.appLetter) {
-          const letterRe = new RegExp(`^${entry.appLetter}\\.\\s`, "i");
-          const appendixRe = new RegExp(
-            `\\bappendix\\s+${entry.appLetter}\\b`,
-            "i",
-          );
-          if (letterRe.test(lineText) || appendixRe.test(lineText)) {
-            matched = true;
-          }
-        }
-
-        // Text-based matching (strip numbers, compare core text)
-        if (!matched && entry.textKey && lineKey && entry.textKey === lineKey) {
-          matched = true;
-        }
-
-        if (matched) {
-          entry.item.pageIndex = p - 1;
-          entry.item.left = line.x || 0;
-          entry.item.top = line.y || 0;
-          console.log(
-            `[Outline] Resolved "${entry.item.title}" → page ${p}, y=${line.y}`,
-          );
-        }
+      if (matchResult.matched) {
+        entry.item.pageIndex = pageNum - 1;
+        entry.item.left = line.x || 0;
+        entry.item.top = line.y || 0;
+        entry.resolved = true;
+        scanStart = i; // next entry starts from this line onward
+        console.log(
+          `[Outline] Resolved "${entry.item.title}" → page ${pageNum}, y=${line.y}` +
+          (matchResult.fuzzy ? " (fuzzy)" : "") +
+          (matchResult.headingLike ? " [heading-like]" : ""),
+        );
+        break;
       }
     }
   }
 
-  const remaining = unresolved.filter((i) => i.left === 0 && i.top === 0);
+  const remaining = entries.filter((e) => !e.resolved);
   if (remaining.length > 0) {
     console.warn(
       `[Outline] Could not resolve ${remaining.length} bookmark(s):`,
-      remaining.map((i) => i.title),
+      remaining.map((e) => e.item.title),
     );
   }
+}
+
+/**
+ * @returns {{ matched: boolean, fuzzy: boolean, headingLike: boolean }}
+ */
+function matchEntry(entry, lineText, lineKey, lineWords, line, bodyLineHeight) {
+  const result = { matched: false, fuzzy: false, headingLike: false };
+  const lineHeight = line.lineHeight || 0;
+  const fontStyle = line.items?.[0]?.fontStyle ?? FontStyle.REGULAR;
+  const isHeadingLike =
+    lineHeight > bodyLineHeight * 1.2 ||
+    fontStyle === FontStyle.BOLD ||
+    fontStyle === FontStyle.BOLD_ITALIC;
+  result.headingLike = isHeadingLike;
+
+  if (entry.appLetter) {
+    const letterRe = new RegExp(`^${entry.appLetter}\\.\\s`, "i");
+    const appendixRe = new RegExp(`\\bappendix\\s+${entry.appLetter}\\b`, "i");
+    if (letterRe.test(lineText) || appendixRe.test(lineText)) {
+      result.matched = true;
+      return result;
+    }
+  }
+
+  if (entry.textKey && lineKey && entry.textKey === lineKey) {
+    result.matched = true;
+    return result;
+  }
+
+  if (
+    entry.textKey.length > 25 &&
+    entry.words.length >= 3 &&
+    lineWords.length >= 2
+  ) {
+    const overlap = countWordOverlap(entry.words, lineWords);
+    const overlapRatio =
+      overlap / Math.max(entry.words.length, lineWords.length);
+
+    if (overlapRatio >= 0.4) {
+      if (isHeadingLike) {
+        result.matched = true;
+        result.fuzzy = true;
+        return result;
+      }
+      if (overlapRatio >= 0.85) {
+        result.matched = true;
+        result.fuzzy = true;
+        return result;
+      }
+    }
+  }
+
+  return result;
+}
+
+/**
+ * Count the number of shared words between two word arrays.
+ * Uses a Set for O(n+m) comparison.
+ */
+function countWordOverlap(wordsA, wordsB) {
+  const setB = new Set(wordsB);
+  let count = 0;
+  for (const word of wordsA) {
+    if (setB.has(word)) count++;
+  }
+  return count;
 }
 
 /**

@@ -25,9 +25,44 @@ const el = {
   pageNum: document.getElementById("current-page"),
 };
 
+// ============================================
+// Pending PDF Storage (IndexedDB)
+// ============================================
+
+const PENDING_DB_NAME = "hover-pending-pdf";
+const PENDING_DB_STORE = "data";
+
 /**
- * Check if we're running in extension context vs dev server
+ * @returns {Promise<{ data: ArrayBuffer, name: string, url: string|null } | null>}
  */
+async function consumePendingPdf() {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open(PENDING_DB_NAME, 1);
+    req.onupgradeneeded = (e) =>
+      e.target.result.createObjectStore(PENDING_DB_STORE);
+    req.onerror = (e) => reject(e.target.error);
+    req.onsuccess = (e) => {
+      const db = e.target.result;
+      const tx = db.transaction(PENDING_DB_STORE, "readwrite");
+      const store = tx.objectStore(PENDING_DB_STORE);
+      const getReq = store.get("pending");
+      store.delete("pending");
+      tx.oncomplete = () => {
+        db.close();
+        resolve(getReq.result || null);
+      };
+      tx.onerror = (err) => {
+        db.close();
+        reject(err.target.error);
+      };
+    };
+  });
+}
+
+// ============================================
+// Utilities
+// ============================================
+
 function isExtensionContext() {
   return (
     typeof chrome !== "undefined" &&
@@ -36,17 +71,11 @@ function isExtensionContext() {
   );
 }
 
-/**
- * Get URL parameter for dev mode
- */
 function getDevUrl() {
   const urlParams = new URLSearchParams(window.location.search);
   return urlParams.get("file") || urlParams.get("url");
 }
 
-/**
- * Get human-readable status message for loading phase
- */
 function getStatusMessage(phase) {
   const messages = {
     "loading-wasm": "Loading PDF engine...",
@@ -73,7 +102,9 @@ function getStatusMessage(phase) {
 }
 
 /**
- * Fetch PDF from URL (for dev mode only)
+ * @param {string} url
+ * @param {(p: {loaded: number, total: number, percent: number, phase: string}) => void} [onProgress]
+ * @returns {Promise<ArrayBuffer>}
  */
 async function fetchPdfFromUrl(url, onProgress) {
   const response = await fetch(url);
@@ -115,136 +146,9 @@ async function fetchPdfFromUrl(url, onProgress) {
 }
 
 /**
- * Decode a base64-encoded PDF string to ArrayBuffer.
- * Handles both raw base64 and data-URI prefixed strings.
- * @param {string} base64
- * @returns {ArrayBuffer}
- */
-function base64ToArrayBuffer(base64) {
-  // Strip data URI prefix if present
-  const raw = base64.includes(",") ? base64.split(",")[1] : base64;
-  const binary = atob(raw);
-  const bytes = new Uint8Array(binary.length);
-  for (let i = 0; i < binary.length; i++) {
-    bytes[i] = binary.charCodeAt(i);
-  }
-  return bytes.buffer;
-}
-
-async function getInterceptedPdf() {
-  const urlParams = new URLSearchParams(window.location.search);
-  const originalUrl = urlParams.get("url");
-  if (!originalUrl && urlParams.get("source") !== "intercepted") {
-    return null;
-  }
-
-  if (typeof chrome === "undefined" || !chrome.runtime?.sendMessage) {
-    return null;
-  }
-
-  return new Promise((resolve) => {
-    chrome.runtime.sendMessage({ type: "GET_PENDING_PDF" }, (response) => {
-      if (chrome.runtime.lastError) {
-        console.error(
-          "[Main] Error getting pending PDF:",
-          chrome.runtime.lastError,
-        );
-        resolve(null);
-        return;
-      }
-
-      if (response?.success && response?.data?.data) {
-        try {
-          const raw = response.data.data;
-          let arrayBuffer;
-
-          if (raw instanceof ArrayBuffer) {
-            arrayBuffer = raw;
-          } else if (raw instanceof Uint8Array) {
-            arrayBuffer = raw.buffer;
-          } else if (raw?.buffer instanceof ArrayBuffer) {
-            arrayBuffer = raw.buffer;
-          } else if (typeof raw === "string") {
-            arrayBuffer = base64ToArrayBuffer(raw);
-          } else if (typeof raw === "object") {
-            const bytes = new Uint8Array(Object.values(raw));
-            arrayBuffer = bytes.buffer;
-          } else {
-            console.error("[Main] Unknown PDF data format:", typeof raw);
-            resolve(null);
-            return;
-          }
-
-          resolve({
-            data: arrayBuffer,
-            name: response.data.name || "document.pdf",
-            url: response.data.url || originalUrl || null,
-          });
-        } catch (error) {
-          console.error("[Main] Error parsing intercepted PDF:", error);
-          resolve(null);
-        }
-      } else {
-        resolve(null);
-      }
-    });
-  });
-}
-
-async function getLocalPdfFromBackground() {
-  if (typeof chrome === "undefined" || !chrome.runtime?.sendMessage) {
-    return null;
-  }
-
-  return new Promise((resolve) => {
-    chrome.runtime.sendMessage({ type: "GET_LOCAL_PDF" }, (response) => {
-      if (chrome.runtime.lastError) {
-        resolve(null);
-        return;
-      }
-
-      if (response?.success && response?.data?.data) {
-        try {
-          const raw = response.data.data;
-          let arrayBuffer;
-
-          if (raw instanceof ArrayBuffer) {
-            arrayBuffer = raw;
-          } else if (raw instanceof Uint8Array) {
-            arrayBuffer = raw.buffer;
-          } else if (typeof raw === "string") {
-            arrayBuffer = base64ToArrayBuffer(raw);
-          } else if (typeof raw === "object" && raw !== null) {
-            const bytes = new Uint8Array(Object.values(raw));
-            arrayBuffer = bytes.buffer;
-          } else {
-            console.error("[Main] Unknown local PDF data format:", typeof raw);
-            resolve(null);
-            return;
-          }
-
-          resolve({
-            data: arrayBuffer,
-            name: response.data.name || "document.pdf",
-          });
-        } catch (error) {
-          console.error(
-            "[Main] Error parsing local PDF from background:",
-            error,
-          );
-          resolve(null);
-        }
-      } else {
-        resolve(null);
-      }
-    });
-  });
-}
-
-/**
- * Try to take over the content.js loading overlay so the user
- * sees a seamless transition instead of two separate loading screens.
- * Returns true if we adopted an existing overlay.
+ * Take over the content.js loading overlay so the user sees a
+ * seamless transition instead of two separate loading screens.
+ * @returns {boolean} Whether an existing overlay was adopted.
  */
 function adoptContentScriptOverlay() {
   const existing = document.getElementById("hover-loading-overlay");
@@ -259,11 +163,12 @@ function adoptContentScriptOverlay() {
   return true;
 }
 
-/**
- * Load PDF - handles both extension and dev contexts
- */
+// ============================================
+// Main Loading
+// ============================================
+
 async function loadPdf(isFirstLaunch = false) {
-  const hadContentOverlay = adoptContentScriptOverlay();
+  adoptContentScriptOverlay();
 
   const loadingOverlay = new LoadingOverlay();
   loadingOverlay.show();
@@ -280,15 +185,12 @@ async function loadPdf(isFirstLaunch = false) {
       }
     };
 
-    // Determine the intended URL early (before fetching data) to decide
-    // whether onboarding should run. Onboarding only triggers for URL-based
-    // launches (clicking a PDF link), not for popup uploads or local files.
     const urlParams = new URLSearchParams(window.location.search);
     const intendedUrl = inExtension ? urlParams.get("url") : getDevUrl();
 
+    // ── Onboarding (first launch with a URL-based open) ──
+
     if (isFirstLaunch && intendedUrl) {
-      // URL-based first launch, show onboarding with default paper,
-      // then reload with the user's intended URL afterwards.
       OnboardingWalkthrough.saveIntendedUrl(intendedUrl);
 
       loadingOverlay.setProgress(0.1, "Fetching tutorial document...");
@@ -323,37 +225,27 @@ async function loadPdf(isFirstLaunch = false) {
       await OnboardingWalkthrough.markCompleted();
     }
 
+    // ── Resolve PDF source ──
+
     let pdfSource = null;
     let pdfName = "document.pdf";
     let originalUrl = null;
 
     if (inExtension) {
-      // 1. Check for intercepted PDF (from content script)
-      const interceptedPdf = await getInterceptedPdf();
-      if (interceptedPdf) {
-        pdfSource = interceptedPdf.data;
-        pdfName = interceptedPdf.name;
-        originalUrl = interceptedPdf.url || null;
-        console.log("[Main] Loading intercepted PDF:", pdfName);
+      const pending = await consumePendingPdf();
+      if (pending) {
+        pdfSource = pending.data;
+        pdfName = pending.name;
+        originalUrl = pending.url || null;
+        console.log("[Main] Loading PDF from IDB:", pdfName);
       }
 
-      // 2. Check for local PDF from IndexedDB/sessionStorage
       if (!pdfSource) {
-        const localPdf = await PDFDocumentModel.getLocalPdf();
+        const localPdf = PDFDocumentModel.getLocalPdf();
         if (localPdf) {
           pdfSource = localPdf.data;
           pdfName = localPdf.name;
           console.log("[Main] Loading local PDF:", pdfName);
-        }
-      }
-
-      // 3. Check for local PDF from background (popup uploads)
-      if (!pdfSource) {
-        const backgroundPdf = await getLocalPdfFromBackground();
-        if (backgroundPdf) {
-          pdfSource = backgroundPdf.data;
-          pdfName = backgroundPdf.name;
-          console.log("[Main] Loading PDF from background:", pdfName);
         }
       }
     } else {
@@ -367,11 +259,24 @@ async function loadPdf(isFirstLaunch = false) {
       }
 
       if (!pdfSource) {
-        const localPdf = await PDFDocumentModel.getLocalPdf();
+        const pending = await consumePendingPdf();
+        if (pending) {
+          pdfSource = pending.data;
+          pdfName = pending.name;
+          originalUrl = pending.url || null;
+          console.log("[Main] DEV MODE - Loading from IDB:", pdfName);
+        }
+      }
+
+      if (!pdfSource) {
+        const localPdf = PDFDocumentModel.getLocalPdf();
         if (localPdf) {
           pdfSource = localPdf.data;
           pdfName = localPdf.name;
-          console.log("[Main] DEV MODE - Loading from local storage:", pdfName);
+          console.log(
+            "[Main] DEV MODE - Loading from sessionStorage:",
+            pdfName,
+          );
         }
       }
     }
@@ -390,6 +295,8 @@ async function loadPdf(isFirstLaunch = false) {
       );
     }
 
+    // ── Load and initialize ──
+
     loadingOverlay.setProgress(0.1, "Loading document...");
     await pdfmodel.load(pdfSource, onProgress);
     loadingOverlay.setProgress(0.95, "Initializing viewer...");
@@ -402,15 +309,13 @@ async function loadPdf(isFirstLaunch = false) {
     document.title = fileName + " - Hover PDF";
 
     await PDFDocumentModel.clearLocalPdf();
-
     await loadingOverlay.hide();
 
-    // Add a RAF to make sure the indexing start after the rendering
+    // Yield to the renderer before starting background indexing
     await new Promise((resolve) =>
       requestAnimationFrame(() => requestAnimationFrame(resolve)),
     );
 
-    // Start indexing
     await pdfmodel.buildIndex();
     wm.toolbar?.navigationTree?.reinitialize();
     wm.progressBar?.buildSectionMarks();
@@ -451,10 +356,8 @@ async function main() {
  ___ ___ ___ ___ ___ ___ ___     
 |___|___|___|___|___|___|___|    
                                  
-                                                               
   `);
   const isFirstLaunch = await OnboardingWalkthrough.isFirstLaunch();
-
   await loadPdf(isFirstLaunch);
 }
 

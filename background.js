@@ -2,39 +2,66 @@
 // Hover PDF Viewer - Background Script
 // ============================================
 
-let pendingPdfData = null;
-let localPdfData = null;
 let bypassUrls = new Set();
 
 // ============================================
-// Pre-warm WASM cache on PDF detection
+// Pending PDF Storage (IndexedDB)
 // ============================================
 
-// try {
-//   chrome.webRequest.onHeadersReceived.addListener(
-//     (details) => {
-//       if (details.type !== "main_frame") return;
-//
-//       const contentTypeHeader = details.responseHeaders?.find(
-//         (h) => h.name.toLowerCase() === "content-type",
-//       );
-//       const contentType = contentTypeHeader?.value || "";
-//
-//       if (
-//         contentType.includes("application/pdf") ||
-//         contentType.includes("application/x-pdf")
-//       ) {
-//         // Fire-and-forget: pre-fetch WASM binary into HTTP cache
-//         // so it's ready when the viewer opens
-//         fetch(chrome.runtime.getURL("pdfium.wasm")).catch(() => { });
-//       }
-//     },
-//     { urls: ["<all_urls>"], types: ["main_frame"] },
-//     ["responseHeaders"],
-//   );
-// } catch (error) {
-//   console.warn("[Hover BG] webRequest listener error:", error.message);
-// }
+const PENDING_DB_NAME = "hover-pending-pdf";
+const PENDING_DB_STORE = "data";
+
+/**
+ * Open the shared IndexedDB used to pass PDF ArrayBuffers from
+ * the background service-worker to the viewer page. Both run on
+ * the same chrome-extension:// origin, so they share this store.
+ * @returns {Promise<IDBDatabase>}
+ */
+function openPendingDb() {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open(PENDING_DB_NAME, 1);
+    req.onupgradeneeded = (e) =>
+      e.target.result.createObjectStore(PENDING_DB_STORE);
+    req.onsuccess = (e) => resolve(e.target.result);
+    req.onerror = (e) => reject(e.target.error);
+  });
+}
+
+/**
+ * Write a PDF record to IndexedDB under a fixed key so the viewer
+ * page can retrieve it on load without a message round-trip.
+ * @param {{ data: ArrayBuffer, name: string, url: string|null }} record
+ */
+async function storePendingPdf(record) {
+  const db = await openPendingDb();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(PENDING_DB_STORE, "readwrite");
+    tx.objectStore(PENDING_DB_STORE).put(record, "pending");
+    tx.oncomplete = () => {
+      db.close();
+      resolve();
+    };
+    tx.onerror = (e) => {
+      db.close();
+      reject(e.target.error);
+    };
+  });
+}
+
+/**
+ * Decode a base64 string (with optional data-URI prefix) to ArrayBuffer.
+ * @param {string} base64
+ * @returns {ArrayBuffer}
+ */
+function base64ToArrayBuffer(base64) {
+  const raw = base64.includes(",") ? base64.split(",")[1] : base64;
+  const binary = atob(raw);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) {
+    bytes[i] = binary.charCodeAt(i);
+  }
+  return bytes.buffer;
+}
 
 // ============================================
 // Message Handlers
@@ -55,15 +82,13 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true;
   }
 
-  // Content script detected a PDF page
   if (message.type === "PDF_PAGE_DETECTED") {
-    handlePdfPageDetected(message, sender)
+    handlePdfPageDetected(message)
       .then((result) => sendResponse(result))
       .catch((err) => sendResponse({ error: err.message }));
     return true;
   }
 
-  // Content script sending PDF data after fetching with credentials
   if (message.type === "PDF_DATA_READY") {
     handlePdfDataReady(message, sender)
       .then((result) => sendResponse(result))
@@ -71,15 +96,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true;
   }
 
-  // Viewer requesting the pending PDF data
-  if (message.type === "GET_PENDING_PDF") {
-    const data = pendingPdfData;
-    pendingPdfData = null; // Clear after retrieval
-    sendResponse({ success: true, data });
-    return true;
-  }
-
-  // Fetch local document
   if (message.type === "FETCH_LOCAL_FILE") {
     fetchLocalFile(message.url)
       .then((result) => sendResponse(result))
@@ -109,20 +125,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
 
   if (message.type === "STORE_LOCAL_PDF") {
-    localPdfData = {
-      data: message.data,
-      name: message.name,
-    };
-    sendResponse({ success: true });
-    return true;
-  }
-
-  if (message.type === "GET_LOCAL_PDF") {
-    sendResponse({
-      success: true,
-      data: localPdfData,
-    });
-    localPdfData = null;
+    handleStoreLocalPdf(message)
+      .then(() => sendResponse({ success: true }))
+      .catch((err) => sendResponse({ success: false, error: err.message }));
     return true;
   }
 
@@ -150,10 +155,15 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 });
 
 // ============================================
-// PDF Page Detection Handlers
+// PDF Interception
 // ============================================
 
-async function handlePdfPageDetected(message, sender) {
+/**
+ * Decide whether to intercept a detected PDF page.
+ * Combines the status check and detection decision into a single
+ * round-trip so content.js doesn't need a separate GET_HOVER_STATUS.
+ */
+async function handlePdfPageDetected(message) {
   const { hoverEnabled = true } =
     await chrome.storage.local.get("hoverEnabled");
   if (!hoverEnabled) {
@@ -166,26 +176,56 @@ async function handlePdfPageDetected(message, sender) {
   return { action: "fetch_and_send" };
 }
 
+/**
+ * Receive base64-encoded PDF from content.js, decode it to an
+ * ArrayBuffer, persist in IndexedDB, and open the viewer in a new
+ * tab adjacent to the source. Navigates the original tab back so
+ * the user returns to the page they clicked from.
+ */
 async function handlePdfDataReady(message, sender) {
   const { url, data, filename } = message;
 
-  pendingPdfData = {
-    data: data, // Base64
+  const arrayBuffer = base64ToArrayBuffer(data);
+  await storePendingPdf({
+    data: arrayBuffer,
     url: url,
     name: filename || extractFilename(url),
-  };
+  });
 
   const viewerUrl =
     chrome.runtime.getURL("index.html") + "?url=" + encodeURIComponent(url);
-  await chrome.tabs.update(sender.tab.id, { url: viewerUrl });
+
+  await chrome.tabs.create({
+    url: viewerUrl,
+    index: sender.tab.index + 1,
+    openerTabId: sender.tab.id,
+  });
+
+  try {
+    await chrome.tabs.goBack(sender.tab.id);
+  } catch {
+    // No navigation history (e.g. URL typed directly) — leave as-is
+  }
 
   return { success: true };
 }
 
+/**
+ * Persist a PDF uploaded from the extension popup into IndexedDB.
+ * The popup handles navigation to the viewer separately.
+ */
+async function handleStoreLocalPdf(message) {
+  const arrayBuffer = base64ToArrayBuffer(message.data);
+  await storePendingPdf({
+    data: arrayBuffer,
+    name: message.name || "document.pdf",
+    url: null,
+  });
+}
+
 function extractFilename(url) {
   try {
-    const urlObj = new URL(url);
-    const pathname = urlObj.pathname;
+    const pathname = new URL(url).pathname;
     const filename = pathname.split("/").pop() || "document.pdf";
     return filename.endsWith(".pdf") ? filename : filename + ".pdf";
   } catch {
@@ -200,7 +240,6 @@ function extractFilename(url) {
 async function handleToggle(enabled) {
   await chrome.storage.local.set({ hoverEnabled: enabled });
 
-  // Find the original PDF URL from any open Hover viewer tab
   const viewerBase = chrome.runtime.getURL("index.html");
   const tabs = await chrome.tabs.query({});
 
@@ -217,18 +256,13 @@ async function handleToggle(enabled) {
           null;
         viewerTabId = tab.id;
       } catch {
-        // ignore parse errors
+        // ignore
       }
       break;
     }
   }
 
-  return {
-    success: true,
-    enabled,
-    currentPdfUrl: originalPdfUrl,
-    viewerTabId,
-  };
+  return { success: true, enabled, currentPdfUrl: originalPdfUrl, viewerTabId };
 }
 
 // ============================================
@@ -248,7 +282,7 @@ chrome.runtime.onStartup.addListener(async () => {
 });
 
 // ============================================
-// Scholar Fetch Functions
+// Network Fetch Helpers
 // ============================================
 
 async function fetchLocalFile(fileUrl) {
@@ -270,7 +304,6 @@ async function fetchLocalFile(fileUrl) {
 
 async function fetchGoogleScholar(query) {
   const searchUrl = `https://scholar.google.com/scholar?q=${encodeURIComponent(query)}&hl=en`;
-
   const response = await fetch(searchUrl, {
     headers: {
       "User-Agent":
@@ -279,18 +312,13 @@ async function fetchGoogleScholar(query) {
       "Accept-Language": "en-US,en;q=0.9",
     },
   });
-
-  if (!response.ok) {
+  if (!response.ok)
     throw new Error(`Scholar request failed: ${response.status}`);
-  }
-
-  const html = await response.text();
-  return { html, query };
+  return { html: await response.text(), query };
 }
 
 async function fetchGoogleScholarCite(paperId) {
   const citeUrl = `https://scholar.google.com/scholar?q=info:${paperId}:scholar.google.com/&output=cite&hl=en`;
-
   const response = await fetch(citeUrl, {
     headers: {
       "User-Agent":
@@ -299,13 +327,9 @@ async function fetchGoogleScholarCite(paperId) {
       "Accept-Language": "en-US,en;q=0.9",
     },
   });
-
-  if (!response.ok) {
+  if (!response.ok)
     throw new Error(`Citation request failed: ${response.status}`);
-  }
-
-  const html = await response.text();
-  return { html, paperId };
+  return { html: await response.text(), paperId };
 }
 
 async function fetchWebsite(query) {
@@ -317,11 +341,7 @@ async function fetchWebsite(query) {
       "Accept-Language": "en-US,en;q=0.9",
     },
   });
-
-  if (!response.ok) {
+  if (!response.ok)
     throw new Error(`${query} request failed: ${response.status}`);
-  }
-
-  const html = await response.text();
-  return { html, query };
+  return { html: await response.text(), query };
 }

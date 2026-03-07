@@ -336,11 +336,10 @@ export class FileMenu {
     try {
       const arrayBuffer = await this.#readFileAsArrayBuffer(file);
 
-      // Clear any old PDF data first
       sessionStorage.removeItem("hover_pdf_data");
       sessionStorage.removeItem("hover_pdf_name");
       try {
-        indexedDB.deleteDatabase("hover_local_pdf");
+        indexedDB.deleteDatabase("hover-pending-pdf");
       } catch (e) {
         /* ignore */
       }
@@ -354,7 +353,6 @@ export class FileMenu {
           );
         });
       } else {
-        // Dev mode: store raw ArrayBuffer in IndexedDB (sessionStorage has ~5MB limit)
         await this.#storeLocalPdf(arrayBuffer, file.name);
       }
 
@@ -393,25 +391,20 @@ export class FileMenu {
   }
 
   /**
-   * Store PDF ArrayBuffer in IndexedDB for dev-mode local imports.
    * @param {ArrayBuffer} arrayBuffer
    * @param {string} name
    */
   #storeLocalPdf(arrayBuffer, name) {
     return new Promise((resolve, reject) => {
-      const req = indexedDB.open("hover_local_pdf", 1);
-      req.onupgradeneeded = () => {
-        const db = req.result;
-        if (!db.objectStoreNames.contains("pdf")) {
-          db.createObjectStore("pdf");
-        }
-      };
-      req.onsuccess = () => {
-        const db = req.result;
-        const tx = db.transaction("pdf", "readwrite");
-        const store = tx.objectStore("pdf");
-        store.put(arrayBuffer, "data");
-        store.put(name, "name");
+      const req = indexedDB.open("hover-pending-pdf", 1);
+      req.onupgradeneeded = (e) => e.target.result.createObjectStore("data");
+      req.onsuccess = (e) => {
+        const db = e.target.result;
+        const tx = db.transaction("data", "readwrite");
+        tx.objectStore("data").put(
+          { data: arrayBuffer, name, url: null },
+          "pending",
+        );
         tx.oncomplete = () => {
           db.close();
           resolve();

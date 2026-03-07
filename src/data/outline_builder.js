@@ -126,11 +126,6 @@ function resolveBookmarkDestination(bookmark, allNamedDests) {
 // ============================================
 
 /**
- * Fix outline items whose bookmark destinations had no coordinate data.
- * Scans document lines sequentially (in outline order) to find matching
- * heading text. Each successive entry resumes scanning from where the
- * previous entry matched, enforcing document-order resolution.
- *
  * @param {OutlineItem[]} outline
  * @param {object} textIndex
  */
@@ -418,7 +413,8 @@ function analyzeLineAsHeading(
   page,
 ) {
   const text = line.text?.trim();
-  if (!text || text.length < 2 || text.length > 100) return null;
+  if (!text || text.length < 5 || text.length > 100) return null;
+  if (line.lineHeight > 40) return null;
 
   const isNumbered = NUMBERED_SECTION_PATTERN.test(text);
   let numberPrefix = null;
@@ -478,6 +474,7 @@ function analyzeLineAsHeading(
   ) {
     return null;
   }
+  console.log(line);
 
   let title = "";
   if (!isNumbered && isTitleCaseHeading) {

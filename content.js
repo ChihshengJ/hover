@@ -3,12 +3,8 @@
 // ============================================
 
 (function() {
-  // Only run in the mainframe
   if (window !== window.top) return;
-
-  const isPdf = document.contentType === "application/pdf";
-  if (!isPdf) return;
-
+  if (document.contentType !== "application/pdf") return;
   if (window.location.href.includes(chrome.runtime.id)) return;
 
   console.log("[Hover] PDF detected at document_start:", window.location.href);
@@ -98,19 +94,77 @@
     }
   }
 
-  // Check status, fetch PDF and send message to background
-  (async function intercept() {
+  function restoreNativeViewer() {
+    const overlayEl = document.getElementById("hover-loading-overlay");
+    if (overlayEl) overlayEl.remove();
+    if (hideStyle.parentNode) hideStyle.remove();
+  }
+
+  function extractFilename(url) {
     try {
-      const statusResponse = await chrome.runtime.sendMessage({
-        type: "GET_HOVER_STATUS",
+      const pathname = new URL(url).pathname;
+      const filename = pathname.split("/").pop() || "document.pdf";
+      const cleanName = filename.split("?")[0];
+      return cleanName.endsWith(".pdf") ? cleanName : cleanName + ".pdf";
+    } catch {
+      return "document.pdf";
+    }
+  }
+
+  /**
+   * Show a prompt when file:// access is denied, giving the user
+   * a link to the extension settings page.
+   */
+  function showFileAccessPrompt() {
+    const el = document.getElementById("hover-loading-overlay");
+    if (!el) return;
+
+    el.innerHTML = `
+      <div style="max-width: 400px; text-align: center; padding: 24px;">
+        <div style="font-size: 28px; margin-bottom: 16px;">📄</div>
+        <div style="font-size: 15px; font-weight: 600; color: #E5E5EA; margin-bottom: 8px;">
+          Local File Access Required
+        </div>
+        <div style="font-size: 13px; color: #8E8E93; line-height: 1.6; margin-bottom: 20px;">
+          To open local PDF files, Hover needs file access permission.
+          Enable <strong style="color: #E5E5EA;">"Allow access to file URLs"</strong>
+          in your extension settings.
+        </div>
+        <div style="display: flex; gap: 10px; justify-content: center;">
+          <button id="hover-open-settings" style="
+            background: #3A3A3C; color: #E5E5EA; border: none;
+            padding: 8px 16px; border-radius: 8px; font-size: 13px;
+            cursor: pointer; font-weight: 500;
+          ">Open Extension Settings</button>
+          <button id="hover-use-native" style="
+            background: transparent; color: #8E8E93; border: 1px solid #3A3A3C;
+            padding: 8px 16px; border-radius: 8px; font-size: 13px;
+            cursor: pointer;
+          ">Use Default Viewer</button>
+        </div>
+      </div>
+    `;
+
+    document
+      .getElementById("hover-open-settings")
+      ?.addEventListener("click", () => {
+        chrome.runtime.sendMessage({ type: "OPEN_EXTENSION_SETTINGS" });
       });
 
-      if (!statusResponse?.enabled) {
-        console.log("[Hover] Extension disabled, restoring native viewer");
+    document
+      .getElementById("hover-use-native")
+      ?.addEventListener("click", () => {
         restoreNativeViewer();
-        return;
-      }
+      });
+  }
 
+  /**
+   * Fetch the PDF bytes (with credentials for authenticated sources),
+   * encode as base64, and hand off to the background script which
+   * persists the data in IndexedDB and opens the viewer in a new tab.
+   */
+  (async function intercept() {
+    try {
       const isLocalFile = window.location.protocol === "file:";
       let arrayBuffer = null;
 
@@ -129,6 +183,7 @@
         const binary = atob(response.data);
         arrayBuffer = Uint8Array.from(binary, (c) => c.charCodeAt(0)).buffer;
       } else {
+        // Single round-trip: checks hoverEnabled + bypass list together
         const detectResponse = await chrome.runtime.sendMessage({
           type: "PDF_PAGE_DETECTED",
           url: window.location.href,
@@ -159,7 +214,6 @@
           return;
         }
 
-        // Verify content type
         const contentType = pdfResponse.headers.get("content-type") || "";
         if (
           !contentType.includes("application/pdf") &&
@@ -172,6 +226,7 @@
           restoreNativeViewer();
           return;
         }
+
         updateStatus("Reading PDF data…", 35);
         arrayBuffer = await pdfResponse.arrayBuffer();
       }
@@ -192,7 +247,8 @@
 
       updateStatus("Preparing for viewer…", 55);
 
-      // Convert to base64 for message passing
+      // Base64 encode for chrome.runtime message passing (content scripts
+      // run in the web page's origin and cannot share IDB with the extension)
       const bytes = new Uint8Array(arrayBuffer);
       let binary = "";
       const chunkSize = 8192;
@@ -204,7 +260,6 @@
 
       updateStatus("Opening viewer…", 80);
 
-      // Send to background script
       const result = await chrome.runtime.sendMessage({
         type: "PDF_DATA_READY",
         url: window.location.href,
@@ -214,7 +269,6 @@
 
       if (result?.success) {
         updateStatus("Opening viewer…", 100);
-        console.log("[Hover] PDF sent to viewer successfully");
       } else {
         console.error("[Hover] Failed to send PDF to viewer:", result?.error);
         restoreNativeViewer();
@@ -228,72 +282,4 @@
       restoreNativeViewer();
     }
   })();
-
-  // ===========================================================
-  // Helpers
-  // ===========================================================
-
-  function restoreNativeViewer() {
-    const overlayEl = document.getElementById("hover-loading-overlay");
-    if (overlayEl) overlayEl.remove();
-    if (hideStyle.parentNode) hideStyle.remove();
-  }
-
-  function extractFilename(url) {
-    try {
-      const pathname = new URL(url).pathname;
-      const filename = pathname.split("/").pop() || "document.pdf";
-      const cleanName = filename.split("?")[0];
-      return cleanName.endsWith(".pdf") ? cleanName : cleanName + ".pdf";
-    } catch {
-      return "document.pdf";
-    }
-  }
-
-  function showFileAccessPrompt() {
-    const overlay = document.getElementById("hover-loading-overlay");
-    if (!overlay) return;
-
-    const extensionId = chrome.runtime.id;
-    const settingsUrl = `chrome://extensions/?id=${extensionId}`;
-
-    overlay.innerHTML = `
-      <div style="max-width: 400px; text-align: center; padding: 24px;">
-        <div style="font-size: 28px; margin-bottom: 16px;">📄</div>
-        <div style="font-size: 15px; font-weight: 600; color: #E5E5EA; margin-bottom: 8px;">
-          Local File Access Required
-        </div>
-        <div style="font-size: 13px; color: #8E8E93; line-height: 1.6; margin-bottom: 20px;">
-          To open local PDF files, Hover needs file access permission.
-          Enable <strong style="color: #E5E5EA;">"Allow access to file URLs"</strong>
-          in your extension settings.
-        </div>
-        <div style="display: flex; gap: 10px; justify-content: center;">
-          <button id="hover-open-settings" style="
-            background: #3A3A3C; color: #E5E5EA; border: none;
-            padding: 8px 16px; border-radius: 8px; font-size: 13px;
-            cursor: pointer; font-weight: 500;
-          ">Open Extension Settings</button>
-          <button id="hover-use-native" style="
-            background: transparent; color: #8E8E93; border: 1px solid #3A3A3C;
-            padding: 8px 16px; border-radius: 8px; font-size: 13px;
-            cursor: pointer;
-          ">Use Default Viewer</button>
-        </div>
-      </div>
-    `;
-
-    document
-      .getElementById("hover-open-settings")
-      ?.addEventListener("click", () => {
-        // Can't navigate to chrome:// URLs directly, so open via background
-        chrome.runtime.sendMessage({ type: "OPEN_EXTENSION_SETTINGS" });
-      });
-
-    document
-      .getElementById("hover-use-native")
-      ?.addEventListener("click", () => {
-        restoreNativeViewer();
-      });
-  }
 })();

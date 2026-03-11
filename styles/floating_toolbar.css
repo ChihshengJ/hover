@@ -202,6 +202,10 @@
   transform: scale(0) translateY(0);
 }
 
+.rotate-icon {
+  transition: transform 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
 .jump-indicators {
   position: fixed;
   pointer-events: none;

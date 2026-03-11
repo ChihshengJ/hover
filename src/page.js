@@ -15,8 +15,15 @@ export class PageView {
     this.doc = this.pane.document;
     this.pageNumber = pageNumber;
 
-    this.canvas = canvas;
     this.wrapper = canvas.parentElement;
+
+    // Inner container for CSS rotation — wraps canvas + overlay layers
+    this.rotateInner = document.createElement("div");
+    this.rotateInner.className = "page-rotate-inner";
+    this.rotateInner.appendChild(canvas);
+    this.wrapper.insertBefore(this.rotateInner, this.wrapper.firstChild);
+
+    this.canvas = canvas;
     this.textLayer = this.#initLayer("text");
     this.annotationLayer = this.#initLayer("annotation");
 
@@ -785,16 +792,15 @@ export class PageView {
   }
 
   #initLayer(layerType) {
-    this.wrapper.style.position = "relative";
-    let layer = this.wrapper.querySelector(`.${layerType}Layer`);
+    this.rotateInner.style.position = "relative";
+    let layer = this.rotateInner.querySelector(`.${layerType}Layer`);
     if (!layer) {
       layer = document.createElement("div");
       layer.className = `${layerType}Layer`;
       layer.style.position = "absolute";
       layer.style.top = "0";
       layer.style.left = "0";
-      this.wrapper.style.position = "relative";
-      this.wrapper.appendChild(layer);
+      this.rotateInner.appendChild(layer);
     }
     layer.innerHTML = "";
     return layer;

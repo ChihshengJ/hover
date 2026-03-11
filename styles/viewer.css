@@ -285,6 +285,30 @@ body {
   z-index: 0;
 }
 
+.page-rotate-inner {
+  position: relative;
+  transform-origin: 0 0;
+}
+
+/* ===========================================
+   Rotation active state — disable annotations
+   =========================================== */
+
+.pane-rotated .textLayer {
+  user-select: none;
+  pointer-events: none;
+}
+
+.pane-rotated .annotation-svg-layer {
+  pointer-events: none;
+  opacity: 0.3;
+  transition: opacity var(--transition-normal, 0.2s ease);
+}
+
+.pane-rotated .comments-container {
+  display: none;
+}
+
 .page-num {
   position: relative;
   color: white;

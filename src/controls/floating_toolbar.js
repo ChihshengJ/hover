@@ -34,8 +34,12 @@ export class FloatingToolbar {
 
     this.#scrollCallback = () => this.updatePageNumber();
 
-    this.nightModeAnimating = false;
     this.isJumping = false;
+
+    // Rotation icon state (cumulative for smooth animation)
+    this._cumulativeRotation = 0;
+    this._lastRotateClick = 0;
+    this._rotateClickTimeout = null;
 
     // Navigation tree state
     this.isTreeOpen = false;
@@ -66,7 +70,6 @@ export class FloatingToolbar {
     this.gooContainer = document.createElement("div");
     this.gooContainer.className = "goo-container";
 
-    // Content layer - sits on top of the ::before pseudo-element
     this.ball = document.createElement("div");
     this.ball.className = "floating-ball";
     this.ball.innerHTML = `
@@ -93,9 +96,12 @@ export class FloatingToolbar {
           <img src="/assets/split.svg" width="25" />
         </div>
       </button>
-      <button class="tool-btn" data-action="night-mode">
+      <button class="tool-btn" data-action="rotate" title="Rotate clockwise (double-click to reset)">
         <div class="inner">
-            <img src="/assets/moon.svg" width="18" />
+          <svg class="rotate-icon" xmlns="http://www.w3.org/2000/svg" width="24" fill="currentColor" class="bi bi-arrow-clockwise" viewBox="0 0 16 16">
+            <path fill-rule="evenodd" d="M8 3a5 5 0 1 0 4.546 2.914.5.5 0 0 1 .908-.417A6 6 0 1 1 8 2z"/>
+            <path d="M8 4.466V.534a.25.25 0 0 1 .41-.192l2.36 1.966c.12.1.12.284 0 .384L8.41 4.658A.25.25 0 0 1 8 4.466"/>
+          </svg>
         </div>
       </button>
     `;
@@ -753,8 +759,8 @@ export class FloatingToolbar {
           this.pane.controls.updateZoomDisplay();
         }
         break;
-      case "night-mode":
-        this.#nightmode();
+      case "rotate":
+        this.#handleRotateClick();
         break;
       case "split-screen":
         if (!this.wm.isSplit) {
@@ -814,45 +820,39 @@ export class FloatingToolbar {
     }
   }
 
-  #nightmode() {
-    if (this.nightModeAnimating) return;
-    this.nightModeAnimating = true;
-
-    const btn = this.toolbarTop.querySelector('[data-action="night-mode"]');
-    const btns = this.wrapper.querySelectorAll(".tool-btn");
-    const pageInfo = this.ball.querySelector(".page-display");
-    const isCurrentlyNight = document.body.classList.contains("night-mode");
-    const scrollPos = this.pane.scroller.scrollTop;
-
-    // floating toolbar animation
-    if (isCurrentlyNight) {
-      this.ball.classList.remove("night-mode");
-      pageInfo.classList.remove("night-mode");
-      for (const b of btns) {
-        b.classList.remove("night-mode");
-        b.firstElementChild.classList.remove("night-mode");
-      }
-      btn.firstElementChild.innerHTML =
-        '<img src="/assets/moon.svg" width="18" />';
-    } else {
-      this.ball.classList.add("night-mode");
-      for (const b of btns) {
-        b.classList.add("night-mode");
-        b.firstElementChild.classList.add("night-mode");
-      }
-      btn.firstElementChild.innerHTML =
-        '<img src="/assets/sun.svg" width="20" />';
-      pageInfo.classList.add("night-mode");
+  #handleRotateClick() {
+    const now = Date.now();
+    if (this._rotateClickTimeout) {
+      clearTimeout(this._rotateClickTimeout);
+      this._rotateClickTimeout = null;
     }
 
-    if (isCurrentlyNight) {
-      document.body.classList.remove("night-mode");
+    if (now - this._lastRotateClick < 250) {
+      // Double-click — reset rotation to 0°
+      this.pane.resetRotation();
+      // Animate icon back to 0
+      this._cumulativeRotation = 0;
+      this.#updateRotateIcon();
+      this._lastRotateClick = 0;
     } else {
-      document.body.classList.add("night-mode");
+      // Single-click — wait to distinguish from double-click
+      this._lastRotateClick = now;
+      this._rotateClickTimeout = setTimeout(() => {
+        this._rotateClickTimeout = null;
+        this.pane.rotate();
+        this._cumulativeRotation += 90;
+        this.#updateRotateIcon();
+      }, 250);
     }
+  }
 
-    this.pane.scroller.scrollTop = scrollPos;
-    this.nightModeAnimating = false;
+  #updateRotateIcon() {
+    const btn = this.toolbarTop.querySelector('[data-action="rotate"]');
+    const icon = btn?.querySelector(".rotate-icon");
+    if (!icon) return;
+
+    icon.style.transform = `rotate(${this._cumulativeRotation}deg)`;
+    btn.classList.toggle("active", this.pane.rotation !== 0);
   }
 
   updatePageNumber() {
@@ -869,6 +869,10 @@ export class FloatingToolbar {
     }
     this.#scrollCallback = () => this.updatePageNumber();
     this.pane.controls.onScroll(this.#scrollCallback);
+
+    // Sync rotation icon with new active pane
+    this._cumulativeRotation = this.pane.rotation;
+    this.#updateRotateIcon();
   }
 
   destroy() {

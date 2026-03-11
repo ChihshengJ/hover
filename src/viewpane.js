@@ -39,6 +39,9 @@ export class ViewerPane {
     this.isPanning = false;
     this.panStart = { x: 0, y: 0, scrollLeft: 0, scrollTop: 0 };
 
+    // Page rotation (0, 90, 180, 270) — CSS-based, per-pane
+    this.rotation = 0;
+
     this.textSelectionManager = new TextSelectionManager(this);
     this.annotationManager = null;
 
@@ -57,10 +60,8 @@ export class ViewerPane {
     this.#createStage();
     this.canvases = await this.#createCanvasPlaceholders();
     this.pages = this.canvases.map((canvas, idx) => {
-      // Wrapper is a page-wrapper containing a canvas, a page number, and everything in a page
       const pageView = new PageView(this, idx + 1, canvas);
-      const wrapper = canvas.parentElement;
-      this.pageMap.set(wrapper, pageView);
+      this.pageMap.set(pageView.wrapper, pageView);
       return pageView;
     });
     this.resizeAllCanvases(this.scale);
@@ -448,6 +449,7 @@ export class ViewerPane {
     const outputScale = window.devicePixelRatio || 1;
     const MAX_RENDER_SCALE = 7.0;
     const effectiveScale = Math.min(scale, MAX_RENDER_SCALE);
+    const isSwapped = this.rotation === 90 || this.rotation === 270;
 
     for (let i = 0; i < this.pages.length; i++) {
       const page = this.pages[i];
@@ -459,33 +461,63 @@ export class ViewerPane {
         page.release();
       }
 
-      const visualWidth = Math.round(dims.width * effectiveScale);
+      // Original (unrotated) visual dimensions
+      const origWidth = Math.round(dims.width * effectiveScale);
       const aspectRatio = dims.height / dims.width;
-      const visualHeight = Math.round(visualWidth * aspectRatio);
+      const origHeight = Math.round(origWidth * aspectRatio);
 
-      const canvasWidth = visualWidth * outputScale;
-      const canvasHeight = visualHeight * outputScale;
+      const canvasWidth = origWidth * outputScale;
+      const canvasHeight = origHeight * outputScale;
 
       page.canvas.width = canvasWidth;
       page.canvas.height = canvasHeight;
 
       Object.assign(page.canvas.style, {
-        width: `${visualWidth}px`,
-        height: `${visualHeight}px`,
+        width: `${origWidth}px`,
+        height: `${origHeight}px`,
         transform: "",
         transformOrigin: "",
       });
 
-      Object.assign(page.wrapper.style, {
-        width: `${visualWidth}px`,
-        height: `${visualHeight}px`,
+      // Inner container keeps original page dimensions
+      Object.assign(page.rotateInner.style, {
+        width: `${origWidth}px`,
+        height: `${origHeight}px`,
+        transformOrigin: "0 0",
       });
 
+      // Apply rotation transform to inner container
+      switch (this.rotation) {
+        case 0:
+          page.rotateInner.style.transform = "";
+          break;
+        case 90:
+          page.rotateInner.style.transform = "rotate(90deg) translateY(-100%)";
+          break;
+        case 180:
+          page.rotateInner.style.transform =
+            "rotate(180deg) translate(-100%, -100%)";
+          break;
+        case 270:
+          page.rotateInner.style.transform = "rotate(270deg) translateX(-100%)";
+          break;
+      }
+
+      // Wrapper dimensions account for rotation
+      const wrapperWidth = isSwapped ? origHeight : origWidth;
+      const wrapperHeight = isSwapped ? origWidth : origHeight;
+
+      Object.assign(page.wrapper.style, {
+        width: `${wrapperWidth}px`,
+        height: `${wrapperHeight}px`,
+      });
+
+      // Overlay layers use original dimensions (inside rotateInner)
       const layerStyles = {
         left: "0px",
         top: "0px",
-        width: `${visualWidth}px`,
-        height: `${visualHeight}px`,
+        width: `${origWidth}px`,
+        height: `${origHeight}px`,
         transform: "",
         transformOrigin: "",
       };
@@ -503,23 +535,25 @@ export class ViewerPane {
   fit(percentage = 1, overrideMode = 0) {
     const viewRect = this.scroller.getBoundingClientRect();
     const fitMode = overrideMode === 1 ? 1 : this.fitMode;
+    const isSwapped = this.rotation === 90 || this.rotation === 270;
+    const dims = this.document.pageDimensions[0];
+
     if (fitMode === 1) {
       if (this.spreadMode === 0) {
-        const intrinsicWidth = this.document.pageDimensions[0]?.width;
+        const intrinsicWidth = isSwapped ? dims?.height : dims?.width;
         if (!intrinsicWidth) return;
 
         const targetScale = (viewRect.width / intrinsicWidth) * percentage;
         this.zoomAt(targetScale, viewRect.width / 2, viewRect.height / 2);
       } else {
-        // For spread mode, use intrinsic width of two pages + gap
-        const pageWidth = this.document.pageDimensions[0]?.width || 0;
-        const spreadWidth = pageWidth * 2 + 4; // 4px gap from CSS
+        const pageWidth = (isSwapped ? dims?.height : dims?.width) || 0;
+        const spreadWidth = pageWidth * 2 + 4;
         const targetScale = (viewRect.width / spreadWidth) * percentage;
         this.zoomAt(targetScale, viewRect.width / 2, viewRect.height / 2);
       }
       this.fitMode = 2;
     } else {
-      const intrinsicHeight = this.document.pageDimensions[0]?.height;
+      const intrinsicHeight = isSwapped ? dims?.width : dims?.height;
       if (!intrinsicHeight) return;
       const targetScale = (viewRect.height / intrinsicHeight) * percentage;
       this.zoomAt(targetScale, viewRect.width / 2, viewRect.height / 2);
@@ -704,6 +738,42 @@ export class ViewerPane {
     }
 
     return this.handMode;
+  }
+
+  // ==================
+  // Rotation
+  // ==================
+
+  rotate() {
+    this.rotation = (this.rotation + 90) % 360;
+    this.#applyRotation();
+  }
+
+  resetRotation() {
+    if (this.rotation === 0) return;
+    this.rotation = 0;
+    this.#applyRotation();
+  }
+
+  get isRotated() {
+    return this.rotation !== 0;
+  }
+
+  #applyRotation() {
+    const isRotated = this.rotation !== 0;
+    this.paneEl.classList.toggle("pane-rotated", isRotated);
+
+    // Dismiss annotation toolbar and clear selection when entering rotation
+    if (isRotated) {
+      this.clearSelection();
+      document
+        .querySelector(".annotation-toolbar-container")
+        ?.classList.remove("visible");
+    }
+
+    this.resizeAllCanvases(this.scale);
+    this.#renderVisiblePages();
+    this.annotationManager?.refresh();
   }
 
   #setupPanHandler() {

@@ -1343,7 +1343,7 @@ export class OnboardingWalkthrough {
     const buttonConfigs = [
       { action: "horizontal-spread", text: "Spread Mode" },
       { action: "split-screen", text: "Split View" },
-      { action: "night-mode", text: "Dark Mode" },
+      { action: "rotate", text: "Rotation" },
       { action: "fit-width", text: "Fit Width/Height" },
       { action: "zoom-in", text: "Zoom In" },
       { action: "zoom-out", text: "Zoom Out" },

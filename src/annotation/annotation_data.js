@@ -407,9 +407,7 @@ export class AnnotationStore {
       if (!page) continue;
 
       const { width: pw, height: ph } = page.size;
-      const segmentRects = pr.rects.map((r) =>
-        this.#toEngineRect(r, pw, ph),
-      );
+      const segmentRects = pr.rects.map((r) => this.#toEngineRect(r, pw, ph));
       const boundingRect = this.#boundingRect(segmentRects);
 
       const pdfAnnotation = {
@@ -461,8 +459,7 @@ export class AnnotationStore {
 
     const { width: pw, height: ph } = page.size;
     const firstRect = firstPr.rects[0];
-    const highlightRight =
-      (firstRect.leftRatio + firstRect.widthRatio) * pw;
+    const highlightRight = (firstRect.leftRatio + firstRect.widthRatio) * pw;
     const highlightTop = firstRect.topRatio * ph;
     const noteSize = 20;
     const noteX = Math.min(highlightRight + 5, pw - noteSize - 5);
@@ -512,9 +509,7 @@ export class AnnotationStore {
       if (!page) continue;
 
       const { width: pw, height: ph } = page.size;
-      const segmentRects = pr.rects.map((r) =>
-        this.#toEngineRect(r, pw, ph),
-      );
+      const segmentRects = pr.rects.map((r) => this.#toEngineRect(r, pw, ph));
       const boundingRect = this.#boundingRect(segmentRects);
 
       const pdfAnnotation = {
@@ -675,7 +670,7 @@ export class AnnotationStore {
           if (!success) continue;
 
           const bottom = pdfium.pdfium.HEAPF32[(rectPtr + 4) >> 2];
-          const top    = pdfium.pdfium.HEAPF32[(rectPtr + 12) >> 2];
+          const top = pdfium.pdfium.HEAPF32[(rectPtr + 12) >> 2];
 
           if (top > bottom) {
             needsCorrection = true;

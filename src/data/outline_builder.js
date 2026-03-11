@@ -474,7 +474,6 @@ function analyzeLineAsHeading(
   ) {
     return null;
   }
-  console.log(line);
 
   let title = "";
   if (!isNumbered && isTitleCaseHeading) {

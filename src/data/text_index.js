@@ -300,6 +300,7 @@ export class DocumentTextIndex {
       lower.includes("semibold") ||
       lower.includes("-bd") ||
       lower.includes("-medi") ||
+      fontName.includes("SFSX") ||
       /cmbx/.test(lower);
 
     const isItalic =

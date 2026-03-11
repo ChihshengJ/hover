@@ -113,6 +113,11 @@ export class CitationPopup {
         result = await this.findCiteTextCallback(target);
       }
 
+      if (result === "invalid location") {
+        this.showError("Click to see the reference (Invalid Location Error)");
+        return;
+      }
+
       if (!result) {
         this.showError("Reference not found");
         return;

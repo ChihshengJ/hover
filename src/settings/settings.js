@@ -244,11 +244,9 @@ export class Settings {
                 <span class="settings-toggle-description">Show reading progress on the side</span>
               </div>
               <label class="settings-toggle-switch">
-                <input type="checkbox" id="progress-bar-toggle">
-                <div class="settings-toggle-slider">
-                  <div class="settings-toggle-knob"></div>
-                </div>
-                <div class="settings-toggle-led"></div>
+                <input type="checkbox" class="progress-bar-toggle">
+                <span class="settings-toggle-slider"></span>
+                <span class="settings-toggle-knob"></span>
               </label>
             </div>
           </div>

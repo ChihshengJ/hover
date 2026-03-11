@@ -224,21 +224,14 @@ export class InlineExtractor {
     const allCitations = [];
     const allCrossRefs = [];
 
-    // Get body line height for superscript detection
     const bodyLineHeight = this.#textIndex?.getBodyLineHeight() || 10;
-
-    // Reference section bounds (to skip scanning there)
     const refSectionStart =
       this.#referenceIndex?.sectionStart?.pageNumber || this.#numPages + 1;
-
     const refSectionEnd = this.#referenceIndex?.sectionEnd?.pageNumber || -1;
 
-    // Single pass through all pages
     for (let pageNum = 1; pageNum <= this.#numPages; pageNum++) {
-      // Reset matched ranges for this page
       this.#matchedRanges.set(pageNum, new Set());
 
-      // Skip pages in reference section for citation extraction
       const isInRefSection =
         pageNum > refSectionStart && pageNum < refSectionEnd;
 
@@ -248,35 +241,20 @@ export class InlineExtractor {
         isInRefSection,
       );
 
+      if (!isInRefSection && citations.length < 5) {
+        citations.push(
+          ...this.#scanPageForSuperscripts(pageNum, bodyLineHeight, false),
+        );
+      }
+
       allCitations.push(...citations);
       allCrossRefs.push(...crossRefs);
-    }
-
-    if (allCitations.length < 10) {
-      console.log(
-        `[InlineExtractor] This paper uses superscripts for citations.`,
-      );
-      for (let pageNum = 1; pageNum <= this.#numPages; pageNum++) {
-        this.#matchedRanges.set(pageNum, new Set());
-
-        const isInRefSection =
-          pageNum > refSectionStart && pageNum < refSectionEnd;
-
-        const citations = this.#scanPageForSuperscripts(
-          pageNum,
-          bodyLineHeight,
-          isInRefSection,
-        );
-
-        allCitations.push(...citations);
-      }
     }
 
     console.log(
       `[InlineExtractor] Found ${allCitations.length} citations, ${allCrossRefs.length} cross-references`,
     );
 
-    // Free adapter index-remapping data — no longer needed after extraction
     this.#textExtractor.destroy?.();
 
     return {
@@ -386,7 +364,6 @@ export class InlineExtractor {
       return { citations, crossRefs };
     }
 
-    // Extract citations only if not in reference section
     if (!isInRefSection) {
       citations.push(
         ...this.#findNumericCitations(fullText, pageNumber, pageIndex),
@@ -397,13 +374,12 @@ export class InlineExtractor {
         ...this.#findAbbreviatedCitations(fullText, pageNumber, pageIndex),
       );
 
-      // Find author-year citations (order matters for overlap detection)
-      // 1. First find large parenthetical blocks and split into individual citations
+      // First find large parenthetical blocks and split into individual citations
       citations.push(
         ...this.#findParentheticalBlocks(fullText, pageNumber, pageIndex),
       );
 
-      // 2. Then find individual patterns (skip if overlapping with blocks)
+      // Then find individual patterns (skip if overlapping with blocks)
       citations.push(
         ...this.#findAuthorYearCitations(fullText, pageNumber, pageIndex),
       );
@@ -616,7 +592,6 @@ export class InlineExtractor {
       if (!anchor.cachedText) continue;
       const m = anchor.cachedText.match(abbrPattern);
       if (m) {
-        // Store lowercase for case-insensitive matching
         index.set(m[1].toLowerCase(), anchor.index);
       }
     }
@@ -626,9 +601,6 @@ export class InlineExtractor {
 
   /**
    * Find abbreviated bracket citations: [YYZS+23], [Min+15, Dua+16b, SL06]
-   * These use author-initial abbreviations + 2-digit year instead of numeric indices.
-   * Only comma/semicolon-separated lists exist — range notation is not used
-   * for abbreviated keys since the keys are non-ordinal identifiers.
    */
   #findAbbreviatedCitations(fullText, pageNumber, pageIndex) {
     const citations = [];
@@ -1078,7 +1050,6 @@ export class InlineExtractor {
 
         if (rects.length === 0) continue;
 
-        // Determine flags
         let flags = CitationFlags.NONE;
         if (validRefIndices.length > 1) {
           flags |= CitationFlags.MULTI_REF;
@@ -1120,14 +1091,12 @@ export class InlineExtractor {
   #matchAuthorYearToSignature(author, year, secondAuthor = null) {
     if (!author || !year) return null;
 
-    // Handle year ranges - extract start year
     let yearToMatch = year;
     const rangeMatch = year.match(/^(\d{4}[a-z]?)\s*[-â€“â€”]\s*\d{4}$/);
     if (rangeMatch) {
       yearToMatch = rangeMatch[1];
     }
 
-    // Clean author: remove "et al.", trim, lowercase
     const authorClean = author
       .replace(/\s*et\s+al\.?\s*/gi, "")
       .trim()
@@ -1154,7 +1123,6 @@ export class InlineExtractor {
       return { index: anchor.index, confidence: 1.0 };
     }
 
-    // No author match found - if only one year match, return it with low confidence
     if (yearMatches.length === 1) {
       return { index: yearMatches[0].index, confidence: 0.5 };
     }
@@ -1182,7 +1150,6 @@ export class InlineExtractor {
       const num = parseInt(numMatch[0], 10);
       if (!validIndices.includes(num)) continue;
 
-      // Skip duplicates (same number appearing twice in text)
       if (subCitations.some((s) => s.refIndex === num)) continue;
 
       const charIndex = matchStart + numMatch.index;
@@ -1219,9 +1186,6 @@ export class InlineExtractor {
         );
         if (rects.length === 0) continue;
 
-        // Extract the target identifier
-        // For most patterns, it's in capture group 1
-        // For theorem pattern, the number is in group 2
         let targetId;
         if (type === "theorem") {
           targetId = match[2];

@@ -195,17 +195,7 @@ async function handlePdfDataReady(message, sender) {
   const viewerUrl =
     chrome.runtime.getURL("index.html") + "?url=" + encodeURIComponent(url);
 
-  await chrome.tabs.create({
-    url: viewerUrl,
-    index: sender.tab.index + 1,
-    openerTabId: sender.tab.id,
-  });
-
-  try {
-    await chrome.tabs.goBack(sender.tab.id);
-  } catch {
-    // No navigation history (e.g. URL typed directly) — leave as-is
-  }
+  await chrome.tabs.update(sender.tab.id, { url: viewerUrl });
 
   return { success: true };
 }

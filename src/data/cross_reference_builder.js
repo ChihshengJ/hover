@@ -189,7 +189,7 @@ export class CrossReferenceBuilder {
           });
         }
       }
-    } 
+    }
 
     // Also detect explicit "Appendix X" in title text
     const appendixMatch = item.title.match(/^appendix\s+([A-Z])/i);
@@ -305,7 +305,6 @@ export class CrossReferenceBuilder {
         continue;
       }
 
-      // Check if line matches a definition pattern
       const defPattern = CROSSREF_DEFINITION_PATTERNS[ref.type];
       if (!defPattern) continue;
 
@@ -376,9 +375,7 @@ export class CrossReferenceBuilder {
     const isLarger = itemFontSize > bodyFontSize * 1.05;
     const isAllCapital = firstItem.str === firstItem.str.toUpperCase();
 
-    const trailingPunc = match
-      ? /^[:\.]/.test(match[0].at(-1))
-      : false;
+    const trailingPunc = match ? /^[:\.]/.test(match[0].at(-1)) : false;
 
     if (type === "sectionMark") return true;
     if (type === "figure" || type === "table") {

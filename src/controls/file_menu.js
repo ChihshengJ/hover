@@ -107,6 +107,19 @@ export class FileMenu {
         <span>Document Info</span>
       </button>
       <div class="file-menu-divider"></div>
+      <div class="file-menu-item file-menu-toggle-item" data-action="night-mode">
+        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
+          <path d="M17 4l.5 1.5a2.2 2.2 0 0 0 1.4 1.4L20.4 7.4l-1.5.5a2.2 2.2 0 0 0-1.4 1.4L17 10.8l-.5-1.5a2.2 2.2 0 0 0-1.4-1.4L13.6 7.4l1.5-.5a2.2 2.2 0 0 0 1.4-1.4L17 4z"/>
+          <path d="M21.6 1.4l.3.9c.1.28.31.49.59.59l.9.3-.9.3c-.28.1-.49.31-.59.59l-.3.9-.3-.9a1.06 1.06 0 0 0-.59-.59l-.9-.3.9-.3c.28-.1.49-.31.59-.59l.3-.9z"/>
+        </svg>
+        <span>Night Mode</span>
+        <label class="file-menu-toggle">
+          <input type="checkbox" class="file-menu-toggle-input">
+          <span class="file-menu-toggle-track"></span>
+          <span class="file-menu-toggle-knob"></span>
+        </label>
+      </div>
       <button class="file-menu-item" data-action="settings">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
           <circle cx="12" cy="12" r="3"/>
@@ -199,6 +212,17 @@ export class FileMenu {
 
     // Menu item clicks
     this.menuList.addEventListener("click", (e) => {
+      const toggleItem = e.target.closest(".file-menu-toggle-item");
+      if (toggleItem) {
+        e.preventDefault();
+        const checkbox = toggleItem.querySelector(".file-menu-toggle-input");
+        if (!e.target.classList.contains("file-menu-toggle-input")) {
+          checkbox.checked = !checkbox.checked;
+        }
+        this.#handleToggleAction(toggleItem.dataset.action, checkbox.checked);
+        return; // Don't close menu
+      }
+
       const item = e.target.closest(".file-menu-item");
       if (item) {
         this.#handleAction(item.dataset.action);
@@ -323,6 +347,20 @@ export class FileMenu {
     if (!["import"].includes(action)) {
       this.closeMenu();
     }
+  }
+
+  #handleToggleAction(action, isOn) {
+    switch (action) {
+      case "night-mode":
+        document.body.classList.toggle("night-mode");
+        break;
+    }
+  }
+
+  /** Called externally to sync toggle state (e.g. if keyboard shortcut triggers night mode) */
+  syncNightModeToggle(isNight) {
+    const checkbox = this.menuList.querySelector('[data-action="night-mode"] .file-menu-toggle-input');
+    if (checkbox) checkbox.checked = isNight;
   }
 
   #triggerFileImport() {

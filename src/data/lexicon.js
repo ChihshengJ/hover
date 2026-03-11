@@ -448,7 +448,7 @@ export const SECTION_NUMBER_STRIP =
  * Tested against line text after stripping section numbers
  */
 export const REFERENCE_SECTION_PATTERN =
-  /^(?:references?|references\+sand\+snotes\bibliography|works\s+cited|citations?|literature\s+cited|cited\s+literature|参考文献|參考文獻)$/i;
+  /^(?:references?|references\s+and\s+notes|bibliography|works\s+cited|citations|literature\s+cited|cited\s+literature|bibliographical\s+references|参考文献|參考文獻)$/i;
 
 /**
  * Patterns that indicate the end of references (next section)
@@ -479,7 +479,6 @@ export const REFERENCE_FORMAT_PATTERNS = {
   "numbered-plain": /^\s*(\d+)\s+(?=[A-Z])/,
 
   "numbered-abbr": /^\s*\[([A-Z][a-zA-Z]+(?:\+)?\d{2}[a-z]?)\]/,
-
 };
 
 /**
@@ -581,7 +580,10 @@ export const AUTHOR_YEAR_BLOCKS = {
   multipleYears: `\\d{4}[a-z]?(?:,[a-z])*(?:\\s*,\\s*\\d{4}[a-z]?(?:,[a-z])*)*`,
 
   // Prefix phrases that may appear before citations in parentheses
-  prefixPhrases: `(?:e\\.g\\.,?|i\\.e\\.,?|see|see also|cf\\.|compare|inter alia:)\\s*`,
+  prefixPhrases: `(?:e\\.g\\.,?|i\\.e\\.,?|see(?:\\s+also)?|cf\\.|compare|inter alia:)(?:,?\\s*(?:e\\.g\\.,?|i\\.e\\.,?))?\\s*`,
+
+  // Postfix phrases that may appear after the last citation in parentheses
+  postfixPhrases: `(?:;\\s*)?(?:among others|amongst others|and others)`,
 
   pages: `(?:,\\s*\\d+(?:[–-]\\d+)?)?`,
 };
@@ -713,18 +715,11 @@ export const AUTHOR_YEAR_PATTERNS = {
 /**
  * Pattern to match large parenthetical citation blocks containing multiple citations.
  * These are semicolon-separated groups of author-year citations.
- *
- * Examples:
- * - (Abutalebi et al., 2008, 2013; de Bruin et al., 2014; Garbin et al., 2011)
- * - (see Smith, 2020; Jones et al., 2021)
- *
- * Strategy: Match the entire parenthetical block, then parse internally.
  */
 export const PARENTHETICAL_CITATION_BLOCK = new RegExp(
   `\\(` +
   `(?:${AUTHOR_YEAR_BLOCKS.prefixPhrases})?` +
   // First citation chunk (required)
-  // Supports: single author, two authors (A and B), three authors (A, B, and C), or et al.
   `(?:${AUTHOR_YEAR_BLOCKS.authorSurname})` +
   `(?:` +
   `,\\s+${AUTHOR_YEAR_BLOCKS.authorSurname},?\\s+${AUTHOR_YEAR_BLOCKS.andConnector}\\s+${AUTHOR_YEAR_BLOCKS.authorSurname}` +
@@ -745,8 +740,11 @@ export const PARENTHETICAL_CITATION_BLOCK = new RegExp(
   `${AUTHOR_YEAR_BLOCKS.etAl}?` +
   `\\s*,?\\s*` +
   `${AUTHOR_YEAR_BLOCKS.multipleYears}` +
-  `${AUTHOR_YEAR_BLOCKS.pages}` +
+  `${(`)*` + `(?:\\s*${AUTHOR_YEAR_BLOCKS.postfixPhrases})?` + `\\)`,
+    AUTHOR_YEAR_BLOCKS.pages)
+  }` +
   `)*` +
+  `(?:\\s*${AUTHOR_YEAR_BLOCKS.postfixPhrases})?` +
   `\\)`,
   "gu",
 );
@@ -1109,8 +1107,7 @@ export function parseNumericCitationContent(content) {
  * Examples: YYZS+23, CHA21, Min+15, Dua+16b, SL06
  * Used to extract the key from reference anchor cachedText.
  */
-export const ABBREVIATED_SINGLE_KEY =
-  /[A-Z][a-zA-Z]+(?:\+)?\d{2}[a-z]?/;
+export const ABBREVIATED_SINGLE_KEY = /[A-Z][a-zA-Z]+(?:\+)?\d{2}[a-z]?/;
 
 /**
  * Parse abbreviated bracket citation content into individual keys.

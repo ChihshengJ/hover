@@ -125,7 +125,7 @@
   filter: invert(1);
 }
 
-.tool-btn.night-mode {
+.night-mode .tool-btn {
   background: linear-gradient(
     135deg,
     rgba(130, 130, 130, 0.8) 18%,
@@ -139,7 +139,7 @@
     0 0 10px 2px #ffffff05;
 }
 
-.inner.night-mode {
+.night-mode .inner {
   filter: invert(1);
 }
 

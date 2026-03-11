@@ -371,12 +371,12 @@ export class CitationBuilder {
         }
       }
 
-      // If no overlap found, check if we should create a citation from native link
-      if (
-        !foundOverlap &&
-        nativeLink.hasValidDest &&
-        nativeLink.matchedRefIndex !== null
-      ) {
+      // if (
+      //   !foundOverlap &&
+      //   nativeLink.hasValidDest &&
+      //   nativeLink.matchedRefIndex !== null
+      // ) {
+      if (!foundOverlap) {
         const targetLocation = {
           pageIndex: nativeLink.destPageIndex,
           x: nativeLink.destX,
@@ -414,7 +414,8 @@ export class CitationBuilder {
    * Check if citation rects overlap with a native link rect
    */
   #rectsOverlap(citRects, nativeRect) {
-    const tolerance = 0;
+    // Smaller tolerance for more precise overlap, works for some papers with dense citations
+    const tolerance = -5;
 
     for (const rect of citRects) {
       const overlapX =

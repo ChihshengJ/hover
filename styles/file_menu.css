@@ -178,6 +178,75 @@ input[type="file"] {
 }
 
 /* ===========================================
+   Inline Toggle (Night Mode)
+   =========================================== */
+
+.file-menu-toggle-item {
+  cursor: pointer;
+}
+
+.file-menu-toggle-item:active {
+  /* Override the scale-down on regular items — toggle shouldn't "press" */
+  transform: none;
+}
+
+.file-menu-toggle {
+  position: relative;
+  width: 32px;
+  height: 14px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+}
+
+.file-menu-toggle-input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+  position: absolute;
+}
+
+.file-menu-toggle-track {
+  position: absolute;
+  left: 3px;
+  right: 3px;
+  height: 1.5px;
+  background: #555;
+  transition:
+    background 0.35s cubic-bezier(0.4, 0, 0.2, 1),
+    box-shadow 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.file-menu-toggle-knob {
+  position: absolute;
+  left: 0;
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  border: 1.5px solid #555;
+  background: var(--bg-secondary);
+  transition: all 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+  top: 50%;
+  transform: translateY(-50%);
+}
+
+.file-menu-toggle-input:checked ~ .file-menu-toggle-track {
+  background: #fff;
+  box-shadow:
+    0 0 4px rgba(255, 255, 255, 0.5),
+    0 0 10px rgba(255, 255, 255, 0.2);
+}
+
+.file-menu-toggle-input:checked ~ .file-menu-toggle-knob {
+  left: 20px;
+  border-color: #fff;
+  background: #fff;
+  box-shadow:
+    0 0 6px rgba(255, 255, 255, 0.6),
+    0 0 14px rgba(255, 255, 255, 0.25);
+}
+
+/* ===========================================
    Menu Divider
    =========================================== */
 

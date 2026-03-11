@@ -31,7 +31,7 @@ const EMPTY_RESULT = {
 };
 
 const OUTLINE_REFERENCE_PATTERN =
-  /^(?:\d+\.?\s+)?(?:references?|bibliography|works\s+cited|citations?|literature\s+cited|cited\s+literature|参考文献|參考文獻)$/i;
+  /^(?:\d+\.?\s+)?(?:references?|bibliography|works\s+cited|citations?|literature\s+cited|cited\s+literature|bibliographical\s+references|参考文献|參考文獻)$/i;
 
 const NUMERIC_ENTRY_PATTERNS = [
   { name: "numbered-bracket", pattern: /^\s*\[(\d{0,3})\]\s*/ },
@@ -208,7 +208,7 @@ function findReferenceSectionByHeading(textIndex) {
   } = docInfo;
   let referenceStart = null;
 
-  for (const [pageNum, data] of pageData) {
+  outerLoop: for (const [pageNum, data] of pageData) {
     if (pageNum <= 2) continue;
 
     const { lines, pageHeight } = data;
@@ -217,7 +217,6 @@ function findReferenceSectionByHeading(textIndex) {
       const line = lines[i];
       const strippedText = line.text
         .replace(SECTION_NUMBER_STRIP, "")
-        .replace(/\s+/g, "")
         .trim()
         .toLowerCase();
 
@@ -238,6 +237,8 @@ function findReferenceSectionByHeading(textIndex) {
             originalY: line.originalY,
             line,
           };
+          // Currently only supports one reference section
+          break outerLoop;
         }
       }
     }
@@ -840,6 +841,8 @@ function detectBoundary(
     }
   } else if (isAfterShortLine) {
     isNewReference = true;
+  } else if (isAtFirstX && !wasIndented) {
+    isNewReference = looksLikeReferenceStart(line.text);
   }
 
   return { isNewReference, yDirection, isBoundaryJump };

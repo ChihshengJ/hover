@@ -343,7 +343,6 @@ export class PageView {
           }
         }
       } else {
-        // Original: single overlay for the whole citation
         for (const rect of citRef.rects) {
           if (rect.height < 1 || rect.width < 1) continue;
           const el = document.createElement("span");
@@ -573,6 +572,9 @@ export class PageView {
 
         // Heuristic fallback: extract text at the destination coordinate
         if (target?.location) {
+          if (target.location.x * target.location.y === 0) {
+            return "invalid location";
+          }
           return await this.#heuristicFindCiteText(
             target.location.x,
             target.location.pageIndex,

@@ -359,7 +359,9 @@ export class FileMenu {
 
   /** Called externally to sync toggle state (e.g. if keyboard shortcut triggers night mode) */
   syncNightModeToggle(isNight) {
-    const checkbox = this.menuList.querySelector('[data-action="night-mode"] .file-menu-toggle-input');
+    const checkbox = this.menuList.querySelector(
+      '[data-action="night-mode"] .file-menu-toggle-input',
+    );
     if (checkbox) checkbox.checked = isNight;
   }
 
@@ -1060,7 +1062,7 @@ export class FileMenu {
           <div class="metadata-row">
             <span class="metadata-label">Author</span>
             <span class="metadata-value">
-              <a href="https://chihshengj.github.io/">Chihsheng Jin</a>
+              <a href="https://chihshengj.github.io/" target="_blank">Chihsheng Jin</a>
             </span>
           </div>
           <div class="metadata-row">

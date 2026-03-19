@@ -98,7 +98,7 @@ export class FileMenu {
         <!--   <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/> -->
         <!--   <polyline points="15 3 21 3 21 9"/> -->
         <!--   <line x1="10" y1="14" x2="21" y2="3"/> -->
-        <!-- </svg> -->
+        </svg>
         <span>View Original</span>
       </button>
       <button class="file-menu-item" data-action="metadata">
@@ -143,9 +143,12 @@ export class FileMenu {
         <span>About</span>
       </button>
     `;
+    this.filterWrapper = document.createElement("div");
+    this.filterWrapper.className = "file-menu-filter-wrapper";
 
-    this.container.appendChild(this.button);
-    this.container.appendChild(this.menuList);
+    this.filterWrapper.appendChild(this.button);
+    this.filterWrapper.appendChild(this.menuList);
+    this.container.appendChild(this.filterWrapper);
 
     document.body.appendChild(this.hitArea);
     document.body.appendChild(this.container);
@@ -162,12 +165,12 @@ export class FileMenu {
       "http://www.w3.org/2000/svg",
       "svg",
     );
+    svgFilter.setAttribute("width", "0");
+    svgFilter.setAttribute("height", "0");
     svgFilter.style.position = "absolute";
-    svgFilter.style.width = "0";
-    svgFilter.style.height = "0";
     svgFilter.innerHTML = `
       <defs>
-        <filter id="file-menu-goo-filter" x="-50%" y="-50%" width="200%" height="200%">
+        <filter id="file-menu-goo-filter" x="-1500%" y="-2000%" width="3500%" height="3500%">
           <feGaussianBlur in="SourceGraphic" stdDeviation="3" result="blur" />
           <feColorMatrix in="blur" mode="matrix" 
             values="1 0 0 0 0  

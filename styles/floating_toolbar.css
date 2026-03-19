@@ -162,7 +162,6 @@
   border-radius: 50%;
   border: none;
   background: rgba(255, 255, 255, 0.8);
-  backdrop-filter: blur(5px) saturate(180%);
   color: var(--text-primary);
   cursor: pointer;
   box-shadow:

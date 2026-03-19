@@ -13,16 +13,14 @@
   bottom: 40px;
   right: 53px;
   z-index: var(--z-modal);
-  display: flex;
-  flex-direction: row-reverse;
-  align-items: flex-start;
   gap: 0;
   pointer-events: none;
-  transition: filter var(--transition-normal);
 }
 
 .file-menu-button {
-  position: relative;
+  position: absolute;
+  bottom: 0;
+  right: 0;
   width: 40px;
   height: 40px;
   border: none;
@@ -54,7 +52,20 @@
   height: 20px;
 }
 
-.file-menu-container.active {
+.file-menu-filter-wrapper {
+  position: absolute;
+  bottom: 0;
+  right: 0;
+  width: 280px;
+  height: 500px;
+  pointer-events: none;
+}
+
+.file-menu-filter-wrapper > * {
+  pointer-events: auto;
+}
+
+.file-menu-container.active .file-menu-filter-wrapper {
   filter: url(#file-menu-goo-filter) drop-shadow(0 0 5px rgba(0, 0, 0, 0.5))
     drop-shadow(-1px -1px 1px rgba(255, 255, 255, 0.2));
 }

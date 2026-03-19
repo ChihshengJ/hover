@@ -404,6 +404,8 @@ export class FloatingToolbar {
     this.initialBallY = parseInt(this.ball.style.top) || 0;
 
     this.gooContainer.classList.add("dragging");
+    this.gooContainer.style.filter = "none";
+    this.gooContainer.style.willChange = "transform";
     this.#boundGooUpdate = (e) => this.#updateGooPosition(e);
     document.addEventListener("mousemove", this.#boundGooUpdate);
     this.#updateGooPosition(e);
@@ -518,7 +520,7 @@ export class FloatingToolbar {
     const visualDelta = deltaY * 0.8;
     // Move the entire goo container, not just the ball
     this.gooContainer.style.transform = `translateY(${visualDelta}px)`;
-    // this.gooContainer.style.transition = "none";
+    this.gooContainer.style.transition = "none";
 
     this.#checkJumpZones(clientY);
   }
@@ -546,6 +548,8 @@ export class FloatingToolbar {
     }
 
     this.gooContainer.classList.remove("dragging");
+    this.gooContainer.style.filter = "";
+    this.gooContainer.style.willChange = "";
     document.removeEventListener("mousemove", this.#boundGooUpdate);
     document.body.style.cursor = "";
 

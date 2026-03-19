@@ -143,7 +143,7 @@ export class FloatingToolbar {
     svgFilter.style.height = "0";
     svgFilter.innerHTML = `
       <defs>
-        <filter id="goo" x="-50%" y="-50%" width="150%" height="150%">
+        <filter id="goo" x="-50%" y="-50%" width="200%" height="200%">
           <feGaussianBlur in="SourceGraphic" stdDeviation="12" result="blur" />
           <feColorMatrix in="blur" mode="matrix" 
             values="1 0 0 0 0  
@@ -404,17 +404,22 @@ export class FloatingToolbar {
     this.initialBallY = parseInt(this.ball.style.top) || 0;
 
     this.gooContainer.classList.add("dragging");
-    this.gooContainer.style.filter = "none";
-    this.gooContainer.style.willChange = "transform";
-    this.#boundGooUpdate = (e) => this.#updateGooPosition(e);
-    document.addEventListener("mousemove", this.#boundGooUpdate);
-    this.#updateGooPosition(e);
 
     this.currentScrollVelocity = 0;
     this.currentDeltaY = 0;
     this.currentDeltaX = 0;
 
-    this.dragMode = null; // 'vertical', 'horizontal', or null
+    this.dragMode = null;
+
+    // Pending state for rAF batching
+    this._pendingTransform = null; // string to apply, or null for no update
+    this._pendingGooX = null;
+    this._pendingGooY = null;
+    this._pendingJumpClientY = null;
+    this._pendingTreeOpen = false;
+
+    // Seed initial goo position
+    this.#computeGooPosition(e);
 
     if (!this.isTreeOpen) {
       this.#showJumpIndicators();
@@ -427,9 +432,40 @@ export class FloatingToolbar {
   #startScrollLoop() {
     const scrollLoop = () => {
       if (!this.isDragging || this.isJumping) return;
+
+      // --- Single DOM-write phase per frame ---
+
+      // 1. Apply goo custom properties
+      if (this._pendingGooX !== null) {
+        this.gooContainer.style.setProperty("--x", this._pendingGooX);
+        this.gooContainer.style.setProperty("--y", this._pendingGooY);
+        this._pendingGooX = null;
+        this._pendingGooY = null;
+      }
+
+      // 2. Apply transform
+      if (this._pendingTransform !== null) {
+        this.gooContainer.style.transform = this._pendingTransform;
+        this._pendingTransform = null;
+      }
+
+      // 3. Apply scroll
       if (this.currentScrollVelocity !== 0 && this.dragMode === "vertical") {
         this.pane.scroller.scrollTop += this.currentScrollVelocity;
       }
+
+      // 4. Check jump zones (reads layout, but after all writes)
+      if (this._pendingJumpClientY !== null) {
+        this.#checkJumpZones(this._pendingJumpClientY);
+        this._pendingJumpClientY = null;
+      }
+
+      // 5. Tree open trigger (deferred from horizontal drag)
+      if (this._pendingTreeOpen) {
+        this._pendingTreeOpen = false;
+        this.#openTree();
+      }
+
       this.scrollAnimationFrame = requestAnimationFrame(scrollLoop);
     };
     this.scrollAnimationFrame = requestAnimationFrame(scrollLoop);
@@ -441,10 +477,12 @@ export class FloatingToolbar {
     this.currentDeltaX = deltaX;
     this.currentDeltaY = deltaY;
 
+    // Compute goo position (store, don't write)
+    this.#computeGooPosition(e);
+
     // Determine drag mode on first significant movement
     if (!this.dragMode) {
       if (Math.abs(deltaX) > 10 || Math.abs(deltaY) > 10) {
-        // Horizontal drag takes priority for tree opening
         if (deltaX < -15 && Math.abs(deltaX) > Math.abs(deltaY) * 0.7) {
           this.dragMode = "horizontal";
           this.#hideJumpIndicators();
@@ -470,19 +508,26 @@ export class FloatingToolbar {
     }
   }
 
-  #handleHorizontalDrag(deltaX) {
-    const visualDelta = Math.max(-150, Math.min(0, deltaX * 0.8));
-    this.gooContainer.style.transform = `translateX(${visualDelta}px)`;
-    this.gooContainer.style.transition = "none";
+  /** Compute-only: stores goo coords for next rAF, no DOM writes */
+  #computeGooPosition(e) {
+    const rect = this.gooContainer.getBoundingClientRect();
+    const padding = 45;
+    const expandedWidth = rect.width + padding * 2;
+    const expandedHeight = rect.height + padding * 2;
 
-    if (deltaX < -this.treeOpenThreshold && !this.isTreeOpen) {
-      this.#openTree();
-    }
+    const x = ((e.clientX - rect.left + padding) / expandedWidth) * 100;
+    const y = ((e.clientY - rect.top + padding) / expandedHeight) * 100;
+
+    this._pendingGooX = Math.max(0, Math.min(100, x));
+    this._pendingGooY = Math.max(0, Math.min(100, y));
   }
 
-  #handleTreeDrag(deltaX) {
-    if (deltaX > 30) {
-      this.#closeTree();
+  #handleHorizontalDrag(deltaX) {
+    const visualDelta = Math.max(-150, Math.min(0, deltaX * 0.8));
+    this._pendingTransform = `translateX(${visualDelta}px)`;
+
+    if (deltaX < -this.treeOpenThreshold && !this.isTreeOpen) {
+      this._pendingTreeOpen = true;
     }
   }
 
@@ -501,7 +546,7 @@ export class FloatingToolbar {
       -maxDragDistance,
       Math.min(maxDragDistance, effectiveDelta),
     );
-    const normalizedDistance = clampedDelta / maxDragDistance; // -1 to 1
+    const normalizedDistance = clampedDelta / maxDragDistance;
 
     let scrollMultiplier;
     const mvRange = Math.abs(normalizedDistance);
@@ -517,12 +562,14 @@ export class FloatingToolbar {
     const maxScrollSpeed = 20;
     this.currentScrollVelocity = scrollMultiplier * maxScrollSpeed;
 
-    const visualDelta = deltaY * 0.8;
-    // Move the entire goo container, not just the ball
-    this.gooContainer.style.transform = `translateY(${visualDelta}px)`;
-    this.gooContainer.style.transition = "none";
+    this._pendingTransform = `translateY(${deltaY * 0.8}px)`;
+    this._pendingJumpClientY = clientY;
+  }
 
-    this.#checkJumpZones(clientY);
+  #handleTreeDrag(deltaX) {
+    if (deltaX > 30) {
+      this.#closeTree();
+    }
   }
 
   #endDrag() {
@@ -550,7 +597,6 @@ export class FloatingToolbar {
     this.gooContainer.classList.remove("dragging");
     this.gooContainer.style.filter = "";
     this.gooContainer.style.willChange = "";
-    document.removeEventListener("mousemove", this.#boundGooUpdate);
     document.body.style.cursor = "";
 
     // If tree is not open, snap gooContainer back

@@ -41,8 +41,8 @@
 
 .goo-container {
   position: relative;
-  width: 75px;
-  height: 75px;
+  width: 80px;
+  height: 80px;
   background: transparent;
   z-index: calc(var(--z-overlay) + 1);
   --x: 50;
@@ -58,7 +58,7 @@
   content: "";
   position: absolute;
   border-radius: 50%;
-  inset: -18px;
+  inset: -15px;
   filter: url(#goo) drop-shadow(0 0.2em 0.2em #00000099) brightness(var(--brt));
   background:
     var(--ball-body) content-box,

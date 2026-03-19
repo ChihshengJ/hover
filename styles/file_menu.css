@@ -29,10 +29,6 @@
   pointer-events: auto;
   z-index: 2;
   background: transparent;
-  transition:
-    background var(--transition-bounce),
-    transform var(--transition-bounce),
-    border-radius var(--transition-normal);
 }
 
 .file-menu-icon {
@@ -65,29 +61,9 @@
   pointer-events: auto;
 }
 
-.file-menu-container.active .file-menu-filter-wrapper {
-  filter: url(#file-menu-goo-filter) drop-shadow(0 0 5px rgba(0, 0, 0, 0.5))
-    drop-shadow(-1px -1px 1px rgba(255, 255, 255, 0.2));
-}
-
-.file-menu-container.active .file-menu-button {
-  background: var(--bg-secondary);
-  border-radius: var(--radius-lg);
-  transform: scale(1.05) translateZ(0);
-}
-
-.file-menu-button.open {
-  border-radius: 4px 16px 16px 16px;
-  transform: scale(1.08);
-}
-
 .file-menu-button.open .file-menu-icon {
   transform: rotate(90deg);
   color: var(--text-primary);
-}
-
-.file-menu-container.active .file-menu-button:hover {
-  transform: scale(1.1) translateZ(0);
 }
 
 .file-menu-list {
@@ -98,21 +74,13 @@
   padding: 8px 0;
   pointer-events: none;
   z-index: 0;
-  background: var(--bg-secondary);
   border-radius: var(--radius-xl);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
-  box-shadow:
-    0 8px 15px rgba(0, 0, 0, 0.3),
-    0 16px 64px rgba(0, 0, 0, 0.1),
-    inset 0 1px 2px rgba(255, 255, 255, 0.9),
-    inset 0 -1px 2px rgba(0, 0, 0, 0.05);
   opacity: 0;
   transform: scale(0.2) translateX(50px) translateY(50px);
   transform-origin: bottom right;
   transition:
     opacity var(--transition-normal),
-    transform var(--transition-bounce);
+    transform var(--transition-fast);
 }
 
 .file-menu-container.open .file-menu-list {
@@ -121,6 +89,53 @@
   transform: scale(1) translateX(0) translateY(0);
   pointer-events: auto;
 }
+
+.file-menu-goo-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none !important;
+  filter: url(#file-menu-goo-filter)
+    drop-shadow(0 0 5px rgba(0, 0, 0, 0.4))
+    drop-shadow(-1px -1px 1px rgba(255, 255, 255, 0.2));
+}
+
+.file-menu-goo-layer::before {
+  content: "";
+  position: absolute;
+  bottom: 0;
+  right: 0;
+  width: 40px;
+  height: 40px;
+  border-radius: var(--radius-xl);
+  background: transparent;
+  transition:
+    background var(--transition-bounce),
+    border-radius var(--transition-normal);
+}
+
+.file-menu-goo-layer::after {
+  content: "";
+  position: absolute;
+  bottom: 25px;
+  right: 28px;
+  width: var(--menu-w, 200px);
+  height: var(--menu-h, 400px);
+  border-radius: var(--radius-xl);
+  background: var(--bg-secondary);
+  opacity: 0;
+  transition: opacity var(--transition-bounce);
+}
+
+.file-menu-container.active .file-menu-goo-layer::before {
+  background: var(--bg-secondary);
+}
+
+.file-menu-container.open .file-menu-goo-layer::before,
+.file-menu-container.open .file-menu-goo-layer::after {
+  opacity: 1;
+}
+
 
 /* ===========================================
    Menu Items

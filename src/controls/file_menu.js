@@ -146,8 +146,13 @@ export class FileMenu {
     this.filterWrapper = document.createElement("div");
     this.filterWrapper.className = "file-menu-filter-wrapper";
 
+    this.gooLayer = document.createElement("div");
+    this.gooLayer.className = "file-menu-goo-layer";
+
+    this.filterWrapper.appendChild(this.gooLayer);
     this.filterWrapper.appendChild(this.button);
     this.filterWrapper.appendChild(this.menuList);
+
     this.container.appendChild(this.filterWrapper);
 
     document.body.appendChild(this.hitArea);
@@ -170,7 +175,7 @@ export class FileMenu {
     svgFilter.style.position = "absolute";
     svgFilter.innerHTML = `
       <defs>
-        <filter id="file-menu-goo-filter" x="-1500%" y="-2000%" width="3500%" height="3500%">
+        <filter id="file-menu-goo-filter" x="-150%" y="-200%" width="350%" height="350%">
           <feGaussianBlur in="SourceGraphic" stdDeviation="3" result="blur" />
           <feColorMatrix in="blur" mode="matrix" 
             values="1 0 0 0 0  
@@ -291,6 +296,10 @@ export class FileMenu {
     if (this.isOpen) return;
     this.isOpen = true;
 
+    requestAnimationFrame(() => {
+      this.gooLayer.style.setProperty('--menu-w', this.menuList.offsetWidth + 'px');
+      this.gooLayer.style.setProperty('--menu-h', this.menuList.offsetHeight + 'px');
+    });
     this.container.classList.add("open");
     this.button.classList.add("open");
 

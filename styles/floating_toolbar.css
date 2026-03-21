@@ -90,6 +90,7 @@
   pointer-events: auto;
   cursor: grab;
   user-select: none;
+  touch-action: none;
   z-index: 1;
 }
 

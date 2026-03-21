@@ -65,7 +65,7 @@ export class AnnotationManager {
 
     // Hide toolbar when clicking outside
     document.addEventListener(
-      "mousedown",
+      "pointerdown",
       (e) => {
         if (
           e.target.closest(".annotation-toolbar-container") ||
@@ -94,7 +94,7 @@ export class AnnotationManager {
 
     // Handle mouseup to show toolbar for new selection
     this.#pane.scroller.addEventListener(
-      "mouseup",
+      "pointerup",
       (e) => {
         // Delay to let selection finalize
         setTimeout(() => {

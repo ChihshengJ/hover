@@ -218,7 +218,7 @@ export class FloatingToolbar {
     });
 
     // drag to scroll (vertical) or open tree (horizontal)
-    this.ball.addEventListener("mousedown", (e) => {
+    this.ball.addEventListener("pointerdown", (e) => {
       if (e.button === 0) {
         this.dragStartTime = Date.now();
         this.wasDragged = false;
@@ -226,13 +226,13 @@ export class FloatingToolbar {
       }
     });
 
-    document.addEventListener("mousemove", (e) => {
+    document.addEventListener("pointermove", (e) => {
       if (this.isDragging) {
         this.#handleDrag(e);
       }
     });
 
-    document.addEventListener("mouseup", () => {
+    document.addEventListener("pointerup", () => {
       if (this.isDragging) {
         this.#endDrag();
       }

@@ -57,7 +57,7 @@ export class TextSelectionManager {
       e.preventDefault();
     };
 
-    textLayerDiv.addEventListener("mousedown", mousedownHandler);
+    textLayerDiv.addEventListener("pointerdown", mousedownHandler);
     textLayerDiv.addEventListener("copy", copyHandler);
 
     this.#textLayers.set(textLayerDiv, {
@@ -80,7 +80,7 @@ export class TextSelectionManager {
     const entry = this.#textLayers.get(textLayerDiv);
     if (entry?.handlers) {
       textLayerDiv.removeEventListener(
-        "mousedown",
+        "pointerdown",
         entry.handlers.mousedownHandler,
       );
       textLayerDiv.removeEventListener("copy", entry.handlers.copyHandler);

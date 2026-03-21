@@ -1112,22 +1112,25 @@ export class OnboardingWalkthrough {
               !hasDragged
             ) {
               hasDragged = true;
-              document.removeEventListener("mousemove", moveHandler);
+              document.removeEventListener("pointermove", moveHandler);
               advance();
             }
           };
-          document.addEventListener("mousemove", moveHandler);
+          document.addEventListener("pointermove", moveHandler);
 
           const mouseupHandler = () => {
-            document.removeEventListener("mousemove", moveHandler);
-            document.removeEventListener("mouseup", mouseupHandler);
+            document.removeEventListener("poinermove", moveHandler);
+            document.removeEventListener("pointerup", mouseupHandler);
           };
-          document.addEventListener("mouseup", mouseupHandler);
+          document.addEventListener("pointerup", mouseupHandler);
         };
 
-        this.toolbar.ball.addEventListener("mousedown", mousedownHandler);
+        this.toolbar.ball.addEventListener("pointerdown", mousedownHandler);
         this.activeListeners.set(eventName, () => {
-          this.toolbar.ball.removeEventListener("mousedown", mousedownHandler);
+          this.toolbar.ball.removeEventListener(
+            "pointerdown",
+            mousedownHandler,
+          );
         });
         break;
       }

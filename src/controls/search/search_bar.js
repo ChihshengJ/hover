@@ -265,7 +265,7 @@ export class SearchBar {
     });
 
     // Prevent search bar from stealing focus when clicking container
-    this.#container.addEventListener("mousedown", (e) => {
+    this.#container.addEventListener("pointerdown", (e) => {
       if (e.target === this.#container) {
         e.preventDefault();
       }
@@ -361,9 +361,9 @@ export class SearchBar {
       this.#dropdownSelectedIndex < visibleOptions.length
     ) {
       const selected = visibleOptions[this.#dropdownSelectedIndex];
-      // Trigger the mousedown event which handles selection
+      // Trigger the pointerdown event which handles selection
       selected.dispatchEvent(
-        new MouseEvent("mousedown", { bubbles: true, cancelable: true }),
+        new PointerEvent("pointerdown", { bubbles: true, cancelable: true }),
       );
     }
   }
@@ -685,7 +685,7 @@ export class SearchBar {
     option.className = "search-dropdown-option";
     option.textContent = text;
     option.dataset.page = pageNumber;
-    option.addEventListener("mousedown", (e) => {
+    option.addEventListener("pointerdown", (e) => {
       e.preventDefault();
       onClick();
     });

@@ -536,8 +536,8 @@ export class BallEditor {
     const onUp = () => {
       marker.classList.remove("dragging");
       this._isDraggingStop = false;
-      document.removeEventListener("mousemove", onMove);
-      document.removeEventListener("mouseup", onUp);
+      document.removeEventListener("pointermove", onMove);
+      document.removeEventListener("pointerup", onUp);
       document.removeEventListener("touchmove", onMove);
       document.removeEventListener("touchend", onUp);
 
@@ -561,13 +561,13 @@ export class BallEditor {
       this._isDraggingStop = true;
       marker.classList.add("dragging");
 
-      document.addEventListener("mousemove", onMove);
-      document.addEventListener("mouseup", onUp);
+      document.addEventListener("pointermove", onMove);
+      document.addEventListener("pointerup", onUp);
       document.addEventListener("touchmove", onMove, { passive: false });
       document.addEventListener("touchend", onUp);
     };
 
-    marker.addEventListener("mousedown", onDown);
+    marker.addEventListener("pointerdown", onDown);
     marker.addEventListener("touchstart", onDown, { passive: false });
   }
 

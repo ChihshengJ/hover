@@ -216,14 +216,14 @@ export class SplitWindowManager {
       e.preventDefault();
       startPos = this.splitDirection === "vertical" ? e.clientX : e.clientY;
       startRatio = this.splitRatio;
-      document.addEventListener("mousemove", onMouseMove);
-      document.addEventListener("mouseup", onMouseUp);
+      document.addEventListener("pointermove", onMouseMove);
+      document.addEventListener("pointerup", onMouseUp);
       this.resizer.classList.add("dragging");
     };
 
     const onMouseUp = () => {
-      document.removeEventListener("mousemove", onMouseMove);
-      document.removeEventListener("mouseup", onMouseUp);
+      document.removeEventListener("pointermove", onMouseMove);
+      document.removeEventListener("pointerup", onMouseUp);
       this.resizer.classList.remove("dragging");
     };
 
@@ -233,7 +233,7 @@ export class SplitWindowManager {
       this.#updateLayout();
     };
 
-    this.resizer.addEventListener("mousedown", onMouseDown);
+    this.resizer.addEventListener("pointerdown", onMouseDown);
     this.resizer.addEventListener("dblclick", onDoubleClick);
 
     this.rootEl.insertBefore(this.resizer, this.panes[1].paneEl);

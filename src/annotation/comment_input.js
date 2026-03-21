@@ -89,7 +89,7 @@ export class CommentInput {
     });
 
     // Prevent clicks from bubbling
-    this.#container.addEventListener("mousedown", (e) => {
+    this.#container.addEventListener("pointerdown", (e) => {
       e.stopPropagation();
     });
   }

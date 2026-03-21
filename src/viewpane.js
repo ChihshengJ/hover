@@ -278,7 +278,7 @@ export class ViewerPane {
       }
     };
 
-    this.scroller.addEventListener("mousedown", (e) => {
+    this.scroller.addEventListener("pointerdown", (e) => {
       if (e.target.closest(".textLayer span")) return;
 
       if (e.target.closest("a, button, .pane-controls, .annotationLayer a"))
@@ -318,13 +318,13 @@ export class ViewerPane {
       anchor.span.closest(".page-wrapper")?.classList.add("text-selecting");
     });
 
-    document.addEventListener("mousemove", (e) => {
+    document.addEventListener("pointermove", (e) => {
       if (!isSelecting) return;
       e.preventDefault();
       updateSelection(e.clientX, e.clientY);
     });
 
-    document.addEventListener("mouseup", (e) => {
+    document.addEventListener("pointerup", (e) => {
       if (!isSelecting) return;
       isSelecting = false;
       anchorNode = null;
@@ -817,16 +817,16 @@ export class ViewerPane {
       this.scroller.classList.remove("panning");
     };
 
-    this.scroller.addEventListener("mousedown", this._onPanStart);
-    document.addEventListener("mousemove", this._onPanMove);
-    document.addEventListener("mouseup", this._onPanEnd);
+    this.scroller.addEventListener("pointerdown", this._onPanStart);
+    document.addEventListener("pointermove", this._onPanMove);
+    document.addEventListener("pointerup", this._onPanEnd);
   }
 
   #teardownPanHandler() {
     if (this._onPanStart) {
-      this.scroller.removeEventListener("mousedown", this._onPanStart);
-      document.removeEventListener("mousemove", this._onPanMove);
-      document.removeEventListener("mouseup", this._onPanEnd);
+      this.scroller.removeEventListener("pointerdown", this._onPanStart);
+      document.removeEventListener("pointermove", this._onPanMove);
+      document.removeEventListener("pointerup", this._onPanEnd);
       this._onPanStart = null;
       this._onPanMove = null;
       this._onPanEnd = null;

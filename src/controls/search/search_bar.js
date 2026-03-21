@@ -238,8 +238,7 @@ export class SearchBar {
         this.#hideDropdown(this.#toSelect);
         this.#dropdownSelectedIndex = -1;
         this.#activeDropdown = null;
-        
-        // Feature #3: Auto-focus first result after confirming range
+
         this.#triggerFocusIfReady();
       } else if (e.key === "ArrowDown") {
         e.preventDefault();
@@ -285,8 +284,10 @@ export class SearchBar {
     this.#clearBtns[1].addEventListener("click", () => {
       this.#toInput.value = "";
       this.#toInput.dataset.page = "";
+      this.#toInput.placeholder = "Page or section";
       this.#isRelativeToMode = false;
       this.#updateRange();
+      this.#toInput.focus();
     });
   }
 
@@ -301,7 +302,7 @@ export class SearchBar {
    */
   #navigateDropdown(dropdown, direction) {
     const visibleOptions = Array.from(
-      dropdown.querySelectorAll(".search-dropdown-option")
+      dropdown.querySelectorAll(".search-dropdown-option"),
     ).filter((opt) => opt.style.display !== "none");
 
     if (visibleOptions.length === 0) return;
@@ -328,7 +329,7 @@ export class SearchBar {
   #updateDropdownSelection(dropdown) {
     const options = dropdown.querySelectorAll(".search-dropdown-option");
     const visibleOptions = Array.from(options).filter(
-      (opt) => opt.style.display !== "none"
+      (opt) => opt.style.display !== "none",
     );
 
     // Remove previous selection
@@ -352,7 +353,7 @@ export class SearchBar {
    */
   #selectDropdownItem(dropdown) {
     const visibleOptions = Array.from(
-      dropdown.querySelectorAll(".search-dropdown-option")
+      dropdown.querySelectorAll(".search-dropdown-option"),
     ).filter((opt) => opt.style.display !== "none");
 
     if (
@@ -362,7 +363,7 @@ export class SearchBar {
       const selected = visibleOptions[this.#dropdownSelectedIndex];
       // Trigger the mousedown event which handles selection
       selected.dispatchEvent(
-        new MouseEvent("mousedown", { bubbles: true, cancelable: true })
+        new MouseEvent("mousedown", { bubbles: true, cancelable: true }),
       );
     }
   }
@@ -429,7 +430,11 @@ export class SearchBar {
     const value = this.#fromInput.value.trim();
     const pageNum = parseInt(value, 10);
 
-    // Filter dropdown based on input
+    this.#fromInput.dataset.type = "";
+    this.#fromInput.dataset.page = "";
+    this.#fromSelected = false;
+    this.#disableToField();
+
     const dropdown = this.#fromSelect;
     const options = dropdown.querySelectorAll(".search-dropdown-option");
 
@@ -479,14 +484,13 @@ export class SearchBar {
   }
 
   #confirmFromSelection() {
-    const value = this.#fromInput.value.trim();
-    const pageNum = parseInt(value, 10);
+    if (this.#fromInput.dataset.type) return;
 
-    if (
-      !isNaN(pageNum) &&
-      pageNum >= 1 &&
-      pageNum <= this.#controller.totalPages
-    ) {
+    const value = this.#fromInput.value.trim();
+    if (!/^\d+$/.test(value)) return;
+
+    const pageNum = parseInt(value, 10);
+    if (pageNum >= 1 && pageNum <= this.#controller.totalPages) {
       this.#selectFrom("page", pageNum);
     }
   }
@@ -547,23 +551,24 @@ export class SearchBar {
 
   #handleToInput() {
     const value = this.#toInput.value.trim();
-    
+    this.#toInput.dataset.page = "";
+
     // Check for relative mode: starts with "+"
     const relativeMatch = value.match(/^\+\s*(\d+)$/);
-    
+
     if (relativeMatch) {
       // Relative mode: +N means "from page + N pages"
       this.#isRelativeToMode = true;
       this.#hideDropdown(this.#toSelect);
-      
+
       const offset = parseInt(relativeMatch[1], 10);
       if (!isNaN(offset) && offset > 0) {
         const toPage = Math.min(
           this.#currentFromPage + offset,
-          this.#controller.totalPages
+          this.#controller.totalPages,
         );
         this.#toInput.dataset.page = toPage;
-        
+
         // Update placeholder to show computed value
         this.#toInput.placeholder = `= Page ${toPage}`;
         this.#updateRange();
@@ -577,12 +582,12 @@ export class SearchBar {
       // Absolute mode: filter dropdown
       this.#isRelativeToMode = false;
       this.#toInput.placeholder = "Page or section";
-      
+
       // Show dropdown if it was hidden
       if (!this.#toSelect.classList.contains("visible") && this.#fromSelected) {
         this.#showToDropdown();
       }
-      
+
       const dropdown = this.#toSelect;
       const options = dropdown.querySelectorAll(".search-dropdown-option");
       const pageNum = parseInt(value, 10);
@@ -593,7 +598,7 @@ export class SearchBar {
           text.includes(value.toLowerCase()) || option.dataset.page === value;
         option.style.display = matches ? "" : "none";
       }
-      
+
       this.#dropdownSelectedIndex = -1;
       this.#updateDropdownSelection(dropdown);
     }
@@ -619,11 +624,13 @@ export class SearchBar {
   }
 
   #confirmToSelection() {
-    const value = this.#toInput.value.trim();
-    const pageNum = parseInt(value, 10);
+    if (this.#toInput.dataset.page) return;
 
+    const value = this.#toInput.value.trim();
+    if (!/^\d+$/.test(value)) return;
+
+    const pageNum = parseInt(value, 10);
     if (
-      !isNaN(pageNum) &&
       pageNum > this.#currentFromPage &&
       pageNum <= this.#controller.totalPages
     ) {
@@ -637,15 +644,15 @@ export class SearchBar {
   #confirmRelativeToSelection() {
     const value = this.#toInput.value.trim();
     const relativeMatch = value.match(/^\+\s*(\d+)$/);
-    
+
     if (relativeMatch) {
       const offset = parseInt(relativeMatch[1], 10);
       if (!isNaN(offset) && offset > 0) {
         const toPage = Math.min(
           this.#currentFromPage + offset,
-          this.#controller.totalPages
+          this.#controller.totalPages,
         );
-        
+
         // Update display to show the resolved page
         this.#toInput.value = `+${offset} (Page ${toPage})`;
         this.#toInput.dataset.page = toPage;
@@ -781,7 +788,7 @@ export class SearchBar {
       this.#fromInput.value = `Current page (${pageNumber})`;
       this.#fromInput.dataset.page = pageNumber;
       this.#validateToSelection();
-      
+
       // Pass isScrollUpdate=true so controller knows to ignore during navigation
       this.#updateRange(true);
     }

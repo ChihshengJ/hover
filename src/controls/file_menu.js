@@ -297,8 +297,14 @@ export class FileMenu {
     this.isOpen = true;
 
     requestAnimationFrame(() => {
-      this.gooLayer.style.setProperty('--menu-w', this.menuList.offsetWidth + 'px');
-      this.gooLayer.style.setProperty('--menu-h', this.menuList.offsetHeight + 'px');
+      this.gooLayer.style.setProperty(
+        "--menu-w",
+        this.menuList.offsetWidth + "px",
+      );
+      this.gooLayer.style.setProperty(
+        "--menu-h",
+        this.menuList.offsetHeight + "px",
+      );
     });
     this.container.classList.add("open");
     this.button.classList.add("open");

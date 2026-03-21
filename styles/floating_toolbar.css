@@ -125,6 +125,8 @@
   font-weight: 300;
   line-height: 1;
   z-index: calc(var(--z-modal) + 2);
+  user-select: none;
+  -webkit-user-select: none;
 }
 
 .page-divider {

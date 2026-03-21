@@ -359,7 +359,7 @@ export class Settings {
     });
 
     // Progress bar toggle
-    const progressToggle = overlay.querySelector("#progress-bar-toggle");
+    const progressToggle = overlay.querySelector(".progress-bar-toggle");
     if (progressToggle) {
       progressToggle.checked = Settings.isProgressBarEnabled();
       progressToggle.addEventListener("change", () => {

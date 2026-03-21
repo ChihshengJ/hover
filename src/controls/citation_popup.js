@@ -172,6 +172,7 @@ export class CitationPopup {
     this.scholarError = null;
     this.isLoadingScholar = false;
     this.isExpanded = false;
+    this.activeTab = "reference";
 
     // Update dots indicator
     this.#updateDotsIndicator();

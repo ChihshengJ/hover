@@ -2,15 +2,23 @@
   <img src="assets/IMG_3047.png" width="140" alt="Hover Banner"/>
 </p>
 
-<h1 align="center">Hover — An immersive PDF Reader Extension</h1>
+<h1 align="center">Hover — An immersive PDF Reader</h1>
 
-Hover is a minimalist PDF reader browser extension designed for people who spend way too much time reading academic papers in the browser.
+<p align="center">
+    <a href="https://chromewebstore.google.com/detail/cpnjpgkmfmdnfaonlhmfaalojnilnilg?utm_source=item-share-cb" target="_blank">
+        <img src="assets/CWS.png" width="145" alt="Chrome Web Store link"/>
+    </a>
+    &nbsp;&nbsp;&nbsp;
+    <a href="https://chihshengj.github.io/hover-pdf/demo/" target="_blank">
+        <img src="https://img.shields.io/badge/▶%20Live%20Demo-FFFFFF?style=for-the-badge&logo=googlechrome" height="32" alt="Live Demo"/>
+    </a>
+</p>
 
-It intentionally keeps only the most essential features, but aims to make the actual experience of reading papers smoother, faster, and more immersive
+Hover is a minimalist PDF reader designed for people who spend way too much time reading academic papers **in the browser**.
+
+It intentionally keeps only the most essential reading features, but aims to make the experience of reading papers smoother, faster, and more immersive
 by introducing a **carefully designed UI system** for desktop reading based on a single ball-shaped controller.
 Every action and command revolves around the single controller, and everything irrelevant to reading fades into the background.
-
-**Currently the main functionalities only works on LaTeX compiled PDF documents. But heuristic parsing will be supported later for all kinds of papers.**
 
 The project is built with Vanilla JS and is dependent on [Embed PDF](https://www.embedpdf.com/)'s engine and Pdfium.
 
@@ -36,7 +44,7 @@ You can even directly open up the URL in the citation or check out the abstract 
 
 <br>
 <p align="center">
-    PDF readers are boring as hell.
+    <strong>PDF readers are boring as hell.</strong>
 </p>
 <br>
 
@@ -47,7 +55,7 @@ It all starts with a ball:
 <img src="assets/ball_demo.png" width="120" alt="Hover Banner"/>
 </p>
 
-- **Left-click**: open the full mini toolbar which includes **dark mode**, **split window**, **spread mode**, **fit screen**, and **zoom in/out**.
+- **Left-click**: open the full mini toolbar which includes **rotate**, **split window**, **spread mode**, **fit screen**, and **zoom in/out**.
 
 <p align="center">
 <img src="assets/ball_expand.gif" width="90" alt="Hover Banner"/>
@@ -64,7 +72,7 @@ It all starts with a ball:
 <img src="assets/tree_demo.gif" width="800" alt="Hover Banner"/>
 </p>
 
-Everything you need for focused reading stays right under your finger.
+Everything you need for focused reading stays right under your fingertip.
 
 ### 3. Split Window Mode
 
@@ -88,7 +96,8 @@ With a click of the button, Hover not only turns the background in a soft dark t
 
 ### 5. Search with Range
 
-Not only is the search more accurate than the default readers as it can detect phrases broken by lines and columns, it also enables you to search with a specific range.
+Not only is the search as accurate as Chrome's default reader (it's honestly awesome), it also enables you to search with a specific range that parse your range query semantically.
+Section title, page number, or even "+2" (as in next 2 page) will be interpreted as a page number for ranged search.
 
 <p align="center">
 <img src="assets/search_demo.png" width="800" alt="Hover Banner"/>
@@ -112,7 +121,7 @@ Get bibtex and citations in other formats with just one click of a button.
 
 ### 8. Appearance Customization
 
-Customize wallpaper from image files or URLs and pick the color of the navigation ball to create your own themed PDF reading experience.
+Customize wallpaper from image files or URLs and pick the color of the navigation ball to create your own themed PDF reading experience. (I personally find it extremely calming to use a wallpaper)
 
 <p align="center">
 <img src="assets/customize_demo.png" width="800" alt="Hover Banner"/>
@@ -124,9 +133,7 @@ Full vim motion support for reading, highlighting, and citation preview (under d
 
 ---
 
-## Installation
-
-This project will be released as a browser extension for Chrome and Safari.
+## Installation & Development
 
 Latest commit is always runnable so you can clone the repo and use npm to build and load it in Chrome.
 Make sure you install the dependencies using
@@ -143,11 +150,13 @@ npm run build:ext
 
 Open Chrome, navigate to [Chrome extension management](chrome://extensions/), turn on developer mode and load the _dist_ folder to use the extension.
 
+Please note that we only accept PRs that do not affect the current UI.
+
 ---
 
 ## Buy Me a Coffee
 
-If you love using Hover like I do, please consider support me here:
+If you love using Hover PDF like I do, please consider support me here:
 
 [!["Buy Me A Coffee"](https://www.buymeacoffee.com/assets/img/custom_images/orange_img.png)](https://www.buymeacoffee.com/chihshengj)
 
@@ -155,14 +164,17 @@ Every donation means a ton to me and to this project!
 
 And if there are any bugs or possible improvements of the codebase, feel free to open an issue.
 
+_If your team happen to be working on PDF related research or services, I'm more than glad to collaborate, please feel free to shot me an email!_
+
 ---
 
 ## Road map
 
-- Heuristic parsing to extract links from non-LaTeX compiled PDFs.
-- **Hover for Safari**
-- Improve indexing performance and memory usage
-- Theme configuration
+- **Hover PDF for Safari**
+- Touch screen support
+- Building a test suite from Semantic Scholar's database
+- Image/table extraction & text block analysis
+- AI reading assistant (bring your own endpoint and API key) and Translation if there is a demand
 
 ---
 

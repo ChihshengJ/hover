@@ -591,7 +591,19 @@ export class PageView {
 
         return null;
       };
-      await citationPopup.show(el, citation, findTextForTarget, targetIndex);
+      await citationPopup.show(
+        el,
+        citation,
+        findTextForTarget,
+        targetIndex,
+        () => {
+          this.pane.scrollToPoint(
+            citation.targetLocation.pageIndex,
+            citation.targetLocation.x,
+            citation.targetLocation.y,
+          );
+        },
+      );
     }, 200);
   }
 

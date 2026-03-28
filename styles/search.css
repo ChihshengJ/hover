@@ -112,6 +112,51 @@
   color: var(--color-danger);
 }
 
+/* Nav buttons (prev / next) */
+.search-nav-btns {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex-shrink: 0;
+  align-self: stretch;
+}
+
+.search-nav-btn {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  border: none;
+  background: var(--bg-glass-solid);
+  box-shadow: var(--shadow-float);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.search-nav-prev {
+  border-radius: 10px 10px 4px 4px;
+}
+
+.search-nav-next {
+  border-radius: 4px 4px 10px 10px;
+}
+
+.search-nav-btn:hover:not(:disabled) {
+  background: var(--color-accent-light);
+  color: var(--color-accent-hover);
+}
+
+.search-nav-btn:active:not(:disabled) {
+  background: var(--bg-active);
+}
+
+.search-nav-btn:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
 /* Range section */
 .search-range {
   display: flex;
@@ -249,6 +294,7 @@
   right: 0;
   max-height: 200px;
   overflow-y: auto;
+  scroll-behavior: smooth;
   background: var(--bg-glass-solid);
   backdrop-filter: blur(10px);
   border: 1px solid var(--border-color);
@@ -329,20 +375,7 @@
   transition: opacity var(--transition-normal);
 }
 
-/* Dropdown option hover and selection states */
-.search-dropdown-option {
-  padding: 8px 12px;
-  cursor: pointer;
-  transition: background-color 0.15s ease;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.search-dropdown-option:hover {
-  background-color: rgba(0, 0, 0, 0.05);
-}
-
+/* Dropdown keyboard selection state */
 .search-dropdown-option.selected {
   background-color: rgba(59, 130, 246, 0.15);
   outline: none;
@@ -350,16 +383,4 @@
 
 .search-dropdown-option.selected:hover {
   background-color: rgba(59, 130, 246, 0.2);
-}
-
-/* Ensure dropdown has proper scrolling for keyboard navigation */
-.search-dropdown {
-  max-height: 200px;
-  overflow-y: auto;
-  scroll-behavior: smooth;
-}
-
-/* Stronger focus ring for search results */
-.search-focus-outline {
-  transition: opacity 0.15s ease;
 }

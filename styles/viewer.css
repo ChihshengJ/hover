@@ -403,3 +403,20 @@ body {
 .spread-row .page-wrapper {
   margin: 0;
 }
+
+/* ===========================================
+   Search Button
+   =========================================== */
+.search-btn {
+  position: absolute;
+  top: 45px;
+  right: 45px;
+  background: transparent;
+  border: none;
+  color: var(--text-secondary);
+  transition: color var(--transition-normal);
+}
+
+.search-btn:hover {
+  color: white;
+}

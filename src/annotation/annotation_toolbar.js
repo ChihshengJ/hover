@@ -153,6 +153,14 @@ export class AnnotationToolbar {
       });
     });
 
+    // Toolbar itself
+    this.#toolbar.addEventListener("click", (e) => {
+      if (!this.#isExpanded) {
+        e.stopPropagation();
+        this.#expand();
+      }
+    });
+
     // Expand on hover when collapsed
     this.#toolbar.addEventListener("mouseenter", () => {
       if (!this.#isExpanded) {
@@ -161,7 +169,7 @@ export class AnnotationToolbar {
     });
 
     // Prevent clicks inside toolbar from closing it
-    this.#toolbar.addEventListener("mousedown", (e) => {
+    this.#toolbar.addEventListener("pointerdown", (e) => {
       e.stopPropagation();
     });
   }
@@ -263,45 +271,36 @@ export class AnnotationToolbar {
   }
 
   #positionToolbar(rect) {
-    const toolbarWidth = 200; // Approximate expanded width
+    const toolbarWidth = 200;
     const toolbarHeight = 44;
-    const margin = 8;
+    const margin = 12;
     const viewportWidth = window.innerWidth;
     const viewportHeight = window.innerHeight;
 
     let x, y;
-    let position = "bottom"; // 'bottom', 'right', 'left', 'top'
 
-    x = rect.left + rect.width / 2 - toolbarWidth / 2;
-    y = rect.bottom + margin;
+    // Default: top-left of selection
+    x = rect.left;
+    y = rect.top - toolbarHeight - margin;
 
-    if (y + toolbarHeight > viewportHeight - margin) {
-      y = rect.top - toolbarHeight - margin;
-      position = "top";
+    // Not enough space above → fall to bottom
+    if (y < margin) {
+      y = rect.bottom + margin;
 
-      if (y < margin) {
-        x = rect.right + margin;
-        y = rect.top + rect.height / 2 - toolbarHeight / 2;
-        position = "right";
-
-        if (x + toolbarWidth > viewportWidth - margin) {
-          x = rect.left - toolbarWidth - margin;
-          position = "left";
-
-          if (x < margin) {
-            x = rect.left + rect.width / 2 - toolbarWidth / 2;
-            y = rect.bottom + margin;
-            position = "bottom";
-          }
-        }
+      // Not enough below either → clamp to top margin
+      if (y + toolbarHeight > viewportHeight - margin) {
+        y = margin;
       }
     }
 
-    x = Math.max(margin, Math.min(x, viewportWidth - toolbarWidth - margin));
+    // Clamp horizontal
+    if (x + toolbarWidth > viewportWidth - margin) {
+      x = viewportWidth - toolbarWidth - margin;
+    }
+    x = Math.max(margin, x);
 
     this.#container.style.left = `${x}px`;
     this.#container.style.top = `${y}px`;
-    this.#container.dataset.position = position;
   }
 
   #show() {

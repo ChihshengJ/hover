@@ -22,6 +22,7 @@ export class CitationPopup {
     this.allTargets = [];
     this.currentTargetIndex = 0;
     this.findCiteTextCallback = null;
+    this.onNavigate = null;
 
     this.init();
   }
@@ -65,6 +66,7 @@ export class CitationPopup {
     citation,
     findCiteTextCallback,
     initialTargetIndex = null,
+    onNavigate = null,
   ) {
     if (this.currentAnchor === anchor && this.popup.style.display === "block") {
       this.cancelClose();
@@ -88,6 +90,7 @@ export class CitationPopup {
     this.allTargets = citation?.allTargets || [];
     this.currentTargetIndex = initialTargetIndex ?? 0;
     this.findCiteTextCallback = findCiteTextCallback;
+    this.onNavigate = onNavigate;
 
     this.cancelClose();
 
@@ -471,6 +474,19 @@ export class CitationPopup {
       this.renderTextWithLinks(textElement, text);
       container.appendChild(textElement);
     }
+    if (this.onNavigate) {
+      const jumpLink = document.createElement("a");
+      jumpLink.className = "citation-jump-link";
+      jumpLink.textContent = "Jump to reference ⏎";
+      jumpLink.href = "#";
+      jumpLink.addEventListener("click", (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        this.onNavigate();
+        this.hide(true);
+      });
+      container.appendChild(jumpLink);
+    }
   }
 
   #updateTextDisplay(data, textElement, toggleBtn, callback) {
@@ -805,6 +821,7 @@ export class CitationPopup {
       this.allTargets = [];
       this.currentTargetIndex = 0;
       this.findCiteTextCallback = null;
+      this.onNavigate = null;
       return;
     }
 
@@ -826,6 +843,7 @@ export class CitationPopup {
       this.allTargets = [];
       this.currentTargetIndex = 0;
       this.findCiteTextCallback = null;
+      this.onNavigate = null;
     }, 300);
   }
 }

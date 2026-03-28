@@ -28,8 +28,8 @@
 
 .floating-toolbar-hit-area {
   position: fixed;
-  width: 120px;
-  height: 380px;
+  width: 100px;
+  height: 350px;
   right: 0;
   pointer-events: none;
   z-index: 0;

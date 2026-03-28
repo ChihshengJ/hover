@@ -36,7 +36,6 @@ export class FloatingToolbar {
 
     this.isJumping = false;
 
-    // Rotation icon state (cumulative for smooth animation)
     this._cumulativeRotation = 0;
     this._lastRotateClick = 0;
     this._rotateClickTimeout = null;
@@ -44,7 +43,7 @@ export class FloatingToolbar {
     // Navigation tree state
     this.isTreeOpen = false;
     this.treeOpenThreshold = 100; // Pixels to drag left before tree opens
-    this.ballOriginalRight = 35;
+    this.ballOriginalRight = 20;
     this.ballTreeOpenRight = null;
 
     this.#createToolbar();
@@ -368,14 +367,16 @@ export class FloatingToolbar {
     }
 
     if (timeSinceLastClick < 220) {
-      // Double-click - scroll to top
+      // Double-click: scroll to top
       this.pane.scrollToTop();
       this.lastClickTime = 0;
     } else {
-      // Single click - do nothing now (tree is opened by drag)
-      // this.pane.fitWidth(0.8);
-      // this.pane.controls.updateZoomDisplay();
+      // Single click: open toolbar
       this.lastClickTime = now;
+      this.clickTimeout = setTimeout(() => {
+        this.clickTimeout = null;
+        this.#toggleExpand();
+      }, 220);
     }
   }
 

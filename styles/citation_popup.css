@@ -230,6 +230,25 @@
   padding: 0px 6px;
 }
 
+.citation-jump-link {
+  display: block;
+  margin-right: auto;
+  margin-top: 8px;
+  width: fit-content;
+  background: none;
+  border: none;
+  font-size: 12px;
+  color: var(--text-secondary);
+  text-decoration: none;
+  cursor: pointer;
+  padding: 0;
+  transition: color 0.15s ease;
+}
+
+.citation-jump-link:hover {
+  color: var(--color-accent);
+}
+
 /* ===========================================
    Loading Skeleton
    =========================================== */

@@ -121,7 +121,7 @@
       border-box;
 }
 
-.page-display.night-mode {
+.night-mode .page-display {
   filter: invert(1);
 }
 
@@ -140,6 +140,10 @@
 }
 
 .night-mode .inner {
+  filter: invert(1);
+}
+
+.night-mode .rotate-icon {
   filter: invert(1);
 }
 

@@ -162,7 +162,7 @@ export class AnnotationManager {
    * Get a selection rect that's visible in the viewport.
    * For cross-page selections, getBoundingClientRect() returns a huge rect
    * spanning all pages, which positions the toolbar off-screen.
-   * Instead, find the last client rect that's visible in the viewport.
+   * Instead, find the first client rect that's visible in the viewport for annotation toolbar's position
    */
   #getVisibleSelectionRect(range) {
     const clientRects = Array.from(range.getClientRects());
@@ -193,8 +193,7 @@ export class AnnotationManager {
     if (visibleRects.length === 0) {
       return range.getBoundingClientRect();
     }
-    const lastRect = visibleRects[visibleRects.length - 1];
-    return lastRect;
+    return visibleRects[0];
   }
 
   /**

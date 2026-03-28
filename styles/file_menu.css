@@ -10,8 +10,8 @@
 
 .file-menu-container {
   position: fixed;
-  bottom: 40px;
-  right: 53px;
+  bottom: 25px;
+  right: 40px;
   z-index: var(--z-modal);
   gap: 0;
   pointer-events: none;
@@ -95,8 +95,7 @@
   inset: 0;
   z-index: 0;
   pointer-events: none !important;
-  filter: url(#file-menu-goo-filter)
-    drop-shadow(0 0 5px rgba(0, 0, 0, 0.4))
+  filter: url(#file-menu-goo-filter) drop-shadow(0 0 5px rgba(0, 0, 0, 0.4))
     drop-shadow(-1px -1px 1px rgba(255, 255, 255, 0.2));
 }
 
@@ -135,7 +134,6 @@
 .file-menu-container.open .file-menu-goo-layer::after {
   opacity: 1;
 }
-
 
 /* ===========================================
    Menu Items

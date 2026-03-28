@@ -1,6 +1,6 @@
 export class SearchBar {
   /** @type {Boolean} */
-  #isIndexing = null;
+  #isIndexing = false;
 
   /** @type {import('./search_controller.js').SearchController} */
   #controller = null;
@@ -34,6 +34,12 @@ export class SearchBar {
 
   /** @type {boolean} */
   #fromSelected = false;
+
+  /** @type {HTMLButtonElement} */
+  #prevBtn = null;
+
+  /** @type {HTMLButtonElement} */
+  #nextBtn = null;
 
   /** @type {number} */
   #debounceTimer = null;
@@ -103,6 +109,19 @@ export class SearchBar {
           </div>
         </div>
       </div>
+
+      <div class="search-nav-btns">
+        <button class="search-nav-btn search-nav-prev" disabled aria-label="Previous result">
+          <svg width="16" height="10" viewBox="0 0 16 10">
+            <polygon points="8,1 15,9 1,9" fill="currentColor" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>
+          </svg>
+        </button>
+        <button class="search-nav-btn search-nav-next" disabled aria-label="Next result">
+          <svg width="16" height="10" viewBox="0 0 16 10">
+            <polygon points="8,9 15,1 1,1" fill="currentColor" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>
+          </svg>
+        </button>
+      </div>
     `;
 
     // Get references
@@ -119,6 +138,8 @@ export class SearchBar {
       this.#container.querySelector("#clear-1"),
       this.#container.querySelector("#clear-2"),
     ];
+    this.#prevBtn = this.#container.querySelector(".search-nav-prev");
+    this.#nextBtn = this.#container.querySelector(".search-nav-next");
 
     document.body.appendChild(this.#container);
   }
@@ -129,8 +150,16 @@ export class SearchBar {
       .querySelector(".search-close-btn")
       .addEventListener("click", () => {
         this.#controller.deactivate();
-        this.#container.classList.remove("visible");
       });
+
+    // Nav buttons
+    this.#prevBtn.addEventListener("click", () => {
+      this.#controller.focusPrev();
+    });
+
+    this.#nextBtn.addEventListener("click", () => {
+      this.#controller.focusNext();
+    });
 
     // Search input
     this.#searchInput.addEventListener("input", () => {
@@ -767,6 +796,9 @@ export class SearchBar {
       "no-results",
       total === 0 && this.#searchInput.value.length > 0,
     );
+
+    this.#prevBtn.disabled = total === 0;
+    this.#nextBtn.disabled = total === 0;
   }
 
   /**

@@ -29,6 +29,7 @@
   pointer-events: auto;
   z-index: 2;
   background: transparent;
+  transition: transform var(--transition-bounce);
 }
 
 .file-menu-icon {
@@ -38,9 +39,7 @@
   width: 100%;
   height: 100%;
   color: var(--text-secondary);
-  transition:
-    color var(--transition-slow),
-    transform var(--transition-slow);
+  transition: transform var(--transition-bounce);
 }
 
 .file-menu-icon svg {
@@ -109,8 +108,8 @@
   border-radius: var(--radius-xl);
   background: transparent;
   transition:
-    background var(--transition-bounce),
-    border-radius var(--transition-normal);
+    opacity var(--transition-bounce),
+    background var(--transition-bounce);
 }
 
 .file-menu-goo-layer::after {

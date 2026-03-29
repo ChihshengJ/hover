@@ -420,3 +420,55 @@ body {
 .search-btn:hover {
   color: white;
 }
+
+/* ===========================================
+   Scroll-back button
+   =========================================== */
+
+.scroll-back-btn {
+  position: absolute;
+  bottom: 30px;
+  left: 20px;
+  z-index: var(--z-dropdown);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px 6px 10px;
+  background: rgba(20, 20, 20, 0.85);
+  color: rgba(255, 255, 255, 0.9);
+  border: none;
+  border-radius: 20px;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  opacity: 0;
+  transform: translateY(6px);
+  transition:
+    opacity var(--transition-normal),
+    transform var(--transition-normal),
+    background var(--transition-fast);
+  pointer-events: auto;
+  user-select: none;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+}
+
+.scroll-back-btn.visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.scroll-back-btn.fading {
+  opacity: 0;
+  transform: translateY(6px);
+}
+
+.scroll-back-btn:hover {
+  background: rgba(40, 40, 40, 0.95);
+}
+
+.scroll-back-btn svg {
+  flex-shrink: 0;
+}

@@ -168,6 +168,20 @@
       const isLocalFile = window.location.protocol === "file:";
       let arrayBuffer = null;
 
+      const detectResponse = await chrome.runtime.sendMessage({
+        type: "PDF_PAGE_DETECTED",
+        url: window.location.href,
+      });
+
+      if (detectResponse?.action !== "fetch_and_send") {
+        console.log(
+          "[Hover] Background declined interception:",
+          detectResponse?.reason,
+        );
+        restoreNativeViewer();
+        return;
+      }
+
       if (isLocalFile) {
         updateStatus("Reading local file…", 15);
 
@@ -183,21 +197,6 @@
         const binary = atob(response.data);
         arrayBuffer = Uint8Array.from(binary, (c) => c.charCodeAt(0)).buffer;
       } else {
-        // Single round-trip: checks hoverEnabled + bypass list together
-        const detectResponse = await chrome.runtime.sendMessage({
-          type: "PDF_PAGE_DETECTED",
-          url: window.location.href,
-        });
-
-        if (detectResponse?.action !== "fetch_and_send") {
-          console.log(
-            "[Hover] Background declined interception:",
-            detectResponse?.reason,
-          );
-          restoreNativeViewer();
-          return;
-        }
-
         updateStatus("Downloading PDF…", 15);
         const pdfResponse = await fetch(window.location.href, {
           credentials: "include",

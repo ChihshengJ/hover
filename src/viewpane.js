@@ -45,6 +45,8 @@ export class ViewerPane {
     this.textSelectionManager = new TextSelectionManager(this);
     this.annotationManager = null;
 
+    this._scrollBack = { scrollTop: 0, page: 0, timer: null, el: null };
+
     this.onAnnotationHover = null;
     this.onAnnotationClick = null;
     this.editAnnotationComment = null;
@@ -407,6 +409,10 @@ export class ViewerPane {
   async scrollToPoint(pageIndex, left, top, center = false) {
     const page = this.document.getPage(pageIndex + 1);
     if (!page) return;
+
+    const originScrollTop = this.scroller.scrollTop;
+    const originPage = this.getCurrentPage();
+
     const pageHeight = page.size.height;
     const viewportY = (pageHeight - top) * this.scale;
     const wrapper = this.pages[pageIndex]?.wrapper;
@@ -415,7 +421,6 @@ export class ViewerPane {
     let targetTop = wrapper.offsetTop + Math.max(0, viewportY);
 
     if (center) {
-      // Offset by half the viewport height so the point appears centered
       const viewportHeight = this.scroller.clientHeight;
       targetTop -= viewportHeight / 2.3;
     }
@@ -424,6 +429,11 @@ export class ViewerPane {
       top: Math.max(0, targetTop),
       behavior: "instant",
     });
+
+    const landedPage = this.getCurrentPage();
+    if (landedPage !== originPage) {
+      this.#showScrollBackButton(originScrollTop, originPage);
+    }
   }
 
   scrollToTop() {
@@ -443,6 +453,69 @@ export class ViewerPane {
     const target = this.pages.find((p) => p.pageNumber === n);
     if (target)
       target.wrapper.scrollIntoView({ behavior: "instant", block: "start" });
+  }
+
+  // ==================
+  // Scroll-back button
+  // ==================
+
+  #showScrollBackButton(scrollTop, page) {
+    this.#dismissScrollBackButton(true);
+
+    this._scrollBack.scrollTop = scrollTop;
+    this._scrollBack.page = page;
+
+    const btn = document.createElement("button");
+    btn.className = "scroll-back-btn";
+    btn.title = `Back to page ${page}`;
+    btn.innerHTML = `
+      <svg width="14" height="14" viewBox="0 0 14 14" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <path d="M11 7H3M3 7L6.5 3.5M3 7L6.5 10.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+      <span> Back to page ${page}</span>
+    `;
+
+    btn.addEventListener("click", () => {
+      this.scroller.scrollTo({
+        top: this._scrollBack.scrollTop,
+        behavior: "instant",
+      });
+      this.#dismissScrollBackButton();
+    });
+
+    this.paneEl.appendChild(btn);
+    this._scrollBack.el = btn;
+
+    requestAnimationFrame(() => btn.classList.add("visible"));
+
+    this._scrollBack.timer = setTimeout(() => {
+      this.#dismissScrollBackButton();
+    }, 5000);
+  }
+
+  #dismissScrollBackButton(immediate = false) {
+    const { el, timer } = this._scrollBack;
+    if (timer) {
+      clearTimeout(timer);
+      this._scrollBack.timer = null;
+    }
+    if (!el) return;
+
+    if (immediate) {
+      el.remove();
+      this._scrollBack.el = null;
+      return;
+    }
+
+    el.classList.add("fading");
+    el.addEventListener(
+      "transitionend",
+      () => {
+        el.remove();
+        if (this._scrollBack.el === el) this._scrollBack.el = null;
+      },
+      { once: true },
+    );
   }
 
   async resizeAllCanvases(scale) {
@@ -845,6 +918,7 @@ export class ViewerPane {
     this.controls.destroy();
     this.textSelectionManager.destroy();
     this.annotationManager?.destroy();
+    this.#dismissScrollBackButton(true);
 
     // Clean up spread layout
     this.#clearSpreadLayout();

@@ -80,7 +80,7 @@ function getStatusMessage(phase) {
   const messages = {
     "loading-wasm": "Loading PDF engine...",
     "downloading-wasm": "Downloading PDF engine...",
-    "parsing-wasm": "Parsing PDF engine...",
+    "parsing-wasm": "PDF engine warming up...",
     "initializing-pdfium": "Initializing PDFium...",
     "creating-engine": "Creating engine...",
     ready: "Engine ready",

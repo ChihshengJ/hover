@@ -139,6 +139,7 @@
       transition: opacity 0.2s ease;
     }
     #hover-loading-overlay .hover-progress-track {
+      position: relative;
       width: 200px;
       height: 3px;
       background: rgba(255, 255, 255, 0.08);
@@ -147,14 +148,26 @@
       overflow: hidden;
     }
     #hover-loading-overlay .hover-progress-bar {
+      position: absolute;
+      top: 0;
+      left: 0;
       height: 100%;
       width: 0%;
       background: #A0A0B0;
       border-radius: 2px;
       transition: width 0.3s ease;
     }
+    #hover-loading-overlay .hover-progress-bar.indeterminate {
+      width: 30%;
+      animation: hover-indeterminate 1.5s ease-in-out infinite;
+    }
     @keyframes hover-spin {
       to { transform: rotate(360deg); }
+    }
+    @keyframes hover-indeterminate {
+      0% { left: 0%; width: 30%; }
+      50% { left: 35%; width: 35%; }
+      100% { left: 70%; width: 30%; }
     }
   `;
   document.documentElement.appendChild(hideStyle);
@@ -175,10 +188,22 @@
     const statusEl = document.getElementById("hover-status-text");
     const progressBar = document.getElementById("hover-progress-bar");
     if (statusEl) statusEl.textContent = text;
-    if (progressBar && progress !== undefined) {
-      progressBar.style.width = `${Math.min(100, Math.round(progress))}%`;
+    if (progressBar) {
+      if (progress === undefined) {
+        progressBar.classList.add("indeterminate");
+        progressBar.style.width = "";
+      } else {
+        progressBar.classList.remove("indeterminate");
+        progressBar.style.width = `${Math.min(100, Math.round(progress))}%`;
+      }
     }
   }
+
+  chrome.runtime.onMessage.addListener((msg) => {
+    if (msg.type === "PDF_PROGRESS") {
+      updateStatus("Downloading PDF…", msg.percent);
+    }
+  });
 
   function restoreNativeViewer() {
     const overlayEl = document.getElementById("hover-loading-overlay");
@@ -231,7 +256,7 @@
 
   (async function intercept() {
     try {
-      updateStatus("Downloading PDF…", 15);
+      updateStatus("Connecting…");
 
       const detectResponse = await chrome.runtime.sendMessage({
         type: "PDF_PAGE_DETECTED",

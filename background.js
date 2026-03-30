@@ -206,10 +206,43 @@ async function handlePdfPageDetected(message, sender) {
   }
 
   try {
+    const tabId = sender.tab.id;
     const response = await fetch(url);
     if (!response.ok) return { action: "content_fetch" };
 
-    const arrayBuffer = await response.arrayBuffer();
+    const contentLength = response.headers.get("content-length");
+    const total = contentLength ? parseInt(contentLength, 10) : 0;
+    let arrayBuffer;
+
+    if (total > 0 && response.body) {
+      const reader = response.body.getReader();
+      const chunks = [];
+      let loaded = 0;
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        chunks.push(value);
+        loaded += value.length;
+        chrome.tabs
+          .sendMessage(tabId, {
+            type: "PDF_PROGRESS",
+            percent: Math.round((loaded / total) * 80),
+          })
+          .catch(() => { });
+      }
+
+      const combined = new Uint8Array(loaded);
+      let offset = 0;
+      for (const chunk of chunks) {
+        combined.set(chunk, offset);
+        offset += chunk.length;
+      }
+      arrayBuffer = combined.buffer;
+    } else {
+      arrayBuffer = await response.arrayBuffer();
+    }
+
     if (!hasPdfMagic(arrayBuffer)) return { action: "content_fetch" };
 
     await storePendingPdf({

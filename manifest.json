@@ -8,7 +8,9 @@
   },
   "permissions": [
     "tabs",
-    "storage"
+    "activeTab",
+    "storage",
+    "scripting"
   ],
   "host_permissions": [
     "https://scholar.google.com/*"

@@ -56,7 +56,7 @@ export class ViewerPane {
     this.document.subscribe(this);
   }
 
-  async initialize(scale = 1.5) {
+  async initialize(scale = 1.7) {
     this.scale = scale;
     this.#createScroller();
     this.#createStage();

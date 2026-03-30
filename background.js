@@ -131,6 +131,13 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true;
   }
 
+  if (message.type === "FETCH_TAB_AS_PDF") {
+    handleFetchTabAsPdf(message)
+      .then((result) => sendResponse(result))
+      .catch((err) => sendResponse({ success: false, error: err.message }));
+    return true;
+  }
+
   if (message.type === "GET_HOVER_STATUS") {
     chrome.storage.local.get("hoverEnabled").then(({ hoverEnabled = true }) => {
       sendResponse({ enabled: hoverEnabled });
@@ -211,6 +218,106 @@ async function handleStoreLocalPdf(message) {
     name: message.name || "document.pdf",
     url: null,
   });
+}
+
+/**
+ * Inject a script into the active tab to grab the PDF bytes.
+ * First tries fetching the page URL itself from cache. If the
+ * response isn't a PDF (e.g. Wiley/Elsevier HTML wrappers), it
+ * looks for an embedded iframe or embed element whose src points
+ * to the actual PDF and fetches that instead.
+ */
+async function handleFetchTabAsPdf(message) {
+  const { url, tabId } = message;
+
+  const [{ result }] = await chrome.scripting.executeScript({
+    target: { tabId },
+    func: async (pageUrl) => {
+      async function fetchAsPdf(targetUrl) {
+        const response = await fetch(targetUrl, {
+          credentials: "include",
+          cache: "force-cache",
+        });
+        if (!response.ok) return null;
+
+        const arrayBuffer = await response.arrayBuffer();
+        const header = new Uint8Array(arrayBuffer.slice(0, 5));
+        const magic = String.fromCharCode(...header);
+        if (!magic.startsWith("%PDF-")) return null;
+
+        const bytes = new Uint8Array(arrayBuffer);
+        let binary = "";
+        const chunkSize = 8192;
+        for (let i = 0; i < bytes.length; i += chunkSize) {
+          const chunk = bytes.subarray(
+            i,
+            Math.min(i + chunkSize, bytes.length),
+          );
+          binary += String.fromCharCode.apply(null, chunk);
+        }
+        return btoa(binary);
+      }
+
+      try {
+        // 1. Try the page URL directly (works for cached direct PDFs)
+        const direct = await fetchAsPdf(pageUrl);
+        if (direct) return { data: direct };
+
+        // 2. Look for a PDF embedded in an iframe or embed element
+        const candidates = [];
+
+        // Named PDF iframes (Wiley uses #pdf-iframe)
+        const pdfIframe = document.getElementById("pdf-iframe");
+        if (pdfIframe?.src) candidates.push(pdfIframe.src);
+
+        // Any iframe whose src path contains "pdf"
+        for (const iframe of document.querySelectorAll("iframe[src]")) {
+          if (candidates.includes(iframe.src)) continue;
+          try {
+            const path = new URL(iframe.src).pathname.toLowerCase();
+            if (path.includes("pdf")) candidates.push(iframe.src);
+          } catch { }
+        }
+
+        // Embed elements with PDF type
+        for (const embed of document.querySelectorAll(
+          'embed[type="application/pdf"]',
+        )) {
+          if (embed.src && !candidates.includes(embed.src)) {
+            candidates.push(embed.src);
+          }
+        }
+
+        for (const candidateUrl of candidates) {
+          const data = await fetchAsPdf(candidateUrl);
+          if (data) return { data };
+        }
+
+        return { error: "No PDF found on this page" };
+      } catch (e) {
+        return { error: e.message };
+      }
+    },
+    args: [url],
+  });
+
+  if (result?.error) {
+    return { success: false, error: result.error };
+  }
+
+  const arrayBuffer = base64ToArrayBuffer(result.data);
+  await storePendingPdf({
+    data: arrayBuffer,
+    url: url,
+    name: extractFilename(url),
+  });
+
+  const viewerUrl =
+    chrome.runtime.getURL("index.html") + "?url=" + encodeURIComponent(url);
+
+  await chrome.tabs.update(tabId, { url: viewerUrl });
+
+  return { success: true };
 }
 
 function extractFilename(url) {

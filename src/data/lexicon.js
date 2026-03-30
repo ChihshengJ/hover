@@ -558,7 +558,7 @@ export const INLINE_CITATION_PATTERNS = {
 export const AUTHOR_YEAR_BLOCKS = {
   // Single author surname (Unicode-aware, handles hyphenated and apostrophe names)
   // Examples: Smith, O'Brien, García-López, Müller, de Bruin
-  authorSurname: `(?:(?:[Dd]e|[Vv]on|[Vv]an|[Dd]er|[Dd]en|[Ll]e|[Ll]a|[Dd]el|[Dd]os|[Dd]as|[Dd]i|[Dd]u)\\s+)?\\p{Lu}[\\p{L}\\p{M}'-]+`,
+  authorSurname: `(?:(?:[Dd]e|[Vv]on|[Vv]an|[Dd]er|[Dd]en|[Ll]e|[Ll]a|[Dd]el|[Dd]os|[Dd]as|[Dd]i|[Dd]u)\\s+)?\\p{Lu}[\\p{L}\\p{M}'’\\-]+`,
 
   // Et al. suffix (optional)
   etAl: `(?:\\s+et\\s+al\\.?)`,
@@ -585,7 +585,7 @@ export const AUTHOR_YEAR_BLOCKS = {
   // Postfix phrases that may appear after the last citation in parentheses
   postfixPhrases: `(?:;\\s*)?(?:among others|amongst others|and others)`,
 
-  pages: `(?:,\\s*\\d+(?:[–-]\\d+)?)?`,
+  pages: `(?:,\\s*(?:pp?\\.\\s*)?\\d+(?:[–-]\\d+)?)?`,
 };
 
 /**
@@ -689,7 +689,11 @@ export const AUTHOR_YEAR_PATTERNS = {
       `${AUTHOR_YEAR_BLOCKS.pages}\\)`,
       "gu",
     ),
-    extractAuthor: (match) => match[1].replace(/\s+et\s+al\.?/i, "").trim(),
+    extractAuthor: (match) =>
+      match[1]
+        .replace(/\s+et\s+al\.?/i, "")
+        .replace(/['’]s$/, "")
+        .trim(),
     extractYears: (match) => parseYearsFromString(match[2]),
     isTwoAuthor: false,
   },

@@ -74,68 +74,6 @@ export class PDFDocumentModel {
     return this.annotationStore.nativeAnnotationsByPage;
   }
 
-  static async getLocalPdf() {
-    try {
-      const result = await new Promise((resolve) => {
-        const req = indexedDB.open("hover_local_pdf", 1);
-        req.onupgradeneeded = () => req.result.createObjectStore("pdf");
-        req.onsuccess = () => {
-          const db = req.result;
-          const tx = db.transaction("pdf", "readonly");
-          const store = tx.objectStore("pdf");
-          const dataReq = store.get("data");
-          const nameReq = store.get("name");
-          tx.oncomplete = () => {
-            db.close();
-            if (dataReq.result) {
-              resolve({
-                data: dataReq.result,
-                name: nameReq.result || "document.pdf",
-              });
-            } else {
-              resolve(null);
-            }
-          };
-          tx.onerror = () => {
-            db.close();
-            resolve(null);
-          };
-        };
-        req.onerror = () => resolve(null);
-      });
-      if (result) return result;
-    } catch (e) {
-      console.warn("[Doc] IndexedDB read failed:", e);
-    }
-
-    const base64 = sessionStorage.getItem("hover_pdf_data");
-    const name = sessionStorage.getItem("hover_pdf_name") || "document.pdf";
-    if (!base64) return null;
-
-    try {
-      const binary = atob(base64);
-      const bytes = new Uint8Array(binary.length);
-      for (let i = 0; i < binary.length; i++) {
-        bytes[i] = binary.charCodeAt(i);
-      }
-      return { data: bytes.buffer, name };
-    } catch (error) {
-      console.error("Error parsing local PDF:", error);
-      return null;
-    }
-  }
-
-  static async clearLocalPdf() {
-    // Clear both stores
-    sessionStorage.removeItem("hover_pdf_data");
-    sessionStorage.removeItem("hover_pdf_name");
-    try {
-      indexedDB.deleteDatabase("hover_local_pdf");
-    } catch (e) {
-      // ignore
-    }
-  }
-
   /**
    * @param {ArrayBuffer} arrayBuffer
    * @param {(p: {loaded: number, total: number, percent: number, phase: string}) => void} [onProgress]
@@ -193,7 +131,6 @@ export class PDFDocumentModel {
   }
 
   /**
-   * Phase 2: Build text index, outline, references, and inline elements.
    * @param {(p: {percent: number, phase: string}) => void} [onProgress]
    */
   async buildIndex(onProgress) {
@@ -224,7 +161,6 @@ export class PDFDocumentModel {
         this.textIndex,
         this.outline,
       );
-      // console.log(this.referenceIndex);
 
       const hasUsableIndex =
         (this.referenceIndex?.anchors?.length || 0) >= MIN_USABLE_REFERENCES;
@@ -451,11 +387,6 @@ export class PDFDocumentModel {
     this.#indexUrls();
   }
 
-  /**
-   * Fallback when reference section is not found or has too few anchors.
-   * Renders native destination links directly as navigable overlays,
-   * skipping inline extraction and citation/cross-ref building entirely.
-   */
   #buildNativeFallback() {
     this.#indexUrls();
 

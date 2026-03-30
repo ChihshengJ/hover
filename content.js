@@ -1,11 +1,97 @@
-// ============================================
-// Hover PDF Viewer - Content Script
-// ============================================
-
 (function() {
   if (window !== window.top) return;
-  if (document.contentType !== "application/pdf") return;
   if (window.location.href.includes(chrome.runtime.id)) return;
+
+  // ============================================
+  // Shared Utilities
+  // ============================================
+
+  function arrayBufferToBase64(buffer) {
+    const bytes = new Uint8Array(buffer);
+    let binary = "";
+    const chunkSize = 8192;
+    for (let i = 0; i < bytes.length; i += chunkSize) {
+      const chunk = bytes.subarray(i, Math.min(i + chunkSize, bytes.length));
+      binary += String.fromCharCode.apply(null, chunk);
+    }
+    return btoa(binary);
+  }
+
+  /**
+   * @param {string} url
+   * @returns {Promise<string|null>}
+   */
+  async function fetchAsPdfBase64(url) {
+    const response = await fetch(url, {
+      credentials: "include",
+      cache: "force-cache",
+    });
+    if (!response.ok) return null;
+
+    const arrayBuffer = await response.arrayBuffer();
+    const header = new Uint8Array(arrayBuffer.slice(0, 5));
+    if (!String.fromCharCode(...header).startsWith("%PDF-")) return null;
+
+    return arrayBufferToBase64(arrayBuffer);
+  }
+
+  /**
+   * @param {string} pageUrl
+   * @returns {Promise<{ data: string } | { error: string }>}
+   */
+  async function findAndFetchPdf(pageUrl) {
+    try {
+      const direct = await fetchAsPdfBase64(pageUrl);
+      if (direct) return { data: direct };
+
+      const candidates = [];
+
+      const pdfIframe = document.getElementById("pdf-iframe");
+      if (pdfIframe?.src) candidates.push(pdfIframe.src);
+
+      for (const iframe of document.querySelectorAll("iframe[src]")) {
+        if (candidates.includes(iframe.src)) continue;
+        try {
+          const path = new URL(iframe.src).pathname.toLowerCase();
+          if (path.includes("pdf")) candidates.push(iframe.src);
+        } catch { }
+      }
+
+      for (const embed of document.querySelectorAll(
+        'embed[type="application/pdf"]',
+      )) {
+        if (embed.src && !candidates.includes(embed.src)) {
+          candidates.push(embed.src);
+        }
+      }
+
+      for (const candidateUrl of candidates) {
+        const data = await fetchAsPdfBase64(candidateUrl);
+        if (data) return { data };
+      }
+
+      return { error: "No PDF found on this page" };
+    } catch (e) {
+      return { error: e.message };
+    }
+  }
+
+  // ============================================
+  // On-Demand Fetch (for "Open Current Tab")
+  // ============================================
+
+  chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+    if (msg.type === "FETCH_PDF_FROM_PAGE") {
+      findAndFetchPdf(window.location.href).then(sendResponse);
+      return true;
+    }
+  });
+
+  // ============================================
+  // Auto-Interception (PDF pages only)
+  // ============================================
+
+  if (document.contentType !== "application/pdf") return;
 
   console.log("[Hover] PDF detected at document_start:", window.location.href);
 
@@ -100,21 +186,6 @@
     if (hideStyle.parentNode) hideStyle.remove();
   }
 
-  function extractFilename(url) {
-    try {
-      const pathname = new URL(url).pathname;
-      const filename = pathname.split("/").pop() || "document.pdf";
-      const cleanName = filename.split("?")[0];
-      return cleanName.endsWith(".pdf") ? cleanName : cleanName + ".pdf";
-    } catch {
-      return "document.pdf";
-    }
-  }
-
-  /**
-   * Show a prompt when file:// access is denied, giving the user
-   * a link to the extension settings page.
-   */
   function showFileAccessPrompt() {
     const el = document.getElementById("hover-loading-overlay");
     if (!el) return;
@@ -158,125 +229,75 @@
       });
   }
 
-  /**
-   * Fetch the PDF bytes (with credentials for authenticated sources),
-   * encode as base64, and hand off to the background script which
-   * persists the data in IndexedDB and opens the viewer in a new tab.
-   */
   (async function intercept() {
     try {
-      const isLocalFile = window.location.protocol === "file:";
-      let arrayBuffer = null;
+      updateStatus("Downloading PDF…", 15);
 
       const detectResponse = await chrome.runtime.sendMessage({
         type: "PDF_PAGE_DETECTED",
         url: window.location.href,
       });
 
-      if (detectResponse?.action !== "fetch_and_send") {
-        console.log(
-          "[Hover] Background declined interception:",
-          detectResponse?.reason,
-        );
+      if (detectResponse?.action === "none") {
         restoreNativeViewer();
         return;
       }
 
-      if (isLocalFile) {
-        updateStatus("Reading local file…", 15);
-
-        const response = await chrome.runtime.sendMessage({
-          type: "FETCH_LOCAL_FILE",
-          url: window.location.href,
-        });
-
-        if (!response?.success) {
-          throw new Error(response?.error || "FILE_ACCESS_DENIED");
-        }
-
-        const binary = atob(response.data);
-        arrayBuffer = Uint8Array.from(binary, (c) => c.charCodeAt(0)).buffer;
-      } else {
-        updateStatus("Downloading PDF…", 15);
-        const pdfResponse = await fetch(window.location.href, {
-          credentials: "include",
-          cache: "force-cache",
-        });
-
-        if (!pdfResponse.ok) {
-          console.error(
-            "[Hover] Failed to fetch PDF:",
-            pdfResponse.status,
-            pdfResponse.statusText,
-          );
-          restoreNativeViewer();
-          return;
-        }
-
-        const contentType = pdfResponse.headers.get("content-type") || "";
-        if (
-          !contentType.includes("application/pdf") &&
-          !contentType.includes("octet-stream")
-        ) {
-          console.log(
-            "[Hover] Response is not a PDF, content-type:",
-            contentType,
-          );
-          restoreNativeViewer();
-          return;
-        }
-
-        updateStatus("Reading PDF data…", 35);
-        arrayBuffer = await pdfResponse.arrayBuffer();
+      if (detectResponse?.action === "done") {
+        updateStatus("Opening viewer…", 100);
+        return;
       }
 
-      // Verify PDF magic bytes
+      if (detectResponse?.action === "file_access_denied") {
+        showFileAccessPrompt();
+        return;
+      }
+
+      updateStatus("Downloading PDF…", 15);
+      const pdfResponse = await fetch(window.location.href, {
+        credentials: "include",
+        cache: "force-cache",
+      });
+
+      if (!pdfResponse.ok) {
+        restoreNativeViewer();
+        return;
+      }
+
+      const contentType = pdfResponse.headers.get("content-type") || "";
+      if (
+        !contentType.includes("application/pdf") &&
+        !contentType.includes("octet-stream")
+      ) {
+        restoreNativeViewer();
+        return;
+      }
+
+      updateStatus("Reading PDF data…", 35);
+      const arrayBuffer = await pdfResponse.arrayBuffer();
+
       const header = new Uint8Array(arrayBuffer.slice(0, 5));
-      const pdfMagic = String.fromCharCode(...header);
-      if (!pdfMagic.startsWith("%PDF-")) {
-        console.log("[Hover] Response does not have PDF magic bytes");
+      if (!String.fromCharCode(...header).startsWith("%PDF-")) {
         restoreNativeViewer();
         return;
       }
-
-      console.log(
-        "[Hover] PDF fetched successfully, size:",
-        arrayBuffer.byteLength,
-      );
 
       updateStatus("Preparing for viewer…", 55);
-
-      // Base64 encode for chrome.runtime message passing (content scripts
-      // run in the web page's origin and cannot share IDB with the extension)
-      const bytes = new Uint8Array(arrayBuffer);
-      let binary = "";
-      const chunkSize = 8192;
-      for (let i = 0; i < bytes.length; i += chunkSize) {
-        const chunk = bytes.subarray(i, Math.min(i + chunkSize, bytes.length));
-        binary += String.fromCharCode.apply(null, chunk);
-      }
-      const base64 = btoa(binary);
+      const base64 = arrayBufferToBase64(arrayBuffer);
 
       updateStatus("Opening viewer…", 80);
-
       const result = await chrome.runtime.sendMessage({
         type: "PDF_DATA_READY",
         url: window.location.href,
         data: base64,
-        filename: extractFilename(window.location.href),
       });
 
       if (result?.success) {
         updateStatus("Opening viewer…", 100);
       } else {
-        console.error("[Hover] Failed to send PDF to viewer:", result?.error);
         restoreNativeViewer();
       }
     } catch (error) {
-      if (error.message === "FILE_ACCESS_DENIED") {
-        showFileAccessPrompt();
-        return;
-      }
       console.error("[Hover] Error intercepting PDF:", error);
       restoreNativeViewer();
     }

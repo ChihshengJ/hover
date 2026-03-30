@@ -9,8 +9,7 @@
   "permissions": [
     "tabs",
     "activeTab",
-    "storage",
-    "scripting"
+    "storage"
   ],
   "host_permissions": [
     "https://scholar.google.com/*"
@@ -31,8 +30,7 @@
   "content_scripts": [
     {
       "matches": [
-        "<all_urls>",
-        "file://*/*"
+        "<all_urls>"
       ],
       "js": [
         "content.js"

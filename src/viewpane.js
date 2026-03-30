@@ -490,7 +490,7 @@ export class ViewerPane {
 
     this._scrollBack.timer = setTimeout(() => {
       this.#dismissScrollBackButton();
-    }, 5000);
+    }, 7000);
   }
 
   #dismissScrollBackButton(immediate = false) {

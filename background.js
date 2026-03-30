@@ -12,9 +12,6 @@ const PENDING_DB_NAME = "hover-pending-pdf";
 const PENDING_DB_STORE = "data";
 
 /**
- * Open the shared IndexedDB used to pass PDF ArrayBuffers from
- * the background service-worker to the viewer page. Both run on
- * the same chrome-extension:// origin, so they share this store.
  * @returns {Promise<IDBDatabase>}
  */
 function openPendingDb() {
@@ -28,8 +25,6 @@ function openPendingDb() {
 }
 
 /**
- * Write a PDF record to IndexedDB under a fixed key so the viewer
- * page can retrieve it on load without a message round-trip.
  * @param {{ data: ArrayBuffer, name: string, url: string|null }} record
  */
 async function storePendingPdf(record) {
@@ -48,8 +43,11 @@ async function storePendingPdf(record) {
   });
 }
 
+// ============================================
+// Utilities
+// ============================================
+
 /**
- * Decode a base64 string (with optional data-URI prefix) to ArrayBuffer.
  * @param {string} base64
  * @returns {ArrayBuffer}
  */
@@ -61,6 +59,31 @@ function base64ToArrayBuffer(base64) {
     bytes[i] = binary.charCodeAt(i);
   }
   return bytes.buffer;
+}
+
+/**
+ * @param {string} url
+ * @returns {string}
+ */
+function extractFilename(url) {
+  try {
+    const pathname = new URL(url).pathname;
+    const segment = pathname.split("/").pop() || "document.pdf";
+    const cleaned = segment.split("?")[0];
+    return cleaned.endsWith(".pdf") ? cleaned : cleaned + ".pdf";
+  } catch {
+    return "document.pdf";
+  }
+}
+
+/**
+ * @param {ArrayBuffer} buffer
+ * @returns {boolean}
+ */
+function hasPdfMagic(buffer) {
+  if (buffer.byteLength < 5) return false;
+  const header = new Uint8Array(buffer.slice(0, 5));
+  return String.fromCharCode(...header).startsWith("%PDF-");
 }
 
 // ============================================
@@ -83,7 +106,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
 
   if (message.type === "PDF_PAGE_DETECTED") {
-    handlePdfPageDetected(message)
+    handlePdfPageDetected(message, sender)
       .then((result) => sendResponse(result))
       .catch((err) => sendResponse({ error: err.message }));
     return true;
@@ -93,13 +116,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     handlePdfDataReady(message, sender)
       .then((result) => sendResponse(result))
       .catch((err) => sendResponse({ error: err.message }));
-    return true;
-  }
-
-  if (message.type === "FETCH_LOCAL_FILE") {
-    fetchLocalFile(message.url)
-      .then((result) => sendResponse(result))
-      .catch((error) => sendResponse({ success: false, error: error.message }));
     return true;
   }
 
@@ -166,11 +182,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 // ============================================
 
 /**
- * Decide whether to intercept a detected PDF page.
- * Combines the status check and detection decision into a single
- * round-trip so content.js doesn't need a separate GET_HOVER_STATUS.
+ * @param {{ url: string }} message
+ * @param {chrome.runtime.MessageSender} sender
  */
-async function handlePdfPageDetected(message) {
+async function handlePdfPageDetected(message, sender) {
   const { hoverEnabled = true } =
     await chrome.storage.local.get("hoverEnabled");
   if (!hoverEnabled) {
@@ -180,36 +195,62 @@ async function handlePdfPageDetected(message) {
     bypassUrls.delete(message.url);
     return { action: "none", reason: "bypass" };
   }
-  return { action: "fetch_and_send" };
+
+  const url = message.url;
+  const isLocal = url.startsWith("file:");
+  const canDirectFetch =
+    url.startsWith("http:") || url.startsWith("https:") || isLocal;
+
+  if (!canDirectFetch) {
+    return { action: "content_fetch" };
+  }
+
+  try {
+    const response = await fetch(url);
+    if (!response.ok) return { action: "content_fetch" };
+
+    const arrayBuffer = await response.arrayBuffer();
+    if (!hasPdfMagic(arrayBuffer)) return { action: "content_fetch" };
+
+    await storePendingPdf({
+      data: arrayBuffer,
+      url: url,
+      name: extractFilename(url),
+    });
+
+    const viewerUrl =
+      chrome.runtime.getURL("index.html") + "?url=" + encodeURIComponent(url);
+    await chrome.tabs.update(sender.tab.id, { url: viewerUrl });
+
+    return { action: "done" };
+  } catch {
+    return { action: isLocal ? "file_access_denied" : "content_fetch" };
+  }
 }
 
 /**
- * Receive base64-encoded PDF from content.js, decode it to an
- * ArrayBuffer, persist in IndexedDB, and open the viewer in a new
- * tab adjacent to the source. Navigates the original tab back so
- * the user returns to the page they clicked from.
+ * @param {{ url: string, data: string }} message
+ * @param {chrome.runtime.MessageSender} sender
  */
 async function handlePdfDataReady(message, sender) {
-  const { url, data, filename } = message;
+  const { url, data } = message;
 
   const arrayBuffer = base64ToArrayBuffer(data);
   await storePendingPdf({
     data: arrayBuffer,
     url: url,
-    name: filename || extractFilename(url),
+    name: extractFilename(url),
   });
 
   const viewerUrl =
     chrome.runtime.getURL("index.html") + "?url=" + encodeURIComponent(url);
-
   await chrome.tabs.update(sender.tab.id, { url: viewerUrl });
 
   return { success: true };
 }
 
 /**
- * Persist a PDF uploaded from the extension popup into IndexedDB.
- * The popup handles navigation to the viewer separately.
+ * @param {{ data: string, name: string }} message
  */
 async function handleStoreLocalPdf(message) {
   const arrayBuffer = base64ToArrayBuffer(message.data);
@@ -221,112 +262,34 @@ async function handleStoreLocalPdf(message) {
 }
 
 /**
- * Inject a script into the active tab to grab the PDF bytes.
- * First tries fetching the page URL itself from cache. If the
- * response isn't a PDF (e.g. Wiley/Elsevier HTML wrappers), it
- * looks for an embedded iframe or embed element whose src points
- * to the actual PDF and fetches that instead.
+ * @param {{ url: string, tabId: number }} message
  */
 async function handleFetchTabAsPdf(message) {
   const { url, tabId } = message;
 
-  const [{ result }] = await chrome.scripting.executeScript({
-    target: { tabId },
-    func: async (pageUrl) => {
-      async function fetchAsPdf(targetUrl) {
-        const response = await fetch(targetUrl, {
-          credentials: "include",
-          cache: "force-cache",
-        });
-        if (!response.ok) return null;
-
-        const arrayBuffer = await response.arrayBuffer();
-        const header = new Uint8Array(arrayBuffer.slice(0, 5));
-        const magic = String.fromCharCode(...header);
-        if (!magic.startsWith("%PDF-")) return null;
-
-        const bytes = new Uint8Array(arrayBuffer);
-        let binary = "";
-        const chunkSize = 8192;
-        for (let i = 0; i < bytes.length; i += chunkSize) {
-          const chunk = bytes.subarray(
-            i,
-            Math.min(i + chunkSize, bytes.length),
-          );
-          binary += String.fromCharCode.apply(null, chunk);
-        }
-        return btoa(binary);
-      }
-
-      try {
-        // 1. Try the page URL directly (works for cached direct PDFs)
-        const direct = await fetchAsPdf(pageUrl);
-        if (direct) return { data: direct };
-
-        // 2. Look for a PDF embedded in an iframe or embed element
-        const candidates = [];
-
-        // Named PDF iframes (Wiley uses #pdf-iframe)
-        const pdfIframe = document.getElementById("pdf-iframe");
-        if (pdfIframe?.src) candidates.push(pdfIframe.src);
-
-        // Any iframe whose src path contains "pdf"
-        for (const iframe of document.querySelectorAll("iframe[src]")) {
-          if (candidates.includes(iframe.src)) continue;
-          try {
-            const path = new URL(iframe.src).pathname.toLowerCase();
-            if (path.includes("pdf")) candidates.push(iframe.src);
-          } catch { }
-        }
-
-        // Embed elements with PDF type
-        for (const embed of document.querySelectorAll(
-          'embed[type="application/pdf"]',
-        )) {
-          if (embed.src && !candidates.includes(embed.src)) {
-            candidates.push(embed.src);
-          }
-        }
-
-        for (const candidateUrl of candidates) {
-          const data = await fetchAsPdf(candidateUrl);
-          if (data) return { data };
-        }
-
-        return { error: "No PDF found on this page" };
-      } catch (e) {
-        return { error: e.message };
-      }
-    },
-    args: [url],
-  });
-
-  if (result?.error) {
-    return { success: false, error: result.error };
-  }
-
-  const arrayBuffer = base64ToArrayBuffer(result.data);
-  await storePendingPdf({
-    data: arrayBuffer,
-    url: url,
-    name: extractFilename(url),
-  });
-
-  const viewerUrl =
-    chrome.runtime.getURL("index.html") + "?url=" + encodeURIComponent(url);
-
-  await chrome.tabs.update(tabId, { url: viewerUrl });
-
-  return { success: true };
-}
-
-function extractFilename(url) {
   try {
-    const pathname = new URL(url).pathname;
-    const filename = pathname.split("/").pop() || "document.pdf";
-    return filename.endsWith(".pdf") ? filename : filename + ".pdf";
-  } catch {
-    return "document.pdf";
+    const result = await chrome.tabs.sendMessage(tabId, {
+      type: "FETCH_PDF_FROM_PAGE",
+    });
+
+    if (result?.error) {
+      return { success: false, error: result.error };
+    }
+
+    const arrayBuffer = base64ToArrayBuffer(result.data);
+    await storePendingPdf({
+      data: arrayBuffer,
+      url: url,
+      name: extractFilename(url),
+    });
+
+    const viewerUrl =
+      chrome.runtime.getURL("index.html") + "?url=" + encodeURIComponent(url);
+    await chrome.tabs.update(tabId, { url: viewerUrl });
+
+    return { success: true };
+  } catch (e) {
+    return { success: false, error: e.message };
   }
 }
 
@@ -381,23 +344,6 @@ chrome.runtime.onStartup.addListener(async () => {
 // ============================================
 // Network Fetch Helpers
 // ============================================
-
-async function fetchLocalFile(fileUrl) {
-  try {
-    const response = await fetch(fileUrl);
-    const arrayBuffer = await response.arrayBuffer();
-    const bytes = new Uint8Array(arrayBuffer);
-    let binary = "";
-    const chunkSize = 8192;
-    for (let i = 0; i < bytes.length; i += chunkSize) {
-      const chunk = bytes.subarray(i, Math.min(i + chunkSize, bytes.length));
-      binary += String.fromCharCode.apply(null, chunk);
-    }
-    return { success: true, data: btoa(binary) };
-  } catch (error) {
-    return { success: false, error: "FILE_ACCESS_DENIED" };
-  }
-}
 
 async function fetchGoogleScholar(query) {
   const searchUrl = `https://scholar.google.com/scholar?q=${encodeURIComponent(query)}&hl=en`;

@@ -20,8 +20,6 @@ document.addEventListener("DOMContentLoaded", async () => {
       enabled,
     });
 
-    // If disabling and a PDF is currently open in Hover, redirect to the
-    // original PDF URL so the browser's native reader takes over.
     if (!enabled && response?.currentPdfUrl) {
       const tabs = await chrome.tabs.query({
         active: true,
@@ -30,7 +28,6 @@ document.addEventListener("DOMContentLoaded", async () => {
       const activeTab = tabs[0];
 
       if (activeTab?.url?.includes(chrome.runtime.getURL(""))) {
-        // Redirect to the original PDF URL
         chrome.tabs.update(activeTab.id, { url: response.currentPdfUrl });
       }
     }
@@ -50,7 +47,6 @@ document.addEventListener("DOMContentLoaded", async () => {
       });
       if (!tab?.url) return;
 
-      // Skip extension pages and chrome:// URLs
       if (
         tab.url.startsWith("chrome://") ||
         tab.url.startsWith("chrome-extension://") ||
@@ -131,8 +127,10 @@ document.addEventListener("DOMContentLoaded", async () => {
   function arrayBufferToBase64(buffer) {
     const bytes = new Uint8Array(buffer);
     let binary = "";
-    for (let i = 0; i < bytes.byteLength; i++) {
-      binary += String.fromCharCode(bytes[i]);
+    const chunkSize = 8192;
+    for (let i = 0; i < bytes.length; i += chunkSize) {
+      const chunk = bytes.subarray(i, Math.min(i + chunkSize, bytes.length));
+      binary += String.fromCharCode.apply(null, chunk);
     }
     return btoa(binary);
   }

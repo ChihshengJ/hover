@@ -145,11 +145,6 @@ async function fetchPdfFromUrl(url, onProgress) {
   }
 }
 
-/**
- * Take over the content.js loading overlay so the user sees a
- * seamless transition instead of two separate loading screens.
- * @returns {boolean} Whether an existing overlay was adopted.
- */
 function adoptContentScriptOverlay() {
   const existing = document.getElementById("hover-loading-overlay");
   if (!existing) return false;
@@ -239,15 +234,6 @@ async function loadPdf(isFirstLaunch = false) {
         originalUrl = pending.url || null;
         console.log("[Main] Loading PDF from IDB:", pdfName);
       }
-
-      if (!pdfSource) {
-        const localPdf = PDFDocumentModel.getLocalPdf();
-        if (localPdf) {
-          pdfSource = localPdf.data;
-          pdfName = localPdf.name;
-          console.log("[Main] Loading local PDF:", pdfName);
-        }
-      }
     } else {
       const devUrl = getDevUrl();
       if (devUrl) {
@@ -265,18 +251,6 @@ async function loadPdf(isFirstLaunch = false) {
           pdfName = pending.name;
           originalUrl = pending.url || null;
           console.log("[Main] DEV MODE - Loading from IDB:", pdfName);
-        }
-      }
-
-      if (!pdfSource) {
-        const localPdf = PDFDocumentModel.getLocalPdf();
-        if (localPdf) {
-          pdfSource = localPdf.data;
-          pdfName = localPdf.name;
-          console.log(
-            "[Main] DEV MODE - Loading from sessionStorage:",
-            pdfName,
-          );
         }
       }
     }
@@ -308,10 +282,8 @@ async function loadPdf(isFirstLaunch = false) {
     const fileName = pdfName.replace(/\.pdf$/i, "");
     document.title = fileName + " - Hover PDF";
 
-    await PDFDocumentModel.clearLocalPdf();
     await loadingOverlay.hide();
 
-    // Yield to the renderer before starting background indexing
     await new Promise((resolve) =>
       requestAnimationFrame(() => requestAnimationFrame(resolve)),
     );
@@ -326,7 +298,6 @@ async function loadPdf(isFirstLaunch = false) {
     }
   } catch (error) {
     console.error("[Main] Error loading PDF:", error);
-    await PDFDocumentModel.clearLocalPdf();
     loadingOverlay.destroy();
     el.wd.innerHTML = `
       <div style="color: red; text-align: center; padding: 50px;">

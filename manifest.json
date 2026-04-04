@@ -1,14 +1,13 @@
 {
   "manifest_version": 3,
   "name": "Hover PDF Reader",
-  "version": "0.9.2",
+  "version": "0.9.3",
   "description": "Enhanced PDF reader for immersive academic reading experience",
   "content_security_policy": {
     "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'"
   },
   "permissions": [
     "tabs",
-    "activeTab",
     "storage"
   ],
   "host_permissions": [

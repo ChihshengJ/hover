@@ -183,8 +183,7 @@ async function loadPdf(isFirstLaunch = false) {
     const urlParams = new URLSearchParams(window.location.search);
     const intendedUrl = inExtension ? urlParams.get("url") : getDevUrl();
 
-    // ── Onboarding (first launch with a URL-based open) ──
-
+    // Onboarding (first launch with a URL-based open, otherwise onboarding will not initiate)
     if (isFirstLaunch && intendedUrl) {
       OnboardingWalkthrough.saveIntendedUrl(intendedUrl);
 
@@ -220,8 +219,7 @@ async function loadPdf(isFirstLaunch = false) {
       await OnboardingWalkthrough.markCompleted();
     }
 
-    // ── Resolve PDF source ──
-
+    // Resolve PDF source
     let pdfSource = null;
     let pdfName = "document.pdf";
     let originalUrl = null;
@@ -269,32 +267,32 @@ async function loadPdf(isFirstLaunch = false) {
       );
     }
 
-    // ── Load and initialize ──
-
+    // Load and initialize
     loadingOverlay.setProgress(0.1, "Loading document...");
     await pdfmodel.load(pdfSource, onProgress);
     loadingOverlay.setProgress(0.95, "Initializing viewer...");
 
+    // Initializing components
     const wm = new SplitWindowManager(el.wd, pdfmodel);
     await wm.initialize();
-    const fileMenu = new FileMenu(wm);
+    const fileMenu = new FileMenu(wm); // Initializing settings
 
     const fileName = pdfName.replace(/\.pdf$/i, "");
-    document.title = fileName + " - Hover PDF";
+    document.title = fileName;
 
     await loadingOverlay.hide();
-
     await new Promise((resolve) =>
       requestAnimationFrame(() => requestAnimationFrame(resolve)),
     );
 
+    // Start parsing and update components
     await pdfmodel.buildIndex();
     wm.toolbar?.navigationTree?.reinitialize();
     wm.progressBar?.buildSectionMarks();
 
     const detectedTitle = await pdfmodel.getDocumentTitle();
     if (detectedTitle) {
-      document.title = detectedTitle + " - Hover PDF";
+      document.title = detectedTitle;
     }
   } catch (error) {
     console.error("[Main] Error loading PDF:", error);

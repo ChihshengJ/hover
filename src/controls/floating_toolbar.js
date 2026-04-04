@@ -199,7 +199,7 @@ export class FloatingToolbar {
   }
 
   #setupEventListeners() {
-    // left click - only for double-click to scroll top now
+    // Left click - only for double-click to scroll top now
     this.ball.addEventListener("click", (e) => {
       if (!this.wasDragged && !this.isTreeOpen) {
         e.preventDefault();
@@ -208,7 +208,7 @@ export class FloatingToolbar {
       this.wasDragged = false;
     });
 
-    // right click for toolbar expansion
+    // Right click for toolbar expansion
     this.ball.addEventListener("contextmenu", (e) => {
       e.preventDefault();
       if (!this.isTreeOpen) {
@@ -707,9 +707,9 @@ export class FloatingToolbar {
 
     // Position indicators relative to the ball
     const wrapperRect = this.wrapper.getBoundingClientRect();
-    const rightOffset = parseInt(this.wrapper.style.right) || 35;
+    const rightOffset = parseInt(this.wrapper.style.right) || 20;
 
-    this.jumpIndicators.style.right = `${rightOffset + 38}px`;
+    this.jumpIndicators.style.right = `${rightOffset + 40}px`;
     this.jumpIndicators.style.top = `${wrapperRect.top}px`; // Center on ball
 
     // Show with animation

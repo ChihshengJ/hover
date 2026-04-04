@@ -23,3 +23,4 @@ public/pdfium.wasm
 *.njsproj
 *.sln
 *.sw?
+.claude

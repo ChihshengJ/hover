@@ -7,7 +7,7 @@ import { OnboardingWalkthrough } from "../settings/onboarding.js";
 import { Settings } from "../settings/settings.js";
 import { requestThrottle } from "./request_throttle.js";
 
-const VERSION = "0.9.2";
+const VERSION = "0.9.3";
 
 export class FileMenu {
   /**
@@ -375,7 +375,7 @@ export class FileMenu {
     }
   }
 
-  /** Called externally to sync toggle state (e.g. if keyboard shortcut triggers night mode) */
+  // Called externally to sync toggle state (e.g. if keyboard shortcut triggers night mode)
   syncNightModeToggle(isNight) {
     const checkbox = this.menuList.querySelector(
       '[data-action="night-mode"] .file-menu-toggle-input',
@@ -889,9 +889,10 @@ export class FileMenu {
 
     try {
       const info = await pdfDoc.getMetadata();
+      const parsedTitle = await pdfDoc.getDocumentTitle();
 
       this.#showMetadataModal({
-        title: info.title || "Untitled",
+        title: parsedTitle || "Unknown",
         author: info.author || "Unknown",
         subject: info.subject || "",
         keywords: info.keywords || "",

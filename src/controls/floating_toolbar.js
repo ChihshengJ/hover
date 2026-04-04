@@ -176,12 +176,17 @@ export class FloatingToolbar {
     this._tipTitle = this.tooltip.querySelector(".tool-btn-tooltip-title");
     this._tipDesc = this.tooltip.querySelector(".tool-btn-tooltip-desc");
     this._tipShowTimer = null;
+    this._tipHideTimer = null;
+    this._tipVisible = false;
 
     const showTip = (btn) => {
       if (this.wrapper.dataset.state !== "expanded") return;
       const title = btn.dataset.tipTitle;
       const desc = btn.dataset.tipDesc;
       if (!title) return;
+
+      clearTimeout(this._tipHideTimer);
+      this._tipHideTimer = null;
 
       this._tipTitle.textContent = title;
       this._tipDesc.textContent = desc;
@@ -190,14 +195,25 @@ export class FloatingToolbar {
       this.tooltip.style.top = `${rect.top + rect.height / 2}px`;
       this.tooltip.style.left = `${rect.left - 10}px`;
 
+      if (this._tipVisible) {
+        // Already showing — reposition instantly, no delay
+        return;
+      }
+
+      clearTimeout(this._tipShowTimer);
       this._tipShowTimer = setTimeout(() => {
+        this._tipVisible = true;
         this.tooltip.classList.add("visible");
       }, 300);
     };
 
     const hideTip = () => {
       clearTimeout(this._tipShowTimer);
-      this.tooltip.classList.remove("visible");
+      // Short grace period so moving between buttons doesn't flicker
+      this._tipHideTimer = setTimeout(() => {
+        this._tipVisible = false;
+        this.tooltip.classList.remove("visible");
+      }, 80);
     };
 
     for (const btn of this.wrapper.querySelectorAll(".tool-btn")) {

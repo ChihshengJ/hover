@@ -69,14 +69,10 @@ export async function initPdfiumEngine(onProgress) {
       onProgress?.({ percent: 50, phase: "initializing-pdfium" });
 
       pdfiumModule = await init({ wasmBinary });
-
       pdfiumModule.PDFiumExt_Init();
 
       onProgress?.({ percent: 70, phase: "creating-engine" });
-      // Create native executor (auto-initializes PDFium)
       nativeInstance = new PdfiumNative(pdfiumModule);
-
-      // Create orchestrator with image converter
       engineInstance = new PdfEngine(nativeInstance, {
         imageConverter: browserImageDataToBlobConverter,
       });

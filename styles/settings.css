@@ -442,6 +442,10 @@
   border: 1px solid var(--border-color);
 }
 
+.settings-toggle-row + .settings-toggle-row {
+  margin-top: 8px;
+}
+
 .settings-toggle-info {
   display: flex;
   flex-direction: column;
@@ -469,7 +473,7 @@
   align-items: center;
 }
 
-.progress-bar-toggle {
+.settings-toggle-switch input[type="checkbox"] {
   opacity: 0;
   width: 0;
   height: 0;
@@ -500,14 +504,14 @@
   transform: translateY(-50%);
 }
 
-.progress-bar-toggle:checked ~ .settings-toggle-slider {
+.settings-toggle-switch input[type="checkbox"]:checked ~ .settings-toggle-slider {
   background: #fff;
   box-shadow:
     0 0 4px rgba(255, 255, 255, 0.5),
     0 0 10px rgba(255, 255, 255, 0.2);
 }
 
-.progress-bar-toggle:checked ~ .settings-toggle-knob {
+.settings-toggle-switch input[type="checkbox"]:checked ~ .settings-toggle-knob {
   left: 38px;
   border-color: #fff;
   background: #fff;

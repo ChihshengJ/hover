@@ -8,6 +8,8 @@ import { BallEditor } from "./ball_editor.js";
 export class Settings {
   /** @type {string} */
   static PROGRESS_BAR_KEY = "hover_progress_bar_enabled";
+  /** @type {string} */
+  static AUTO_COLLAPSE_KEY = "hover_toolbar_auto_collapse";
 
   /**
    * @param {SplitWindowManager} wm
@@ -85,6 +87,37 @@ export class Settings {
     if (typeof chrome !== "undefined" && chrome.storage?.local) {
       chrome.storage.local.set({
         [Settings.PROGRESS_BAR_KEY]: enabled,
+      });
+    }
+  }
+
+  /**
+   * Check if toolbar auto-collapse is enabled.
+   * @returns {boolean}
+   */
+  static isAutoCollapseEnabled() {
+    try {
+      const val = localStorage.getItem(Settings.AUTO_COLLAPSE_KEY);
+      return val === null ? true : val === "true";
+    } catch {
+      return true;
+    }
+  }
+
+  /**
+   * Save toolbar auto-collapse state.
+   * @param {boolean} enabled
+   */
+  static setAutoCollapseEnabled(enabled) {
+    try {
+      localStorage.setItem(Settings.AUTO_COLLAPSE_KEY, String(enabled));
+    } catch (err) {
+      console.warn("[Settings] Failed to save auto-collapse setting:", err);
+    }
+
+    if (typeof chrome !== "undefined" && chrome.storage?.local) {
+      chrome.storage.local.set({
+        [Settings.AUTO_COLLAPSE_KEY]: enabled,
       });
     }
   }
@@ -249,6 +282,17 @@ export class Settings {
                 <span class="settings-toggle-knob"></span>
               </label>
             </div>
+            <div class="settings-toggle-row">
+              <div class="settings-toggle-info">
+                <span class="settings-toggle-label">Auto-collapse Toolbar</span>
+                <span class="settings-toggle-description">Automatically collapse tool buttons after a delay</span>
+              </div>
+              <label class="settings-toggle-switch">
+                <input type="checkbox" class="auto-collapse-toggle">
+                <span class="settings-toggle-slider"></span>
+                <span class="settings-toggle-knob"></span>
+              </label>
+            </div>
           </div>
 
         </div>
@@ -370,6 +414,18 @@ export class Settings {
           } else {
             this.wm.progressBar.hide();
           }
+        }
+      });
+    }
+
+    // Auto-collapse toggle
+    const collapseToggle = overlay.querySelector(".auto-collapse-toggle");
+    if (collapseToggle) {
+      collapseToggle.checked = Settings.isAutoCollapseEnabled();
+      collapseToggle.addEventListener("change", () => {
+        Settings.setAutoCollapseEnabled(collapseToggle.checked);
+        if (this.wm.toolbar) {
+          this.wm.toolbar.setAutoCollapse(collapseToggle.checked);
         }
       });
     }

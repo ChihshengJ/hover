@@ -5,6 +5,7 @@
  */
 
 import { NavigationTree } from "./navigation_tree.js";
+import { Settings } from "../settings/settings.js";
 
 export class FloatingToolbar {
   /**
@@ -31,6 +32,7 @@ export class FloatingToolbar {
     this.expandTimer = null;
     this.HIDE_DELAY = 3000;
     this.COLLAPSE_DELAY = 7000;
+    this.autoCollapse = Settings.isAutoCollapseEnabled();
 
     this.#scrollCallback = () => this.updatePageNumber();
 
@@ -286,6 +288,7 @@ export class FloatingToolbar {
   }
 
   #startExpandTimer() {
+    if (!this.autoCollapse) return;
     this.#cancelExpandTimer();
     this.expandTimer = setTimeout(() => {
       this.#collapse();
@@ -314,6 +317,20 @@ export class FloatingToolbar {
     if (!this.isHidden) return;
     this.isHidden = false;
     this.wrapper.classList.remove("hidden");
+  }
+
+  /**
+   * @param {boolean} enabled
+   */
+  setAutoCollapse(enabled) {
+    this.autoCollapse = enabled;
+    if (enabled) {
+      if (this.isExpanded) {
+        this.#startExpandTimer();
+      }
+    } else {
+      this.#cancelExpandTimer();
+    }
   }
 
   enterSplitMode() {

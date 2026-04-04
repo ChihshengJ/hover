@@ -87,17 +87,17 @@ export class FloatingToolbar {
     this.toolbarTop = document.createElement("div");
     this.toolbarTop.className = "floating-toolbar floating-toolbar-top";
     this.toolbarTop.innerHTML = `
-      <button class="tool-btn" data-action="horizontal-spread">
+      <button class="tool-btn" data-action="horizontal-spread" data-tip-title="Spread Mode" data-tip-desc="Click to cycle: single → even → odd spread">
         <div class="inner">
           <img src="/assets/book.svg" width="25" />
         </div>
       </button>
-      <button class="tool-btn" data-action="split-screen">
+      <button class="tool-btn" data-action="split-screen" data-tip-title="Split Screen" data-tip-desc="Click to toggle split-screen reading">
         <div class="inner">
           <img src="/assets/split.svg" width="25" />
         </div>
       </button>
-      <button class="tool-btn" data-action="rotate" title="Rotate clockwise (double-click to reset)">
+      <button class="tool-btn" data-action="rotate" data-tip-title="Rotate" data-tip-desc="Click to rotate 90°, double-click to reset">
         <div class="inner">
           <svg class="rotate-icon" xmlns="http://www.w3.org/2000/svg" width="24" fill="currentColor" class="bi bi-arrow-clockwise" viewBox="0 0 16 16">
             <path fill-rule="evenodd" d="M8 3a5 5 0 1 0 4.546 2.914.5.5 0 0 1 .908-.417A6 6 0 1 1 8 2z"/>
@@ -111,17 +111,17 @@ export class FloatingToolbar {
     this.toolbarBottom = document.createElement("div");
     this.toolbarBottom.className = "floating-toolbar floating-toolbar-bottom";
     this.toolbarBottom.innerHTML = `
-      <button class="tool-btn" data-action="fit-width">
+      <button class="tool-btn" data-action="fit-width" data-tip-title="Fit to View" data-tip-desc="Click to toggle fit width / fit height">
         <div class="inner">
           <img src="/assets/fit_width.svg" width="20" />
         </div>
       </button>
-      <button class="tool-btn" data-action="zoom-in">
+      <button class="tool-btn" data-action="zoom-in" data-tip-title="Zoom In" data-tip-desc="Increase zoom level">
         <div class="inner">
             <img src="/assets/plus.svg" width="24" />
         </div>
       </button>
-      <button class="tool-btn" data-action="zoom-out">
+      <button class="tool-btn" data-action="zoom-out" data-tip-title="Zoom Out" data-tip-desc="Decrease zoom level">
         <div class="inner">
             <img src="/assets/minus.svg" width="24" />
         </div>
@@ -134,6 +134,8 @@ export class FloatingToolbar {
 
     document.body.appendChild(this.wrapper);
     this.wrapper.dataset.state = "collapsed";
+
+    this.#createTooltip();
 
     const svgFilter = document.createElementNS(
       "http://www.w3.org/2000/svg",
@@ -157,6 +159,51 @@ export class FloatingToolbar {
       </defs>
     `;
     document.body.appendChild(svgFilter);
+  }
+
+  #createTooltip() {
+    // Only enable on devices with a real pointer (no touch-only)
+    if (!window.matchMedia("(hover: hover)").matches) return;
+
+    this.tooltip = document.createElement("div");
+    this.tooltip.className = "tool-btn-tooltip";
+    this.tooltip.innerHTML = `
+      <div class="tool-btn-tooltip-title"></div>
+      <div class="tool-btn-tooltip-desc"></div>
+    `;
+    document.body.appendChild(this.tooltip);
+
+    this._tipTitle = this.tooltip.querySelector(".tool-btn-tooltip-title");
+    this._tipDesc = this.tooltip.querySelector(".tool-btn-tooltip-desc");
+    this._tipShowTimer = null;
+
+    const showTip = (btn) => {
+      if (this.wrapper.dataset.state !== "expanded") return;
+      const title = btn.dataset.tipTitle;
+      const desc = btn.dataset.tipDesc;
+      if (!title) return;
+
+      this._tipTitle.textContent = title;
+      this._tipDesc.textContent = desc;
+
+      const rect = btn.getBoundingClientRect();
+      this.tooltip.style.top = `${rect.top + rect.height / 2}px`;
+      this.tooltip.style.left = `${rect.left - 10}px`;
+
+      this._tipShowTimer = setTimeout(() => {
+        this.tooltip.classList.add("visible");
+      }, 300);
+    };
+
+    const hideTip = () => {
+      clearTimeout(this._tipShowTimer);
+      this.tooltip.classList.remove("visible");
+    };
+
+    for (const btn of this.wrapper.querySelectorAll(".tool-btn")) {
+      btn.addEventListener("mouseenter", () => showTip(btn));
+      btn.addEventListener("mouseleave", hideTip);
+    }
   }
 
   #animateButtons(state) {

@@ -260,3 +260,48 @@
   color: white;
   transform: translateX(-50%) scale(1.2);
 }
+
+/* ================================
+   Toolbar Button Tooltips
+   ================================ */
+
+.tool-btn-tooltip {
+  position: fixed;
+  z-index: calc(var(--z-modal) + 1);
+  transform: translate(-100%, -50%) translateX(4px);
+  white-space: nowrap;
+  pointer-events: none;
+
+  background: rgba(0, 0, 0, 0.85);
+  backdrop-filter: blur(12px);
+  border-radius: 8px;
+  padding: 8px 12px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+
+  opacity: 0;
+  transition:
+    opacity 0.2s ease,
+    transform 0.2s ease;
+}
+
+.tool-btn-tooltip.visible {
+  opacity: 1;
+  transform: translate(-100%, -50%);
+}
+
+.tool-btn-tooltip-title {
+  font-family: "DM Sans", -apple-system, BlinkMacSystemFont, sans-serif;
+  font-size: 13px;
+  font-weight: 600;
+  color: #ffffff;
+  line-height: 1.3;
+}
+
+.tool-btn-tooltip-desc {
+  font-family: "DM Sans", -apple-system, BlinkMacSystemFont, sans-serif;
+  font-size: 11px;
+  font-weight: 400;
+  color: rgba(255, 255, 255, 0.65);
+  line-height: 1.4;
+  margin-top: 2px;
+}

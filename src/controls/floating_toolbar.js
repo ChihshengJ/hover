@@ -365,7 +365,7 @@ export class FloatingToolbar {
   }
 
   #collapse() {
-    if (!this.isExpanded) return;
+    if (!this.isExpanded || !this.autoCollapse) return;
     this.isExpanded = false;
     this.#animateButtons("collapsing");
 

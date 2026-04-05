@@ -225,6 +225,16 @@ export class ActionButton {
     requestAnimationFrame(waitForAnimation);
   }
 
+  // ╍╍╍ Active State ╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍
+
+  get container() {
+    return this.#container;
+  }
+
+  setToolActive(active) {
+    this.#mainBtn.classList.toggle("action-btn-active", active);
+  }
+
   // ╍╍╍ Cleanup ╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍
 
   destroy() {

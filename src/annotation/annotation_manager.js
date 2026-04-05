@@ -2,6 +2,7 @@ import { AnnotationToolbar } from "./annotation_toolbar.js";
 import { CommentInput } from "./comment_input.js";
 import { CommentDisplay } from "./comment_display.js";
 import { AnnotationSVGLayer } from "./annotation_svg_layer.js";
+import { DrawingSelectionManager } from "./drawing/drawing_selection.js";
 
 /**
  * AnnotationManager - Coordinates annotation UI for a ViewerPane
@@ -29,6 +30,9 @@ export class AnnotationManager {
   /** @type {AnnotationSVGLayer} */
   #svgLayer = null;
 
+  /** @type {DrawingSelectionManager} */
+  #drawingSelection = null;
+
   /** @type {string|null} */
   #selectedAnnotationId = null;
 
@@ -50,6 +54,7 @@ export class AnnotationManager {
     this.#commentInput = CommentInput.getInstance();
     this.#commentDisplay = new CommentDisplay(pane);
     this.#svgLayer = new AnnotationSVGLayer(pane);
+    this.#drawingSelection = new DrawingSelectionManager(pane);
 
     this.#setupEventListeners();
     this.#setupPaneCallbacks();
@@ -136,6 +141,7 @@ export class AnnotationManager {
 
   #checkForNewSelection() {
     if (this.#pane.handMode) return;
+    if (this.#pane.scroller?.classList.contains("drawing-mode-active")) return;
     if (!this.#hasActiveSelection()) return;
 
     const selectionData = this.#pane.textSelectionManager.getSelection();
@@ -289,6 +295,12 @@ export class AnnotationManager {
     const annotation = this.#pane.document.getAnnotation(annotationId);
     if (!annotation) return;
 
+    // Drawings use their own selection manager
+    if (annotation.type === "drawing") {
+      this.#drawingSelection.select(annotationId, annotation);
+      return;
+    }
+
     const rect = this.#getAnnotationRect(annotationId);
     if (!rect) return;
 
@@ -413,6 +425,7 @@ export class AnnotationManager {
     this.#abortController?.abort();
     this.#svgLayer?.destroy();
     this.#commentDisplay?.destroy();
+    this.#drawingSelection?.destroy();
     this.#toolbar?.hide();
     this.#commentInput?.hide();
   }

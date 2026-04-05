@@ -9,6 +9,7 @@ import { GestureDetector } from "./touch_controls.js";
 import { SearchController } from "./search/search_controller.js";
 import { ActionButton } from "./action_button.js";
 import { RegionSelectController } from "../tools/region_select.js";
+import { DrawingController } from "../tools/drawing_controller.js";
 
 export class WindowControls {
   /**
@@ -22,7 +23,10 @@ export class WindowControls {
     this.searchController = new SearchController(wm);
     /** @type {RegionSelectController} */
     this.regionSelectController = new RegionSelectController(wm);
+    /** @type {DrawingController} */
+    this.drawingController = null; // initialized after action button
     this.#createDOM();
+    this.drawingController = new DrawingController(wm, this.actionButton);
     this.#setupKeyboardShortcuts();
     this.#bindGestures();
     this.MAX_RENDER_SCALE = 7;
@@ -55,7 +59,14 @@ export class WindowControls {
         icon: `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
           <path d="M12.146.146a.5.5 0 0 1 .708 0l3 3a.5.5 0 0 1 0 .708l-10 10a.5.5 0 0 1-.168.11l-5 2a.5.5 0 0 1-.65-.65l2-5a.5.5 0 0 1 .11-.168zM11.207 2.5 13.5 4.793 14.793 3.5 12.5 1.207zm1.586 3L10.5 3.207 4 9.707V10h.5a.5.5 0 0 1 .5.5v.5h.5a.5.5 0 0 1 .5.5v.5h.293z"/>
         </svg>`,
-        activate: () => {},
+        activate: () => {
+          if (this.drawingController?.isActive) {
+            this.drawingController.deactivate();
+          } else {
+            this.drawingController?.activate();
+          }
+        },
+        deactivate: () => this.drawingController?.deactivate(),
       },
       {
         id: "crop",
@@ -95,6 +106,13 @@ export class WindowControls {
     });
 
     document.addEventListener("keydown", (e) => {
+      // Handle Escape to close drawing mode
+      if (e.key === "Escape" && this.drawingController?.isActive) {
+        e.preventDefault();
+        this.drawingController.deactivate();
+        return;
+      }
+
       // Handle Escape to close search (even when in search input)
       if (e.key === "Escape" && this.searchController?.isActive) {
         e.preventDefault();
@@ -353,6 +371,7 @@ export class WindowControls {
     }
     this.gestureDetectors.clear();
     this.regionSelectController?.deactivate();
+    this.drawingController?.deactivate();
     this.searchController?.destroy();
     this.actionButton?.destroy();
   }

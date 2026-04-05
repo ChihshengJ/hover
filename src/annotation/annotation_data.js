@@ -1,4 +1,5 @@
 const COLOR_NAME_TO_HEX = {
+  black: "#000000",
   yellow: "#FFB300",
   red: "#E53935",
   blue: "#1E88E5",
@@ -6,6 +7,7 @@ const COLOR_NAME_TO_HEX = {
 };
 
 const HEX_TO_COLOR_NAME = {
+  "#000000": "black",
   "#FFB300": "yellow",
   "#E53935": "red",
   "#1E88E5": "blue",
@@ -53,6 +55,7 @@ const PdfAnnotationSubtype = {
   SQUIGGLY: 11,
   STRIKEOUT: 12,
   TEXT: 1,
+  INK: 15,
 };
 
 export class AnnotationStore {
@@ -125,6 +128,18 @@ export class AnnotationStore {
               this.#addToPageIndex(converted.id, pageNum);
               this.#annotationIdToPdfId.set(converted.id, annot.id);
             }
+          } else if (annot.type === PdfAnnotationSubtype.INK) {
+            const converted = this.#convertInkAnnotation(
+              annot,
+              pageNum,
+              pageWidth,
+              pageHeight,
+            );
+            if (converted) {
+              this.annotations.set(converted.id, converted);
+              this.#addToPageIndex(converted.id, pageNum);
+              this.#annotationIdToPdfId.set(converted.id, annot.id);
+            }
           } else if (annot.type === PdfAnnotationSubtype.TEXT) {
             textAnnotations.push({
               pdfAnnot: annot,
@@ -161,6 +176,8 @@ export class AnnotationStore {
       type: annotationData.type,
       color: annotationData.color,
       pageRanges: annotationData.pageRanges,
+      strokes: annotationData.strokes || null,
+      rotation: annotationData.rotation ?? 0,
       comment: annotationData.comment || null,
       createdAt: now,
       updatedAt: now,
@@ -185,6 +202,9 @@ export class AnnotationStore {
     if (updates.color !== undefined) annotation.color = updates.color;
     if (updates.type !== undefined) annotation.type = updates.type;
     if (updates.comment !== undefined) annotation.comment = updates.comment;
+    if (updates.strokes !== undefined) annotation.strokes = updates.strokes;
+    if (updates.pageRanges !== undefined) annotation.pageRanges = updates.pageRanges;
+    if (updates.rotation !== undefined) annotation.rotation = updates.rotation;
     annotation.updatedAt = new Date().toISOString();
 
     const typeChanged = oldType !== annotation.type;
@@ -402,6 +422,11 @@ export class AnnotationStore {
   async #createInEngine(annotation) {
     if (!this.#pdfDoc || !this.#engine) return;
 
+    if (annotation.type === "drawing") {
+      await this.#createDrawingInEngine(annotation);
+      return;
+    }
+
     for (const pr of annotation.pageRanges) {
       const page = this.#doc.getPage(pr.pageNumber);
       if (!page) continue;
@@ -496,6 +521,12 @@ export class AnnotationStore {
 
   async #updateInEngine(annotation, oldComment, typeChanged = false) {
     if (!this.#pdfDoc || !this.#engine) return;
+
+    if (annotation.type === "drawing") {
+      await this.#updateDrawingInEngine(annotation);
+      return;
+    }
+
     if (typeChanged) {
       await this.#deleteFromEngine(annotation);
       await this.#createInEngine(annotation);
@@ -692,6 +723,190 @@ export class AnnotationStore {
       }
     } finally {
       pdfium.FPDF_ClosePage(pagePtr);
+    }
+  }
+
+  // ============================================
+  // Drawing / INK Annotation Support
+  // ============================================
+
+  #convertInkAnnotation(annot, pageNum, pageWidth, pageHeight) {
+    if (!annot.inkList || annot.inkList.length === 0) return null;
+
+    const strokes = annot.inkList.map((ink) => ({
+      points: (ink.points || []).map((p) => ({
+        x: p.x / pageWidth,
+        y: p.y / pageHeight,
+      })),
+      strokeWidth: (annot.strokeWidth || 2) / pageWidth,
+    }));
+
+    // Compute bounding rect from all stroke points
+    let minX = Infinity, minY = Infinity;
+    let maxX = -Infinity, maxY = -Infinity;
+    for (const stroke of strokes) {
+      for (const p of stroke.points) {
+        minX = Math.min(minX, p.x);
+        minY = Math.min(minY, p.y);
+        maxX = Math.max(maxX, p.x);
+        maxY = Math.max(maxY, p.y);
+      }
+    }
+
+    if (!isFinite(minX)) return null;
+
+    const colorHex = annot.strokeColor || annot.color;
+
+    return {
+      id: annot.id || crypto.randomUUID(),
+      type: "drawing",
+      color: hexToColorName(colorHex),
+      pageRanges: [{
+        pageNumber: pageNum,
+        rects: [{
+          leftRatio: minX,
+          topRatio: minY,
+          widthRatio: maxX - minX,
+          heightRatio: maxY - minY,
+        }],
+        text: "",
+      }],
+      strokes,
+      rotation: annot.custom?.rotation ?? 0,
+      comment: annot.contents?.trim() || null,
+      createdAt: annot.created?.toISOString() || new Date().toISOString(),
+      updatedAt: annot.modified?.toISOString() || new Date().toISOString(),
+    };
+  }
+
+  async #createDrawingInEngine(annotation) {
+    if (!annotation.strokes || annotation.strokes.length === 0) return;
+
+    const pr = annotation.pageRanges[0];
+    if (!pr) return;
+
+    const page = this.#doc.getPage(pr.pageNumber);
+    if (!page) return;
+
+    const { width: pw, height: ph } = page.size;
+
+    const inkList = annotation.strokes.map((stroke) => ({
+      points: stroke.points.map((p) => ({
+        x: p.x * pw,
+        y: p.y * ph,
+      })),
+    }));
+
+    // Compute bounding rect in PDF units
+    let minX = Infinity, minY = Infinity;
+    let maxX = -Infinity, maxY = -Infinity;
+    for (const ink of inkList) {
+      for (const p of ink.points) {
+        minX = Math.min(minX, p.x);
+        minY = Math.min(minY, p.y);
+        maxX = Math.max(maxX, p.x);
+        maxY = Math.max(maxY, p.y);
+      }
+    }
+
+    const strokeWidthPdf = (annotation.strokes[0]?.strokeWidth || 0.003) * pw;
+
+    const pdfAnnotation = {
+      id: annotation.id,
+      type: PdfAnnotationSubtype.INK,
+      pageIndex: pr.pageNumber - 1,
+      rect: {
+        origin: { x: minX - strokeWidthPdf, y: minY - strokeWidthPdf },
+        size: {
+          width: maxX - minX + strokeWidthPdf * 2,
+          height: maxY - minY + strokeWidthPdf * 2,
+        },
+      },
+      inkList,
+      strokeColor: colorNameToHex(annotation.color),
+      opacity: 1.0,
+      strokeWidth: strokeWidthPdf,
+      custom: {
+        colorName: annotation.color,
+        annotationType: "drawing",
+        rotation: annotation.rotation || 0,
+      },
+    };
+
+    try {
+      const resultId = await this.#engine
+        .createPageAnnotation(this.#pdfDoc, page, pdfAnnotation)
+        .toPromise();
+
+      this.#annotationIdToPdfId.set(
+        annotation.id,
+        resultId && resultId !== annotation.id ? resultId : annotation.id,
+      );
+    } catch (error) {
+      console.warn("[AnnotationStore] Error creating drawing in engine:", error);
+    }
+  }
+
+  async #updateDrawingInEngine(annotation) {
+    if (!annotation.strokes || annotation.strokes.length === 0) return;
+
+    const pdfId = this.#annotationIdToPdfId.get(annotation.id);
+    const pr = annotation.pageRanges[0];
+    if (!pr) return;
+
+    const page = this.#doc.getPage(pr.pageNumber);
+    if (!page) return;
+
+    const { width: pw, height: ph } = page.size;
+
+    const inkList = annotation.strokes.map((stroke) => ({
+      points: stroke.points.map((p) => ({
+        x: p.x * pw,
+        y: p.y * ph,
+      })),
+    }));
+
+    let minX = Infinity, minY = Infinity;
+    let maxX = -Infinity, maxY = -Infinity;
+    for (const ink of inkList) {
+      for (const p of ink.points) {
+        minX = Math.min(minX, p.x);
+        minY = Math.min(minY, p.y);
+        maxX = Math.max(maxX, p.x);
+        maxY = Math.max(maxY, p.y);
+      }
+    }
+
+    const strokeWidthPdf = (annotation.strokes[0]?.strokeWidth || 0.003) * pw;
+
+    const pdfAnnotation = {
+      id: pdfId || annotation.id,
+      type: PdfAnnotationSubtype.INK,
+      pageIndex: pr.pageNumber - 1,
+      rect: {
+        origin: { x: minX - strokeWidthPdf, y: minY - strokeWidthPdf },
+        size: {
+          width: maxX - minX + strokeWidthPdf * 2,
+          height: maxY - minY + strokeWidthPdf * 2,
+        },
+      },
+      inkList,
+      strokeColor: colorNameToHex(annotation.color),
+      opacity: 1.0,
+      strokeWidth: strokeWidthPdf,
+      custom: {
+        colorName: annotation.color,
+        annotationType: "drawing",
+        rotation: annotation.rotation || 0,
+      },
+    };
+
+    try {
+      await this.#engine
+        .updatePageAnnotation(this.#pdfDoc, page, pdfAnnotation)
+        .toPromise();
+    } catch (error) {
+      console.warn("[AnnotationStore] Error updating drawing in engine:", error);
     }
   }
 

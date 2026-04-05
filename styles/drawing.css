@@ -1,0 +1,310 @@
+/* ===========================================
+   Drawing Mode - Active State
+   =========================================== */
+
+.pane-scroll-area.drawing-mode-active {
+  cursor: crosshair;
+  user-select: none;
+}
+
+.pane-scroll-area.drawing-mode-active .textLayer,
+.pane-scroll-area.drawing-mode-active .textLayer * {
+  user-select: none !important;
+  pointer-events: none !important;
+  cursor: crosshair !important;
+}
+
+.pane-scroll-area.drawing-mode-active .annotationLayer {
+  pointer-events: none;
+}
+
+.pane-scroll-area.drawing-mode-active .annotation-svg-layer {
+  pointer-events: none;
+}
+
+/* Allow clicking on existing drawings even during drawing mode */
+.pane-scroll-area.drawing-mode-active
+  .annotation-svg-layer
+  .annotation-mark.drawing {
+  pointer-events: auto !important;
+}
+
+/* ===========================================
+   Action Button - Active State
+   =========================================== */
+
+.action-btn.action-btn-active {
+  color: white;
+}
+
+/* ===========================================
+   Drawing Canvas Overlay
+   =========================================== */
+
+.drawing-canvas-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 100;
+  pointer-events: none;
+}
+
+/* ===========================================
+   Drawing Toolbar
+   =========================================== */
+
+.drawing-toolbar {
+  position: fixed;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 0 6px;
+  height: 34px;
+  background: rgba(255, 255, 255, 0.2);
+  backdrop-filter: blur(8px);
+  border-radius: 17px;
+  box-shadow:
+    inset 1px 1px 5px 1px rgba(255, 255, 255, 0.8),
+    inset -2px -2px 3px 2px rgba(255, 255, 255, 0.2),
+    0 4px 20px rgba(0, 0, 0, 0.3),
+    0 2px 4px 5px rgba(0, 0, 0, 0.1);
+  z-index: var(--z-dropdown);
+  opacity: 0;
+  transform: translateX(10px);
+  transition:
+    opacity var(--transition-fast),
+    transform var(--transition-fast);
+  pointer-events: none;
+}
+
+.drawing-toolbar.visible {
+  opacity: 1;
+  transform: translateX(0);
+  pointer-events: auto;
+}
+
+.drawing-toolbar-colors,
+.drawing-toolbar-widths {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px;
+}
+
+.drawing-toolbar-divider {
+  width: 2px;
+  height: 20px;
+  border-radius: 3px;
+  background: rgba(50, 50, 50, 0.2);
+  margin: 0 2px;
+}
+
+/* ─── Color Buttons ─── */
+
+.drawing-color-btn {
+  width: 28px;
+  height: 28px;
+  border: none;
+  background: transparent;
+  border-radius: 50%;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition:
+    transform var(--transition-fast),
+    background-color var(--transition-fast);
+}
+
+.drawing-color-btn:hover {
+  transform: scale(1.12);
+}
+
+.drawing-color-btn.active .drawing-color-circle {
+  outline: white solid 2px;
+  box-shadow: 1px 2px 3px 2px var(--bg-active);
+}
+
+.drawing-color-circle {
+  width: 18px;
+  height: 16px;
+  border-radius: 50%;
+  box-shadow: 1px 1px 3px rgba(0, 0, 0, 0.2);
+  transition:
+    transform var(--transition-fast),
+    outline var(--transition-fast),
+    box-shadow var(--transition-fast);
+}
+
+.drawing-color-circle.black {
+  background: linear-gradient(135deg, #555 0%, #000 100%);
+}
+
+.drawing-color-circle.yellow {
+  background: linear-gradient(135deg, #ffd54f 0%, #ffb300 100%);
+}
+
+.drawing-color-circle.red {
+  background: linear-gradient(135deg, #ef5350 0%, #e53935 100%);
+}
+
+.drawing-color-circle.blue {
+  background: linear-gradient(135deg, #42a5f5 0%, #1e88e5 100%);
+}
+
+.drawing-color-circle.green {
+  background: linear-gradient(135deg, #66bb6a 0%, #43a047 100%);
+}
+
+/* ─── Width Buttons ─── */
+
+.drawing-width-btn {
+  width: 28px;
+  height: 28px;
+  border: none;
+  background: transparent;
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all var(--transition-fast);
+}
+
+.drawing-width-btn:hover {
+  background: rgba(50, 50, 50, 0.1);
+}
+
+.drawing-width-btn.active {
+  background: rgba(50, 50, 50, 0.15);
+  box-shadow: var(--shadow-inset-light);
+}
+
+.drawing-width-btn svg {
+  color: rgba(50, 50, 50, 0.7);
+  transition: color var(--transition-fast);
+}
+
+.drawing-width-btn:hover svg {
+  color: rgba(50, 50, 50, 0.9);
+}
+
+.drawing-width-btn.active svg {
+  color: white;
+}
+
+/* ===========================================
+   Drawing Bounding Box (Selection)
+   =========================================== */
+
+.drawing-bounding-box {
+  position: absolute;
+  border: 2px dashed currentColor;
+  pointer-events: auto;
+  cursor: move;
+  z-index: 65;
+  box-sizing: border-box;
+}
+
+.drawing-bbox-controls {
+  position: absolute;
+  top: -36px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 4px;
+  background: rgba(255, 255, 255, 0.2);
+  backdrop-filter: blur(8px);
+  border-radius: 8px;
+  padding: 4px;
+  box-shadow:
+    inset 1px 1px 4px rgba(255, 255, 255, 0.6),
+    0 2px 8px rgba(0, 0, 0, 0.2);
+}
+
+.drawing-bbox-btn {
+  width: 26px;
+  height: 26px;
+  border: none;
+  background: transparent;
+  border-radius: 6px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: rgba(50, 50, 50, 0.7);
+  transition: all var(--transition-fast);
+}
+
+.drawing-bbox-btn:hover {
+  background: rgba(50, 50, 50, 0.1);
+  color: rgba(50, 50, 50, 0.9);
+}
+
+.drawing-bbox-delete:hover {
+  background: rgba(239, 83, 80, 0.3);
+  color: #e53935;
+}
+
+.drawing-bbox-rotate {
+  cursor: grab;
+}
+
+.drawing-bbox-rotate:active {
+  cursor: grabbing;
+}
+
+/* ─── Resize Handle ─── */
+
+.drawing-bbox-resize-handle {
+  position: absolute;
+  bottom: -5px;
+  right: -5px;
+  width: 12px;
+  height: 12px;
+  background: rgba(255, 255, 255, 0.8);
+  border: 2px solid currentColor;
+  border-radius: 3px;
+  cursor: nwse-resize;
+  z-index: 1;
+}
+
+.drawing-bbox-resize-handle:hover {
+  background: white;
+}
+
+/* ===========================================
+   SVG Drawing Marks
+   =========================================== */
+
+.annotation-mark.drawing {
+  fill: none;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  pointer-events: auto;
+  cursor: pointer;
+}
+
+/* Hit-area rect: override fill:none from .annotation-mark.drawing */
+.annotation-mark.drawing-hit-area {
+  fill: transparent !important;
+  pointer-events: all !important;
+}
+
+/* ===========================================
+   Black Color Theme (for annotations)
+   =========================================== */
+
+[data-color="black"] {
+  --anno-primary: #555;
+  --anno-secondary: #000;
+  --anno-fill: rgba(0, 0, 0, 0.8);
+  --anno-fill-hover: rgba(0, 0, 0, 0.9);
+  --anno-fill-selected: rgba(0, 0, 0, 1);
+  --anno-shadow: rgba(0, 0, 0, 0.4);
+  --anno-bg: rgba(230, 230, 230, 0.8);
+  --anno-stroke: #000;
+  --anno-text: #fff;
+  --anno-underline: rgba(0, 0, 0, 0.85);
+  --anno-underline-hover: rgba(0, 0, 0, 1);
+}

@@ -1,3 +1,5 @@
+import { renderDrawingAnnotation } from "./drawing/drawing_svg_renderer.js";
+
 export class AnnotationSVGLayer {
   /** @type {ViewerPane} */
   #pane = null;
@@ -82,6 +84,16 @@ export class AnnotationSVGLayer {
    */
   #renderAnnotation(annotation) {
     const ns = "http://www.w3.org/2000/svg";
+
+    if (annotation.type === "drawing") {
+      const group = renderDrawingAnnotation(annotation, this.#pane);
+      if (group) {
+        this.#attachEvents(group, annotation.id);
+        this.#svg.appendChild(group);
+        this.#annotationGroups.set(annotation.id, group);
+      }
+      return;
+    }
 
     const group = document.createElementNS(ns, "g");
     group.classList.add("annotation-group");

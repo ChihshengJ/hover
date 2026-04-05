@@ -371,6 +371,17 @@ body {
   background-color: rgba(86, 242, 70, 0.15);
 }
 
+.image-overlay-rect {
+  display: block;
+  background-color: transparent;
+  transition: box-shadow var(--transition-normal);
+  border-radius: 2px;
+}
+
+.image-overlay-rect:hover {
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.28), 0 2px 6px rgba(0, 0, 0, 0.18);
+}
+
 /* ===========================================
    Horizontal spread
    =========================================== */

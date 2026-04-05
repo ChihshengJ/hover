@@ -16,6 +16,7 @@ import "../styles/progress_bar.css";
 import "../styles/file_menu.css";
 import "../styles/search.css";
 import "../styles/loading_overlay.css";
+import "../styles/image_modal.css";
 import "../styles/onboarding.css";
 import "../styles/settings.css";
 import "../styles/color_settings.css";

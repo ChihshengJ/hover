@@ -17,6 +17,7 @@ import {
   matchCitationToReference,
 } from "./data/reference_builder.js";
 import { PdfiumDocumentFactory } from "./data/text_extractor.js";
+import { PdfiumImageExtractor } from "./data/image_extractor.js";
 import { createInlineExtractor } from "./data/inline_extractor.js";
 import { createCitationBuilder } from "./data/citation_builder.js";
 import { createCrossReferenceBuilder } from "./data/cross_reference_builder.js";
@@ -49,6 +50,8 @@ export class PDFDocumentModel {
     this.crossRefsByPage = new Map();
     this.crossRefTargets = new Map();
     this.urlsByPage = new Map();
+    /** @type {Map<number, import('./data/image_extractor.js').ImageObjectInfo[]>} */
+    this.imagesByPage = new Map();
 
     /** @type {Array<{id: string, title: string, pageIndex: number, left: number, top: number, children: Array}>} */
     this.outline = [];
@@ -65,6 +68,8 @@ export class PDFDocumentModel {
     this.lowLevelHandle = null;
     /** @type {import('./data/text_extractor.js').PdfiumTextExtractor|null} */
     this.textExtractor = null;
+    /** @type {import('./data/image_extractor.js').PdfiumImageExtractor|null} */
+    this.imageExtractor = null;
     /** @type {'pending'|'running'|'complete'} */
     this.indexingState = "pending";
   }
@@ -153,6 +158,10 @@ export class PDFDocumentModel {
 
       this.detectedMetadata = detectDocumentMetadata(this.textIndex);
 
+      if (this.imageExtractor && this.lowLevelHandle) {
+        this.#scanImages();
+      }
+
       reportProgress(50, "building outline");
       await this.#buildOutline();
 
@@ -193,6 +202,7 @@ export class PDFDocumentModel {
       const factory = new PdfiumDocumentFactory(pdfiumModule);
       this.lowLevelHandle = factory.loadFromBuffer(this.pdfData);
       this.textExtractor = this.lowLevelHandle.extractor;
+      this.imageExtractor = new PdfiumImageExtractor(pdfiumModule);
     } catch (error) {
       console.error("[Doc] Error setting up low-level access:", error);
     }
@@ -600,6 +610,24 @@ export class PDFDocumentModel {
   }
 
   // ============================================================================
+  // Image Extraction
+  // ============================================================================
+
+  #scanImages() {
+    const docPtr = this.lowLevelHandle.docPtr;
+    for (let i = 0; i < this.numPages; i++) {
+      const { images } = this.imageExtractor.getPageImageInfos(docPtr, i);
+      if (images.length > 0) {
+        this.imagesByPage.set(i + 1, images);
+      }
+    }
+  }
+
+  getPageImages(pageNumber) {
+    return this.imagesByPage?.get(pageNumber) || [];
+  }
+
+  // ============================================================================
   // Cleanup
   // ============================================================================
 
@@ -608,6 +636,7 @@ export class PDFDocumentModel {
       this.lowLevelHandle.close();
       this.lowLevelHandle = null;
       this.textExtractor = null;
+      this.imageExtractor = null;
     }
 
     if (this.pdfDoc && this.engine) {
@@ -630,6 +659,8 @@ export class PDFDocumentModel {
     this.crossRefTargets = null;
     this.urlsByPage?.clear();
     this.urlsByPage = null;
+    this.imagesByPage?.clear();
+    this.imagesByPage = null;
     this.textIndex?.destroy();
     this.textIndex = null;
   }

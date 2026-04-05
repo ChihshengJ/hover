@@ -1,4 +1,5 @@
 import { CitationPopup } from "./controls/citation_popup.js";
+import { getSharedImageModal } from "./controls/image_modal.js";
 import { CitationFlags } from "./data/lexicon.js";
 
 let sharedPopup = null;
@@ -119,6 +120,7 @@ export class PageView {
       const textScale = cssWidth / pageWidth;
 
       this.annotationLayer.innerHTML = "";
+      this.#renderImageOverlays(textScale);
       this.#renderUrlLinks(page, textScale, cssWidth, cssHeight);
       this.#renderCitationOverlays(page, textScale, cssWidth, cssHeight);
       this.#renderCrossRefOverlays(page, textScale, cssWidth, cssHeight);
@@ -307,6 +309,37 @@ export class PageView {
   }
 
   // ============================================
+  // Image Overlays
+  // ============================================
+
+  #renderImageOverlays(scale) {
+    const images = this.doc.getPageImages(this.pageNumber);
+    if (!images || images.length === 0) return;
+
+    const fragment = document.createDocumentFragment();
+
+    for (const img of images) {
+      const r = img.screenRect;
+      if (r.width < 1 || r.height < 1) continue;
+      const el = document.createElement("div");
+      el.className = "image-overlay-rect";
+      el.style.cssText = `
+        position: absolute;
+        left: ${(r.x * scale).toFixed(2)}px;
+        top: ${(r.y * scale).toFixed(2)}px;
+        width: ${(r.width * scale).toFixed(2)}px;
+        height: ${(r.height * scale).toFixed(2)}px;
+        pointer-events: auto;
+        cursor: pointer;
+      `;
+      el._imageInfo = img;
+      fragment.appendChild(el);
+    }
+
+    this.annotationLayer.appendChild(fragment);
+  }
+
+  // ============================================
   // Citation Overlays
   // ============================================
 
@@ -463,6 +496,7 @@ export class PageView {
     const textScale = cssWidth / page.size.width;
 
     this.annotationLayer.innerHTML = "";
+    this.#renderImageOverlays(textScale);
     this.#renderUrlLinks(page, textScale, cssWidth, cssHeight);
     this.#renderCitationOverlays(page, textScale, cssWidth, cssHeight);
     this.#renderCrossRefOverlays(page, textScale, cssWidth, cssHeight);
@@ -531,6 +565,13 @@ export class PageView {
       if (refRect) {
         e.preventDefault();
         this.#handleCrossRefClick(refRect);
+        return;
+      }
+
+      const imgRect = e.target.closest(".image-overlay-rect");
+      if (imgRect) {
+        e.preventDefault();
+        getSharedImageModal().show(imgRect._imageInfo);
       }
     });
 

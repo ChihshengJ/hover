@@ -20,6 +20,7 @@ import "../styles/image_modal.css";
 import "../styles/onboarding.css";
 import "../styles/settings.css";
 import "../styles/color_settings.css";
+import "../styles/action_button.css";
 
 const el = {
   wd: document.getElementById("window-container"),

@@ -4,6 +4,7 @@
 
 import { WallpaperManager } from "./wallpaper.js";
 import { BallEditor } from "./ball_editor.js";
+import { ActionButton } from "../controls/action_button.js";
 
 export class Settings {
   /** @type {string} */
@@ -293,6 +294,18 @@ export class Settings {
                 <span class="settings-toggle-knob"></span>
               </label>
             </div>
+            <div class="settings-select-row">
+              <div class="settings-toggle-info">
+                <span class="settings-toggle-label">Default Action</span>
+                <span class="settings-toggle-description">First tool shown in the action button</span>
+              </div>
+              <select class="settings-select default-tool-select">
+                <option value="search">Search</option>
+                <option value="drawing">Drawing</option>
+                <option value="crop">Crop</option>
+                <option value="translation">Translation</option>
+              </select>
+            </div>
           </div>
 
         </div>
@@ -427,6 +440,15 @@ export class Settings {
         if (this.wm.toolbar) {
           this.wm.toolbar.setAutoCollapse(collapseToggle.checked);
         }
+      });
+    }
+
+    // Default tool select
+    const defaultToolSelect = overlay.querySelector(".default-tool-select");
+    if (defaultToolSelect) {
+      defaultToolSelect.value = ActionButton.getDefaultTool();
+      defaultToolSelect.addEventListener("change", () => {
+        ActionButton.setDefaultTool(defaultToolSelect.value);
       });
     }
   }

@@ -1,0 +1,103 @@
+/* ===========================================
+   Action Button (Multi-Tool Cycling Button)
+   =========================================== */
+
+.action-btn-container {
+  position: absolute;
+  top: 38px;
+  right: 45px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  z-index: var(--z-dropdown);
+}
+
+/* ─── Arrow Buttons ─── */
+
+.action-btn-arrow {
+  width: 16px;
+  height: 14px;
+  padding: 0;
+  background: transparent;
+  border: none;
+  color: var(--text-secondary);
+  cursor: pointer;
+  opacity: 0;
+  transform: scaleY(0.7);
+  transition:
+    opacity var(--transition-fast),
+    transform var(--transition-fast),
+    color var(--transition-fast);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.action-btn-container:hover .action-btn-arrow {
+  opacity: 1;
+  transform: scaleY(1);
+}
+
+.action-btn-arrow:hover {
+  color: white;
+}
+
+/* ─── Main Button ─── */
+
+.action-btn {
+  position: relative;
+  background: transparent;
+  border: none;
+  color: var(--text-secondary);
+  cursor: pointer;
+  padding: 4px;
+  overflow: hidden;
+  width: 24px;
+  height: 24px;
+  transition: color var(--transition-normal);
+}
+
+.action-btn:hover {
+  color: white;
+}
+
+/* ─── Icon Slot ─── */
+
+.action-btn-icon {
+  position: absolute;
+  top: 4px;
+  left: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  transition:
+    transform var(--transition-bounce),
+    opacity var(--transition-fast);
+}
+
+/* Slide-out states */
+.action-btn-icon.slide-out-up {
+  transform: translateY(-100%);
+  opacity: 0;
+}
+
+.action-btn-icon.slide-out-down {
+  transform: translateY(100%);
+  opacity: 0;
+}
+
+/* Slide-in entry positions (set immediately, then removed to trigger transition) */
+.action-btn-icon.slide-in-from-below {
+  transform: translateY(100%);
+  opacity: 0;
+  transition: none;
+}
+
+.action-btn-icon.slide-in-from-above {
+  transform: translateY(-100%);
+  opacity: 0;
+  transition: none;
+}

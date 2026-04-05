@@ -7,6 +7,7 @@
 
 import { GestureDetector } from "./touch_controls.js";
 import { SearchController } from "./search/search_controller.js";
+import { ActionButton } from "./action_button.js";
 
 export class WindowControls {
   /**
@@ -32,14 +33,47 @@ export class WindowControls {
   }
 
   #createDOM() {
-    this.searchBtn = document.createElement("button");
-    this.searchBtn.className = "search-btn";
-    this.searchBtn.innerHTML = `
-      <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-search" viewBox="0 0 16 16">
-        <path d="M11.742 10.344a6.5 6.5 0 1 0-1.397 1.398h-.001q.044.06.098.115l3.85 3.85a1 1 0 0 0 1.415-1.414l-3.85-3.85a1 1 0 0 0-.115-.1zM12 6.5a5.5 5.5 0 1 1-11 0 5.5 5.5 0 0 1 11 0"/>
-      </svg>
-    `;
-    document.body.appendChild(this.searchBtn); 
+    const tools = [
+      {
+        id: "search",
+        name: "Search",
+        icon: `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
+          <path d="M11.742 10.344a6.5 6.5 0 1 0-1.397 1.398h-.001q.044.06.098.115l3.85 3.85a1 1 0 0 0 1.415-1.414l-3.85-3.85a1 1 0 0 0-.115-.1zM12 6.5a5.5 5.5 0 1 1-11 0 5.5 5.5 0 0 1 11 0"/>
+        </svg>`,
+        activate: () => this.showSearch(),
+        deactivate: () => {
+          if (this.searchController.isActive)
+            this.searchController.deactivate();
+        },
+      },
+      {
+        id: "drawing",
+        name: "Drawing",
+        icon: `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
+          <path d="M12.146.146a.5.5 0 0 1 .708 0l3 3a.5.5 0 0 1 0 .708l-10 10a.5.5 0 0 1-.168.11l-5 2a.5.5 0 0 1-.65-.65l2-5a.5.5 0 0 1 .11-.168zM11.207 2.5 13.5 4.793 14.793 3.5 12.5 1.207zm1.586 3L10.5 3.207 4 9.707V10h.5a.5.5 0 0 1 .5.5v.5h.5a.5.5 0 0 1 .5.5v.5h.293z"/>
+        </svg>`,
+        activate: () => {},
+      },
+      {
+        id: "crop",
+        name: "Crop",
+        icon: `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
+          <path d="M3.5.5A.5.5 0 0 1 4 1v13h13a.5.5 0 0 1 0 1h-2v2a.5.5 0 0 1-1 0v-2H3.5a.5.5 0 0 1-.5-.5V4H1a.5.5 0 0 1 0-1h2V1a.5.5 0 0 1 .5-.5m2.5 3a.5.5 0 0 1 .5-.5h8a.5.5 0 0 1 .5.5v8a.5.5 0 0 1-1 0V4H6.5a.5.5 0 0 1-.5-.5"/>
+        </svg>`,
+        activate: () => {},
+      },
+      {
+        id: "translation",
+        name: "Translation",
+        icon: `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
+          <path d="M4.545 6.714 4.11 8H3l1.862-5h1.284L8 8H6.833l-.435-1.286zm1.634-.736L5.5 3.956h-.049l-.679 2.022z"/>
+          <path d="M0 2a2 2 0 0 1 2-2h7a2 2 0 0 1 2 2v3h3a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2v-3H2a2 2 0 0 1-2-2zm2-1a1 1 0 0 0-1 1v7a1 1 0 0 0 1 1h7a1 1 0 0 0 1-1V2a1 1 0 0 0-1-1zm7.138 9.995q.289.451.63.846c-.748.575-1.673 1.001-2.768 1.292.178.217.451.635.555.867 1.125-.359 2.08-.844 2.886-1.494.777.665 1.739 1.165 2.93 1.472.133-.254.414-.673.629-.89-1.125-.253-2.057-.694-2.82-1.284.681-.747 1.222-1.651 1.621-2.757H14V8h-3v1.047h.765c-.318.844-.74 1.546-1.272 2.13a6 6 0 0 1-.415-.492 2 2 0 0 1-.94.31"/>
+        </svg>`,
+        activate: () => {},
+      },
+    ];
+
+    this.actionButton = new ActionButton(tools);
   }
 
   #setupKeyboardShortcuts() {
@@ -49,11 +83,6 @@ export class WindowControls {
       }
       this.searchController?.refresh();
     });
-
-    this.searchBtn.addEventListener("click", () => {
-        this.showSearch();
-        return;
-    })
 
     document.addEventListener("keydown", (e) => {
       // Handle Escape to close search (even when in search input)
@@ -74,7 +103,7 @@ export class WindowControls {
 
       if (isSearchKey) {
         e.preventDefault();
-        this.showSearch();
+        this.actionButton.activateToolById("search");
         return;
       }
 
@@ -314,5 +343,6 @@ export class WindowControls {
     }
     this.gestureDetectors.clear();
     this.searchController?.destroy();
+    this.actionButton?.destroy();
   }
 }

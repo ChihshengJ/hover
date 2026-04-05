@@ -8,6 +8,7 @@
 import { GestureDetector } from "./touch_controls.js";
 import { SearchController } from "./search/search_controller.js";
 import { ActionButton } from "./action_button.js";
+import { RegionSelectController } from "../tools/region_select.js";
 
 export class WindowControls {
   /**
@@ -19,6 +20,8 @@ export class WindowControls {
     this.gestureDetectors = new Map();
     /** @type {SearchController} */
     this.searchController = new SearchController(wm);
+    /** @type {RegionSelectController} */
+    this.regionSelectController = new RegionSelectController(wm);
     this.#createDOM();
     this.#setupKeyboardShortcuts();
     this.#bindGestures();
@@ -60,7 +63,14 @@ export class WindowControls {
         icon: `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
           <path d="M3.5.5A.5.5 0 0 1 4 1v13h13a.5.5 0 0 1 0 1h-2v2a.5.5 0 0 1-1 0v-2H3.5a.5.5 0 0 1-.5-.5V4H1a.5.5 0 0 1 0-1h2V1a.5.5 0 0 1 .5-.5m2.5 3a.5.5 0 0 1 .5-.5h8a.5.5 0 0 1 .5.5v8a.5.5 0 0 1-1 0V4H6.5a.5.5 0 0 1-.5-.5"/>
         </svg>`,
-        activate: () => {},
+        activate: () => {
+          if (this.regionSelectController.isActive) {
+            this.regionSelectController.deactivate();
+          } else {
+            this.regionSelectController.activate();
+          }
+        },
+        deactivate: () => this.regionSelectController.deactivate(),
       },
       {
         id: "translation",
@@ -342,6 +352,7 @@ export class WindowControls {
       gesture.destroy?.();
     }
     this.gestureDetectors.clear();
+    this.regionSelectController?.deactivate();
     this.searchController?.destroy();
     this.actionButton?.destroy();
   }

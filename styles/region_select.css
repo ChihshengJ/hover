@@ -1,0 +1,26 @@
+/* Region-select tool: crosshair cursor and layer disabling */
+
+.pane-scroll-area.region-select-active {
+  cursor: crosshair;
+  user-select: none;
+}
+
+.pane-scroll-area.region-select-active .textLayer,
+.pane-scroll-area.region-select-active .textLayer * {
+  user-select: none;
+  pointer-events: none;
+}
+
+.pane-scroll-area.region-select-active .annotationLayer {
+  pointer-events: none;
+}
+
+/* Selection overlay rectangle */
+
+.region-select-overlay {
+  position: absolute;
+  z-index: 70;
+  border: 2px dashed var(--color-accent);
+  background: rgba(59, 130, 246, 0.08);
+  pointer-events: none;
+}

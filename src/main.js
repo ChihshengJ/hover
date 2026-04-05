@@ -21,6 +21,7 @@ import "../styles/onboarding.css";
 import "../styles/settings.css";
 import "../styles/color_settings.css";
 import "../styles/action_button.css";
+import "../styles/region_select.css";
 
 const el = {
   wd: document.getElementById("window-container"),

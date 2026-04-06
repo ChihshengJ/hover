@@ -308,6 +308,7 @@ export class CitationPopup {
   renderContent(text) {
     this.popup.className = "citation-popup";
     this.reference = text;
+    this.popup.dataset.reference = text;
 
     this.popup.innerHTML = "";
 

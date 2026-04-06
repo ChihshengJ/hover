@@ -916,7 +916,7 @@ function detectTitle(allLines, bodyFontSize) {
   }
 
   if (titleLines.length === 0) return null;
-  titleLines.sort((a, b) => a.y - b.y);
+  titleLines.sort((a, b) => a.originalY - b.originalY);
 
   let title = "";
   for (let i = 0; i < titleLines.length; i++) {

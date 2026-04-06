@@ -284,3 +284,39 @@
   color: rgb(255, 60, 60);
   filter: none;
 }
+
+/* ===========================================
+   Trail Overlay
+   =========================================== */
+
+.night-mode .trail-panel {
+  background: rgba(30, 30, 35, 0.85);
+  border-bottom-color: rgba(255, 255, 255, 0.08);
+}
+
+.night-mode .trail-backdrop {
+  background: rgba(0, 0, 0, 0.45);
+}
+
+.night-mode .trail-node rect {
+  fill: rgba(45, 45, 50, 0.9);
+  stroke: rgba(255, 255, 255, 0.15);
+}
+
+.night-mode .trail-node:hover rect {
+  fill: rgba(59, 130, 246, 0.15);
+  stroke: var(--color-accent);
+}
+
+.night-mode .trail-node.current rect {
+  stroke: var(--color-accent);
+}
+
+.night-mode .trail-link {
+  stroke: rgba(255, 255, 255, 0.15);
+}
+
+.night-mode .trail-tooltip {
+  background: rgba(40, 40, 45, 0.95);
+  border-color: rgba(255, 255, 255, 0.1);
+}

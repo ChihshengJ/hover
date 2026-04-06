@@ -362,15 +362,35 @@ async function handleToggle(enabled) {
 // Initialization
 // ============================================
 
+/**
+ * Purge trail pending connections older than 10 minutes.
+ */
+async function purgeStaleTrailConnections() {
+  try {
+    const key = "hover-pending-connections";
+    const result = await chrome.storage.local.get(key);
+    const connections = result[key] || [];
+    const cutoff = Date.now() - 10 * 60 * 1000;
+    const fresh = connections.filter((c) => c.timestamp > cutoff);
+    if (fresh.length !== connections.length) {
+      await chrome.storage.local.set({ [key]: fresh });
+    }
+  } catch {
+    // ignore
+  }
+}
+
 chrome.runtime.onInstalled.addListener(async () => {
   const { hoverEnabled } = await chrome.storage.local.get("hoverEnabled");
   if (hoverEnabled === undefined) {
     await chrome.storage.local.set({ hoverEnabled: true });
   }
+  await purgeStaleTrailConnections();
   console.log("Hover PDF Viewer installed");
 });
 
 chrome.runtime.onStartup.addListener(async () => {
+  await purgeStaleTrailConnections();
   console.log("Hover PDF Viewer started");
 });
 

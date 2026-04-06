@@ -3,6 +3,9 @@ import { SplitWindowManager } from "./window_manager.js";
 import { FileMenu } from "./controls/file_menu.js";
 import { LoadingOverlay } from "./controls/loading_overlay.js";
 import { OnboardingWalkthrough } from "./settings/onboarding.js";
+import { TrailStore } from "./trail/trail_store.js";
+import { TrailLinker } from "./trail/trail_linker.js";
+import { TrailOverlay } from "./trail/trail_overlay.js";
 
 import "../styles/_variables.css";
 import "../styles/viewer.css";
@@ -23,6 +26,7 @@ import "../styles/color_settings.css";
 import "../styles/action_button.css";
 import "../styles/region_select.css";
 import "../styles/drawing.css";
+import "../styles/trail_overlay.css";
 
 const el = {
   wd: document.getElementById("window-container"),
@@ -297,6 +301,23 @@ async function loadPdf(isFirstLaunch = false) {
     const detectedTitle = await pdfmodel.getDocumentTitle();
     if (detectedTitle) {
       document.title = detectedTitle;
+    }
+
+    // Trail system initialization
+    try {
+      const trailStore = new TrailStore();
+      await trailStore.initialize();
+      const trailLinker = new TrailLinker(pdfmodel, trailStore, originalUrl);
+      trailLinker.initialize();
+      const matchResult = await trailLinker.matchOnOpen(detectedTitle);
+      const trailOverlay = new TrailOverlay(
+        trailStore,
+        detectedTitle,
+        originalUrl,
+      );
+      trailOverlay.initialize();
+    } catch (err) {
+      console.warn("[Trail] Failed to initialize:", err);
     }
   } catch (error) {
     console.error("[Main] Error loading PDF:", error);

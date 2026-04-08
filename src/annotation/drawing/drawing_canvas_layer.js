@@ -36,10 +36,16 @@ export class DrawingCanvasLayer {
    * @param {number} height - CSS pixel height
    */
   ensureCanvas(pageRotateInner, width, height) {
-    // Reuse existing canvas if same parent
-    if (this.#canvas && this.#parent === pageRotateInner) return;
+    // Reuse existing canvas if same parent and dimensions match
+    if (this.#canvas && this.#parent === pageRotateInner) {
+      const curW = Math.round(width);
+      const curH = Math.round(height);
+      const canW = Math.round(parseFloat(this.#canvas.style.width));
+      const canH = Math.round(parseFloat(this.#canvas.style.height));
+      if (curW === canW && curH === canH) return;
+    }
 
-    // Different page — destroy old canvas and create new one
+    // Different page or dimensions changed — destroy old canvas and create new one
     this.destroy();
 
     this.#parent = pageRotateInner;

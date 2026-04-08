@@ -12,6 +12,7 @@
 
 import { DrawingCanvasLayer } from "../annotation/drawing/drawing_canvas_layer.js";
 import { DrawingToolbar } from "../annotation/drawing/drawing_toolbar.js";
+import { LazyBrush } from "../annotation/drawing/lazy_brush.js";
 
 const COMMIT_DELAY_MS = 1000;
 
@@ -57,6 +58,12 @@ export class DrawingController {
 
   /** @type {DrawingToolbar|null} */
   #toolbar = null;
+
+  /** @type {LazyBrush} */
+  #lazyBrush = new LazyBrush({ radius: 8 });
+
+  /** @type {HTMLElement|null} */
+  #brushCursor = null;
 
   // Bound event handlers
   #onPointerDown = (e) => this.#handlePointerDown(e);
@@ -107,6 +114,23 @@ export class DrawingController {
     });
     this.#toolbar.show(this.#actionButton.container);
 
+    // Create brush cursor indicator
+    this.#brushCursor = document.createElement("div");
+    this.#brushCursor.className = "lazy-brush-cursor";
+    Object.assign(this.#brushCursor.style, {
+      position: "fixed",
+      width: "6px",
+      height: "6px",
+      borderRadius: "50%",
+      background: "rgba(0, 0, 0, 0.5)",
+      border: "1px solid rgba(255, 255, 255, 0.8)",
+      pointerEvents: "none",
+      zIndex: "10000",
+      display: "none",
+      transform: "translate(-50%, -50%)",
+    });
+    document.body.appendChild(this.#brushCursor);
+
     // Signal active state on the action button
     this.#actionButton.setToolActive(true);
   }
@@ -145,6 +169,9 @@ export class DrawingController {
     this.#toolbar?.destroy();
     this.#toolbar = null;
 
+    this.#brushCursor?.remove();
+    this.#brushCursor = null;
+
     this.#actionButton.setToolActive(false);
 
     document.getSelection()?.removeAllRanges();
@@ -163,8 +190,7 @@ export class DrawingController {
     // Skip drawing if clicking on an existing drawing annotation (let selection handle it)
     if (e.target.closest(".annotation-mark.drawing")) return;
 
-    // Skip drawing if a drawing bounding box is active (selection in progress)
-    if (document.querySelector(".drawing-bounding-box")) return;
+
 
     const pane = this.#wm.activePane;
     if (!pane) return;
@@ -191,14 +217,18 @@ export class DrawingController {
       parseFloat(page.textLayer.style.height) || inner.offsetHeight;
     this.#canvasLayer.ensureCanvas(inner, width, height);
 
-    // First point
+    // First point — snap lazy brush to start position
     const coords = this.#clientToPageCoords(e.clientX, e.clientY, page);
-    const norm = this.#pixelToNormalized(coords.x, coords.y, page);
+    this.#lazyBrush.update({ x: coords.x, y: coords.y }, { both: true });
+    const brush = this.#lazyBrush.getBrushCoordinates();
+    const norm = this.#pixelToNormalized(brush.x, brush.y, page);
     this.#currentStroke.push(norm);
 
     const strokeWidthPx = this.#getStrokeWidthPx(page);
     const hexColor = this.#getColorHex();
-    this.#canvasLayer.beginStroke(coords.x, coords.y, hexColor, strokeWidthPx);
+    this.#canvasLayer.beginStroke(brush.x, brush.y, hexColor, strokeWidthPx);
+
+    this.#updateBrushCursor(brush, page);
 
     document.addEventListener("pointermove", this.#onPointerMove);
     document.addEventListener("pointerup", this.#onPointerUp);
@@ -220,10 +250,15 @@ export class DrawingController {
     const x = Math.max(0, Math.min(coords.x, inner.offsetWidth));
     const y = Math.max(0, Math.min(coords.y, inner.offsetHeight));
 
-    const norm = this.#pixelToNormalized(x, y, this.#currentPage);
+    this.#lazyBrush.update({ x, y }, { friction: 0.01 });
+    if (!this.#lazyBrush.brushHasMoved()) return;
+
+    const brush = this.#lazyBrush.getBrushCoordinates();
+    const norm = this.#pixelToNormalized(brush.x, brush.y, this.#currentPage);
     this.#currentStroke.push(norm);
 
-    this.#canvasLayer.addPoint(x, y);
+    this.#canvasLayer.addPoint(brush.x, brush.y);
+    this.#updateBrushCursor(brush, this.#currentPage);
   }
 
   /** @param {PointerEvent} e */
@@ -232,6 +267,8 @@ export class DrawingController {
 
     document.removeEventListener("pointermove", this.#onPointerMove);
     document.removeEventListener("pointerup", this.#onPointerUp);
+
+    if (this.#brushCursor) this.#brushCursor.style.display = "none";
 
     this.#finalizeCurrentStroke();
 
@@ -399,6 +436,14 @@ export class DrawingController {
    * @param {PageView} pageView
    * @returns {{x: number, y: number}}
    */
+  #updateBrushCursor(brush, page) {
+    if (!this.#brushCursor) return;
+    const rect = page.rotateInner.getBoundingClientRect();
+    this.#brushCursor.style.left = `${rect.left + brush.x}px`;
+    this.#brushCursor.style.top = `${rect.top + brush.y}px`;
+    this.#brushCursor.style.display = "block";
+  }
+
   #clientToPageCoords(clientX, clientY, pageView) {
     const rect = pageView.rotateInner.getBoundingClientRect();
     return {

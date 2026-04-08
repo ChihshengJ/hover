@@ -289,17 +289,17 @@ export class AnnotationManager {
   }
 
   #onAnnotationClick(annotationId) {
-    this.#selectAnnotation(annotationId);
-
     // Show toolbar for editing
     const annotation = this.#pane.document.getAnnotation(annotationId);
     if (!annotation) return;
 
-    // Drawings use their own selection manager
+    // Drawings use their own selection manager (skip SVG outline selection)
     if (annotation.type === "drawing") {
       this.#drawingSelection.select(annotationId, annotation);
       return;
     }
+
+    this.#selectAnnotation(annotationId);
 
     const rect = this.#getAnnotationRect(annotationId);
     if (!rect) return;

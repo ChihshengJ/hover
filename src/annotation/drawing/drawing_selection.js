@@ -45,6 +45,9 @@ export class DrawingSelectionManager {
   /**
    * @param {ViewerPane} pane
    */
+  /**
+   * @param {ViewerPane} pane
+   */
   constructor(pane) {
     this.#pane = pane;
   }

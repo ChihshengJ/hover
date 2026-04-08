@@ -113,6 +113,7 @@
   padding: 14px 20px 10px;
   border-bottom: 1px solid var(--border-color-subtle);
   flex-shrink: 0;
+  text-transform: uppercase;
 }
 
 .trail-star-btn {

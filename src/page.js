@@ -120,7 +120,7 @@ export class PageView {
       const textScale = cssWidth / pageWidth;
 
       this.annotationLayer.innerHTML = "";
-      this.#renderImageOverlays(textScale);
+      // this.#renderImageOverlays(textScale);
       this.#renderUrlLinks(page, textScale, cssWidth, cssHeight);
       this.#renderCitationOverlays(page, textScale, cssWidth, cssHeight);
       this.#renderCrossRefOverlays(page, textScale, cssWidth, cssHeight);
@@ -496,7 +496,7 @@ export class PageView {
     const textScale = cssWidth / page.size.width;
 
     this.annotationLayer.innerHTML = "";
-    this.#renderImageOverlays(textScale);
+    // this.#renderImageOverlays(textScale);
     this.#renderUrlLinks(page, textScale, cssWidth, cssHeight);
     this.#renderCitationOverlays(page, textScale, cssWidth, cssHeight);
     this.#renderCrossRefOverlays(page, textScale, cssWidth, cssHeight);
@@ -568,11 +568,11 @@ export class PageView {
         return;
       }
 
-      const imgRect = e.target.closest(".image-overlay-rect");
-      if (imgRect) {
-        e.preventDefault();
-        getSharedImageModal().show(imgRect._imageInfo);
-      }
+      // const imgRect = e.target.closest(".image-overlay-rect");
+      // if (imgRect) {
+      //   e.preventDefault();
+      //   getSharedImageModal().show(imgRect._imageInfo);
+      // }
     });
 
     this._delegatedListenersAttached = true;

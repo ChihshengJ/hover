@@ -7,7 +7,7 @@ import { OnboardingWalkthrough } from "../settings/onboarding.js";
 import { Settings } from "../settings/settings.js";
 import { requestThrottle } from "./request_throttle.js";
 
-const VERSION = "0.9.3";
+const VERSION = "0.10.0";
 
 export class FileMenu {
   /**

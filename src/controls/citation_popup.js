@@ -656,7 +656,8 @@ export class CitationPopup {
 
     const errorText = document.createElement("div");
     errorText.className = "scholar-error-text";
-    errorText.textContent = "Could not fetch abstract";
+    errorText.textContent =
+      "Could not fetch abstract, please click the button below to do a reCAPTCHA.";
     errorWrapper.appendChild(errorText);
 
     // Search on Google Scholar button

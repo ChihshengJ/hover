@@ -27,6 +27,7 @@ import "../styles/action_button.css";
 import "../styles/region_select.css";
 import "../styles/drawing.css";
 import "../styles/trail_overlay.css";
+import "../styles/demo_banner.css";
 
 const el = {
   wd: document.getElementById("window-container"),

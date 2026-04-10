@@ -52,6 +52,10 @@ import {
   AUTHOR_YEAR_BLOCKS,
 } from "./lexicon.js";
 
+function escapeForRegex(str) {
+  return str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
 class InlineTextAdapter {
   /** @type {import('./text_extractor.js').PdfiumTextExtractor} */
   #extractor = null;
@@ -1092,7 +1096,7 @@ export class InlineExtractor {
     if (!author || !year) return null;
 
     let yearToMatch = year;
-    const rangeMatch = year.match(/^(\d{4}[a-z]?)\s*[-â€“â€”]\s*\d{4}$/);
+    const rangeMatch = year.match(/^(\d{4}[a-z]?)\s*[-–—]\s*\d{4}$/);
     if (rangeMatch) {
       yearToMatch = rangeMatch[1];
     }
@@ -1108,19 +1112,28 @@ export class InlineExtractor {
     const yearMatches = this.#signatures.filter((a) => a.year === yearToMatch);
     if (yearMatches.length === 0) return null;
 
+    const escaped = escapeForRegex(authorClean);
+    const authorRe = new RegExp(`(?:^|\\b)${escaped}(?:\\b|$)`);
+    const authorStartRe = new RegExp(`^${escaped}(?:[^\\p{L}]|$)`, "u");
+    const secondClean = secondAuthor?.trim().toLowerCase() || null;
+    const secondRe = secondClean
+      ? new RegExp(`(?:^|\\b)${escapeForRegex(secondClean)}(?:\\b|$)`)
+      : null;
+
+    // Pass 1: first author at START, then refine with second author if available
     for (const anchor of yearMatches) {
       if (!anchor.authorSearchText) continue;
-      const hasFirstAuthor = anchor.authorSearchText.includes(authorClean);
-      if (!hasFirstAuthor) continue;
-      if (secondAuthor) {
-        const secondClean = secondAuthor.trim().toLowerCase();
-        const hasSecondAuthor = anchor.authorSearchText.includes(secondClean);
-        if (hasSecondAuthor) {
-          return { index: anchor.index, confidence: 1.0 };
-        }
-        return { index: anchor.index, confidence: 0.7 };
-      }
+      if (!authorStartRe.test(anchor.authorSearchText)) continue;
+      if (secondRe && !secondRe.test(anchor.authorSearchText)) continue;
       return { index: anchor.index, confidence: 1.0 };
+    }
+
+    // Pass 2: first author ANYWHERE (fallback for non-standard formats)
+    for (const anchor of yearMatches) {
+      if (!anchor.authorSearchText) continue;
+      if (!authorRe.test(anchor.authorSearchText)) continue;
+      if (secondRe && !secondRe.test(anchor.authorSearchText)) continue;
+      return { index: anchor.index, confidence: 0.7 };
     }
 
     if (yearMatches.length === 1) {

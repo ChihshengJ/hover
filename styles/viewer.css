@@ -467,3 +467,37 @@ body {
 .scroll-back-btn svg {
   flex-shrink: 0;
 }
+
+/* ===========================================
+   Night Mode Overrides
+   =========================================== */
+
+.night-mode .page-wrapper canvas {
+  filter: invert(1) hue-rotate(75deg) brightness(1.1) contrast(0.9);
+}
+
+.night-mode .page-wrapper {
+  box-shadow: 0px 0px 10px 2px rgba(0, 0, 0, 0.5);
+}
+
+.night-mode .page-num {
+  color: #888;
+}
+
+.night-mode .pane-controls {
+  background: rgba(40, 40, 40, 0.85);
+  box-shadow:
+    0 2px 12px rgba(0, 0, 0, 0.3),
+    0 0 0 1px rgba(255, 255, 255, 0.1),
+    inset 0px -2px 10px 1px rgba(255, 255, 255, 0.1);
+}
+
+.night-mode .pane-btn img {
+  filter: invert(0.8);
+}
+
+.night-mode .pane-btn.active {
+  background: rgba(59, 130, 246, 0.3);
+  border-color: rgba(59, 130, 246, 0.5);
+  box-shadow: inset 0 0 3px 1px rgba(255, 255, 255, 0.1);
+}

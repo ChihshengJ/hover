@@ -1,0 +1,34 @@
+/* ===========================================
+   CSS Entry Point — Layer Order & Imports
+   ===========================================
+   The @layer declaration controls the cascade:
+   later layers win over earlier ones, regardless
+   of file or import order.
+
+   tokens     — CSS custom properties, color themes
+   base       — global reset, layout containers
+   components — all individual UI components
+   =========================================== */
+
+@layer tokens, base, components;
+
+@import "./_variables.css" layer(tokens);
+@import "./viewer.css" layer(base);
+@import "./text_layer.css" layer(components);
+@import "./floating_toolbar.css" layer(components);
+@import "./citation_popup.css" layer(components);
+@import "./navigation_tree.css" layer(components);
+@import "./annotations.css" layer(components);
+@import "./progress_bar.css" layer(components);
+@import "./file_menu.css" layer(components);
+@import "./search.css" layer(components);
+@import "./loading_overlay.css" layer(components);
+@import "./image_modal.css" layer(components);
+@import "./onboarding.css" layer(components);
+@import "./settings.css" layer(components);
+@import "./color_settings.css" layer(components);
+@import "./action_button.css" layer(components);
+@import "./region_select.css" layer(components);
+@import "./drawing.css" layer(components);
+@import "./trail_overlay.css" layer(components);
+@import "./demo_banner.css" layer(components);

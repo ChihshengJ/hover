@@ -550,3 +550,28 @@
 .annotation-group.hovered .annotation-mark.underline {
   fill: var(--anno-underline-hover, rgba(255, 193, 7, 1));
 }
+
+/* ===========================================
+   Night Mode Overrides
+   =========================================== */
+
+.night-mode .annotation-toolbar {
+  background: rgba(255, 255, 255, 0.3);
+}
+
+.night-mode .toolbar-divider {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+.night-mode .action-btn {
+  filter: invert(1) hue-rotate(75deg);
+}
+
+.night-mode .action-btn.active {
+  background: rgba(255, 255, 255, 0.3);
+}
+
+.night-mode .action-btn.delete-btn:hover {
+  color: rgb(255, 60, 60);
+  filter: none;
+}

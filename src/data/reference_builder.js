@@ -721,6 +721,7 @@ function extractStructuralReferences(lines, format, metrics) {
 
   const baselineLineGap = computeSectionLineGap(lines);
   const typicalLineWidth = metrics.lineWidth;
+  const layout = analyzeLayout(lines, typicalLineWidth);
 
   const anchors = [];
   let currentRef = { firstLineX: null, lines: [] };
@@ -751,6 +752,7 @@ function extractStructuralReferences(lines, format, metrics) {
         baselineLineGap,
         typicalLineWidth,
         format,
+        layout,
       );
       isNewReference = result.isNewReference;
 
@@ -791,7 +793,9 @@ function detectBoundary(
   baselineLineGap,
   typicalLineWidth,
   format,
+  layout,
 ) {
+  const { isJustified } = layout;
   const yDelta = line.y - prevLine.y;
   const yDirection = Math.sign(yDelta);
   const absYDelta = Math.abs(yDelta);
@@ -799,7 +803,7 @@ function detectBoundary(
   const lineHeight = line.lineHeight || 10;
   const tolerance = lineHeight;
   const prevLineWidth = calculateLineWidth(prevLine);
-  const isAfterShortLine = prevLineWidth < typicalLineWidth - tolerance * 3;
+  const isAfterShortLine = prevLineWidth < typicalLineWidth - tolerance * 2;
 
   const isIndented = line.x > currentRef.firstLineX + tolerance;
   const isAtFirstX = line.x <= currentRef.firstLineX + tolerance;
@@ -836,13 +840,27 @@ function detectBoundary(
   } else if (isAtFirstX && wasIndented) {
     if (isAfterShortLine) {
       isNewReference = true;
+    } else if (format === "author-year") {
+      isNewReference = AUTHOR_YEAR_START_PATTERN.test(line.text);
     } else {
       isNewReference = looksLikeReferenceStart(line.text);
     }
   } else if (isAfterShortLine) {
-    isNewReference = true;
+    if (isJustified) {
+      isNewReference = true;
+    } else if (format === "author-year") {
+      isNewReference = AUTHOR_YEAR_START_PATTERN.test(line.text);
+    } else {
+      isNewReference = looksLikeReferenceStart(line.text);
+    }
   } else if (isAtFirstX && !wasIndented) {
-    isNewReference = looksLikeReferenceStart(line.text);
+    if (format === "author-year") {
+      isNewReference = AUTHOR_YEAR_START_PATTERN.test(line.text);
+    } else if (isJustified) {
+      isNewReference = false;
+    } else {
+      isNewReference = looksLikeReferenceStart(line.text);
+    }
   }
 
   return { isNewReference, yDirection, isBoundaryJump };
@@ -853,10 +871,7 @@ function looksLikeReferenceStart(text) {
   if (/^\s*[\[\(]?\d+[\]\)\.]/.test(trimmed)) return true;
   if (/^\s*[\[\(]?[A-Z]*\+?\d+[\]\)\.]/.test(trimmed)) return true;
   if (/^[A-Z][a-zÀ-ÿ]+[,\.]/.test(trimmed)) return true;
-
-  const continuationWords =
-    /^(and|the|in|of|on|at|to|for|with|from|by|as|or|an|a)\s/i;
-  if (/^[A-Z]/.test(trimmed) && !continuationWords.test(trimmed)) return true;
+  if (AUTHOR_YEAR_START_PATTERN.test(trimmed)) return true;
 
   return false;
 }
@@ -875,6 +890,51 @@ function computeSectionLineGap(lines) {
   const baselineLineGap = median(gaps);
 
   return baselineLineGap;
+}
+
+function analyzeLayout(lines, typicalLineWidth) {
+  if (lines.length < 5) {
+    return { isJustified: false, usesIndentation: false };
+  }
+
+  const substantialLines = lines.filter((l) => l.text.trim().length > 10);
+  if (substantialLines.length < 5) {
+    return { isJustified: false, usesIndentation: false };
+  }
+
+  // Justification detection
+  const lineWidths = substantialLines.map((l) => calculateLineWidth(l));
+  const columnWidth = percentile(lineWidths, 90);
+  const medianHeight = median(substantialLines.map((l) => l.lineHeight || 10));
+  const tolerance = medianHeight * 3;
+
+  let nearFullCount = 0;
+  let measuredCount = 0;
+  for (const w of lineWidths) {
+    if (w < columnWidth * 0.5) continue;
+    measuredCount++;
+    if (Math.abs(w - columnWidth) < tolerance) {
+      nearFullCount++;
+    }
+  }
+  const isJustified = measuredCount > 0 && nearFullCount / measuredCount >= 0.7;
+
+  // Indentation detection
+  const xPositions = substantialLines.map((l) => Math.round(l.x / 2) * 2);
+  const xCounts = {};
+  for (const x of xPositions) {
+    xCounts[x] = (xCounts[x] || 0) + 1;
+  }
+  const modeX = Number(
+    Object.entries(xCounts).sort((a, b) => b[1] - a[1])[0][0],
+  );
+  const indentedCount = substantialLines.filter(
+    (l) => l.x > modeX + medianHeight,
+  ).length;
+  const usesIndentation =
+    indentedCount >= 3 && indentedCount >= substantialLines.length * 0.1;
+
+  return { isJustified, usesIndentation };
 }
 
 function calculateLineWidth(line) {

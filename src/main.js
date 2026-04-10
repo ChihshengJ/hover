@@ -7,27 +7,7 @@ import { TrailStore } from "./trail/trail_store.js";
 import { TrailLinker } from "./trail/trail_linker.js";
 import { TrailOverlay } from "./trail/trail_overlay.js";
 
-import "../styles/_variables.css";
-import "../styles/viewer.css";
-import "../styles/text_layer.css";
-import "../styles/floating_toolbar.css";
-import "../styles/citation_popup.css";
-import "../styles/navigation_tree.css";
-import "../styles/nightmode.css";
-import "../styles/annotations.css";
-import "../styles/progress_bar.css";
-import "../styles/file_menu.css";
-import "../styles/search.css";
-import "../styles/loading_overlay.css";
-import "../styles/image_modal.css";
-import "../styles/onboarding.css";
-import "../styles/settings.css";
-import "../styles/color_settings.css";
-import "../styles/action_button.css";
-import "../styles/region_select.css";
-import "../styles/drawing.css";
-import "../styles/trail_overlay.css";
-import "../styles/demo_banner.css";
+import "../styles/index.css";
 
 const el = {
   wd: document.getElementById("window-container"),

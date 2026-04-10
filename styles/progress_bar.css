@@ -481,6 +481,98 @@
 }
 
 /* ===========================================
+   Night Mode Overrides
+   =========================================== */
+
+.night-mode .progress-bar-track {
+  background: linear-gradient(
+    to bottom,
+    rgba(255, 255, 255, 0.05) 0%,
+    rgba(255, 255, 255, 0.1) 50%,
+    rgba(255, 255, 255, 0.05) 100%
+  );
+}
+
+.night-mode .progress-bar-glow {
+  background: linear-gradient(
+    to bottom,
+    rgba(200, 220, 255, 0.5) 0%,
+    rgba(180, 200, 255, 0.8) 100%
+  );
+  box-shadow:
+    0 0 8px rgba(180, 200, 255, 0.6),
+    0 0 16px rgba(150, 180, 255, 0.3),
+    0 0 24px rgba(120, 160, 255, 0.15);
+}
+
+.night-mode .indicator-core {
+  background: radial-gradient(
+    circle at 40% 40%,
+    rgba(200, 220, 255, 1) 0%,
+    rgba(180, 200, 255, 0.9) 40%,
+    rgba(150, 180, 255, 0.8) 100%
+  );
+}
+
+.night-mode .section-tick {
+  background: rgba(100, 100, 100, 0.5);
+}
+
+.night-mode .section-mark.reached .section-tick {
+  background: rgba(180, 200, 255, 0.8);
+  box-shadow:
+    0 0 4px rgba(180, 200, 255, 0.5),
+    0 0 8px rgba(150, 180, 255, 0.3);
+}
+
+.night-mode .progress-end-marker {
+  background: rgba(100, 100, 100, 0.4);
+}
+
+.night-mode .progress-end-marker.reached {
+  background: rgba(180, 200, 255, 0.9);
+  box-shadow:
+    0 0 6px rgba(180, 200, 255, 0.7),
+    0 0 12px rgba(150, 180, 255, 0.4);
+}
+
+.night-mode .pane-progress-ring .progress-ring-bg {
+  stroke: rgba(100, 100, 100, 0.2);
+}
+
+.night-mode .pane-progress-ring .progress-ring-fill {
+  stroke: rgba(219, 147, 52, 0.4);
+}
+
+.night-mode .pane-progress-ring .progress-ring-glow {
+  stroke: rgba(219, 147, 52, 0.2);
+}
+
+.night-mode .viewer-pane.active .pane-progress-ring .progress-ring-fill {
+  stroke: rgba(219, 147, 52, 0.8);
+}
+
+.night-mode .viewer-pane.active .pane-progress-ring .progress-ring-glow {
+  stroke: rgba(219, 147, 52, 0.4);
+}
+
+.night-mode .pane-progress-ring.completed .progress-ring-fill {
+  stroke: rgba(180, 200, 255, 0.8);
+}
+
+.night-mode .pane-progress-ring.completed .progress-ring-glow {
+  stroke: rgba(180, 200, 255, 0.4);
+}
+
+.night-mode .viewer-pane:not(.active) .pane-progress-ring .progress-ring-fill {
+  stroke: rgba(100, 100, 100, 0.3);
+}
+
+.night-mode .viewer-pane:not(.active) .pane-progress-ring .progress-ring-glow {
+  stroke: rgba(100, 100, 100, 0.15);
+}
+
+/* ===========================================
    Responsive Adjustments
    =========================================== */
 

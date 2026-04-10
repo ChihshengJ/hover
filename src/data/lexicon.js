@@ -714,6 +714,26 @@ export const AUTHOR_YEAR_PATTERNS = {
     extractYears: (match) => parseYearsFromString(match[2]),
     isTwoAuthor: false,
   },
+
+  /**
+   * Comma-separated two authors with et al. and year(s) OUTSIDE parentheses
+   * Examples: Tang, Zou et al. (2023), Wang, Li et al. (2020, 2021)
+   */
+  commaAuthorEtAlExternal: {
+    pattern: new RegExp(
+      `(${AUTHOR_YEAR_BLOCKS.authorSurname})` +
+      `,\\s+` +
+      `(${AUTHOR_YEAR_BLOCKS.authorSurname})` +
+      `${AUTHOR_YEAR_BLOCKS.etAl}` +
+      `,?\\s*\\((${AUTHOR_YEAR_BLOCKS.multipleYears})` +
+      `${AUTHOR_YEAR_BLOCKS.pages}\\)`,
+      "gu",
+    ),
+    extractAuthor: (match) => match[1].trim(),
+    extractSecondAuthor: (match) => match[2].trim(),
+    extractYears: (match) => parseYearsFromString(match[3]),
+    isTwoAuthor: true,
+  },
 };
 
 /**
@@ -728,6 +748,7 @@ export const PARENTHETICAL_CITATION_BLOCK = new RegExp(
   `(?:` +
   `,\\s+${AUTHOR_YEAR_BLOCKS.authorSurname},?\\s+${AUTHOR_YEAR_BLOCKS.andConnector}\\s+${AUTHOR_YEAR_BLOCKS.authorSurname}` +
   `|\\s+${AUTHOR_YEAR_BLOCKS.andConnector}\\s+${AUTHOR_YEAR_BLOCKS.authorSurname}` +
+  `|,\\s+${AUTHOR_YEAR_BLOCKS.authorSurname}` +
   `)?` +
   `${AUTHOR_YEAR_BLOCKS.etAl}?` +
   `\\s*,?\\s*` +
@@ -740,6 +761,7 @@ export const PARENTHETICAL_CITATION_BLOCK = new RegExp(
   `(?:` +
   `,\\s+${AUTHOR_YEAR_BLOCKS.authorSurname},?\\s+${AUTHOR_YEAR_BLOCKS.andConnector}\\s+${AUTHOR_YEAR_BLOCKS.authorSurname}` +
   `|\\s+${AUTHOR_YEAR_BLOCKS.andConnector}\\s+${AUTHOR_YEAR_BLOCKS.authorSurname}` +
+  `|,\\s+${AUTHOR_YEAR_BLOCKS.authorSurname}` +
   `)?` +
   `${AUTHOR_YEAR_BLOCKS.etAl}?` +
   `\\s*,?\\s*` +
@@ -782,6 +804,8 @@ export const CITATION_CHUNK_PARSER = new RegExp(
   `,\\s+(${AUTHOR_YEAR_BLOCKS.authorSurname}),?\\s+${AUTHOR_YEAR_BLOCKS.andConnector}\\s+(${AUTHOR_YEAR_BLOCKS.authorSurname})` +
   // Two-author form: Author1 and Author2
   `|\\s+${AUTHOR_YEAR_BLOCKS.andConnector}\\s+(${AUTHOR_YEAR_BLOCKS.authorSurname})` +
+  // Comma-separated second author: Author1, Author2 (typically followed by et al.)
+  `|,\\s+(${AUTHOR_YEAR_BLOCKS.authorSurname})` +
   `)?` +
   `${AUTHOR_YEAR_BLOCKS.etAl}?` +
   `)` +
@@ -849,11 +873,11 @@ export function parseCitationChunk(chunk) {
 
   const fullAuthorPart = match[1];
   const firstAuthor = match[2];
-  // Three-author form: groups 3 & 4; Two-author form: group 5
+  // Three-author form: groups 3 & 4; Two-author form: group 5; Comma-author form: group 6
   const isThreeAuthor = !!(match[3] && match[4]);
-  const secondAuthor = match[3] || match[5] || null;
+  const secondAuthor = match[3] || match[5] || match[6] || null;
   const thirdAuthor = match[4] || null;
-  const yearsStr = match[6];
+  const yearsStr = match[7];
 
   const hasEtAl = /\s+et\s+al\.?/i.test(fullAuthorPart);
   const years = parseYearsFromString(yearsStr);

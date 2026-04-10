@@ -384,3 +384,59 @@
   background: rgba(26, 115, 232, 0.2);
   border-color: rgba(26, 115, 232, 0.5);
 }
+
+/* ===========================================
+   Night Mode Overrides
+   =========================================== */
+
+.night-mode .citation-popup {
+  background: rgba(0, 0, 0, 0.2);
+  box-shadow:
+    0 10px 20px 20px rgba(0, 0, 0, 0.5),
+    0 0 0 2px rgba(0, 0, 0, 0.2),
+    inset 0 0 20px 3px rgba(255, 255, 255, 0.3);
+}
+
+.night-mode .citation-popup-header {
+  background: rgb(47, 48, 53, 1);
+}
+
+.night-mode .citation-tab {
+  color: white;
+}
+
+.night-mode .citation-tabs {
+  background: rgb(50, 50, 50, 1);
+}
+
+.night-mode .citation-tab:hover {
+  background: rgb(100, 100, 100, 0.7);
+}
+
+.night-mode .citation-tab:active {
+  background: rgb(150, 150, 150, 1);
+}
+
+.night-mode .citation-tab.active {
+  background: rgb(100, 100, 100, 1);
+  box-shadow: inset 0 0 5px 1px rgb(255, 255, 255, 0.1);
+}
+
+.night-mode .citation-popup-text,
+.night-mode .citation-popup-toggle,
+.night-mode .scholar-abstract {
+  color: white;
+}
+
+.night-mode .scholar-title {
+  color: #4778f5;
+}
+
+.night-mode .scholar-title:hover {
+  color: #4795f5;
+}
+
+.night-mode .scholar-authors {
+  color: rgb(230, 230, 230);
+  border-bottom: 1px solid rgba(180, 180, 180);
+}

@@ -622,3 +622,12 @@ input[type="file"] {
   background: var(--bg-tertiary);
   color: var(--text-secondary);
 }
+
+/* ===========================================
+   Night Mode Overrides
+   =========================================== */
+
+.night-mode .file-menu-container.active {
+  filter: url(#file-menu-goo-filter) drop-shadow(0 0 3px rgb(0, 0, 0, 0.5))
+    drop-shadow(-1px -1px 2px rgb(255, 255, 255, 0.1));
+}

@@ -206,6 +206,7 @@ body.night-mode .nav-tree-row--table .nav-tree-icon {
    ─────────────────────────────────────────────────────────────── */
 
 .nav-tree-title {
+  font-family: "Elms Sans", monospace;
   flex: 1;
   font-size: 14px;
   color: var(--text-primary);

@@ -1,4 +1,5 @@
 .settings-modal {
+  font-family: "Elms Sans", monospace;
   max-width: 520px;
   width: 92%;
 }
@@ -504,7 +505,9 @@
   transform: translateY(-50%);
 }
 
-.settings-toggle-switch input[type="checkbox"]:checked ~ .settings-toggle-slider {
+.settings-toggle-switch
+  input[type="checkbox"]:checked
+  ~ .settings-toggle-slider {
   background: #fff;
   box-shadow:
     0 0 4px rgba(255, 255, 255, 0.5),

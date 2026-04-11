@@ -66,6 +66,7 @@
 }
 
 .file-menu-list {
+  font-family: "Elms Sans", monospace;
   position: absolute;
   bottom: 25px;
   right: 28px;

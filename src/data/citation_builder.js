@@ -117,8 +117,11 @@ export class CitationBuilder {
         pageNum <= this.#refSectionEndPage
       )
         continue;
-      const { width: pageWidth, height: pageHeight } =
-        this.#textIndex.getPageDimensions(pageNum);
+      const {
+        width: pageWidth,
+        height: pageHeight,
+        multiColumn,
+      } = this.#textIndex.getPageDimensions(pageNum);
 
       for (const annot of annotations) {
         // Only process destination links (not URLs)
@@ -138,7 +141,7 @@ export class CitationBuilder {
         if (destPageIndex + 1 < this.#refSectionStartPage) continue;
 
         const hasValidDest =
-          destX * destY !== 0 &&
+          (multiColumn ? destX * destY !== 0 : destY !== 0) &&
           rect.origin.x < pageWidth &&
           rect.origin.y < pageHeight;
 
@@ -189,8 +192,8 @@ export class CitationBuilder {
       if (anchor.pageNumber !== pageNumber) continue;
       if (anchor.startCoord.y > y) continue;
 
-      const dist =
-        Math.abs(anchor.startCoord.y - y) + Math.abs(anchor.startCoord.x - x);
+      let dist = Math.abs(anchor.startCoord.y - y);
+      if (x !== 0) dist = dist + Math.abs(anchor.startCoord.x - x);
 
       if (dist < bestDist) {
         bestDist = dist;

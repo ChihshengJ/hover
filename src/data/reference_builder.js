@@ -138,14 +138,16 @@ function findReferenceSectionFromOutline(textIndex, outline) {
     line: pageEntry.lines[closestIdx],
   };
 
-  const { lineHeight: bodyFontSize, marginBottom: bodyMarginBottom } = docInfo;
+  const docMetrics = textIndex.getDocumentMetrics();
   const referenceEnd = findReferenceSectionEnd(
     pageData,
     referenceStart,
-    bodyFontSize,
-    bodyMarginBottom,
+    docMetrics.lineHeight,
+    docMetrics.marginBottom,
+    docMetrics.headerHeight,
+    docMetrics.footerHeight
   );
-  const lines = collectSectionLines(pageData, referenceStart, referenceEnd);
+  const lines = collectSectionLines(pageData, referenceStart, referenceEnd, docMetrics);
 
   if (lines.length < 3) return null;
 
@@ -203,8 +205,6 @@ function findReferenceSectionByHeading(textIndex) {
 
   const {
     pageData,
-    lineHeight: bodyFontSize,
-    marginBottom: bodyMarginBottom,
   } = docInfo;
   let referenceStart = null;
 
@@ -246,13 +246,17 @@ function findReferenceSectionByHeading(textIndex) {
 
   if (!referenceStart) return null;
 
+  const docMetrics = textIndex.getDocumentMetrics();
   const referenceEnd = findReferenceSectionEnd(
     pageData,
     referenceStart,
-    bodyFontSize,
-    bodyMarginBottom,
+    docMetrics.lineHeight,
+    docMetrics.marginBottom,
+    docMetrics.headerHeight,
+    docMetrics.footerHeight
   );
-  const lines = collectSectionLines(pageData, referenceStart, referenceEnd);
+
+  const lines = collectSectionLines(pageData, referenceStart, referenceEnd, docMetrics);
 
   return {
     startPage: referenceStart.pageNumber,
@@ -276,8 +280,6 @@ function findReferenceSectionByBackwardProbe(textIndex) {
 
   const {
     pageData,
-    lineHeight: bodyFontSize,
-    marginBottom: bodyMarginBottom,
   } = docInfo;
   const pageNumbers = Array.from(pageData.keys()).sort((a, b) => a - b);
   if (pageNumbers.length === 0) return null;
@@ -336,14 +338,18 @@ function findReferenceSectionByBackwardProbe(textIndex) {
     line: startLine,
   };
 
+
+  const docMetrics = textIndex.getDocumentMetrics();
   const referenceEnd = findReferenceSectionEnd(
     pageData,
     referenceStart,
-    bodyFontSize,
-    bodyMarginBottom,
+    docMetrics.lineHeight,
+    docMetrics.marginBottom,
+    docMetrics.headerHeight,
+    docMetrics.footerHeight
   );
 
-  const lines = collectSectionLines(pageData, referenceStart, referenceEnd);
+  const lines = collectSectionLines(pageData, referenceStart, referenceEnd, docMetrics);
   if (lines.length < 3) return null;
 
   console.log(
@@ -486,6 +492,8 @@ function findReferenceSectionEnd(
   start,
   bodyFontSize,
   bodyMarginBottom,
+  headerHeight,
+  footerHeight
 ) {
   let lastValidLine = null;
   const pageNumbers = Array.from(pageData.keys()).sort((a, b) => a - b);
@@ -504,8 +512,8 @@ function findReferenceSectionEnd(
       if (text.length <= 3) continue;
       const isPageBreak = lastValidLine?.pageNumber !== pageNum;
       const isHeaderFooter =
-        line.y >= pageHeight * 0.95 ||
-        line.y <= pageHeight * 0.05 ||
+        line.y >= pageHeight - headerHeight ||
+        line.y <= footerHeight ||
         (isPageBreak && line.x > marginLeft + 20);
       if (isHeaderFooter) continue;
       const isOnMargin =
@@ -559,7 +567,7 @@ function findReferenceSectionEnd(
 // Section Line Collection (shared)
 // ============================================
 
-function collectSectionLines(pageData, start, end) {
+function collectSectionLines(pageData, start, end, metrics) {
   const lines = [];
   const pageNumbers = Array.from(pageData.keys()).sort((a, b) => a - b);
 
@@ -583,8 +591,8 @@ function collectSectionLines(pageData, start, end) {
 
     for (let i = startIdx; i <= endIdx && i < pageLines.length; i++) {
       const isHeaderFooter =
-        pageLines[i].y >= pageHeight * 0.97 ||
-        pageLines[i].y <= pageHeight * 0.03;
+        pageLines[i].y >= pageHeight - metrics.headerHeight ||
+        pageLines[i].y <= metrics.footerHeight;
       if (isHeaderFooter) continue;
       if (pageLines[i].text.length <= 3) continue;
       if (
@@ -678,6 +686,7 @@ function extractReferenceAnchors(lines, format, textIndex) {
     return extractNumberedReferences(lines, format);
   }
   const metrics = textIndex.getDocumentMetrics();
+  console.log(metrics);
   return extractStructuralReferences(lines, format, metrics);
 }
 

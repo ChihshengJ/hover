@@ -32,6 +32,29 @@ export class PdfiumTextExtractor {
   // ============================================================================
 
   /**
+   * Open a page without creating a text page (for object-level operations).
+   *
+   * @param {number} docPtr
+   * @param {number} pageIndex - 0-based
+   * @param {(ctx: {pagePtr: number, pageWidth: number, pageHeight: number}) => T} fn
+   * @returns {T|null}
+   * @template T
+   */
+  withPage(docPtr, pageIndex, fn) {
+    const pdfium = this.#pdfium;
+    const pagePtr = pdfium.FPDF_LoadPage(docPtr, pageIndex);
+    if (!pagePtr) return null;
+
+    try {
+      const pageWidth = pdfium.FPDF_GetPageWidthF(pagePtr);
+      const pageHeight = pdfium.FPDF_GetPageHeightF(pagePtr);
+      return fn({ pagePtr, pageWidth, pageHeight });
+    } finally {
+      pdfium.FPDF_ClosePage(pagePtr);
+    }
+  }
+
+  /**
    * @param {number} docPtr
    * @param {number} pageIndex - 0-based
    * @param {(ctx: {pagePtr: number, textPagePtr: number, pageWidth: number, pageHeight: number, charCount: number}) => T} fn
@@ -201,6 +224,32 @@ export class PdfiumTextExtractor {
   }
 
   // ============================================================================
+  // High-level path extraction (general-purpose)
+  // ============================================================================
+
+  /**
+   * @typedef {Object} PathObjectInfo
+   * @property {number} index - Sequential index among path objects on the page
+   * @property {{left: number, bottom: number, right: number, top: number}} pdfRect - PDF native coords (bottom-left origin)
+   * @property {{x: number, y: number, width: number, height: number}} screenRect - Top-left origin coords
+   */
+
+  /**
+   * Extract all path object bounds from a page.
+   *
+   * @param {number} docPtr
+   * @param {number} pageIndex - 0-based
+   * @returns {{pageIndex: number, paths: PathObjectInfo[], pageWidth: number, pageHeight: number}}
+   */
+  extractPagePaths(docPtr, pageIndex) {
+    const result = this.withPage(docPtr, pageIndex, ({ pagePtr, pageWidth, pageHeight }) => {
+      const paths = this.#collectPathObjects(pagePtr, false, pageHeight);
+      return { pageIndex, paths, pageWidth, pageHeight };
+    });
+    return result || { pageIndex, paths: [], pageWidth: 0, pageHeight: 0 };
+  }
+
+  // ============================================================================
   // Private low-level helpers
   // ============================================================================
 
@@ -340,6 +389,84 @@ export class PdfiumTextExtractor {
       pdfium.pdfium.wasmExports.free(leftPtr);
       pdfium.pdfium.wasmExports.free(rightPtr);
       pdfium.pdfium.wasmExports.free(bottomPtr);
+      pdfium.pdfium.wasmExports.free(topPtr);
+    }
+  }
+
+  /**
+   * Recursively collect all path object bounds from a page or form object.
+   *
+   * @param {number} containerPtr - Page or form object pointer
+   * @param {boolean} isForm - Whether containerPtr is a form object
+   * @param {number} pageHeight - For coordinate conversion
+   * @returns {PathObjectInfo[]}
+   */
+  #collectPathObjects(containerPtr, isForm, pageHeight) {
+    const pdfium = this.#pdfium;
+    const PAGEOBJ_PATH = 1;
+    const PAGEOBJ_FORM = 5;
+    const paths = [];
+
+    const count = isForm
+      ? pdfium.FPDFFormObj_CountObjects(containerPtr)
+      : pdfium.FPDFPage_CountObjects(containerPtr);
+
+    for (let i = 0; i < count; i++) {
+      const objPtr = isForm
+        ? pdfium.FPDFFormObj_GetObject(containerPtr, i)
+        : pdfium.FPDFPage_GetObject(containerPtr, i);
+      if (!objPtr) continue;
+
+      const type = pdfium.FPDFPageObj_GetType(objPtr);
+      if (type === PAGEOBJ_PATH) {
+        const bounds = this.#getPathBounds(objPtr);
+        if (bounds) {
+          paths.push({
+            index: paths.length,
+            pdfRect: bounds,
+            screenRect: {
+              x: bounds.left,
+              y: pageHeight - bounds.top,
+              width: bounds.right - bounds.left,
+              height: bounds.top - bounds.bottom,
+            },
+          });
+        }
+      } else if (type === PAGEOBJ_FORM) {
+        const nested = this.#collectPathObjects(objPtr, true, pageHeight);
+        for (let j = 0; j < nested.length; j++) paths.push(nested[j]);
+      }
+    }
+    return paths;
+  }
+
+  /**
+   * Get bounding box of a path object via FPDFPageObj_GetBounds.
+   *
+   * @param {number} objPtr
+   * @returns {{left: number, bottom: number, right: number, top: number}|null}
+   */
+  #getPathBounds(objPtr) {
+    const pdfium = this.#pdfium;
+    const leftPtr = pdfium.pdfium.wasmExports.malloc(4);
+    const bottomPtr = pdfium.pdfium.wasmExports.malloc(4);
+    const rightPtr = pdfium.pdfium.wasmExports.malloc(4);
+    const topPtr = pdfium.pdfium.wasmExports.malloc(4);
+
+    try {
+      const ok = pdfium.FPDFPageObj_GetBounds(objPtr, leftPtr, bottomPtr, rightPtr, topPtr);
+      if (!ok) return null;
+
+      return {
+        left: pdfium.pdfium.HEAPF32[leftPtr >> 2],
+        bottom: pdfium.pdfium.HEAPF32[bottomPtr >> 2],
+        right: pdfium.pdfium.HEAPF32[rightPtr >> 2],
+        top: pdfium.pdfium.HEAPF32[topPtr >> 2],
+      };
+    } finally {
+      pdfium.pdfium.wasmExports.free(leftPtr);
+      pdfium.pdfium.wasmExports.free(bottomPtr);
+      pdfium.pdfium.wasmExports.free(rightPtr);
       pdfium.pdfium.wasmExports.free(topPtr);
     }
   }
@@ -697,6 +824,15 @@ export class PdfiumDocumentHandle {
    */
   extractPageText(pageIndex) {
     return this.#extractor.extractPageText(this.#docPtr, pageIndex);
+  }
+
+  /**
+   * Extract path objects from a page
+   * @param {number} pageIndex - 0-based page index
+   * @returns {{pageIndex: number, paths: PathObjectInfo[], pageWidth: number, pageHeight: number}}
+   */
+  extractPagePaths(pageIndex) {
+    return this.#extractor.extractPagePaths(this.#docPtr, pageIndex);
   }
 
   /**

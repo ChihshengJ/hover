@@ -615,12 +615,21 @@ export class PageView {
             target.refKey.author,
             target.refKey.year,
           );
+          console.log(matched);
           if (matched?.cachedText) return matched.cachedText;
         }
 
         // Heuristic fallback: extract text at the destination coordinate
         if (target?.location) {
-          if (target.location.x * target.location.y === 0) {
+          const dims = this.doc.textIndex?.getPageDimensions(
+            target.location.pageIndex + 1,
+          );
+          const multiColumn = dims?.multiColumn ?? false;
+          if (
+            multiColumn
+              ? target.location.x * target.location.y === 0
+              : target.location.y === 0
+          ) {
             return "invalid location";
           }
           return await this.#heuristicFindCiteText(

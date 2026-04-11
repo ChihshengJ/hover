@@ -46,6 +46,9 @@ export class DocumentTextIndex {
   #bodyMarginBottom = null;
   #bodyFontStyle = null;
   #bodyFontAnalyzed = false;
+  #headerHeight = null;
+  #footerHeight = null;
+  #headerFooterAnalyzed = false;
 
   constructor(doc) {
     this.#doc = doc;
@@ -74,6 +77,8 @@ export class DocumentTextIndex {
       lineHeight: this.getBodyLineHeight(),
       lineWidth: this.getBodyLineWidth(),
       marginBottom: this.getBodyMarginBottom(),
+      headerHeight: this.getHeaderHeight(),
+      footerHeight: this.getFooterHeight(),
       pageData: this.#pageData,
     };
     return info;
@@ -86,6 +91,8 @@ export class DocumentTextIndex {
       lineHeight: this.getBodyLineHeight(),
       lineWidth: this.getBodyLineWidth(),
       marginBottom: this.getBodyMarginBottom(),
+      headerHeight: this.getHeaderHeight(),
+      footerHeight: this.getFooterHeight(),
     };
     return info;
   }
@@ -97,11 +104,19 @@ export class DocumentTextIndex {
   getPageDimensions(pageNumber) {
     const data = this.#pageData.get(pageNumber);
     if (data) {
-      return { width: data.pageWidth, height: data.pageHeight };
+      return {
+        width: data.pageWidth,
+        height: data.pageHeight,
+        multiColumn: data.multiColumn,
+      };
     }
     const page = this.#doc.pdfDoc?.pages?.[pageNumber - 1];
     if (page) {
-      return { width: page.size.width, height: page.size.height };
+      return {
+        width: page.size.width,
+        height: page.size.height,
+        multiColumn: false,
+      };
     }
     return null;
   }
@@ -129,6 +144,16 @@ export class DocumentTextIndex {
   getBodyMarginBottom() {
     this.#ensureBodyFontAnalyzed();
     return this.#bodyMarginBottom ?? 0;
+  }
+
+  getHeaderHeight() {
+    this.#ensureHeaderFooterAnalyzed();
+    return this.#headerHeight;
+  }
+
+  getFooterHeight() {
+    this.#ensureHeaderFooterAnalyzed();
+    return this.#footerHeight;
   }
 
   async ensurePageIndexed(pageNumber) {
@@ -190,6 +215,30 @@ export class DocumentTextIndex {
       const marginBottom =
         lines.length > 0 ? Math.min(...lines.map((l) => l.y)) : 0;
 
+      let paths = [];
+      if (this.#lowLevelHandle) {
+        try {
+          const pathResult = this.#lowLevelHandle.extractPagePaths(
+            pageNumber - 1,
+          );
+          paths = pathResult.paths || [];
+        } catch (_) {
+          // Path extraction is best-effort
+        }
+      }
+
+      const { headerLines, footerLines, headerSepY, footerSepY } =
+        this.#detectHeaderFooter(lines, paths, pageWidth, pageHeight);
+
+      this.#headerFooterAnalyzed = false;
+
+      const multiColumn = this.#detectMultiColumn(
+        lines,
+        headerLines,
+        footerLines,
+        pageWidth,
+      );
+
       this.#pageData.set(pageNumber, {
         pageNumber,
         pageWidth,
@@ -197,6 +246,11 @@ export class DocumentTextIndex {
         marginLeft,
         marginBottom,
         lines,
+        headerLines,
+        footerLines,
+        headerSepY,
+        footerSepY,
+        multiColumn,
       });
       this.#indexedPages.add(pageNumber);
     } catch (error) {
@@ -336,6 +390,114 @@ export class DocumentTextIndex {
   }
 
   /**
+   * Detect header/footer lines and separator positions for a single page.
+   * All Y coordinates use PDF native bottom-left origin (higher Y = top of page).
+   *
+   * @param {TextLine[]} lines
+   * @param {PathObjectInfo[]} paths - from extractPagePaths
+   * @param {number} pageWidth
+   * @param {number} pageHeight
+   * @returns {{headerLines: TextLine[], footerLines: TextLine[], headerSepY: number|null, footerSepY: number|null}}
+   */
+  #detectHeaderFooter(lines, paths, pageWidth, pageHeight) {
+    let headerSepY = null;
+    let footerSepY = null;
+
+    for (const path of paths) {
+      const { pdfRect } = path;
+      const pathWidth = pdfRect.right - pdfRect.left;
+      const pathHeight = pdfRect.top - pdfRect.bottom;
+
+      if (pathHeight >= 3 || pathWidth <= pageWidth * 0.4) continue;
+
+      // Header zone (top 15%): high Y in PDF coords
+      if (pdfRect.bottom > pageHeight * 0.85) {
+        const candidate = pdfRect.bottom;
+        if (headerSepY === null || candidate < headerSepY) {
+          headerSepY = candidate;
+        }
+      }
+      // Footer zone (bottom 15%): low Y in PDF coords
+      if (pdfRect.top < pageHeight * 0.15) {
+        const candidate = pdfRect.top;
+        if (footerSepY === null || candidate > footerSepY) {
+          footerSepY = candidate;
+        }
+      }
+    }
+
+    const headerThreshold = headerSepY ?? pageHeight * 0.9;
+    const footerThreshold = footerSepY ?? pageHeight * 0.1;
+
+    const headerLines = [];
+    const footerLines = [];
+
+    for (const line of lines) {
+      if (line.y > headerThreshold) {
+        if (this.#isHeaderFooterCandidate(line, pageWidth)) {
+          headerLines.push(line);
+        }
+      } else if (line.y < footerThreshold) {
+        if (this.#isHeaderFooterCandidate(line, pageWidth)) {
+          footerLines.push(line);
+        }
+      }
+    }
+
+    return { headerLines, footerLines, headerSepY, footerSepY };
+  }
+
+  /**
+   * Check if a line looks like a header/footer (short, not spanning full width).
+   */
+  #isHeaderFooterCandidate(line, pageWidth) {
+    if (line.text.trim().length > 120) return false;
+    if (line.lineWidth > pageWidth * 0.7) return false;
+    return true;
+  }
+
+  /**
+   * Detect whether a page has a multi-column layout by clustering x-positions
+   * of body-text lines.
+   *
+   * @param {TextLine[]} lines
+   * @param {TextLine[]} headerLines
+   * @param {TextLine[]} footerLines
+   * @param {number} pageWidth
+   * @returns {boolean}
+   */
+  #detectMultiColumn(lines, headerLines, footerLines, pageWidth) {
+    const excludeSet = new Set();
+    for (const hl of headerLines) excludeSet.add(hl);
+    for (const fl of footerLines) excludeSet.add(fl);
+
+    const bodyLines = lines.filter(
+      (l) =>
+        !excludeSet.has(l) &&
+        l.text.trim().length > 10 &&
+        l.lineWidth < pageWidth * 0.6,
+    );
+
+    if (bodyLines.length < 6) return false;
+
+    const quantize = (v) => Math.round(v / 2) * 2;
+    const xCounts = new Map();
+    for (const line of bodyLines) {
+      const qx = quantize(line.x);
+      xCounts.set(qx, (xCounts.get(qx) || 0) + 1);
+    }
+
+    // Find the two most frequent x-positions
+    const sorted = [...xCounts.entries()].sort((a, b) => b[1] - a[1]);
+    if (sorted.length < 2) return false;
+
+    const [x1, count1] = sorted[0];
+    const [x2, count2] = sorted[1];
+
+    return count1 >= 3 && count2 >= 3 && Math.abs(x1 - x2) > pageWidth * 0.2;
+  }
+
+  /**
    * Estimate the true body-text left margin using mode of x positions,
    * filtering out outlier lines (short page numbers, wide banners, etc.).
    */
@@ -390,6 +552,11 @@ export class DocumentTextIndex {
       marginLeft: 0,
       marginBottom: 0,
       lines: [],
+      headerLines: [],
+      footerLines: [],
+      headerSepY: null,
+      footerSepY: null,
+      multiColumn: false,
     });
     this.#indexedPages.add(pageNumber);
   }
@@ -408,7 +575,21 @@ export class DocumentTextIndex {
     for (const [, data] of this.#pageData) {
       if (count > 5) break;
       if (data.marginBottom > 0) marginBottoms.push(data.marginBottom);
-      for (const line of data.lines.slice(5, 25)) {
+
+      const excludeSet = new Set();
+      if (data.headerLines) {
+        for (const hl of data.headerLines) excludeSet.add(hl);
+      }
+      if (data.footerLines) {
+        for (const fl of data.footerLines) excludeSet.add(fl);
+      }
+
+      const bodyLines =
+        excludeSet.size > 0
+          ? data.lines.filter((l) => !excludeSet.has(l)).slice(5, 40)
+          : data.lines.slice(5, 40);
+
+      for (const line of bodyLines) {
         if (line.fontSize > 0) fontSizes.push(line.fontSize);
         if (line.lineHeight > 0) lineHeights.push(line.lineHeight);
         if (line.lineWidth > 0) lineWidths.push(Math.floor(line.lineWidth));
@@ -426,6 +607,39 @@ export class DocumentTextIndex {
     this.#bodyLineHeight = this.#findMedian(lineHeights);
     this.#bodyLineWidth = this.#findMostCommon(lineWidths);
     this.#bodyMarginBottom = this.#findMostCommon(marginBottoms);
+  }
+
+  #ensureHeaderFooterAnalyzed() {
+    if (this.#headerFooterAnalyzed) return;
+    this.#headerFooterAnalyzed = true;
+
+    const headerExtents = [];
+    const footerExtents = [];
+    let count = 0;
+
+    for (const [, data] of this.#pageData) {
+      if (count >= 10) break;
+      count++;
+
+      if (data.headerLines && data.headerLines.length > 0) {
+        const lowestHeaderY =
+          data.headerSepY ??
+          Math.min(...data.headerLines.map((l) => l.y - (l.lineHeight || 0)));
+        headerExtents.push(data.pageHeight - lowestHeaderY);
+      }
+      if (data.footerLines && data.footerLines.length > 0) {
+        const highestFooterY =
+          data.footerSepY ?? Math.max(...data.footerLines.map((l) => l.y));
+        footerExtents.push(highestFooterY);
+      }
+    }
+
+    if (headerExtents.length >= 2) {
+      this.#headerHeight = this.#findMedian(headerExtents);
+    }
+    if (footerExtents.length >= 2) {
+      this.#footerHeight = this.#findMedian(footerExtents);
+    }
   }
 
   #findMedian(arr) {
@@ -458,5 +672,8 @@ export class DocumentTextIndex {
     this.#bodyLineHeight = null;
     this.#bodyFontStyle = null;
     this.#bodyFontAnalyzed = false;
+    this.#headerHeight = null;
+    this.#footerHeight = null;
+    this.#headerFooterAnalyzed = false;
   }
 }

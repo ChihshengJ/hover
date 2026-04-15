@@ -1,12 +1,12 @@
 /**
  * @typedef {import('./viewpane.js').ViewerPane} ViewerPane;
  * @typedef {import('./doc.js').PDFDocumentModel} PDFDocumentModel;
- * @typedef {import('./controls/floating_toolbar.js') FloatingToolbar};
+ * @typedef {import('./controls/floating_toolbar/index.js') FloatingToolbar};
  * @typedef {import('./controls/progress_bar.js') ProgressBar};
  */
 
 import { ViewerPane } from "./viewpane.js";
-import { FloatingToolbar } from "./controls/floating_toolbar.js";
+import { FloatingToolbar } from "./controls/floating_toolbar/index.js";
 import { WindowControls } from "./controls/window_controls.js";
 import { ProgressBar } from "./controls/progress_bar.js";
 

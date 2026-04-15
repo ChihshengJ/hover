@@ -324,7 +324,7 @@
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 10px 20px;
+  padding: 5px 20px;
   background: #ffffff;
   border-radius: 999px;
   box-shadow:
@@ -386,7 +386,7 @@
 .jump-to-top-btn.visible {
   opacity: 1;
   pointer-events: auto;
-  transform: translate(calc(-100% - 180px), -50%) scale(1);
+  transform: translate(calc(-100% - 175px), -50%) scale(1);
 }
 
 .jump-to-top-btn:hover {
@@ -396,7 +396,7 @@
 }
 
 .jump-to-page-input {
-  width: 64px;
+  width: 48px;
   padding: 5px 8px;
   border: 1px solid rgba(0, 0, 0, 0.12);
   border-radius: 8px;

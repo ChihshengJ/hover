@@ -2,7 +2,7 @@
  * Onboarding Walkthrough for Hover PDF Viewer
  *
  * @typedef {import('./window_manager.js').SplitWindowManager} SplitWindowManager
- * @typedef {import('./controls/floating_toolbar.js').FloatingToolbar} FloatingToolbar
+ * @typedef {import('./controls/floating_toolbar/index.js').FloatingToolbar} FloatingToolbar
  * @typedef {import('./controls/file_menu.js').FileMenu} FileMenu
  */
 

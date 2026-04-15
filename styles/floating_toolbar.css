@@ -290,7 +290,11 @@
 }
 
 .tool-btn-tooltip-title {
-  font-family: "DM Sans", -apple-system, BlinkMacSystemFont, sans-serif;
+  font-family:
+    "DM Sans",
+    -apple-system,
+    BlinkMacSystemFont,
+    sans-serif;
   font-size: 13px;
   font-weight: 600;
   color: #ffffff;
@@ -298,12 +302,118 @@
 }
 
 .tool-btn-tooltip-desc {
-  font-family: "DM Sans", -apple-system, BlinkMacSystemFont, sans-serif;
+  font-family:
+    "DM Sans",
+    -apple-system,
+    BlinkMacSystemFont,
+    sans-serif;
   font-size: 11px;
   font-weight: 400;
   color: rgba(255, 255, 255, 0.65);
   line-height: 1.4;
   margin-top: 2px;
+}
+
+/* ================================
+   Jump-to-Page Popup
+   ================================ */
+
+.jump-to-page-popup {
+  position: fixed;
+  z-index: calc(var(--z-modal) + 1);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 20px;
+  background: #ffffff;
+  border-radius: 999px;
+  box-shadow:
+    0 14px 44px rgba(0, 0, 0, 0.28),
+    0 2px 8px rgba(0, 0, 0, 0.12);
+  font-size: 14px;
+  color: #111;
+  pointer-events: none;
+  opacity: 0;
+  transform: translate(-100%, -50%) translateX(40px) scale(0.9);
+  transition:
+    opacity 0.25s ease,
+    transform 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.jump-to-page-popup.visible {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translate(-100%, -50%) scale(1);
+}
+
+.jump-to-page-label {
+  white-space: nowrap;
+  font-weight: 500;
+  color: #333;
+}
+
+/* Standalone circular jump-to-top button — mirrors .search-close-btn.
+   Positioned separately from the popup, sitting further left of the ball. */
+.jump-to-top-btn {
+  position: fixed;
+  z-index: calc(var(--z-modal) + 1);
+  width: 36px;
+  height: 36px;
+  border: none;
+  border-radius: 50%;
+  background: var(--bg-glass-solid);
+  box-shadow: var(--shadow-float);
+  color: var(--text-primary);
+  font-family: "Elms Sans", monospace;
+  font-size: 20px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+  pointer-events: none;
+  opacity: 0;
+  /* Offset left of the popup (popup is ~180px wide + a gap) */
+  transform: translate(calc(-100% - 200px), -50%) translateX(40px) scale(0.9);
+  transition:
+    opacity 0.25s ease,
+    transform 0.4s cubic-bezier(0.34, 1.56, 0.64, 1),
+    background var(--transition-fast),
+    box-shadow var(--transition-fast),
+    color var(--transition-fast);
+}
+
+.jump-to-top-btn.visible {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translate(calc(-100% - 180px), -50%) scale(1);
+}
+
+.jump-to-top-btn:hover {
+  background: #cfe9ff;
+  box-shadow: 0 8px 12px rgba(42, 110, 186, 0.4);
+  color: #1d4ed8;
+}
+
+.jump-to-page-input {
+  width: 64px;
+  padding: 5px 8px;
+  border: 1px solid rgba(0, 0, 0, 0.12);
+  border-radius: 8px;
+  font: inherit;
+  outline: none;
+  text-align: center;
+  background: #fafafa;
+  -moz-appearance: textfield;
+}
+.jump-to-page-input::-webkit-outer-spin-button,
+.jump-to-page-input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+.jump-to-page-input:focus {
+  border-color: var(--color-accent, #2a7eba);
+  background: #fff;
 }
 
 /* ===========================================

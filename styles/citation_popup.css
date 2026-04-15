@@ -1,4 +1,5 @@
 .citation-popup {
+  font-family: "Elms Sans", monospace;
   z-index: var(--z-popover);
   max-width: 450px;
   min-width: 320px;

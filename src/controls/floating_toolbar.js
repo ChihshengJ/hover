@@ -52,6 +52,7 @@ export class FloatingToolbar {
     /** @type {NavigationTree} */
     this.navigationTree = new NavigationTree(this);
     this.#createHitArea();
+    this.#createJumpPopup();
     this.#setupEventListeners();
     this.#updatePosition();
   }
@@ -263,8 +264,99 @@ export class FloatingToolbar {
     });
   }
 
+  #createJumpPopup() {
+    this.jumpPopup = document.createElement("div");
+    this.jumpPopup.className = "jump-to-page-popup";
+    this.jumpPopup.innerHTML = `
+      <label class="jump-to-page-label">to Page:</label>
+      <input type="number" class="jump-to-page-input" min="1" inputmode="numeric" />
+    `;
+    document.body.appendChild(this.jumpPopup);
+
+    this.jumpTopBtn = document.createElement("button");
+    this.jumpTopBtn.className = "jump-to-top-btn";
+    this.jumpTopBtn.type = "button";
+    this.jumpTopBtn.title = "Jump to top";
+    this.jumpTopBtn.textContent = "↑";
+    document.body.appendChild(this.jumpTopBtn);
+
+    this.jumpInput = this.jumpPopup.querySelector(".jump-to-page-input");
+    this.isJumpPopupOpen = false;
+  }
+
+  #positionJumpPopup() {
+    const rect = this.ball.getBoundingClientRect();
+    const centerY = rect.top + rect.height / 2;
+    // Popup sits just left of the ball
+    this.jumpPopup.style.top = `${centerY}px`;
+    this.jumpPopup.style.left = `${rect.left - 16}px`;
+    // Jump-to-top button sits further left, as a separate floating circle
+    this.jumpTopBtn.style.top = `${centerY}px`;
+    this.jumpTopBtn.style.left = `${rect.left - 16}px`;
+  }
+
+  #openJumpPopup() {
+    if (this.isJumpPopupOpen) {
+      this.#closeJumpPopup();
+      return;
+    }
+    this.isJumpPopupOpen = true;
+    this.jumpInput.value = "";
+    this.jumpInput.max = String(this.pane.pages.length);
+    this.#positionJumpPopup();
+    this.jumpPopup.classList.add("visible");
+    this.jumpTopBtn.classList.add("visible");
+    requestAnimationFrame(() => this.jumpInput.focus());
+    this.#cancelHideTimer();
+
+    // Dismiss on any click outside the popup, the to-top button, or the ball.
+    // Defer binding to the next tick so the opening click doesn't close it.
+    this._jumpOutsideHandler = (e) => {
+      if (
+        this.jumpPopup.contains(e.target) ||
+        this.jumpTopBtn.contains(e.target) ||
+        this.ball.contains(e.target)
+      ) {
+        return;
+      }
+      this.#closeJumpPopup();
+    };
+    setTimeout(() => {
+      if (this.isJumpPopupOpen) {
+        document.addEventListener("pointerdown", this._jumpOutsideHandler, true);
+      }
+    }, 0);
+  }
+
+  #closeJumpPopup() {
+    this.isJumpPopupOpen = false;
+    this.jumpPopup.classList.remove("visible");
+    this.jumpTopBtn.classList.remove("visible");
+    if (this._jumpOutsideHandler) {
+      document.removeEventListener("pointerdown", this._jumpOutsideHandler, true);
+      this._jumpOutsideHandler = null;
+    }
+  }
+
+  #submitJumpPopup() {
+    const total = this.pane.pages.length;
+    const raw = parseInt(this.jumpInput.value, 10);
+    if (Number.isNaN(raw)) {
+      this.#closeJumpPopup();
+      return;
+    }
+    if (raw < 1) {
+      this.pane.goToPage(1);
+    } else if (raw > total) {
+      this.pane.scrollToBottom();
+    } else {
+      this.pane.goToPage(raw);
+    }
+    this.#closeJumpPopup();
+  }
+
   #setupEventListeners() {
-    // Left click - only for double-click to scroll top now
+    // Click - only for double-click to scroll top now
     this.ball.addEventListener("click", (e) => {
       if (!this.wasDragged && !this.isTreeOpen) {
         e.preventDefault();
@@ -273,7 +365,7 @@ export class FloatingToolbar {
       this.wasDragged = false;
     });
 
-    // Right click for toolbar expansion
+    // Left click for toolbar expansion
     this.ball.addEventListener("contextmenu", (e) => {
       e.preventDefault();
       if (!this.isTreeOpen) {
@@ -331,6 +423,36 @@ export class FloatingToolbar {
       if (this.isTreeOpen) {
         this.#closeTree();
       }
+      if (this.isJumpPopupOpen) {
+        this.#positionJumpPopup();
+      }
+    });
+
+    this.jumpInput.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        this.#submitJumpPopup();
+      } else if (e.key === "Escape") {
+        e.preventDefault();
+        this.#closeJumpPopup();
+      }
+    });
+
+    this.jumpInput.addEventListener("blur", (e) => {
+      if (this.isJumpPopupOpen && e.relatedTarget !== this.jumpTopBtn) {
+        this.#closeJumpPopup();
+      }
+    });
+
+    this.jumpTopBtn.addEventListener("mousedown", (e) => {
+      // Prevent input blur from closing popup before click fires
+      e.preventDefault();
+    });
+
+    this.jumpTopBtn.addEventListener("click", (e) => {
+      e.preventDefault();
+      this.pane.scrollToTop();
+      this.#closeJumpPopup();
     });
 
     this.pane.controls.onScroll(this.#scrollCallback);
@@ -447,8 +569,8 @@ export class FloatingToolbar {
     }
 
     if (timeSinceLastClick < 220) {
-      // Double-click: scroll to top
-      this.pane.scrollToTop();
+      // Double-click: open jump-to-page popup
+      this.#openJumpPopup();
       this.lastClickTime = 0;
     } else {
       // Single click: open toolbar
@@ -458,20 +580,6 @@ export class FloatingToolbar {
         this.#toggleExpand();
       }, 220);
     }
-  }
-
-  #updateGooPosition(e) {
-    const rect = this.gooContainer.getBoundingClientRect();
-    // Need to be bigger than the padding in the pseudo element for more viscosity
-    const padding = 45;
-    const expandedWidth = rect.width + padding * 2;
-    const expandedHeight = rect.height + padding * 2;
-
-    const x = ((e.clientX - rect.left + padding) / expandedWidth) * 100;
-    const y = ((e.clientY - rect.top + padding) / expandedHeight) * 100;
-
-    this.gooContainer.style.setProperty("--x", Math.max(0, Math.min(100, x)));
-    this.gooContainer.style.setProperty("--y", Math.max(0, Math.min(100, y)));
   }
 
   #startDrag(e) {

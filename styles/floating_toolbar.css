@@ -334,7 +334,7 @@
   color: #111;
   pointer-events: none;
   opacity: 0;
-  transform: translate(-100%, -50%) translateX(40px) scale(0.9);
+  transform: translate(0, -50%) translateX(40px) scale(0.9);
   transition:
     opacity 0.25s ease,
     transform 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
@@ -343,7 +343,7 @@
 .jump-to-page-popup.visible {
   opacity: 1;
   pointer-events: auto;
-  transform: translate(-100%, -50%) scale(1);
+  transform: translate(0, -50%) scale(1);
 }
 
 .jump-to-page-label {
@@ -352,8 +352,10 @@
   color: #333;
 }
 
-/* Standalone circular jump-to-top button — mirrors .search-close-btn.
-   Positioned separately from the popup, sitting further left of the ball. */
+/* Standalone circular jump button — mirrors .search-close-btn.
+   Sits to the left of the ball; popup sits further left of the button.
+   Absolute left/top are set in JS; transform here only handles vertical
+   centering and the bounce/scale entrance. */
 .jump-to-top-btn {
   position: fixed;
   z-index: calc(var(--z-modal) + 1);
@@ -373,8 +375,7 @@
   line-height: 1;
   pointer-events: none;
   opacity: 0;
-  /* Offset left of the popup (popup is ~180px wide + a gap) */
-  transform: translate(calc(-100% - 200px), -50%) translateX(40px) scale(0.9);
+  transform: translate(0, -50%) translateX(40px) scale(0.9);
   transition:
     opacity 0.25s ease,
     transform 0.4s cubic-bezier(0.34, 1.56, 0.64, 1),
@@ -386,13 +387,22 @@
 .jump-to-top-btn.visible {
   opacity: 1;
   pointer-events: auto;
-  transform: translate(calc(-100% - 175px), -50%) scale(1);
+  transform: translate(0, -50%) scale(1);
 }
 
 .jump-to-top-btn:hover {
   background: #cfe9ff;
   box-shadow: 0 8px 12px rgba(42, 110, 186, 0.4);
   color: #1d4ed8;
+}
+
+.jump-to-top-btn-icon {
+  display: inline-block;
+  transition: transform 0.3s ease;
+}
+
+.jump-to-top-btn.direction-down .jump-to-top-btn-icon {
+  transform: rotate(180deg);
 }
 
 .jump-to-page-input {
@@ -480,4 +490,27 @@
 .night-mode .jump-indicator.active {
   background: rgba(100, 150, 255, 0.3);
   border-color: rgba(100, 150, 255, 0.5);
+}
+
+.night-mode .jump-to-page-popup {
+  background: #2a2a2a;
+  color: #f0f0f0;
+  box-shadow:
+    0 14px 44px rgba(0, 0, 0, 0.6),
+    0 2px 8px rgba(0, 0, 0, 0.4);
+}
+
+.night-mode .jump-to-page-label {
+  color: #d0d0d0;
+}
+
+.night-mode .jump-to-page-input {
+  background: #1e1e1e;
+  color: #f0f0f0;
+  border-color: rgba(255, 255, 255, 0.15);
+}
+
+.night-mode .jump-to-page-input:focus {
+  background: #252525;
+  border-color: var(--color-accent, #2a7eba);
 }

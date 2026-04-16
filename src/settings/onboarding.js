@@ -424,8 +424,8 @@ export class OnboardingWalkthrough {
         noOverlay: true,
         tooltip: {
           text: "Double click the ball",
-          subtext: "This scrolls the paper to the top",
-          position: "left",
+          subtext: "Press the jump button to go to the top",
+          position: "top",
         },
         waitFor: "ballDoubleClicked",
         onEnter: () => setTimeout(() => this.#onBallDoubleClickEnter(), 300),
@@ -1199,12 +1199,12 @@ export class OnboardingWalkthrough {
       case "ballDoubleClicked": {
         // Watch for double-click on ball
         const handler = () => {
-          this.toolbar.ball.removeEventListener("dblclick", handler);
+          this.toolbar.jumpPopup.topBtn.removeEventListener("click", handler);
           advance();
         };
-        this.toolbar.ball.addEventListener("dblclick", handler);
+        this.toolbar.jumpPopup.topBtn.addEventListener("click", handler);
         this.activeListeners.set(eventName, () =>
-          this.toolbar.ball.removeEventListener("dblclick", handler),
+          this.toolbar.jumpPopup.topBtn.removeEventListener("click", handler),
         );
         break;
       }
@@ -1650,7 +1650,7 @@ export class OnboardingWalkthrough {
         width: rect.width,
         height: rect.height,
       };
-      this.#positionTooltip("left", tooltipConfig, -50, 0);
+      this.#positionTooltip("top", tooltipConfig, -50, 0);
       this.tooltip.classList.add("visible");
     }
   }

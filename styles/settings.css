@@ -430,6 +430,37 @@
 }
 
 /* ===========================================
+   Subsection separator (title + hairline rule)
+   =========================================== */
+
+.settings-subsection + .settings-subsection {
+  margin-top: 18px;
+}
+
+.settings-subsection-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 8px;
+  padding: 0 2px;
+}
+
+.settings-subsection-title {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--text-tertiary);
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  flex-shrink: 0;
+}
+
+.settings-subsection-rule {
+  flex: 1;
+  height: 1px;
+  background: var(--border-color);
+}
+
+/* ===========================================
    Toggle Switch (Progress Bar, etc.)
    =========================================== */
 

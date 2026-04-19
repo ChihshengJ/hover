@@ -223,3 +223,24 @@ body.night-mode {
   --color-accent: #60a5fa;
   --color-accent-hover: #3b82f6;
 }
+
+/* Ball defaults for night mode — applied only when the user has NOT
+   opted to persist their custom ball style into night mode. */
+body.night-mode:not(.ball-night-persist) {
+  --ball-body: linear-gradient(
+    140deg,
+    rgba(200, 200, 200, 1) 20%,
+    rgba(120, 120, 120, 1) 45%,
+    rgba(230, 230, 230, 1) 90%
+  );
+  --goo-body: 200, 200, 200;
+  --page-color: #e0e0e0;
+  --theme-btn-color: rgba(60, 60, 60, 1);
+}
+
+/* Hide custom wallpaper in night mode unless the user opts to persist it.
+   The inline backgroundImage set by WallpaperManager is overridden here so
+   --bg-body (the flat night color) shows through. */
+body.night-mode:not(.wallpaper-night-persist) {
+  background-image: none !important;
+}

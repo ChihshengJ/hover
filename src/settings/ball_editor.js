@@ -23,6 +23,8 @@ export class BallEditor {
     },
     pageColor: "#000000",
     pageWeight: 300,
+    persistInNight: false,
+    useThemeButtons: false,
   };
 
   /**
@@ -139,6 +141,8 @@ export class BallEditor {
       },
       pageColor: saved.pageColor || fallback.pageColor,
       pageWeight: saved.pageWeight || fallback.pageWeight,
+      persistInNight: saved.persistInNight ?? fallback.persistInNight,
+      useThemeButtons: saved.useThemeButtons ?? fallback.useThemeButtons,
     };
   }
 
@@ -203,6 +207,49 @@ export class BallEditor {
     return `${r}, ${g}, ${b}`;
   }
 
+  /**
+   * Pick the gradient stop with the largest coverage along the axis.
+   * Coverage = midpoint-to-midpoint span (edges clamped to 0/100).
+   * @param {Array<{color: string, position: number}>} stops
+   * @returns {{color: string, position: number}}
+   */
+  _dominantStop(stops) {
+    const sorted = [...stops].sort((a, b) => a.position - b.position);
+    let best = sorted[0];
+    let bestSpan = -1;
+    for (let i = 0; i < sorted.length; i++) {
+      const left =
+        i === 0 ? 0 : (sorted[i - 1].position + sorted[i].position) / 2;
+      const right =
+        i === sorted.length - 1
+          ? 100
+          : (sorted[i].position + sorted[i + 1].position) / 2;
+      const span = right - left;
+      if (span > bestSpan) {
+        bestSpan = span;
+        best = sorted[i];
+      }
+    }
+    return best;
+  }
+
+  /**
+   * WCAG relative luminance of a hex color, 0..1.
+   * @param {string} hex
+   * @returns {number}
+   */
+  _relativeLuminance(hex) {
+    const h = hex.replace("#", "");
+    const toLin = (v) => {
+      v = v / 255;
+      return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4);
+    };
+    const r = toLin(parseInt(h.slice(0, 2), 16) || 0);
+    const g = toLin(parseInt(h.slice(2, 4), 16) || 0);
+    const b = toLin(parseInt(h.slice(4, 6), 16) || 0);
+    return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+  }
+
   // ╍╍╍ Ball Style Application ╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍
 
   /**
@@ -216,12 +263,21 @@ export class BallEditor {
       this._buildGradientCSS(style.gradient),
     );
 
-    const midIdx = Math.floor(style.gradient.stops.length / 2);
-    const gooColor = style.gradient.stops[midIdx]?.color || "#ffffff";
-    root.style.setProperty("--goo-body", this._hexToRgbTriplet(gooColor));
+    const dominant = this._dominantStop(style.gradient.stops);
+    const dominantColor = dominant?.color || "#ffffff";
+    root.style.setProperty("--goo-body", this._hexToRgbTriplet(dominantColor));
+    root.style.setProperty("--theme-btn-color", dominantColor);
 
     root.style.setProperty("--page-color", style.pageColor);
     root.style.setProperty("--page-weight", String(style.pageWeight));
+
+    const body = document.body;
+    body.classList.toggle("ball-night-persist", !!style.persistInNight);
+    body.classList.toggle("theme-buttons", !!style.useThemeButtons);
+    body.classList.toggle(
+      "theme-buttons-dark-icon",
+      !!style.useThemeButtons && this._relativeLuminance(dominantColor) < 0.5,
+    );
   }
 
   /**
@@ -350,6 +406,24 @@ export class BallEditor {
       }
     });
 
+    // ── Night-mode persist toggle ──
+    const persistToggle = overlay.querySelector(".ball-night-persist-toggle");
+    if (persistToggle) {
+      persistToggle.addEventListener("change", () => {
+        this._ballStyle.persistInNight = persistToggle.checked;
+        this._onBallStyleChanged();
+      });
+    }
+
+    // ── Use theme color for buttons toggle ──
+    const themeBtnsToggle = overlay.querySelector(".ball-theme-buttons-toggle");
+    if (themeBtnsToggle) {
+      themeBtnsToggle.addEventListener("change", () => {
+        this._ballStyle.useThemeButtons = themeBtnsToggle.checked;
+        this._onBallStyleChanged();
+      });
+    }
+
     // ── Gradient bar click to add stop ──
     const gradientBar = overlay.querySelector("#gradient-bar");
     gradientBar.addEventListener("click", (e) => {
@@ -422,6 +496,17 @@ export class BallEditor {
       pageColorSwatch.style.backgroundColor = style.pageColor;
       pageColorHex.value = style.pageColor;
     }
+
+    // Toggle states
+    const persistToggle = this._overlay.querySelector(
+      ".ball-night-persist-toggle",
+    );
+    if (persistToggle) persistToggle.checked = !!style.persistInNight;
+
+    const themeBtnsToggle = this._overlay.querySelector(
+      ".ball-theme-buttons-toggle",
+    );
+    if (themeBtnsToggle) themeBtnsToggle.checked = !!style.useThemeButtons;
 
     // Add stop button state
     this._updateAddStopButton();

@@ -164,7 +164,7 @@
   height: 40px;
   border-radius: 50%;
   border: none;
-  background: rgba(255, 255, 255, 0.8);
+  background: rgba(255, 255, 255, 1);
   color: var(--text-primary);
   cursor: pointer;
   box-shadow:
@@ -433,44 +433,63 @@
 .night-mode .goo-container::before {
   filter: url(#goo) drop-shadow(0 0.3em 0.1em #00000099)
     drop-shadow(0 -0.05em 1em #ffffff4d);
-  background:
-    radial-gradient(
-        ellipse 50% 50% at 75% 85%,
-        rgba(0, 0, 0, 0.5) 0%,
-        transparent 45%
-      )
-      content-box,
-    linear-gradient(
-        140deg,
-        rgba(200, 200, 200, 1) 20%,
-        rgba(120, 120, 120, 1) 45%,
-        rgba(230, 230, 230, 1) 90%
-      )
-      content-box,
-    radial-gradient(
-        45px 45px at calc(var(--x) * 1%) calc(var(--y) * 1%),
-        rgba(200, 200, 200, var(--goo-opacity)) 0%,
-        transparent 100%
-      )
-      border-box;
-}
-
-.night-mode .page-display {
-  filter: invert(1);
 }
 
 .night-mode .tool-btn {
   background: linear-gradient(
     135deg,
-    rgba(130, 130, 130, 0.8) 18%,
-    rgba(150, 150, 150, 0.8) 65%,
-    rgba(250, 250, 250, 0.8) 90%
+    rgba(130, 130, 130, 1) 18%,
+    rgba(150, 150, 150, 1) 65%,
+    rgba(250, 250, 250, 1) 90%
   );
   box-shadow:
     inset -2px -2px 5px 1px #0000008e,
     inset 1px 1px 5px 1px #0000006d,
     0 3px 5px 2px #ffffff10,
     0 0 10px 2px #ffffff05;
+}
+
+/* ================================
+   Theme-colored tool buttons
+   ================================
+   Applies in light mode, or in night mode ONLY when the ball's
+   persist-in-night-mode toggle is on (so button state follows
+   ball state). */
+body.theme-buttons:not(.night-mode) .tool-btn,
+body.theme-buttons.night-mode.ball-night-persist .tool-btn {
+  background: var(--theme-btn-color, rgba(255, 255, 255, 1));
+}
+
+/* Neutralize the default night-mode icon inversion so icon color is
+   driven purely by button background luminance in themed state. */
+body.theme-buttons.night-mode.ball-night-persist .tool-btn .inner,
+body.theme-buttons.night-mode.ball-night-persist .tool-btn .inner img,
+body.theme-buttons.night-mode.ball-night-persist .tool-btn .rotate-icon {
+  filter: none;
+}
+
+/* When the dominant color is dark enough, invert img icons and
+   flip the inline rotate SVG to white via currentColor. */
+body.theme-buttons.theme-buttons-dark-icon:not(.night-mode)
+  .tool-btn
+  .inner
+  img,
+body.theme-buttons.theme-buttons-dark-icon.night-mode.ball-night-persist
+  .tool-btn
+  .inner
+  img {
+  filter: invert(1);
+}
+
+body.theme-buttons.theme-buttons-dark-icon:not(.night-mode)
+  .tool-btn
+  .inner
+  .rotate-icon,
+body.theme-buttons.theme-buttons-dark-icon.night-mode.ball-night-persist
+  .tool-btn
+  .inner
+  .rotate-icon {
+  color: #fff;
 }
 
 .night-mode .inner {

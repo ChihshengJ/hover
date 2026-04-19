@@ -115,6 +115,25 @@ export class WallpaperManager {
   async init() {
     await this._ensureDB();
     this._meta = await this._loadMeta();
+    this._syncPersistClass();
+  }
+
+  /**
+   * Toggle whether the custom wallpaper persists in night mode.
+   * @param {boolean} enabled
+   */
+  async setPersistInNight(enabled) {
+    if (!this._meta) return;
+    this._meta.persistInNight = !!enabled;
+    await this._saveMeta(this._meta);
+    this._syncPersistClass();
+  }
+
+  _syncPersistClass() {
+    document.body.classList.toggle(
+      "wallpaper-night-persist",
+      !!this._meta?.persistInNight,
+    );
   }
 
   /**
@@ -124,6 +143,7 @@ export class WallpaperManager {
   async applyOnStartup() {
     try {
       await this.init();
+      this._syncPersistClass();
       const activeId = this._meta.activeId;
       if (!activeId) return;
 
@@ -450,7 +470,12 @@ export class WallpaperManager {
 
   /** @returns {Promise<Object>} */
   async _loadMeta() {
-    const fallback = { activeId: null, custom: [], presetThumbs: {} };
+    const fallback = {
+      activeId: null,
+      custom: [],
+      presetThumbs: {},
+      persistInNight: false,
+    };
 
     if (typeof chrome !== "undefined" && chrome.storage?.local) {
       return new Promise((resolve) => {

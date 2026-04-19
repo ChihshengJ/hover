@@ -267,44 +267,98 @@ export class Settings {
             </div>
           </div>
 
-          <!-- ─── Display Section ─── -->
+          <!-- ─── Configs Section ─── -->
           <div class="settings-section">
             <div class="settings-section-header">
-              <h3 class="settings-section-title">Display</h3>
+              <h3 class="settings-section-title">Configs</h3>
             </div>
-            <div class="settings-toggle-row">
-              <div class="settings-toggle-info">
-                <span class="settings-toggle-label">Progress Bar</span>
-                <span class="settings-toggle-description">Show reading progress on the side</span>
+
+            <div class="settings-subsection">
+              <div class="settings-subsection-header">
+                <span class="settings-subsection-title">Display</span>
+                <span class="settings-subsection-rule"></span>
               </div>
-              <label class="settings-toggle-switch">
-                <input type="checkbox" class="progress-bar-toggle">
-                <span class="settings-toggle-slider"></span>
-                <span class="settings-toggle-knob"></span>
-              </label>
+              <div class="settings-toggle-row">
+                <div class="settings-toggle-info">
+                  <span class="settings-toggle-label">Progress Bar</span>
+                  <span class="settings-toggle-description">Show reading progress on the side</span>
+                </div>
+                <label class="settings-toggle-switch">
+                  <input type="checkbox" class="progress-bar-toggle">
+                  <span class="settings-toggle-slider"></span>
+                  <span class="settings-toggle-knob"></span>
+                </label>
+              </div>
+              <div class="settings-toggle-row">
+                <div class="settings-toggle-info">
+                  <span class="settings-toggle-label">Auto-collapse Toolbar</span>
+                  <span class="settings-toggle-description">Automatically collapse tool buttons after a delay</span>
+                </div>
+                <label class="settings-toggle-switch">
+                  <input type="checkbox" class="auto-collapse-toggle">
+                  <span class="settings-toggle-slider"></span>
+                  <span class="settings-toggle-knob"></span>
+                </label>
+              </div>
+              <div class="settings-toggle-row">
+                <div class="settings-toggle-info">
+                  <span class="settings-toggle-label">Theme-colored Buttons</span>
+                  <span class="settings-toggle-description">Tint tool buttons with the floating ball's dominant color</span>
+                </div>
+                <label class="settings-toggle-switch">
+                  <input type="checkbox" class="ball-theme-buttons-toggle">
+                  <span class="settings-toggle-slider"></span>
+                  <span class="settings-toggle-knob"></span>
+                </label>
+              </div>
             </div>
-            <div class="settings-toggle-row">
-              <div class="settings-toggle-info">
-                <span class="settings-toggle-label">Auto-collapse Toolbar</span>
-                <span class="settings-toggle-description">Automatically collapse tool buttons after a delay</span>
+
+            <div class="settings-subsection">
+              <div class="settings-subsection-header">
+                <span class="settings-subsection-title">Night Mode</span>
+                <span class="settings-subsection-rule"></span>
               </div>
-              <label class="settings-toggle-switch">
-                <input type="checkbox" class="auto-collapse-toggle">
-                <span class="settings-toggle-slider"></span>
-                <span class="settings-toggle-knob"></span>
-              </label>
+              <div class="settings-toggle-row">
+                <div class="settings-toggle-info">
+                  <span class="settings-toggle-label">Persist Wallpaper</span>
+                  <span class="settings-toggle-description">Keep the custom wallpaper in night mode instead of the default dark background</span>
+                </div>
+                <label class="settings-toggle-switch">
+                  <input type="checkbox" class="wallpaper-night-persist-toggle">
+                  <span class="settings-toggle-slider"></span>
+                  <span class="settings-toggle-knob"></span>
+                </label>
+              </div>
+              <div class="settings-toggle-row">
+                <div class="settings-toggle-info">
+                  <span class="settings-toggle-label">Persist Floating Ball</span>
+                  <span class="settings-toggle-description">Keep the custom ball style in night mode instead of the default dark style</span>
+                </div>
+                <label class="settings-toggle-switch">
+                  <input type="checkbox" class="ball-night-persist-toggle">
+                  <span class="settings-toggle-slider"></span>
+                  <span class="settings-toggle-knob"></span>
+                </label>
+              </div>
             </div>
-            <div class="settings-select-row">
-              <div class="settings-toggle-info">
-                <span class="settings-toggle-label">Default Action</span>
-                <span class="settings-toggle-description">First tool shown in the action button</span>
+
+            <div class="settings-subsection">
+              <div class="settings-subsection-header">
+                <span class="settings-subsection-title">Action Tool</span>
+                <span class="settings-subsection-rule"></span>
               </div>
-              <select class="settings-select default-tool-select">
-                <option value="search">Search</option>
-                <option value="drawing">Drawing</option>
-                <option value="crop">Crop</option>
-                <option value="translation">Translation</option>
-              </select>
+              <div class="settings-select-row">
+                <div class="settings-toggle-info">
+                  <span class="settings-toggle-label">Default Action</span>
+                  <span class="settings-toggle-description">First tool shown in the action button</span>
+                </div>
+                <select class="settings-select default-tool-select">
+                  <option value="search">Search</option>
+                  <option value="drawing">Drawing</option>
+                  <option value="crop">Crop</option>
+                  <option value="translation">Translation</option>
+                </select>
+              </div>
             </div>
           </div>
 
@@ -414,6 +468,17 @@ export class Settings {
       urlInput.value = "";
       urlArea.style.display = "none";
     });
+
+    // Wallpaper night-mode persist toggle
+    const wallpaperPersistToggle = overlay.querySelector(
+      ".wallpaper-night-persist-toggle",
+    );
+    if (wallpaperPersistToggle) {
+      wallpaperPersistToggle.checked = !!this.wallpaper.meta?.persistInNight;
+      wallpaperPersistToggle.addEventListener("change", () => {
+        this.wallpaper.setPersistInNight(wallpaperPersistToggle.checked);
+      });
+    }
 
     // Progress bar toggle
     const progressToggle = overlay.querySelector(".progress-bar-toggle");

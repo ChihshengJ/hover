@@ -580,7 +580,6 @@ function findReferenceSectionEnd(
 function collectSectionLines(pageData, start, end, metrics) {
   const lines = [];
   const pageNumbers = Array.from(pageData.keys()).sort((a, b) => a - b);
-  console.log(metrics.headerHeight, metrics.footerHeight);
 
   for (const pageNum of pageNumbers) {
     if (pageNum < start.pageNumber || pageNum > end.pageNumber) continue;

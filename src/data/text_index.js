@@ -148,12 +148,12 @@ export class DocumentTextIndex {
 
   getHeaderHeight() {
     this.#ensureHeaderFooterAnalyzed();
-    return this.#headerHeight;
+    return this.#headerHeight ?? 0;
   }
 
   getFooterHeight() {
     this.#ensureHeaderFooterAnalyzed();
-    return this.#footerHeight;
+    return this.#footerHeight ?? 0;
   }
 
   async ensurePageIndexed(pageNumber) {
@@ -226,7 +226,6 @@ export class DocumentTextIndex {
           // Path extraction is best-effort
         }
       }
-
       const { headerLines, footerLines, headerSepY, footerSepY } =
         this.#detectHeaderFooter(lines, paths, pageWidth, pageHeight);
 
@@ -400,31 +399,31 @@ export class DocumentTextIndex {
    * @returns {{headerLines: TextLine[], footerLines: TextLine[], headerSepY: number|null, footerSepY: number|null}}
    */
   #detectHeaderFooter(lines, paths, pageWidth, pageHeight) {
-    let headerSepY = null;
-    let footerSepY = null;
+    const headerCandidates = [];
+    const footerCandidates = [];
 
     for (const path of paths) {
       const { pdfRect } = path;
       const pathWidth = pdfRect.right - pdfRect.left;
       const pathHeight = pdfRect.top - pdfRect.bottom;
 
-      if (pathHeight >= 3 || pathWidth <= pageWidth * 0.4) continue;
+      if (pathHeight >= 3 || pathWidth <= pageWidth * 0.6) continue;
 
       // Header zone (top 15%): high Y in PDF coords
       if (pdfRect.bottom > pageHeight * 0.85) {
-        const candidate = pdfRect.bottom;
-        if (headerSepY === null || candidate < headerSepY) {
-          headerSepY = candidate;
-        }
+        headerCandidates.push(pdfRect.bottom);
       }
       // Footer zone (bottom 15%): low Y in PDF coords
       if (pdfRect.top < pageHeight * 0.15) {
-        const candidate = pdfRect.top;
-        if (footerSepY === null || candidate > footerSepY) {
-          footerSepY = candidate;
-        }
+        footerCandidates.push(pdfRect.top);
       }
     }
+    // Use median so a stray rule (e.g. a table border that leaks into the
+    // header/footer zone) can't drag the separator away from the true one.
+    const headerSepY =
+      headerCandidates.length > 0 ? this.#findMedian(headerCandidates) : null;
+    const footerSepY =
+      footerCandidates.length > 0 ? this.#findMedian(footerCandidates) : null;
 
     const headerThreshold = headerSepY ?? pageHeight * 0.9;
     const footerThreshold = footerSepY ?? pageHeight * 0.1;
@@ -622,23 +621,28 @@ export class DocumentTextIndex {
       count++;
 
       if (data.headerLines && data.headerLines.length > 0) {
-        const lowestHeaderY =
+        const headerY =
           data.headerSepY ??
-          Math.min(...data.headerLines.map((l) => l.y - (l.lineHeight || 0)));
-        headerExtents.push(data.pageHeight - lowestHeaderY);
+          this.#findMedian(
+            data.headerLines.map((l) => l.y - (l.lineHeight || 0)),
+          );
+        headerExtents.push(data.pageHeight - headerY);
       }
       if (data.footerLines && data.footerLines.length > 0) {
-        const highestFooterY =
-          data.footerSepY ?? Math.max(...data.footerLines.map((l) => l.y));
-        footerExtents.push(highestFooterY);
+        const footerY =
+          data.footerSepY ??
+          this.#findMedian(
+            data.footerLines.map((l) => l.y + (l.lineHeight || 0)),
+          );
+        footerExtents.push(footerY);
       }
     }
 
     if (headerExtents.length >= 2) {
-      this.#headerHeight = this.#findMedian(headerExtents);
+      this.#headerHeight = this.#findMostCommon(headerExtents);
     }
     if (footerExtents.length >= 2) {
-      this.#footerHeight = this.#findMedian(footerExtents);
+      this.#footerHeight = this.#findMostCommon(footerExtents);
     }
   }
 

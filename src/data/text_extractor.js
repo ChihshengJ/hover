@@ -242,10 +242,14 @@ export class PdfiumTextExtractor {
    * @returns {{pageIndex: number, paths: PathObjectInfo[], pageWidth: number, pageHeight: number}}
    */
   extractPagePaths(docPtr, pageIndex) {
-    const result = this.withPage(docPtr, pageIndex, ({ pagePtr, pageWidth, pageHeight }) => {
-      const paths = this.#collectPathObjects(pagePtr, false, pageHeight);
-      return { pageIndex, paths, pageWidth, pageHeight };
-    });
+    const result = this.withPage(
+      docPtr,
+      pageIndex,
+      ({ pagePtr, pageWidth, pageHeight }) => {
+        const paths = this.#collectPathObjects(pagePtr, false, pageHeight);
+        return { pageIndex, paths, pageWidth, pageHeight };
+      },
+    );
     return result || { pageIndex, paths: [], pageWidth: 0, pageHeight: 0 };
   }
 
@@ -404,6 +408,7 @@ export class PdfiumTextExtractor {
   #collectPathObjects(containerPtr, isForm, pageHeight) {
     const pdfium = this.#pdfium;
     const PAGEOBJ_PATH = 1;
+    const PAGEOBJ_IMAGE = 2;
     const PAGEOBJ_FORM = 5;
     const paths = [];
 
@@ -418,26 +423,51 @@ export class PdfiumTextExtractor {
       if (!objPtr) continue;
 
       const type = pdfium.FPDFPageObj_GetType(objPtr);
-      if (type === PAGEOBJ_PATH) {
-        const bounds = this.#getPathBounds(objPtr);
-        if (bounds) {
-          paths.push({
-            index: paths.length,
-            pdfRect: bounds,
-            screenRect: {
-              x: bounds.left,
-              y: pageHeight - bounds.top,
-              width: bounds.right - bounds.left,
-              height: bounds.top - bounds.bottom,
-            },
-          });
-        }
-      } else if (type === PAGEOBJ_FORM) {
+
+      if (type === PAGEOBJ_FORM) {
         const nested = this.#collectPathObjects(objPtr, true, pageHeight);
         for (let j = 0; j < nested.length; j++) paths.push(nested[j]);
+        continue;
       }
+
+      let accept = false;
+      if (type === PAGEOBJ_PATH) {
+        accept = this.#isSimpleLinePath(objPtr);
+      } else if (type === PAGEOBJ_IMAGE) {
+        accept = true;
+      }
+      if (!accept) continue;
+
+      const bounds = this.#getPathBounds(objPtr);
+      if (!bounds) continue;
+
+      const h = bounds.top - bounds.bottom;
+      const w = bounds.right - bounds.left;
+      const isLinelikeBounds = (h < 3 && w > 20) || (w < 3 && h > 20);
+      if (type === PAGEOBJ_IMAGE && !isLinelikeBounds) continue;
+
+      paths.push({
+        index: paths.length,
+        pdfRect: bounds,
+        screenRect: {
+          x: bounds.left,
+          y: pageHeight - bounds.top,
+          width: w,
+          height: h,
+        },
+      });
     }
     return paths;
+  }
+
+  #isSimpleLinePath(objPtr) {
+    const pdfium = this.#pdfium;
+    if (pdfium.FPDFPath_CountSegments(objPtr) !== 2) return false;
+    const seg0 = pdfium.FPDFPath_GetPathSegment(objPtr, 0);
+    const seg1 = pdfium.FPDFPath_GetPathSegment(objPtr, 1);
+    if (pdfium.FPDFPathSegment_GetType(seg0) !== 0) return false;
+    if (pdfium.FPDFPathSegment_GetType(seg1) !== 1) return false;
+    return true;
   }
 
   /**
@@ -454,7 +484,13 @@ export class PdfiumTextExtractor {
     const topPtr = pdfium.pdfium.wasmExports.malloc(4);
 
     try {
-      const ok = pdfium.FPDFPageObj_GetBounds(objPtr, leftPtr, bottomPtr, rightPtr, topPtr);
+      const ok = pdfium.FPDFPageObj_GetBounds(
+        objPtr,
+        leftPtr,
+        bottomPtr,
+        rightPtr,
+        topPtr,
+      );
       if (!ok) return null;
 
       return {
@@ -603,7 +639,7 @@ export class PdfiumTextExtractor {
           top: box.top,
           right: box.right,
           bottom: box.bottom,
-          avgHeight: box.height,
+          maxHeight: box.height,
           lastVisibleCharCode: charCode,
         };
         continue;
@@ -611,8 +647,8 @@ export class PdfiumTextExtractor {
 
       const sameLine =
         Math.abs(box.bottom - currentRun.bottom) <
-        currentRun.avgHeight * LINE_TOLERANCE_FACTOR;
-      const gapThreshold = currentRun.avgHeight * WORD_GAP_FACTOR;
+        currentRun.maxHeight * LINE_TOLERANCE_FACTOR;
+      const gapThreshold = currentRun.maxHeight * WORD_GAP_FACTOR;
       const horizontalGap = box.left - currentRun.right;
       const isAdjacent = horizontalGap < gapThreshold;
 
@@ -660,7 +696,7 @@ export class PdfiumTextExtractor {
           top: box.top,
           right: box.right,
           bottom: box.bottom,
-          avgHeight: box.height,
+          maxHeight: box.height,
           lastVisibleCharCode: charCode,
         };
       } else {
@@ -669,10 +705,9 @@ export class PdfiumTextExtractor {
         currentRun.right = Math.max(currentRun.right, box.right);
         currentRun.bottom = Math.min(currentRun.bottom, box.bottom);
         currentRun.top = Math.max(currentRun.top, box.top);
-        currentRun.avgHeight =
-          box.height > 5
-            ? (currentRun.avgHeight + box.height) / 2
-            : currentRun.avgHeight;
+        if (box.height > 5) {
+          currentRun.maxHeight = Math.max(currentRun.maxHeight, box.height);
+        }
         currentRun.lastVisibleCharCode = charCode;
       }
     }
@@ -700,7 +735,7 @@ export class PdfiumTextExtractor {
     if (!visibleContent || /^\s*$/.test(visibleContent)) return;
 
     const width = run.right - run.left;
-    const height = run.avgHeight;
+    const height = run.maxHeight;
 
     if (width < 0 && height < 0) return;
     if (height > 100) return;

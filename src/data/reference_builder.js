@@ -145,9 +145,14 @@ function findReferenceSectionFromOutline(textIndex, outline) {
     docMetrics.lineHeight,
     docMetrics.marginBottom,
     docMetrics.headerHeight,
-    docMetrics.footerHeight
+    docMetrics.footerHeight,
   );
-  const lines = collectSectionLines(pageData, referenceStart, referenceEnd, docMetrics);
+  const lines = collectSectionLines(
+    pageData,
+    referenceStart,
+    referenceEnd,
+    docMetrics,
+  );
 
   if (lines.length < 3) return null;
 
@@ -203,9 +208,7 @@ function findReferenceSectionByHeading(textIndex) {
   const docInfo = textIndex.getDocumentData();
   if (!docInfo?.pageData) return null;
 
-  const {
-    pageData,
-  } = docInfo;
+  const { pageData } = docInfo;
   let referenceStart = null;
 
   outerLoop: for (const [pageNum, data] of pageData) {
@@ -253,10 +256,15 @@ function findReferenceSectionByHeading(textIndex) {
     docMetrics.lineHeight,
     docMetrics.marginBottom,
     docMetrics.headerHeight,
-    docMetrics.footerHeight
+    docMetrics.footerHeight,
   );
 
-  const lines = collectSectionLines(pageData, referenceStart, referenceEnd, docMetrics);
+  const lines = collectSectionLines(
+    pageData,
+    referenceStart,
+    referenceEnd,
+    docMetrics,
+  );
 
   return {
     startPage: referenceStart.pageNumber,
@@ -278,9 +286,7 @@ function findReferenceSectionByBackwardProbe(textIndex) {
   const docInfo = textIndex.getDocumentData();
   if (!docInfo?.pageData) return null;
 
-  const {
-    pageData,
-  } = docInfo;
+  const { pageData } = docInfo;
   const pageNumbers = Array.from(pageData.keys()).sort((a, b) => a - b);
   if (pageNumbers.length === 0) return null;
 
@@ -338,7 +344,6 @@ function findReferenceSectionByBackwardProbe(textIndex) {
     line: startLine,
   };
 
-
   const docMetrics = textIndex.getDocumentMetrics();
   const referenceEnd = findReferenceSectionEnd(
     pageData,
@@ -346,10 +351,15 @@ function findReferenceSectionByBackwardProbe(textIndex) {
     docMetrics.lineHeight,
     docMetrics.marginBottom,
     docMetrics.headerHeight,
-    docMetrics.footerHeight
+    docMetrics.footerHeight,
   );
 
-  const lines = collectSectionLines(pageData, referenceStart, referenceEnd, docMetrics);
+  const lines = collectSectionLines(
+    pageData,
+    referenceStart,
+    referenceEnd,
+    docMetrics,
+  );
   if (lines.length < 3) return null;
 
   console.log(
@@ -493,7 +503,7 @@ function findReferenceSectionEnd(
   bodyFontSize,
   bodyMarginBottom,
   headerHeight,
-  footerHeight
+  footerHeight,
 ) {
   let lastValidLine = null;
   const pageNumbers = Array.from(pageData.keys()).sort((a, b) => a - b);
@@ -686,7 +696,6 @@ function extractReferenceAnchors(lines, format, textIndex) {
     return extractNumberedReferences(lines, format);
   }
   const metrics = textIndex.getDocumentMetrics();
-  console.log(metrics);
   return extractStructuralReferences(lines, format, metrics);
 }
 

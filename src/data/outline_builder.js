@@ -351,6 +351,8 @@ function collectHeadingCandidates(textIndex, titleInfo) {
     fontStyle: bodyFontStyle,
     lineHeight: bodyLineHeight,
     lineWidth: bodyLineWidth,
+    headerHeight: headerHeight,
+    footerHeight: footerHeight,
     pageData,
   } = textIndex.getDocumentData();
 
@@ -367,17 +369,23 @@ function collectHeadingCandidates(textIndex, titleInfo) {
     if (pageNum < startPage) continue;
     const { lines, pageHeight, pageWidth } = data;
     const pageData = { pageHeight, pageWidth };
+    const headerThreshold = pageHeight - headerHeight;
 
     const skipThresholdY =
       titleLine != 0
         ? titleLine
         : abstractLine
           ? abstractLine
-          : pageHeight * 0.3;
+          : headerThreshold;
     startPage = titlePage ? titlePage : startPage;
 
     for (const line of lines) {
       if (pageNum <= startPage && line.y > skipThresholdY) continue;
+      if (
+        pageNum > startPage &&
+        (line.y > headerThreshold || line.y < footerHeight)
+      )
+        continue;
 
       const candidate = analyzeLineAsHeading(
         line,
@@ -385,7 +393,8 @@ function collectHeadingCandidates(textIndex, titleInfo) {
         bodyFontSize,
         bodyLineHeight,
         bodyLineWidth,
-        pageData,
+        pageHeight - headerHeight,
+        footerHeight,
       );
       if (candidate) candidates.push(candidate);
     }
@@ -410,7 +419,8 @@ function analyzeLineAsHeading(
   bodyFontSize,
   bodyLineHeight,
   bodyLineWidth,
-  page,
+  headerHeight,
+  footerHeight,
 ) {
   const text = line.text?.trim();
   if (!text || text.length < 5 || text.length > 100) return null;
@@ -420,8 +430,7 @@ function analyzeLineAsHeading(
   let numberPrefix = null;
   let numberDepth = 0;
 
-  const weirdPosition =
-    line.y < page.pageHeight * 0.08 || line.y > page.pageHeight * 0.95;
+  const weirdPosition = line.y < footerHeight || line.y > headerHeight;
   const isTabFig = /^(tab|fig|sec|keywords)/.test(text.toLowerCase());
   if (weirdPosition || isTabFig) return null;
 
@@ -437,7 +446,8 @@ function analyzeLineAsHeading(
   const fontStyle = line.items[0].fontStyle ?? FontStyle.REGULAR;
 
   const isSmallerFont =
-    Math.floor(lineHeight * 100) < Math.floor(bodyLineHeight * 100);
+    // This is used for ruling out footnotes so we add a 0.5 offset here.
+    Math.floor(lineHeight * 100) + 50 < Math.floor(bodyLineHeight * 100);
   const isLargerFont = lineHeight > bodyLineHeight * 1.4;
   const isStyled =
     fontStyle === FontStyle.BOLD || fontStyle === FontStyle.BOLD_ITALIC;
@@ -451,7 +461,7 @@ function analyzeLineAsHeading(
       .replace(/\s+/g, "")
       .trim();
     if (!/[A-Z]/.test(strippedText[0])) return null;
-    if (!isShortLine) return null;
+    // if (!isShortLine) return null;
     if (!isStyled && !isAllCapital) return null;
     if (isSmallerFont) return null;
   }

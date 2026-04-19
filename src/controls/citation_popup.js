@@ -538,6 +538,7 @@ export class CitationPopup {
                 query: this.reference,
               });
             },
+            (r) => r?.success && r?.data,
           );
 
           if (response.success && response.data) {

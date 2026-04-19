@@ -580,6 +580,7 @@ function findReferenceSectionEnd(
 function collectSectionLines(pageData, start, end, metrics) {
   const lines = [];
   const pageNumbers = Array.from(pageData.keys()).sort((a, b) => a - b);
+  console.log(metrics.headerHeight, metrics.footerHeight);
 
   for (const pageNum of pageNumbers) {
     if (pageNum < start.pageNumber || pageNum > end.pageNumber) continue;
@@ -847,6 +848,7 @@ function detectBoundary(
   //   wasIndented,
   //   isAtFirstX,
   //   isAfterShortLine,
+  //   isJustified
   // );
 
   if (isLargeGap) {
@@ -872,10 +874,10 @@ function detectBoundary(
       isNewReference = looksLikeReferenceStart(line.text);
     }
   } else if (isAtFirstX && !wasIndented) {
-    if (format === "author-year") {
-      isNewReference = AUTHOR_YEAR_START_PATTERN.test(line.text);
-    } else if (isJustified) {
+    if (isJustified) {
       isNewReference = false;
+    } else if (format === "author-year") {
+      isNewReference = AUTHOR_YEAR_START_PATTERN.test(line.text);
     } else {
       isNewReference = looksLikeReferenceStart(line.text);
     }

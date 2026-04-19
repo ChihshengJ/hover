@@ -783,6 +783,8 @@ export class PageView {
     if (startLineIdx === -1) return null;
 
     const refNumberPattern = /^\s*[\[\(]?\d{1,3}[\]\)\.\,]?\s+\S/;
+    const typicalLineWidth =
+      this.doc.textIndex?.getDocumentMetrics?.().lineWidth ?? 0;
 
     const reference = [];
     const firstLine = lines[startLineIdx];
@@ -791,6 +793,7 @@ export class PageView {
     let continuationLineX = null;
     let lineCount = 0;
     let prevLineY = firstLine.y;
+    let prevLine = firstLine;
 
     for (let i = startLineIdx; i < lines.length; i++) {
       const line = lines[i];
@@ -824,6 +827,16 @@ export class PageView {
             break;
           }
 
+          // Check if previous line was noticeably shorter than typical body
+          // line width — references usually fill the column, so a short prev
+          // line signals the previous reference just ended.
+          if (typicalLineWidth > 0 && prevLine?.lineWidth > 0) {
+            const tolerance = (line.lineHeight || 10) * 2;
+            if (prevLine.lineWidth < typicalLineWidth - tolerance) {
+              break;
+            }
+          }
+
           // Check indentation
           if (lineCount === 1) {
             continuationLineX = line.x;
@@ -845,6 +858,7 @@ export class PageView {
 
       reference.push(text);
       prevLineY = line.y;
+      prevLine = line;
 
       if (reference.length > 35) break;
     }

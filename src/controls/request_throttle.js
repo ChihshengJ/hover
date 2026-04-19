@@ -22,9 +22,14 @@ class RequestThrottle {
    *        The actual async work. Only invoked when:
    *         - the result is not already cached, AND
    *         - there is no identical in-flight request.
+   * @param {(result: any) => boolean} [isSuccess]
+   *        Predicate deciding whether the resolved value is worth caching.
+   *        Results that fail the predicate are returned to the caller but
+   *        NOT written to the cache, so the next call retries the network.
+   *        Defaults to truthy.
    * @returns {Promise<any>}
    */
-  async fetch(key, fetchFn) {
+  async fetch(key, fetchFn, isSuccess = (r) => Boolean(r)) {
     // 1. Return from cache if still fresh
     const cached = this.cache.get(key);
     if (cached && Date.now() - cached.ts < CACHE_TTL_MS) {
@@ -46,7 +51,9 @@ class RequestThrottle {
     // 4. Execute and track
     const promise = fetchFn(key)
       .then((result) => {
-        this.cache.set(key, { data: result, ts: Date.now() });
+        if (isSuccess(result)) {
+          this.cache.set(key, { data: result, ts: Date.now() });
+        }
         return result;
       })
       .finally(() => {

@@ -616,25 +616,21 @@ export class DocumentTextIndex {
     const footerExtents = [];
     let count = 0;
 
-    for (const [, data] of this.#pageData) {
+    for (const [pageNum, data] of this.#pageData) {
       if (count >= 10) break;
+      // Skip the first page: titles, abstracts, and author blocks live there
+      // and would otherwise be classified as header/footer text.
+      if (pageNum === 1) continue;
       count++;
 
-      if (data.headerLines && data.headerLines.length > 0) {
-        const headerY =
-          data.headerSepY ??
-          this.#findMedian(
-            data.headerLines.map((l) => l.y - (l.lineHeight || 0)),
-          );
-        headerExtents.push(data.pageHeight - headerY);
+      // Only count a page when it has a confirmed separator rule. Short text
+      // near the top/bottom isn't enough — papers without running headers
+      // should report 0 height.
+      if (data.headerSepY !== null && data.headerSepY !== undefined) {
+        headerExtents.push(data.pageHeight - data.headerSepY);
       }
-      if (data.footerLines && data.footerLines.length > 0) {
-        const footerY =
-          data.footerSepY ??
-          this.#findMedian(
-            data.footerLines.map((l) => l.y + (l.lineHeight || 0)),
-          );
-        footerExtents.push(footerY);
+      if (data.footerSepY !== null && data.footerSepY !== undefined) {
+        footerExtents.push(data.footerSepY);
       }
     }
 

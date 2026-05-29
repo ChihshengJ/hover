@@ -3,9 +3,7 @@ export class PaneControls {
     this.pane = pane;
     this.element = null;
     this.isHidden = true;
-    this.progressRing = null;
     this.currentProgress = 0;
-    this.ringPerimeter = 0;
     this._scrollBound = false;
 
     /** @type {Set<Function>} */
@@ -15,6 +13,7 @@ export class PaneControls {
   attach() {
     this.element = document.createElement("div");
     this.element.className = "pane-controls hidden";
+    this.element.style.setProperty("--progress", "0%");
     this.element.innerHTML = `
       <div class="pane-controls-inner">
         <span class="pane-page-info">
@@ -36,8 +35,6 @@ export class PaneControls {
         </span>
       </div>
     `;
-
-    this.#createProgressRing();
 
     this.element.addEventListener("click", (e) => {
       const btn = e.target.closest("[data-action]");
@@ -78,7 +75,7 @@ export class PaneControls {
   #onScroll() {
     if (!this.isHidden) {
       this.#updatePageDisplay();
-      this.#updateProgressRing();
+      this.#updateProgressFill();
     }
 
     // Notify all subscribers
@@ -87,90 +84,8 @@ export class PaneControls {
     }
   }
 
-  #getRoundedRectPath(w, h, r) {
-    const x = 1;
-    const y = 1;
-    const startX = x + w / 2;
-    const startY = y + h;
-
-    return [
-      `M ${startX} ${startY}`,
-      `H ${x + w - r}`,
-      `A ${r} ${r} 0 0 0 ${x + w} ${y + h - r}`,
-      `V ${y + r}`,
-      `A ${r} ${r} 0 0 0 ${x + w - r} ${y}`,
-      `H ${x + r}`,
-      `A ${r} ${r} 0 0 0 ${x} ${y + r}`,
-      `V ${y + h - r}`,
-      `A ${r} ${r} 0 0 0 ${x + r} ${y + h}`,
-      `H ${startX}`,
-    ].join(" ");
-  }
-
-  #createProgressRing() {
-    const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
-    svg.classList.add("pane-progress-ring");
-
-    svg.innerHTML = `
-      <defs>
-        <linearGradient id="progress-grad-${this.pane.id}" x1="0%" y1="0%" x2="100%" y2="100%">
-          <stop offset="0%" class="progress-grad-start" />
-          <stop offset="100%" class="progress-grad-end" />
-        </linearGradient>
-      </defs>
-      <path class="progress-ring-bg" />
-      <path class="progress-ring-fill" />
-      <path class="progress-ring-glow" />
-    `;
-
-    this.progressRing = svg;
-    this.element.appendChild(svg);
-    this.#updateRingDimensions();
-  }
-
-  #updateRingDimensions() {
-    if (!this.progressRing || !this.element) return;
-
-    requestAnimationFrame(() => {
-      const rect = this.element.getBoundingClientRect();
-      if (rect.width === 0) return;
-
-      const width = rect.width + 2;
-      const height = rect.height + 6;
-
-      this.progressRing.setAttribute("viewBox", `0 0 ${width} ${height}`);
-      this.progressRing.style.width = `${width}px`;
-      this.progressRing.style.height = `${height}px`;
-
-      const r = 19;
-      const w = width;
-      const h = height - 2;
-      const pathD = this.#getRoundedRectPath(w, h, r);
-
-      // Update all paths with the same d attribute
-      const paths = this.progressRing.querySelectorAll("path");
-      paths.forEach((p) => {
-        p.setAttribute("d", pathD);
-      });
-
-      // Calculate perimeter: 2 straights + 2 straights + 4 quarter circles
-      const perimeter = (w - 2 * r) * 2 + (h - 2 * r) * 2 + 2 * Math.PI * r;
-      this.ringPerimeter = perimeter;
-
-      // Set initial dash array
-      const fill = this.progressRing.querySelector(".progress-ring-fill");
-      const glow = this.progressRing.querySelector(".progress-ring-glow");
-      if (fill) {
-        fill.style.strokeDasharray = `0 ${perimeter}`;
-      }
-      if (glow) {
-        glow.style.strokeDasharray = `0 ${perimeter}`;
-      }
-    });
-  }
-
-  #updateProgressRing() {
-    if (!this.progressRing || !this.ringPerimeter) return;
+  #updateProgressFill() {
+    if (!this.element) return;
 
     const scroller = this.pane.scroller;
     const scrollTop = scroller.scrollTop;
@@ -180,20 +95,10 @@ export class PaneControls {
 
     this.currentProgress = progress;
 
-    const dashLength = progress * this.ringPerimeter;
-    const fill = this.progressRing.querySelector(".progress-ring-fill");
-    const glow = this.progressRing.querySelector(".progress-ring-glow");
+    this.element.style.setProperty("--progress", `${progress * 100}%`);
 
-    if (fill) {
-      fill.style.strokeDasharray = `${dashLength} ${this.ringPerimeter}`;
-    }
-    if (glow) {
-      glow.style.strokeDasharray = `${dashLength} ${this.ringPerimeter}`;
-    }
-
-    // Check for completion
     const isComplete = progress >= 0.98;
-    this.progressRing.classList.toggle("completed", isComplete);
+    this.element.classList.toggle("progress-complete", isComplete);
   }
 
   #handleAction(action) {
@@ -268,10 +173,9 @@ export class PaneControls {
     this.element.classList.remove("hidden");
     this.isHidden = false;
 
-    // Update dimensions when shown
+    // Update progress when shown
     requestAnimationFrame(() => {
-      this.#updateRingDimensions();
-      this.#updateProgressRing();
+      this.#updateProgressFill();
     });
   }
 

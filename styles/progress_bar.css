@@ -375,109 +375,109 @@
 }
 
 /* ===========================================
-   Pane Control Progress Ring (Split Mode)
+   Pane Control Progress Fill (Battery Style)
    =========================================== */
 
-.pane-progress-ring {
+/* Battery-style fill rendered as a pseudo-element behind the
+   controls' inner row. The fill width is driven by the JS-set
+   --progress CSS variable on .pane-controls. The control bar
+   sets overflow:hidden so the fill is clipped to the rounded
+   corners, and .pane-controls-inner uses position:relative +
+   z-index so icons (and the grey mode-toggle background) sit
+   on top of the fill. */
+
+.pane-controls::before {
+  content: "";
   position: absolute;
-  top: -3px;
-  left: -3px;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  width: var(--progress, 0%);
+  background: linear-gradient(
+    to right,
+    rgba(59, 130, 246, 0.12),
+    rgba(99, 170, 255, 0.22)
+  );
   pointer-events: none;
-  z-index: -1;
-  overflow: visible;
+  z-index: 0;
+  transition:
+    width var(--transition-fast),
+    background var(--transition-normal);
 }
 
-.pane-progress-ring .progress-ring-bg {
-  fill: none;
-  stroke: rgba(100, 100, 100, 0.2);
-  stroke-width: 2;
+/* Active pane - slightly stronger tint */
+.viewer-pane.active .pane-controls::before {
+  background: linear-gradient(
+    to right,
+    rgba(59, 130, 246, 0.2),
+    rgba(99, 170, 255, 0.32)
+  );
 }
 
-.pane-progress-ring .progress-ring-fill {
-  fill: none;
-  stroke: rgba(59, 130, 246, 0.5);
-  stroke-width: 2.5;
-  stroke-linecap: round;
-  transition: stroke-dasharray var(--transition-fast);
+/* Inactive pane - muted grey */
+.viewer-pane:not(.active) .pane-controls::before {
+  background: linear-gradient(
+    to right,
+    rgba(150, 150, 150, 0.1),
+    rgba(150, 150, 150, 0.18)
+  );
 }
 
-.pane-progress-ring .progress-ring-glow {
-  fill: none;
-  stroke: rgba(59, 130, 246, 0.2);
-  stroke-width: 5;
-  stroke-linecap: round;
-  filter: blur(3px);
-  transition: stroke-dasharray var(--transition-fast);
+/* Completed state - subtle glow finish, no color swap */
+.pane-controls.progress-complete::before {
+  animation: pane-progress-complete-glow 1.4s ease-in-out;
 }
 
-/* Gradient stops */
-.pane-progress-ring .progress-grad-start {
-  stop-color: rgba(59, 130, 246, 0.6);
+.pane-controls.progress-complete {
+  animation: pane-complete-shadow-glow 1.4s ease-in-out;
 }
 
-.pane-progress-ring .progress-grad-end {
-  stop-color: rgba(99, 170, 255, 0.8);
+.viewer-pane.active .pane-controls.progress-complete {
+  animation: pane-complete-shadow-glow-active 1.4s ease-in-out;
 }
 
-/* Active pane - brighter colors */
-.viewer-pane.active .pane-progress-ring .progress-ring-fill {
-  stroke: rgba(59, 130, 246, 0.9);
-}
-
-.viewer-pane.active .pane-progress-ring .progress-ring-glow {
-  stroke: rgba(59, 130, 246, 0.4);
-}
-
-/* Completed state */
-.pane-progress-ring.completed .progress-ring-fill {
-  stroke: rgba(34, 197, 94, 0.8);
-  animation: progress-ring-complete-pulse 1s ease-out;
-}
-
-.pane-progress-ring.completed .progress-ring-glow {
-  stroke: rgba(34, 197, 94, 0.4);
-  animation: progress-ring-glow-pulse 1s ease-out;
-}
-
-@keyframes progress-ring-complete-pulse {
-  0% {
-    stroke-width: 2.5;
-  }
-  40% {
-    stroke-width: 4;
-  }
+@keyframes pane-progress-complete-glow {
+  0%,
   100% {
-    stroke-width: 2.5;
+    filter: brightness(1) saturate(1);
+  }
+  50% {
+    filter: brightness(1.3) saturate(1.2);
   }
 }
 
-@keyframes progress-ring-glow-pulse {
-  0% {
-    stroke-width: 5;
-    filter: blur(3px);
-  }
-  40% {
-    stroke-width: 10;
-    filter: blur(6px);
-  }
+@keyframes pane-complete-shadow-glow {
+  0%,
   100% {
-    stroke-width: 5;
-    filter: blur(3px);
+    box-shadow:
+      0 2px 12px rgba(0, 0, 0, 0.3),
+      0 0 0 1px rgba(0, 0, 0, 0.05),
+      0 0 0 0 rgba(59, 130, 246, 0);
+  }
+  50% {
+    box-shadow:
+      0 2px 12px rgba(0, 0, 0, 0.3),
+      0 0 0 1px rgba(0, 0, 0, 0.05),
+      0 0 16px 3px rgba(59, 130, 246, 0.35);
   }
 }
 
-/* Override existing active pane border styling when progress bar is present */
-.viewer-pane.active .pane-controls:has(.pane-progress-ring) {
-  box-shadow: var(--shadow-elevated);
-}
-
-/* Inactive pane styling */
-.viewer-pane:not(.active) .pane-progress-ring .progress-ring-fill {
-  stroke: rgba(150, 150, 150, 0.3);
-}
-
-.viewer-pane:not(.active) .pane-progress-ring .progress-ring-glow {
-  stroke: rgba(150, 150, 150, 0.15);
+@keyframes pane-complete-shadow-glow-active {
+  0%,
+  100% {
+    box-shadow:
+      0 2px 12px rgba(0, 0, 0, 0.2),
+      0 0 0 1px rgba(0, 0, 0, 0.05),
+      inset 0 0 4px 2px rgba(25, 119, 235, 0.8),
+      0 0 0 0 rgba(59, 130, 246, 0);
+  }
+  50% {
+    box-shadow:
+      0 2px 12px rgba(0, 0, 0, 0.2),
+      0 0 0 1px rgba(0, 0, 0, 0.05),
+      inset 0 0 4px 2px rgba(25, 119, 235, 0.8),
+      0 0 18px 3px rgba(59, 130, 246, 0.4);
+  }
 }
 
 /* ===========================================
@@ -536,40 +536,42 @@
     0 0 12px rgba(150, 180, 255, 0.4);
 }
 
-.night-mode .pane-progress-ring .progress-ring-bg {
-  stroke: rgba(100, 100, 100, 0.2);
+.night-mode .pane-controls::before {
+  background: linear-gradient(
+    to right,
+    rgba(219, 147, 52, 0.14),
+    rgba(219, 147, 52, 0.24)
+  );
 }
 
-.night-mode .pane-progress-ring .progress-ring-fill {
-  stroke: rgba(219, 147, 52, 0.4);
+.night-mode .viewer-pane.active .pane-controls::before {
+  background: linear-gradient(
+    to right,
+    rgba(219, 147, 52, 0.22),
+    rgba(219, 147, 52, 0.38)
+  );
 }
 
-.night-mode .pane-progress-ring .progress-ring-glow {
-  stroke: rgba(219, 147, 52, 0.2);
+.night-mode .viewer-pane:not(.active) .pane-controls::before {
+  background: linear-gradient(
+    to right,
+    rgba(120, 120, 120, 0.14),
+    rgba(120, 120, 120, 0.22)
+  );
 }
 
-.night-mode .viewer-pane.active .pane-progress-ring .progress-ring-fill {
-  stroke: rgba(219, 147, 52, 0.8);
+.night-mode .pane-controls.progress-complete {
+  animation: pane-complete-shadow-glow-night 1.2s ease-out;
 }
 
-.night-mode .viewer-pane.active .pane-progress-ring .progress-ring-glow {
-  stroke: rgba(219, 147, 52, 0.4);
-}
-
-.night-mode .pane-progress-ring.completed .progress-ring-fill {
-  stroke: rgba(180, 200, 255, 0.8);
-}
-
-.night-mode .pane-progress-ring.completed .progress-ring-glow {
-  stroke: rgba(180, 200, 255, 0.4);
-}
-
-.night-mode .viewer-pane:not(.active) .pane-progress-ring .progress-ring-fill {
-  stroke: rgba(100, 100, 100, 0.3);
-}
-
-.night-mode .viewer-pane:not(.active) .pane-progress-ring .progress-ring-glow {
-  stroke: rgba(100, 100, 100, 0.15);
+@keyframes pane-complete-shadow-glow-night {
+  45% {
+    box-shadow:
+      0 2px 12px rgba(0, 0, 0, 0.3),
+      0 0 0 1px rgba(255, 255, 255, 0.1),
+      inset 0px -2px 10px 1px rgba(255, 255, 255, 0.1),
+      0 0 16px 2px rgba(219, 147, 52, 0.4);
+  }
 }
 
 /* ===========================================

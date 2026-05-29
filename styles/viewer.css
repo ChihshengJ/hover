@@ -161,6 +161,7 @@ body {
   padding: 6px 16px;
   pointer-events: auto;
   user-select: none;
+  overflow: hidden;
   transition:
     opacity var(--transition-normal),
     transform var(--transition-normal);
@@ -171,6 +172,8 @@ body {
 }
 
 .pane-controls-inner {
+  position: relative;
+  z-index: 1;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -222,7 +225,9 @@ body {
   display: flex;
   align-items: center;
   gap: 2px;
-  background: var(--bg-tertiary);
+  background:
+    linear-gradient(var(--bg-tertiary), var(--bg-tertiary)),
+    var(--bg-glass-solid);
   border-radius: 6px;
   padding: 2px;
 }

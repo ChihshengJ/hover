@@ -472,6 +472,7 @@
   background: var(--bg-tertiary);
   border-radius: var(--radius-lg);
   border: 1px solid var(--border-color);
+  margin-top: 8px;
 }
 
 .settings-toggle-row + .settings-toggle-row {
@@ -482,6 +483,8 @@
   display: flex;
   flex-direction: column;
   gap: 2px;
+  flex: 1;
+  min-width: 0;
 }
 
 .settings-toggle-label {
@@ -503,6 +506,7 @@
   cursor: pointer;
   display: flex;
   align-items: center;
+  flex-shrink: 0;
 }
 
 .settings-toggle-switch input[type="checkbox"] {

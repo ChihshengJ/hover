@@ -2,9 +2,9 @@
  * @typedef {{ id: string, name: string, icon: string, activate: Function, deactivate?: Function }} ToolDescriptor
  */
 
-export class ActionButton {
-  static DEFAULT_TOOL_KEY = "hover_action_button_default_tool";
+import { Config } from "../settings/config.js";
 
+export class ActionButton {
   /** @type {ToolDescriptor[]} */
   #tools;
   /** @type {number} */
@@ -39,23 +39,11 @@ export class ActionButton {
   // ╍╍╍ Static Settings ╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍
 
   static getDefaultTool() {
-    try {
-      return localStorage.getItem(ActionButton.DEFAULT_TOOL_KEY) || "search";
-    } catch {
-      return "search";
-    }
+    return Config.get("default_tool");
   }
 
   static setDefaultTool(toolId) {
-    try {
-      localStorage.setItem(ActionButton.DEFAULT_TOOL_KEY, toolId);
-    } catch (err) {
-      console.warn("[ActionButton] Failed to save default tool:", err);
-    }
-
-    if (typeof chrome !== "undefined" && chrome.storage?.local) {
-      chrome.storage.local.set({ [ActionButton.DEFAULT_TOOL_KEY]: toolId });
-    }
+    return Config.set("default_tool", toolId);
   }
 
   // ╍╍╍ DOM ╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍

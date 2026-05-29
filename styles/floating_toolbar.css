@@ -330,6 +330,7 @@
   box-shadow:
     0 14px 44px rgba(0, 0, 0, 0.28),
     0 2px 8px rgba(0, 0, 0, 0.12);
+  font-family: "Elms Sans", monospace;
   font-size: 14px;
   color: #111;
   pointer-events: none;

@@ -3,6 +3,7 @@ import { SplitWindowManager } from "./window_manager.js";
 import { FileMenu } from "./controls/file_menu.js";
 import { LoadingOverlay } from "./controls/loading_overlay.js";
 import { OnboardingWalkthrough } from "./settings/onboarding.js";
+import { Config } from "./settings/config.js";
 import { TrailStore } from "./trail/trail_store.js";
 import { TrailLinker } from "./trail/trail_linker.js";
 import { TrailOverlay } from "./trail/trail_overlay.js";
@@ -332,8 +333,26 @@ async function main() {
 |___|___|___|___|___|___|___|    
                                  
   `);
+  try {
+    await Config.load();
+  } catch (err) {
+    console.warn("[Main] Config.load failed — continuing with defaults:", err);
+  }
+  applyInitialNightMode();
   const isFirstLaunch = await OnboardingWalkthrough.isFirstLaunch();
   await loadPdf(isFirstLaunch);
+}
+
+/**
+ * Decide whether to launch in night mode, based on the user's startup
+ * preference. Applied before any UI is constructed so there's no flash.
+ */
+function applyInitialNightMode() {
+  const mode = Config.get("night_mode_startup");
+  let isNight = false;
+  if (mode === "night") isNight = true;
+  else if (mode === "persist") isNight = !!Config.get("night_mode_last");
+  document.body.classList.toggle("night-mode", isNight);
 }
 
 main();

@@ -9,6 +9,7 @@ import { ViewerPane } from "./viewpane.js";
 import { FloatingToolbar } from "./controls/floating_toolbar/index.js";
 import { WindowControls } from "./controls/window_controls.js";
 import { ProgressBar } from "./controls/progress_bar.js";
+import { Config } from "./settings/config.js";
 
 export class SplitWindowManager {
   /**
@@ -47,6 +48,28 @@ export class SplitWindowManager {
     this.controls = new WindowControls(this);
     this.progressBar = new ProgressBar(this);
     await this.progressBar.initialize();
+
+    await this.#applyPersistedSplit();
+  }
+
+  async #applyPersistedSplit() {
+    if (!Config.get("split_persist")) return;
+    const saved = Config.get("split_state");
+    if (!saved || !saved.direction) return;
+    if (typeof saved.ratio === "number") this.splitRatio = saved.ratio;
+    await this.split(saved.direction);
+  }
+
+  #persistSplitStateIfEnabled() {
+    if (!Config.get("split_persist")) return;
+    if (this.isSplit) {
+      Config.set("split_state", {
+        direction: this.splitDirection,
+        ratio: this.splitRatio,
+      });
+    } else {
+      Config.set("split_state", null);
+    }
   }
 
   #createPaneContainer() {
@@ -116,6 +139,7 @@ export class SplitWindowManager {
     });
 
     this.isSplit = true;
+    this.#persistSplitStateIfEnabled();
     return newPane;
   }
 
@@ -153,6 +177,7 @@ export class SplitWindowManager {
     this.#removeResizer();
     this.#updateLayout();
     this.isSplit = false;
+    this.#persistSplitStateIfEnabled();
   }
 
   #updateLayout() {
@@ -225,12 +250,14 @@ export class SplitWindowManager {
       document.removeEventListener("pointermove", onMouseMove);
       document.removeEventListener("pointerup", onMouseUp);
       this.resizer.classList.remove("dragging");
+      this.#persistSplitStateIfEnabled();
     };
 
     const onDoubleClick = (e) => {
       e.preventDefault();
       this.splitRatio = 0.5;
       this.#updateLayout();
+      this.#persistSplitStateIfEnabled();
     };
 
     this.resizer.addEventListener("pointerdown", onMouseDown);

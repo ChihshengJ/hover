@@ -6,7 +6,6 @@
  */
 
 import { init } from "@embedpdf/pdfium";
-// import { init, DEFAULT_PDFIUM_WASM_URL } from "@embedpdf/pdfium";
 import { PdfiumNative, PdfEngine } from "@embedpdf/engines/pdfium";
 import { browserImageDataToBlobConverter } from "@embedpdf/engines/converters";
 
@@ -47,14 +46,21 @@ export async function initPdfiumEngine(onProgress) {
   initPromise = (async () => {
     try {
       onProgress?.({ percent: 5, phase: "loading-wasm" });
-      // let wasmUrl = DEFAULT_PDFIUM_WASM_URL;
-      // if (typeof chrome !== "undefined" && chrome.runtime?.getURL) {
-      //   try {
-      //     wasmUrl = chrome.runtime.getURL("pdfium.wasm");
-      //   } catch (e) { }
-      // }
-
-      const wasmUrl = chrome.runtime.getURL("pdfium.wasm");
+      let wasmUrl;
+      if (typeof chrome !== "undefined" && chrome.runtime?.getURL) {
+        try {
+          wasmUrl = chrome.runtime.getURL("pdfium.wasm");
+        } catch (e) { }
+      }
+      if (!wasmUrl) {
+        if (__LOCAL_WASM_ONLY__) {
+          throw new Error(
+            "[PDFium] Local pdfium.wasm not resolvable; STORE_BUILD requires the bundled asset",
+          );
+        }
+        const { DEFAULT_PDFIUM_WASM_URL } = await import("@embedpdf/pdfium");
+        wasmUrl = DEFAULT_PDFIUM_WASM_URL;
+      }
 
       onProgress?.({ percent: 10, phase: "downloading-wasm" });
       const response = await fetch(wasmUrl);

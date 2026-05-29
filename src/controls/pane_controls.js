@@ -31,8 +31,8 @@ export class PaneControls {
         </span>
         <button class="pane-btn small" data-action="fit-width" title="Fit to width">↔</button>
         <span class="pane-mode-toggle">
-          <button class="pane-btn small active" data-action="cursor" title="Selection mode"><img src="/assets/cursor.svg" width="16" /></button>
-          <button class="pane-btn small" data-action="hand-tool" title="Hand tool"><img src="/assets/handtool.svg" width="16" /></button>
+          <button class="pane-btn small active" data-action="cursor" title="Selection mode"><img src="assets/cursor.svg" width="16" /></button>
+          <button class="pane-btn small" data-action="hand-tool" title="Hand tool"><img src="assets/handtool.svg" width="16" /></button>
         </span>
       </div>
     `;

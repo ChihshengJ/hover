@@ -78,9 +78,9 @@ export class ToolActions {
     const img = btn.querySelector("img");
 
     const config = {
-      0: { src: "/assets/book.svg", title: "Single page view" },
-      1: { src: "/assets/even.png", title: "Even spread (1-2, 3-4...)" },
-      2: { src: "/assets/odd.png", title: "Odd spread (1, 2-3, 4-5...)" },
+      0: { src: "assets/book.svg", title: "Single page view" },
+      1: { src: "assets/even.png", title: "Even spread (1-2, 3-4...)" },
+      2: { src: "assets/odd.png", title: "Odd spread (1, 2-3, 4-5...)" },
     };
 
     const { src, title } = config[mode];
@@ -93,12 +93,12 @@ export class ToolActions {
     const img = btn.querySelector("img");
 
     if (fitMode === 1) {
-      img.src = "/assets/fit_width.svg";
+      img.src = "assets/fit_width.svg";
       img.width = "20";
       btn.title = "Fit horizontal";
       btn.classList.add("active");
     } else {
-      img.src = "/assets/fit_height.svg";
+      img.src = "assets/fit_height.svg";
       img.width = "18";
       btn.title = "Fit vertical";
       btn.classList.remove("active");

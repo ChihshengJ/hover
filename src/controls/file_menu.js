@@ -5,9 +5,10 @@
 
 import { OnboardingWalkthrough } from "../settings/onboarding.js";
 import { Settings } from "../settings/settings.js";
+import { Config } from "../settings/config.js";
 import { requestThrottle } from "./request_throttle.js";
 
-const VERSION = "0.10.0";
+const VERSION = __APP_VERSION__;
 
 export class FileMenu {
   /**
@@ -32,9 +33,20 @@ export class FileMenu {
 
     this.#createDOM();
     this.#setupEventListeners();
+    this.#syncNightModeToggleFromBody();
 
     // Apply saved config on startup
     this.settings.applyOnStartup();
+  }
+
+  /** Sync the night-mode checkbox to whatever class main.js applied to body. */
+  #syncNightModeToggleFromBody() {
+    const checkbox = this.menuList.querySelector(
+      '[data-action="night-mode"] .file-menu-toggle-input',
+    );
+    if (checkbox) {
+      checkbox.checked = document.body.classList.contains("night-mode");
+    }
   }
 
   #createDOM() {
@@ -369,9 +381,13 @@ export class FileMenu {
 
   #handleToggleAction(action, isOn) {
     switch (action) {
-      case "night-mode":
-        document.body.classList.toggle("night-mode");
+      case "night-mode": {
+        const isNight = document.body.classList.toggle("night-mode");
+        if (Config.get("night_mode_startup") === "persist") {
+          Config.set("night_mode_last", isNight);
+        }
         break;
+      }
     }
   }
 

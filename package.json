@@ -6,6 +6,7 @@
     "dev": "vite",
     "build": "vite build",
     "build:ext": "vite build && npm run copy-ext-files",
+    "build:ext:store": "STORE_BUILD=1 vite build && npm run copy-ext-files",
     "copy-ext-files": "cp manifest.json dist/ 2>/dev/null || echo 'manifest.json not in root (check public/ folder)'",
     "watch:ext": "vite build --watch",
     "preview": "vite preview"

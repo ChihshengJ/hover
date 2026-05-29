@@ -161,6 +161,7 @@ export class AnnotationManager {
     this.#toolbar.showForSelection(rect, {
       onAnnotate: (options) => this.#createAnnotation(options),
       onComment: () => this.#showCommentInputForNewAnnotation(rect),
+      onCopy: () => this.#copySelectionText(),
     });
   }
 
@@ -276,6 +277,39 @@ export class AnnotationManager {
     });
   }
 
+  async #copySelectionText() {
+    const text = this.#pendingSelection
+      ?.map((sel) => sel.text)
+      .filter(Boolean)
+      .join("\n")
+      .trim();
+    if (!text) return;
+    await this.#writeClipboardText(text);
+    this.#toolbar.hide();
+  }
+
+  async #copyAnnotationText(annotationId) {
+    const annotation = this.#pane.document.getAnnotation(annotationId);
+    if (!annotation) return;
+    const text = (annotation.pageRanges || [])
+      .map((r) => r.text)
+      .filter(Boolean)
+      .join("\n")
+      .trim();
+    if (!text) return;
+    await this.#writeClipboardText(text);
+    this.#toolbar.hide();
+    this.#selectAnnotation(null);
+  }
+
+  async #writeClipboardText(text) {
+    try {
+      await navigator.clipboard.writeText(text);
+    } catch (err) {
+      console.error("copy failed", err);
+    }
+  }
+
   #onAnnotationHover(annotationId, isEntering) {
     if (isEntering) {
       // Highlight comment card if exists
@@ -330,6 +364,7 @@ export class AnnotationManager {
         await this.#pane.document.deleteAnnotation(annotationId);
         this.#selectAnnotation(null);
       },
+      onCopy: () => this.#copyAnnotationText(annotationId),
     });
   }
 

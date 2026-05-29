@@ -35,6 +35,9 @@ export class AnnotationToolbar {
   /** @type {Function|null} */
   #onDelete = null;
 
+  /** @type {Function|null} */
+  #onCopy = null;
+
   /** @type {Object|null} */
   #currentAnnotation = null;
 
@@ -93,19 +96,26 @@ export class AnnotationToolbar {
         <div class="toolbar-divider"></div>
         <div class="toolbar-actions">
           <button class="action-btn" data-action="highlight" title="Highlight">
-            <img src='/assets/highlight.png' width='25'></img>
+            <img src='assets/highlight.png' width='24'></img>
           </button>
           <button class="action-btn" data-action="underline" title="Underline">
-            <img src='/assets/underline.png' width='25'></img>
+            <img src='assets/underline.png' width='24'></img>
           </button>
           <button class="action-btn" data-action="comment" title="Add Comment">
-            <img src='/assets/comment.png' width='25'></img>
+            <!-- <img src='assets/comment.png' width='24'></img> -->
+            <svg xmlns="http://www.w3.org/2000/svg" width="26" height="26" fill="currentColor" viewBox="0 0 16 16">
+              <path d="M14 1a1 1 0 0 1 1 1v8a1 1 0 0 1-1 1H4.414A2 2 0 0 0 3 11.586l-2 2V2a1 1 0 0 1 1-1zM2 0a2 2 0 0 0-2 2v12.793a.5.5 0 0 0 .854.353l2.853-2.853A1 1 0 0 1 4.414 12H14a2 2 0 0 0 2-2V2a2 2 0 0 0-2-2z"/>
+              <path d="M3 3.5a.5.5 0 0 1 .5-.5h9a.5.5 0 0 1 0 1h-9a.5.5 0 0 1-.5-.5M3 6a.5.5 0 0 1 .5-.5h9a.5.5 0 0 1 0 1h-9A.5.5 0 0 1 3 6m0 2.5a.5.5 0 0 1 .5-.5h5a.5.5 0 0 1 0 1h-5a.5.5 0 0 1-.5-.5"/>
+            </svg>
+          </button>
+          <button class="action-btn" data-action="copy" title="Copy Seleted Text">
+            <svg xmlns="http://www.w3.org/2000/svg" width="26" height="26" fill="currentColor" viewBox="0 0 16 16">
+              <path fill-rule="evenodd" d="M4 2a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2zm2-1a1 1 0 0 0-1 1v8a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1V2a1 1 0 0 0-1-1zM2 5a1 1 0 0 0-1 1v8a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1v-1h1v1a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h1v1z"/>
+            </svg>
           </button>
           <button class="action-btn delete-btn hidden" data-action="delete" title="Delete">
-            <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <!-- Placeholder: delete icon -->
-              <polyline points="3 6 5 6 21 6"/>
-              <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-trash3" viewBox="0 0 16 16">
+              <path d="M6.5 1h3a.5.5 0 0 1 .5.5v1H6v-1a.5.5 0 0 1 .5-.5M11 2.5v-1A1.5 1.5 0 0 0 9.5 0h-3A1.5 1.5 0 0 0 5 1.5v1H1.5a.5.5 0 0 0 0 1h.538l.853 10.66A2 2 0 0 0 4.885 16h6.23a2 2 0 0 0 1.994-1.84l.853-10.66h.538a.5.5 0 0 0 0-1zm1.958 1-.846 10.58a1 1 0 0 1-.997.92h-6.23a1 1 0 0 1-.997-.92L3.042 3.5zm-7.487 1a.5.5 0 0 1 .528.47l.5 8.5a.5.5 0 0 1-.998.06L5 5.03a.5.5 0 0 1 .47-.53Zm5.058 0a.5.5 0 0 1 .47.53l-.5 8.5a.5.5 0 1 1-.998-.06l.5-8.5a.5.5 0 0 1 .528-.47M8 4.5a.5.5 0 0 1 .5.5v8.5a.5.5 0 0 1-1 0V5a.5.5 0 0 1 .5-.5"/>
             </svg>
           </button>
         </div>
@@ -146,6 +156,8 @@ export class AnnotationToolbar {
           this.#triggerAnnotation();
         } else if (action === "comment") {
           this.#onComment?.();
+        } else if (action === "copy") {
+          this.#onCopy?.();
         } else if (action === "delete") {
           this.#onDelete?.();
           this.hide();
@@ -225,11 +237,12 @@ export class AnnotationToolbar {
    * @param {Function} callbacks.onAnnotate - Called when annotation is created
    * @param {Function} callbacks.onComment - Called when comment button clicked
    */
-  showForSelection(selectionRect, { onAnnotate, onComment }) {
+  showForSelection(selectionRect, { onAnnotate, onComment, onCopy }) {
     this.#selectionRect = selectionRect;
     this.#currentAnnotation = null;
     this.#onAnnotate = onAnnotate;
     this.#onComment = onComment;
+    this.#onCopy = onCopy;
     this.#onDelete = null;
 
     // Hide delete button for new selections
@@ -249,13 +262,14 @@ export class AnnotationToolbar {
   showForAnnotation(
     annotationRect,
     annotation,
-    { onAnnotate, onComment, onDelete },
+    { onAnnotate, onComment, onDelete, onCopy },
   ) {
     this.#selectionRect = annotationRect;
     this.#currentAnnotation = annotation;
     this.#onAnnotate = onAnnotate;
     this.#onComment = onComment;
     this.#onDelete = onDelete;
+    this.#onCopy = onCopy;
 
     // Set toolbar state to match annotation
     AnnotationToolbar.#lastColor = annotation.color;

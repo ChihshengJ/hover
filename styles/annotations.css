@@ -35,7 +35,6 @@
   transition: all var(--transition-normal) cubic-bezier(0.4, 0, 0.2, 1);
 }
 
-/* Collapsed state - just a ball */
 .annotation-toolbar.collapsed {
   width: 44px;
   height: 44px;
@@ -86,7 +85,6 @@
 .annotation-toolbar.expanded .toolbar-content {
   display: flex;
   align-items: center;
-  gap: 4px;
   opacity: 1;
   pointer-events: auto;
 }
@@ -156,8 +154,8 @@
 
 .toolbar-actions {
   display: flex;
-  gap: 2px;
-  padding: 4px;
+  gap: 4px;
+  padding: 8px;
 }
 
 .action-btn {
@@ -165,7 +163,7 @@
   height: 32px;
   border: none;
   background: transparent;
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-sm);
   cursor: pointer;
   display: flex;
   align-items: center;

@@ -3,10 +3,12 @@
  *
  * Storage strategy:
  *   - Full images stored in IndexedDB as Blobs (binary, no base64 inflation)
- *   - Metadata + thumbnails stored in chrome.storage.local (extension) or localStorage (dev)
+ *   - Metadata + thumbnails go through Config (chrome.storage.local + localStorage mirror)
  *   - Preset wallpapers referenced by URL, fetched on demand
  *   - Active custom wallpaper applied via Object URL (tiny pointer, not data URL)
  */
+
+import { Config } from "./config.js";
 
 export class WallpaperManager {
   /** @type {string} */
@@ -15,8 +17,6 @@ export class WallpaperManager {
   static DB_VERSION = 1;
   /** @type {string} */
   static STORE_NAME = "wallpapers";
-  /** @type {string} */
-  static META_KEY = "hover_wallpaper_meta";
   /** @type {number} Max dimension for stored wallpaper (px) */
   static MAX_IMAGE_DIM = 3840;
   /** @type {number} Thumbnail max width (px) */
@@ -457,83 +457,28 @@ export class WallpaperManager {
     });
   }
 
-  // ╍╍╍ Metadata (chrome.storage.local / localStorage) ╍╍╍╍╍╍
+  // ╍╍╍ Metadata (via Config) ╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍
 
   /**
    * Metadata shape:
    * {
    *   activeId: string | null,
    *   custom: [ { id, name, thumbnail } ],
-   *   presetThumbs: { [presetId]: thumbnailDataUrl }
+   *   presetThumbs: { [presetId]: thumbnailDataUrl },
+   *   persistInNight: boolean
    * }
    */
 
   /** @returns {Promise<Object>} */
   async _loadMeta() {
-    const fallback = {
-      activeId: null,
-      custom: [],
-      presetThumbs: {},
-      persistInNight: false,
-    };
-
-    if (typeof chrome !== "undefined" && chrome.storage?.local) {
-      return new Promise((resolve) => {
-        chrome.storage.local.get(WallpaperManager.META_KEY, (result) => {
-          if (chrome.runtime.lastError) {
-            console.warn(
-              "[WallpaperManager] chrome.storage read error:",
-              chrome.runtime.lastError,
-            );
-            resolve(this._loadMetaLocalStorage(fallback));
-            return;
-          }
-          const data = result[WallpaperManager.META_KEY];
-          resolve(data ? { ...fallback, ...data } : fallback);
-        });
-      });
-    }
-
-    return this._loadMetaLocalStorage(fallback);
-  }
-
-  _loadMetaLocalStorage(fallback) {
-    try {
-      const raw = localStorage.getItem(WallpaperManager.META_KEY);
-      return raw ? { ...fallback, ...JSON.parse(raw) } : fallback;
-    } catch {
-      return fallback;
-    }
+    const fallback = structuredClone(Config.DEFAULTS.wallpaper_meta);
+    return { ...fallback, ...Config.get("wallpaper_meta") };
   }
 
   /** @param {Object} meta */
   async _saveMeta(meta) {
     this._meta = meta;
-
-    if (typeof chrome !== "undefined" && chrome.storage?.local) {
-      return new Promise((resolve) => {
-        chrome.storage.local.set({ [WallpaperManager.META_KEY]: meta }, () => {
-          if (chrome.runtime.lastError) {
-            console.warn(
-              "[WallpaperManager] chrome.storage write error:",
-              chrome.runtime.lastError,
-            );
-            this._saveMetaLocalStorage(meta);
-          }
-          resolve();
-        });
-      });
-    }
-
-    this._saveMetaLocalStorage(meta);
-  }
-
-  _saveMetaLocalStorage(meta) {
-    try {
-      localStorage.setItem(WallpaperManager.META_KEY, JSON.stringify(meta));
-    } catch (err) {
-      console.error("[WallpaperManager] localStorage write error:", err);
-    }
+    await Config.set("wallpaper_meta", meta);
   }
 
   // ╍╍╍ Image Processing ╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍

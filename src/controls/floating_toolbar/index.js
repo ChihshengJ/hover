@@ -5,7 +5,7 @@
  */
 
 import { NavigationTree } from "../navigation_tree.js";
-import { Settings } from "../../settings/settings.js";
+import { Config } from "../../settings/config.js";
 import { ToolButtonTooltip } from "./tool_button_tooltip.js";
 import { JumpPopup } from "./jump_popup.js";
 import { JumpIndicators } from "./jump_indicators.js";
@@ -38,7 +38,7 @@ export class FloatingToolbar {
       wrapper: this.wrapper,
       toolbarTop: this.toolbarTop,
       toolbarBottom: this.toolbarBottom,
-      autoCollapse: Settings.isAutoCollapseEnabled(),
+      autoCollapse: Config.get("toolbar_auto_collapse"),
     });
     this.autoHide = new AutoHideController({
       wrapper: this.wrapper,

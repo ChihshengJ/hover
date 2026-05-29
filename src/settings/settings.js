@@ -5,13 +5,9 @@
 import { WallpaperManager } from "./wallpaper.js";
 import { BallEditor } from "./ball_editor.js";
 import { ActionButton } from "../controls/action_button.js";
+import { Config } from "./config.js";
 
 export class Settings {
-  /** @type {string} */
-  static PROGRESS_BAR_KEY = "hover_progress_bar_enabled";
-  /** @type {string} */
-  static AUTO_COLLAPSE_KEY = "hover_toolbar_auto_collapse";
-
   /**
    * @param {SplitWindowManager} wm
    * @param {Function} showToast - toast function from FileMenu
@@ -59,68 +55,6 @@ export class Settings {
   async applyOnStartup() {
     await this.wallpaper.applyOnStartup();
     await this.ballStyle.applyOnStartup();
-  }
-
-  /**
-   * Check if the progress bar is enabled.
-   * @returns {boolean}
-   */
-  static isProgressBarEnabled() {
-    try {
-      const val = localStorage.getItem(Settings.PROGRESS_BAR_KEY);
-      return val === null ? true : val === "true";
-    } catch {
-      return true;
-    }
-  }
-
-  /**
-   * Save progress bar enabled state.
-   * @param {boolean} enabled
-   */
-  static setProgressBarEnabled(enabled) {
-    try {
-      localStorage.setItem(Settings.PROGRESS_BAR_KEY, String(enabled));
-    } catch (err) {
-      console.warn("[Settings] Failed to save progress bar setting:", err);
-    }
-
-    if (typeof chrome !== "undefined" && chrome.storage?.local) {
-      chrome.storage.local.set({
-        [Settings.PROGRESS_BAR_KEY]: enabled,
-      });
-    }
-  }
-
-  /**
-   * Check if toolbar auto-collapse is enabled.
-   * @returns {boolean}
-   */
-  static isAutoCollapseEnabled() {
-    try {
-      const val = localStorage.getItem(Settings.AUTO_COLLAPSE_KEY);
-      return val === null ? true : val === "true";
-    } catch {
-      return true;
-    }
-  }
-
-  /**
-   * Save toolbar auto-collapse state.
-   * @param {boolean} enabled
-   */
-  static setAutoCollapseEnabled(enabled) {
-    try {
-      localStorage.setItem(Settings.AUTO_COLLAPSE_KEY, String(enabled));
-    } catch (err) {
-      console.warn("[Settings] Failed to save auto-collapse setting:", err);
-    }
-
-    if (typeof chrome !== "undefined" && chrome.storage?.local) {
-      chrome.storage.local.set({
-        [Settings.AUTO_COLLAPSE_KEY]: enabled,
-      });
-    }
   }
 
   // ╍╍╍ Modal Rendering ╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍
@@ -311,12 +245,34 @@ export class Settings {
                   <span class="settings-toggle-knob"></span>
                 </label>
               </div>
+              <div class="settings-toggle-row">
+                <div class="settings-toggle-info">
+                  <span class="settings-toggle-label">Persist Split Window</span>
+                  <span class="settings-toggle-description">Restore the last split layout (direction and ratio) on launch</span>
+                </div>
+                <label class="settings-toggle-switch">
+                  <input type="checkbox" class="split-persist-toggle">
+                  <span class="settings-toggle-slider"></span>
+                  <span class="settings-toggle-knob"></span>
+                </label>
+              </div>
             </div>
 
             <div class="settings-subsection">
               <div class="settings-subsection-header">
                 <span class="settings-subsection-title">Night Mode</span>
                 <span class="settings-subsection-rule"></span>
+              </div>
+              <div class="settings-select-row">
+                <div class="settings-toggle-info">
+                  <span class="settings-toggle-label">Startup Mode</span>
+                  <span class="settings-toggle-description">Which theme to use when Hover launches</span>
+                </div>
+                <select class="settings-select night-mode-startup-select">
+                  <option value="day">Light</option>
+                  <option value="night">Dark</option>
+                  <option value="persist">Remember last</option>
+                </select>
               </div>
               <div class="settings-toggle-row">
                 <div class="settings-toggle-info">
@@ -483,9 +439,9 @@ export class Settings {
     // Progress bar toggle
     const progressToggle = overlay.querySelector(".progress-bar-toggle");
     if (progressToggle) {
-      progressToggle.checked = Settings.isProgressBarEnabled();
+      progressToggle.checked = Config.get("progress_bar_enabled");
       progressToggle.addEventListener("change", () => {
-        Settings.setProgressBarEnabled(progressToggle.checked);
+        Config.set("progress_bar_enabled", progressToggle.checked);
         if (this.wm.progressBar) {
           if (progressToggle.checked) {
             this.wm.progressBar.show();
@@ -499,9 +455,9 @@ export class Settings {
     // Auto-collapse toggle
     const collapseToggle = overlay.querySelector(".auto-collapse-toggle");
     if (collapseToggle) {
-      collapseToggle.checked = Settings.isAutoCollapseEnabled();
+      collapseToggle.checked = Config.get("toolbar_auto_collapse");
       collapseToggle.addEventListener("change", () => {
-        Settings.setAutoCollapseEnabled(collapseToggle.checked);
+        Config.set("toolbar_auto_collapse", collapseToggle.checked);
         if (this.wm.toolbar) {
           this.wm.toolbar.setAutoCollapse(collapseToggle.checked);
         }
@@ -514,6 +470,48 @@ export class Settings {
       defaultToolSelect.value = ActionButton.getDefaultTool();
       defaultToolSelect.addEventListener("change", () => {
         ActionButton.setDefaultTool(defaultToolSelect.value);
+      });
+    }
+
+    // Night mode startup select
+    const nightStartupSelect = overlay.querySelector(
+      ".night-mode-startup-select",
+    );
+    if (nightStartupSelect) {
+      nightStartupSelect.value = Config.get("night_mode_startup");
+      nightStartupSelect.addEventListener("change", () => {
+        const mode = nightStartupSelect.value;
+        Config.set("night_mode_startup", mode);
+        // When switching INTO persist, snapshot the current state so the
+        // next launch reflects what the user sees right now.
+        if (mode === "persist") {
+          Config.set(
+            "night_mode_last",
+            document.body.classList.contains("night-mode"),
+          );
+        }
+      });
+    }
+
+    // Split-window persist toggle
+    const splitPersistToggle = overlay.querySelector(".split-persist-toggle");
+    if (splitPersistToggle) {
+      splitPersistToggle.checked = Config.get("split_persist");
+      splitPersistToggle.addEventListener("change", () => {
+        const on = splitPersistToggle.checked;
+        Config.set("split_persist", on);
+        // When turning persist on, snapshot the current layout so it
+        // gets restored next launch even if the user never re-splits.
+        if (on) {
+          if (this.wm.isSplit) {
+            Config.set("split_state", {
+              direction: this.wm.splitDirection,
+              ratio: this.wm.splitRatio,
+            });
+          } else {
+            Config.set("split_state", null);
+          }
+        }
       });
     }
   }

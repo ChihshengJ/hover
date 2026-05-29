@@ -1,9 +1,19 @@
 import { defineConfig } from "vite";
 import { resolve } from "path";
-import { copyFileSync, existsSync } from "fs";
+import { copyFileSync, existsSync, readFileSync, writeFileSync } from "fs";
+
+const manifest = JSON.parse(
+  readFileSync(resolve(__dirname, "manifest.json"), "utf8"),
+);
+const APP_VERSION = manifest.version;
+const STORE_BUILD = process.env.STORE_BUILD === "1";
 
 export default defineConfig({
   root: ".",
+  define: {
+    __APP_VERSION__: JSON.stringify(APP_VERSION),
+    __LOCAL_WASM_ONLY__: JSON.stringify(STORE_BUILD),
+  },
   build: {
     rollupOptions: {
       input: {
@@ -38,6 +48,27 @@ export default defineConfig({
   },
   plugins: [
     {
+      name: "inject-version-html",
+      transformIndexHtml(html) {
+        return html.replace(/%VERSION%/g, APP_VERSION);
+      },
+    },
+    {
+      // In store builds, scrub the remote CDN URL baked into
+      // @embedpdf/pdfium so reviewers don't flag it as remote code.
+      name: "scrub-pdfium-cdn",
+      enforce: "pre",
+      transform(code, id) {
+        if (!STORE_BUILD) return null;
+        if (!id.includes("@embedpdf/pdfium")) return null;
+        if (!code.includes("cdn.jsdelivr.net")) return null;
+        return code.replace(
+          /['"]https?:\/\/cdn\.jsdelivr\.net\/[^'"]*pdfium[^'"]*['"]/g,
+          '""',
+        );
+      },
+    },
+    {
       name: "copy-popup-files",
       closeBundle() {
         // Copy popup.css and popup.js to dist (they're not processed by Vite)
@@ -46,10 +77,11 @@ export default defineConfig({
             resolve(__dirname, "popup.css"),
             resolve(__dirname, "dist/popup.css"),
           );
-          copyFileSync(
+          const popupJs = readFileSync(
             resolve(__dirname, "popup.js"),
-            resolve(__dirname, "dist/popup.js"),
-          );
+            "utf8",
+          ).replace(/__APP_VERSION__/g, JSON.stringify(APP_VERSION));
+          writeFileSync(resolve(__dirname, "dist/popup.js"), popupJs);
         } catch (err) {
           console.warn("Could not copy popup files:", err.message);
         }

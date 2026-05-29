@@ -10,6 +10,8 @@
  * @property {boolean} reached
  */
 
+import { Config } from "../settings/config.js";
+
 export class ProgressBar {
   /**
    * @param {SplitWindowManager} wm
@@ -357,17 +359,11 @@ export class ProgressBar {
   }
 
   /**
-   * Apply the saved visibility preference from localStorage.
+   * Apply the saved visibility preference from Config.
    */
   #applyVisibilityPreference() {
-    try {
-      const val = localStorage.getItem("hover_progress_bar_enabled");
-      const enabled = val === null ? true : val === "true";
-      if (!enabled) {
-        this.container.style.display = "none";
-      }
-    } catch {
-      // default visible
+    if (!Config.get("progress_bar_enabled")) {
+      this.container.style.display = "none";
     }
   }
 

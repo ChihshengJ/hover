@@ -42,12 +42,12 @@ export function buildToolbarDom() {
   toolbarTop.innerHTML = `
     <button class="tool-btn" data-action="horizontal-spread" data-tip-title="Spread Mode" data-tip-desc="Click to cycle: single → even → odd spread">
       <div class="inner">
-        <img src="/assets/book.svg" width="25" />
+        <img src="assets/book.svg" width="25" />
       </div>
     </button>
     <button class="tool-btn" data-action="split-screen" data-tip-title="Split Screen" data-tip-desc="Click to toggle split-screen reading">
       <div class="inner">
-        <img src="/assets/split.svg" width="25" />
+        <img src="assets/split.svg" width="25" />
       </div>
     </button>
     <button class="tool-btn" data-action="rotate" data-tip-title="Rotate" data-tip-desc="Click to rotate 90°, double-click to reset">
@@ -65,17 +65,17 @@ export function buildToolbarDom() {
   toolbarBottom.innerHTML = `
     <button class="tool-btn" data-action="fit-width" data-tip-title="Fit to View" data-tip-desc="Click to toggle fit width / fit height">
       <div class="inner">
-        <img src="/assets/fit_width.svg" width="20" />
+        <img src="assets/fit_width.svg" width="20" />
       </div>
     </button>
     <button class="tool-btn" data-action="zoom-in" data-tip-title="Zoom In" data-tip-desc="Increase zoom level">
       <div class="inner">
-          <img src="/assets/plus.svg" width="24" />
+          <img src="assets/plus.svg" width="24" />
       </div>
     </button>
     <button class="tool-btn" data-action="zoom-out" data-tip-title="Zoom Out" data-tip-desc="Decrease zoom level">
       <div class="inner">
-          <img src="/assets/minus.svg" width="24" />
+          <img src="assets/minus.svg" width="24" />
       </div>
     </button>
   `;

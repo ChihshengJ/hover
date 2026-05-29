@@ -3,29 +3,19 @@
  * page-number color, and the interactive gradient editor UI.
  */
 
+import { Config } from "./config.js";
+
 export class BallEditor {
-  /** @type {string} */
-  static BALL_STYLE_KEY = "hover_ball_style";
   /** @type {number} Max gradient stops */
   static MAX_STOPS = 3;
 
   /**
    * Default ball style matching the CSS variables in _variables.css.
+   * Authoritative copy lives in Config.DEFAULTS.ball_style.
    */
-  static DEFAULT_BALL_STYLE = {
-    gradient: {
-      direction: 120,
-      stops: [
-        { color: "#ffffff", position: 10 },
-        { color: "#fafafa", position: 25 },
-        { color: "#bebebe", position: 85 },
-      ],
-    },
-    pageColor: "#000000",
-    pageWeight: 300,
-    persistInNight: false,
-    useThemeButtons: false,
-  };
+  static get DEFAULT_BALL_STYLE() {
+    return Config.DEFAULTS.ball_style;
+  }
 
   /**
    * @param {Function} showToast - toast function from FileMenu
@@ -97,30 +87,7 @@ export class BallEditor {
    */
   async _loadBallStyle() {
     const fallback = structuredClone(BallEditor.DEFAULT_BALL_STYLE);
-
-    if (typeof chrome !== "undefined" && chrome.storage?.local) {
-      return new Promise((resolve) => {
-        chrome.storage.local.get(BallEditor.BALL_STYLE_KEY, (result) => {
-          if (chrome.runtime.lastError) {
-            resolve(this._loadBallStyleLocalStorage(fallback));
-            return;
-          }
-          const data = result[BallEditor.BALL_STYLE_KEY];
-          resolve(data ? this._mergeBallStyle(fallback, data) : fallback);
-        });
-      });
-    }
-
-    return this._loadBallStyleLocalStorage(fallback);
-  }
-
-  _loadBallStyleLocalStorage(fallback) {
-    try {
-      const raw = localStorage.getItem(BallEditor.BALL_STYLE_KEY);
-      return raw ? this._mergeBallStyle(fallback, JSON.parse(raw)) : fallback;
-    } catch {
-      return fallback;
-    }
+    return this._mergeBallStyle(fallback, Config.get("ball_style") || {});
   }
 
   /**
@@ -160,25 +127,7 @@ export class BallEditor {
   }
 
   async _persistBallStyle(style) {
-    if (typeof chrome !== "undefined" && chrome.storage?.local) {
-      return new Promise((resolve) => {
-        chrome.storage.local.set({ [BallEditor.BALL_STYLE_KEY]: style }, () => {
-          if (chrome.runtime.lastError) {
-            this._saveBallStyleLocalStorage(style);
-          }
-          resolve();
-        });
-      });
-    }
-    this._saveBallStyleLocalStorage(style);
-  }
-
-  _saveBallStyleLocalStorage(style) {
-    try {
-      localStorage.setItem(BallEditor.BALL_STYLE_KEY, JSON.stringify(style));
-    } catch (err) {
-      console.error("[BallEditor] localStorage write error:", err);
-    }
+    await Config.set("ball_style", style);
   }
 
   // ╍╍╍ CSS Helpers ╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍

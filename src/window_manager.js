@@ -27,6 +27,11 @@ export class SplitWindowManager {
     this.activePane = null;
     this.isSplit = false;
 
+    this.survivorSide = "left";
+    /** @type {{ side: 'left'|'right', scale: number, scrollTop: number, scrollLeft: number } | null} */
+    this.savedSlot = null;
+    this.paneCounter = 0;
+
     this.toolbar = null;
     this.controls = null;
     /** @type {ProgressBar} */
@@ -72,7 +77,11 @@ export class SplitWindowManager {
     }
   }
 
-  #createPaneContainer() {
+  /**
+   * @param {HTMLElement | null} insertBeforeEl - if provided, the container is
+   *   inserted before this element (left/top slot); otherwise appended (right).
+   */
+  #createPaneContainer(insertBeforeEl = null) {
     const container = document.createElement("div");
     container.className = "viewer-pane";
 
@@ -88,35 +97,52 @@ export class SplitWindowManager {
       true,
     );
 
-    this.rootEl.appendChild(container);
+    if (insertBeforeEl) {
+      this.rootEl.insertBefore(container, insertBeforeEl);
+    } else {
+      this.rootEl.appendChild(container);
+    }
     return container;
   }
 
   async split(direction = "vertical") {
     if (this.panes.length >= 2 || this.isSplit) return;
 
-    // capture viewport before split
-    const primaryPane = this.activePane;
-    this.setActivePane(primaryPane);
-    const currentScale = primaryPane.scale;
-    const currentScrollTop = primaryPane.scroller.scrollTop;
-    const currentScrollLeft = primaryPane.scroller.scrollLeft;
-
+    const existingPane = this.activePane;
+    this.setActivePane(existingPane);
     this.splitDirection = direction;
-    const container = this.#createPaneContainer();
+    const newPaneSide = this.survivorSide === "left" ? "right" : "left";
+    const restore =
+      this.savedSlot && this.savedSlot.side === newPaneSide
+        ? this.savedSlot
+        : null;
+    const seedScale = restore ? restore.scale : existingPane.scale;
+    const seedScrollTop = restore
+      ? restore.scrollTop
+      : existingPane.scroller.scrollTop;
+    const seedScrollLeft = restore
+      ? restore.scrollLeft
+      : existingPane.scroller.scrollLeft;
+
+    const container = this.#createPaneContainer(
+      newPaneSide === "left" ? existingPane.paneEl : null,
+    );
     const newPane = new ViewerPane(this.document, container, {
-      id: "secondary",
+      id: `secondary-${++this.paneCounter}`,
       pinned: false,
     });
 
-    await newPane.initialize(currentScale);
+    await newPane.initialize(seedScale);
 
-    this.panes.push(newPane);
+    if (newPaneSide === "left") {
+      this.panes.unshift(newPane);
+    } else {
+      this.panes.push(newPane);
+    }
     this.toolbar.enterSplitMode();
     this.#updateLayout();
     this.#createResizer();
 
-    // Enter split mode for progress bar
     this.progressBar?.enterSplitMode();
     for (const p of this.panes) {
       p.controls.attach();
@@ -133,33 +159,42 @@ export class SplitWindowManager {
 
     requestAnimationFrame(() => {
       requestAnimationFrame(() => {
-        newPane.scroller.scrollTop = currentScrollTop;
-        newPane.scroller.scrollLeft = currentScrollLeft;
+        newPane.scroller.scrollTop = seedScrollTop;
+        newPane.scroller.scrollLeft = seedScrollLeft;
       });
     });
 
     this.isSplit = true;
+    this.savedSlot = null;
     this.#persistSplitStateIfEnabled();
     return newPane;
   }
 
   unsplit() {
     if (this.panes.length <= 1 || !this.isSplit) return;
+    const paneToKeep = this.activePane ?? this.panes[0];
+    const paneToRemove =
+      this.panes.find((p) => p !== paneToKeep) ?? this.panes[1];
+    this.survivorSide = this.panes.indexOf(paneToKeep) === 0 ? "left" : "right";
+    this.savedSlot = {
+      side: this.panes.indexOf(paneToRemove) === 0 ? "left" : "right",
+      scale: paneToRemove.scale,
+      scrollTop: paneToRemove.scroller.scrollTop,
+      scrollLeft: paneToRemove.scroller.scrollLeft,
+    };
 
-    const paneToRemove = this.panes[1];
     paneToRemove.destroy();
     paneToRemove.paneEl.remove();
 
-    this.panes = [this.panes[0]];
-    this.activePane = this.panes[0];
+    this.panes = [paneToKeep];
+    this.activePane = paneToKeep;
     this.activePane?.paneEl.classList.remove("active");
     this.splitDirection = null;
 
     this.toolbar.exitSplitMode();
-    this.toolbar.updateActivePane(this.panes[0]);
-    this.controls.updateActivePane(this.panes[0]);
+    this.toolbar.updateActivePane(paneToKeep);
+    this.controls.updateActivePane(paneToKeep);
 
-    // Exit split mode for progress bar
     this.progressBar?.exitSplitMode();
 
     requestAnimationFrame(() => {

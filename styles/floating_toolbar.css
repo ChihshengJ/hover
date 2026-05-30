@@ -169,11 +169,10 @@
   cursor: pointer;
   box-shadow:
     inset 2px 2px 5px #00000033,
-    inset -1px -2px 5px #0000001a,
+    inset -1px -2px 5px #0000004d,
     inset 3px 1px 8px 3px #ffffffa6,
     inset -3px -3px 12px 5px #ffffff99,
-    inset -2px -1px 1px 0px rgba(0, 0, 0, 0.05),
-    0 4px 10px rgba(0, 0, 0, 0.3);
+    0 4px 8px rgba(0, 0, 0, 0.3);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -458,7 +457,14 @@
    ball state). */
 body.theme-buttons:not(.night-mode) .tool-btn,
 body.theme-buttons.night-mode.ball-night-persist .tool-btn {
-  background: var(--theme-btn-color, rgba(255, 255, 255, 1));
+  filter: brightness(1.13);
+  background: var(--theme-btn-color);
+  box-shadow:
+    inset -2px -3px 3px #00000033,
+    inset 1px 3px 5px #00000033,
+    inset 3px -3px 5px #ffffff40,
+    inset -4px 1px 5px #ffffff40,
+    0 4px 10px rgba(0, 0, 0, 0.3);
 }
 
 /* Neutralize the default night-mode icon inversion so icon color is

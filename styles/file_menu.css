@@ -314,6 +314,7 @@ input[type="file"] {
 }
 
 .file-menu-modal {
+  font-family: "Elms Sans", monospace;
   background: var(--bg-glass-solid);
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);

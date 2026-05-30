@@ -68,9 +68,9 @@
 
   /* Glassmorphism shadows */
   --shadow-glass:
-    0 8px 32px rgba(0, 0, 0, 0.3), inset 0 1px 2px rgba(255, 255, 255, 0.9);
+    0 8px 32px rgba(0, 0, 0, 0.2), inset 0 1px 2px rgba(255, 255, 255, 0.6);
   --shadow-glass-hover:
-    0 8px 32px rgba(0, 0, 0, 0.4), inset 0 1px 2px rgba(255, 255, 255, 0.9);
+    0 8px 32px rgba(0, 0, 0, 0.3), inset 0 1px 2px rgba(255, 255, 255, 0.6);
 
   /* Elevated elements */
   --shadow-elevated:
@@ -215,9 +215,6 @@ body.night-mode {
   /* Shadows */
   --shadow-float: 0 5px 10px rgba(0, 0, 0, 0.5);
   --shadow-popup: 0 10px 20px 20px rgba(0, 0, 0, 0.5);
-  --shadow-elevated-active:
-    0 2px 12px rgba(0, 0, 0, 0.2), 0 0 0 1px rgba(0, 0, 0, 0.05),
-    inset 0 0 4px 2px rgba(219, 147, 52, 0.8);
 
   /* Accent adjustments for night mode */
   --color-accent: #60a5fa;

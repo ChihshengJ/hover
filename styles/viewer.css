@@ -226,8 +226,9 @@ body {
   align-items: center;
   gap: 2px;
   background:
-    linear-gradient(var(--bg-tertiary), var(--bg-tertiary)),
+    linear-gradient(var(--bg-active), var(--bg-tertiary)),
     var(--bg-glass-solid);
+  box-shadow: var(--shadow-glass);
   border-radius: 6px;
   padding: 2px;
 }
@@ -384,7 +385,9 @@ body {
 }
 
 .image-overlay-rect:hover {
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.28), 0 2px 6px rgba(0, 0, 0, 0.18);
+  box-shadow:
+    0 4px 16px rgba(0, 0, 0, 0.28),
+    0 2px 6px rgba(0, 0, 0, 0.18);
 }
 
 /* ===========================================
@@ -419,7 +422,6 @@ body {
 .spread-row .page-wrapper {
   margin: 0;
 }
-
 
 /* ===========================================
    Scroll-back button
@@ -487,14 +489,6 @@ body {
 
 .night-mode .page-num {
   color: #888;
-}
-
-.night-mode .pane-controls {
-  background: rgba(40, 40, 40, 0.85);
-  box-shadow:
-    0 2px 12px rgba(0, 0, 0, 0.3),
-    0 0 0 1px rgba(255, 255, 255, 0.1),
-    inset 0px -2px 10px 1px rgba(255, 255, 255, 0.1);
 }
 
 .night-mode .pane-btn img {

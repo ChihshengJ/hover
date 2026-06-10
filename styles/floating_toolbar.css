@@ -89,6 +89,7 @@
   justify-content: center;
   pointer-events: auto;
   cursor: grab;
+  -webkit-user-select: none; /* Safari < 18.4 ignores unprefixed user-select */
   user-select: none;
   touch-action: none;
   z-index: 1;

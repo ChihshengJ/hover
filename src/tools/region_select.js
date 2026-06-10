@@ -7,6 +7,7 @@
  */
 
 import { getSharedImageModal } from "../controls/image_modal.js";
+import { beginDragGuard, endDragGuard } from "../drag_guard.js";
 
 const MIN_SELECTION_PX = 5;
 const RENDER_SCALE_FACTOR = 3;
@@ -90,6 +91,9 @@ export class RegionSelectController {
     if (!page) return;
 
     e.preventDefault();
+    // preventDefault() on pointerdown doesn't stop native text selection
+    // on Safari/Firefox — the guard does.
+    beginDragGuard();
 
     this.#isDragging = true;
     this.#startPage = page;
@@ -130,6 +134,7 @@ export class RegionSelectController {
     document.removeEventListener("pointermove", this.#onPointerMove);
     document.removeEventListener("pointerup", this.#onPointerUp);
     this.#isDragging = false;
+    endDragGuard();
 
     const coords = this.#clientToPageCoords(
       e.clientX,
@@ -217,6 +222,7 @@ export class RegionSelectController {
     if (!this.#isDragging) return;
     this.#isDragging = false;
     this.#startPage = null;
+    endDragGuard();
     document.removeEventListener("pointermove", this.#onPointerMove);
     document.removeEventListener("pointerup", this.#onPointerUp);
   }

@@ -2,11 +2,13 @@
 
 .pane-scroll-area.region-select-active {
   cursor: crosshair;
+  -webkit-user-select: none; /* Safari < 18.4 ignores unprefixed user-select */
   user-select: none;
 }
 
 .pane-scroll-area.region-select-active .textLayer,
 .pane-scroll-area.region-select-active .textLayer * {
+  -webkit-user-select: none;
   user-select: none;
   pointer-events: none;
 }

@@ -13,6 +13,14 @@ export class TextSelectionManager {
   /** @type {boolean} */
   #isPointerDown = false;
 
+  /**
+   * Whether the current pointer gesture started inside a text layer.
+   * Selections caused by other drags (floating ball, resizer, region
+   * select, ...) must not trigger the endOfContent machinery.
+   * @type {boolean}
+   */
+  #pointerDownInTextLayer = false;
+
   /** @type {Range|null} */
   #prevRange = null;
 
@@ -33,8 +41,6 @@ export class TextSelectionManager {
    * @param {HTMLElement} endOfContent - The endOfContent element for selection stability
    */
   register(pageView, textLayerDiv, endOfContent) {
-    this.#textLayers.set(textLayerDiv, { endOfContent, pageView });
-
     const mousedownHandler = (e) => {
       if (
         e.target.matches(".textLayer span") ||
@@ -104,6 +110,8 @@ export class TextSelectionManager {
     textLayerDiv.append(endOfContent);
     endOfContent.style.width = "";
     endOfContent.style.height = "";
+    endOfContent.style.userSelect = "";
+    endOfContent.style.webkitUserSelect = "";
     textLayerDiv.classList.remove("selecting");
     pageView.wrapper.classList.remove("text-selecting");
   }
@@ -116,8 +124,11 @@ export class TextSelectionManager {
 
     document.addEventListener(
       "pointerdown",
-      () => {
+      (e) => {
         this.#isPointerDown = true;
+        this.#pointerDownInTextLayer = !!(
+          e.target instanceof Element && e.target.closest(".textLayer")
+        );
       },
       { signal },
     );
@@ -160,6 +171,16 @@ export class TextSelectionManager {
   }
 
   #handleSelectionChange() {
+    // Ignore selections dragged out by other pointer gestures (floating
+    // ball, split resizer, region select, ...). Safari starts a native
+    // selection even when those controls preventDefault() their
+    // pointerdown; reacting here would expand endOfContent and shuffle
+    // the DOM in the middle of their drag. Keyboard-driven selection
+    // changes (pointer up) still pass through.
+    if (this.#isPointerDown && !this.#pointerDownInTextLayer) {
+      return;
+    }
+
     const selection = document.getSelection();
 
     if (selection.rangeCount === 0) {
@@ -192,13 +213,18 @@ export class TextSelectionManager {
       }
     }
 
-    // Firefox handles selection natively without the endOfContent trick
+    // Firefox handles selection natively without the endOfContent trick.
+    // The probe must run against an element that has `user-select: none`
+    // applied (endOfContent) — only Gecko aliases it to -moz-user-select,
+    // so Chrome/Safari compute "" here while Firefox computes "none".
+    // Probing the textLayer div itself would always yield false.
     if (this.#isFirefox === null) {
-      const firstDiv = this.#textLayers.keys().next().value;
-      if (firstDiv) {
+      const firstEntry = this.#textLayers.values().next().value;
+      if (firstEntry) {
         this.#isFirefox =
-          getComputedStyle(firstDiv).getPropertyValue("-moz-user-select") ===
-          "none";
+          getComputedStyle(firstEntry.endOfContent).getPropertyValue(
+            "-moz-user-select",
+          ) === "none";
       }
     }
     if (this.#isFirefox) return;
@@ -244,6 +270,8 @@ export class TextSelectionManager {
       endOfContent.style.width = parentTextLayer.style.width;
       endOfContent.style.height = parentTextLayer.style.height;
       endOfContent.style.userSelect = "text";
+      // Safari < 18.4 only honors the prefixed property
+      endOfContent.style.webkitUserSelect = "text";
 
       anchor.parentElement?.insertBefore(
         endOfContent,
@@ -337,9 +365,11 @@ export class TextSelectionManager {
   #mergeRects(rects) {
     if (rects.length === 0) return [];
 
+    const LINE_TOLERANCE = 8;
+
     rects.sort((a, b) => {
-      const topDiff = a.bottom - b.bottom;
-      if (Math.abs(topDiff) > 8) return topDiff;
+      const bottomDiff = a.top + a.height - (b.top + b.height);
+      if (Math.abs(bottomDiff) > LINE_TOLERANCE) return bottomDiff;
       return a.left - b.left;
     });
 
@@ -349,16 +379,25 @@ export class TextSelectionManager {
     for (let i = 1; i < rects.length; i++) {
       const rect = rects[i];
 
-      const sameLine = Math.abs(rect.bottom - current.bottom) < 8;
-
-      const overlapsOrAdjacent = rect.right <= current.left + 8;
+      const sameLine =
+        Math.abs(rect.top + rect.height - (current.top + current.height)) <
+        LINE_TOLERANCE;
+      const overlapsOrAdjacent =
+        rect.left <= current.left + current.width + LINE_TOLERANCE;
 
       if (sameLine && overlapsOrAdjacent) {
-        const newRight = Math.max(current.right, rect.right);
-        const newBottom = Math.min(current.bottom, rect.botom);
-        const newTop = Math.max(current.top, rect.top);
-        current.top = newTop;
-        current.height = Math.abs(newBottom - newTop);
+        const right = Math.max(
+          current.left + current.width,
+          rect.left + rect.width,
+        );
+        const bottom = Math.max(
+          current.top + current.height,
+          rect.top + rect.height,
+        );
+        current.left = Math.min(current.left, rect.left);
+        current.top = Math.min(current.top, rect.top);
+        current.width = right - current.left;
+        current.height = bottom - current.top;
       } else {
         merged.push(current);
         current = { ...rect };

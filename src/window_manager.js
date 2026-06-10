@@ -10,6 +10,7 @@ import { FloatingToolbar } from "./controls/floating_toolbar/index.js";
 import { WindowControls } from "./controls/window_controls.js";
 import { ProgressBar } from "./controls/progress_bar.js";
 import { Config } from "./settings/config.js";
+import { beginDragGuard, endDragGuard } from "./drag_guard.js";
 
 export class SplitWindowManager {
   /**
@@ -274,16 +275,23 @@ export class SplitWindowManager {
 
     const onMouseDown = (e) => {
       e.preventDefault();
+      // preventDefault() on pointerdown doesn't stop native text selection
+      // on Safari/Firefox — the guard does.
+      beginDragGuard();
+      this.resizer.setPointerCapture(e.pointerId);
       startPos = this.splitDirection === "vertical" ? e.clientX : e.clientY;
       startRatio = this.splitRatio;
       document.addEventListener("pointermove", onMouseMove);
       document.addEventListener("pointerup", onMouseUp);
+      document.addEventListener("pointercancel", onMouseUp);
       this.resizer.classList.add("dragging");
     };
 
     const onMouseUp = () => {
+      endDragGuard();
       document.removeEventListener("pointermove", onMouseMove);
       document.removeEventListener("pointerup", onMouseUp);
+      document.removeEventListener("pointercancel", onMouseUp);
       this.resizer.classList.remove("dragging");
       this.#persistSplitStateIfEnabled();
     };

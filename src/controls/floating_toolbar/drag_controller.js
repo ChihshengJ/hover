@@ -13,6 +13,8 @@
  * The facade reads `isDragging` / `dragMode` / `wasDragged` as getters and
  * clears `wasDragged` after each click.
  */
+import { beginDragGuard, endDragGuard } from "../../drag_guard.js";
+
 export class DragController {
   /**
    * @param {Object} opts
@@ -84,6 +86,12 @@ export class DragController {
         this.endDrag();
       }
     });
+
+    document.addEventListener("pointercancel", () => {
+      if (this.isDragging) {
+        this.endDrag();
+      }
+    });
   }
 
   clearWasDragged() {
@@ -107,6 +115,12 @@ export class DragController {
 
   #startDrag(e) {
     this.hooks.onDragStart();
+    // Route the rest of the gesture to the ball and keep receiving events
+    // even when the pointer leaves the window.
+    this.ball.setPointerCapture(e.pointerId);
+    // Suppress native text selection for the duration of the drag —
+    // preventDefault() below only achieves that on Chrome, not Safari/Firefox.
+    beginDragGuard();
     this.isDragging = true;
     this.isJumping = false;
     this.dragStartX = e.clientX;
@@ -279,7 +293,9 @@ export class DragController {
 
   endDrag() {
     if (this.isJumping) return;
+    if (!this.isDragging) return;
 
+    endDragGuard();
     this.isDragging = false;
     this.currentScrollVelocity = 0;
     this.dragMode = null;

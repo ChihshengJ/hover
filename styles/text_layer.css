@@ -56,6 +56,7 @@
 }
 
 .textLayer span[role="img"] {
+  -webkit-user-select: none;
   user-select: none;
   cursor: default;
 }
@@ -83,6 +84,7 @@
   inset: 100% 0 0;
   z-index: 0;
   cursor: default;
+  -webkit-user-select: none; /* Safari < 18.4 ignores unprefixed user-select */
   user-select: none;
 }
 

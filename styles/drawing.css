@@ -4,11 +4,13 @@
 
 .pane-scroll-area.drawing-mode-active {
   cursor: crosshair;
+  -webkit-user-select: none; /* Safari < 18.4 ignores unprefixed user-select */
   user-select: none;
 }
 
 .pane-scroll-area.drawing-mode-active .textLayer,
 .pane-scroll-area.drawing-mode-active .textLayer * {
+  -webkit-user-select: none !important;
   user-select: none !important;
   pointer-events: none !important;
   cursor: crosshair !important;

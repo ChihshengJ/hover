@@ -3,6 +3,7 @@
  */
 
 import { normalizeTitle } from "./trail_store.js";
+import { beginDragGuard, endDragGuard } from "../drag_guard.js";
 
 const SVG_NS = "http://www.w3.org/2000/svg";
 
@@ -176,6 +177,7 @@ export class TrailOverlay {
     );
     document.addEventListener("pointermove", (e) => this.#onPanMove(e));
     document.addEventListener("pointerup", () => this.#onPanEnd());
+    document.addEventListener("pointercancel", () => this.#onPanEnd());
 
     // Scroll wheel to switch trails
     this.treeContainer.addEventListener("wheel", (e) => {
@@ -639,6 +641,9 @@ export class TrailOverlay {
 
   #onPanStart(e) {
     if (e.button !== 0) return;
+    // Suppress native text selection while panning the tree (Safari and
+    // Firefox would otherwise drag out a selection alongside the pan).
+    beginDragGuard();
     this.isPanning = true;
     this.wasDragged = false;
     this.panStartX = e.clientX - this.panOffsetX;
@@ -660,6 +665,8 @@ export class TrailOverlay {
   }
 
   #onPanEnd() {
+    if (!this.isPanning) return;
     this.isPanning = false;
+    endDragGuard();
   }
 }

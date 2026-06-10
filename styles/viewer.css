@@ -113,11 +113,29 @@ body {
 }
 
 /* ===========================================
+   Drag guard
+   ===========================================
+   Applied to <body> by drag_guard.js while a custom pointer drag is in
+   progress. Safari/Firefox don't suppress native text selection on a
+   preventDefault()ed pointerdown, so we have to do it ourselves.
+   !important is needed to beat the inline user-select that
+   TextSelectionManager sets on endOfContent. */
+
+body.ui-dragging,
+body.ui-dragging * {
+  -webkit-user-select: none !important;
+  user-select: none !important;
+}
+
+/* ===========================================
    Resizer
    =========================================== */
 
 .split-resizer {
   flex-shrink: 0;
+  -webkit-user-select: none; /* Safari < 18.4 ignores unprefixed user-select */
+  user-select: none;
+  touch-action: none;
   background: rgba(50, 50, 50, 0.1);
   box-shadow:
     0 2px 12px rgba(0, 0, 0, 0.3),

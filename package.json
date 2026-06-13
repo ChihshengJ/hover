@@ -5,14 +5,20 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "build:ext": "vite build && npm run copy-ext-files",
-    "build:ext:store": "STORE_BUILD=1 vite build && npm run copy-ext-files",
-    "copy-ext-files": "cp manifest.json dist/ 2>/dev/null || echo 'manifest.json not in root (check public/ folder)'",
-    "watch:ext": "vite build --watch",
+    "build:chrome": "TARGET=chrome vite build",
+    "build:firefox": "TARGET=firefox vite build",
+    "build:safari": "TARGET=safari vite build && bash scripts/build_safari.sh",
+    "build:all": "npm run build:chrome && npm run build:firefox && npm run build:safari",
+    "build:store": "STORE_BUILD=1 npm run build:all",
+    "package": "npm run build:all && node scripts/package.mjs",
+    "watch:chrome": "TARGET=chrome vite build --watch",
+    "dev:firefox": "npm run build:firefox && web-ext run --source-dir dist/firefox",
+    "lint:firefox": "web-ext lint --source-dir dist/firefox",
     "preview": "vite preview"
   },
   "devDependencies": {
-    "vite": "^7.3.1"
+    "vite": "^7.3.1",
+    "web-ext": "^10.3.0"
   },
   "dependencies": {
     "@embedpdf/engines": "^2.3.0",

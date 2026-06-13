@@ -24,8 +24,16 @@ export class TextSelectionManager {
   /** @type {Range|null} */
   #prevRange = null;
 
-  /** @type {boolean|null} */
-  #isFirefox = null;
+  /**
+   * Whether to skip the endOfContent repositioning trick (Gecko handles
+   * gappy selections natively and the trick breaks it). The build target
+   * decides; for cross-loaded builds (e.g. a chrome build opened in
+   * Firefox) `null` defers to the runtime probe in #handleSelectionChange.
+   * @type {boolean|null}
+   */
+  #isFirefox = typeof __TARGET__ !== "undefined" && __TARGET__ === "firefox"
+    ? true
+    : null;
 
   /**
    * @param {import('./viewpane.js').ViewerPane} pane - The pane this manager belongs to

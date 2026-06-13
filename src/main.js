@@ -57,7 +57,9 @@ function isExtensionContext() {
   return (
     typeof chrome !== "undefined" &&
     chrome.runtime?.id &&
-    window.location.protocol === "chrome-extension:"
+    ["chrome-extension:", "moz-extension:", "safari-web-extension:"].includes(
+      window.location.protocol,
+    )
   );
 }
 
@@ -221,6 +223,15 @@ async function loadPdf(isFirstLaunch = false) {
         pdfName = pending.name;
         originalUrl = pending.url || null;
         console.log("[Main] Loading PDF from IDB:", pdfName);
+      } else if (intendedUrl) {
+        // Firefox flow: the background webRequest redirect lands here with
+        // no pending record — the viewer downloads the document itself.
+        console.log("[Main] Loading PDF from URL:", intendedUrl);
+        loadingOverlay.setIndeterminate("Downloading document...");
+        pdfSource = await fetchPdfFromUrl(intendedUrl, onProgress);
+        pdfName =
+          intendedUrl.split("/").pop()?.split("?")[0] || "document.pdf";
+        originalUrl = intendedUrl;
       }
     } else {
       const devUrl = getDevUrl();

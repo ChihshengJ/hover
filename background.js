@@ -162,20 +162,95 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
 
   if (message.type === "OPEN_EXTENSION_SETTINGS") {
-    chrome.tabs.create({
-      url: `chrome://extensions/?id=${chrome.runtime.id}`,
-    });
-    sendResponse({ success: true });
+    // chrome:// URLs are Chrome-only; Firefox/Safari reject privileged URLs
+    // in tabs.create, so report failure instead of throwing.
+    chrome.tabs
+      .create({ url: `chrome://extensions/?id=${chrome.runtime.id}` })
+      .then(() => sendResponse({ success: true }))
+      .catch((err) => sendResponse({ success: false, error: err.message }));
     return true;
   }
 
   if (message.type === "CHECK_FILE_ACCESS") {
+    // Chrome-only API — Safari doesn't implement it.
+    if (typeof chrome.extension?.isAllowedFileSchemeAccess !== "function") {
+      sendResponse({ allowed: false });
+      return true;
+    }
     chrome.extension.isAllowedFileSchemeAccess().then((allowed) => {
       sendResponse({ allowed });
     });
     return true;
   }
 });
+
+// ============================================
+// Firefox: Network-level PDF takeover
+// ============================================
+// Firefox never injects content scripts into its built-in PDF.js viewer,
+// and with pdf.js disabled a PDF navigation goes straight to download —
+// so the content-script takeover used on Chrome can't fire there at all.
+// Instead, intercept main-frame PDF responses at the network layer
+// (blocking webRequest is still supported in Firefox MV3) and redirect to
+// the viewer, which then downloads the document itself via ?url=.
+// Gated on the API's existence: the Chrome/Safari builds don't request the
+// webRequest permission, so this block is inert there.
+if (chrome.webRequest?.onHeadersReceived) {
+  const headerValue = (headers, name) =>
+    headers?.find((h) => h.name.toLowerCase() === name)?.value || "";
+
+  // The blocking listener below MUST be synchronous: on Firefox's
+  // non-persistent (event-page) background, a Promise-returning blocking
+  // listener races with event-page wake-up and the PDF stream hand-off to
+  // pdf.js, and the redirect silently gets dropped. So we keep hoverEnabled
+  // in memory instead of awaiting storage inside the listener.
+  // Defaults to true (intercept) until the first storage read resolves.
+  let hoverEnabledCache = true;
+  chrome.storage.local.get("hoverEnabled").then(({ hoverEnabled = true }) => {
+    hoverEnabledCache = hoverEnabled;
+  });
+  chrome.storage.onChanged.addListener((changes, area) => {
+    if (area === "local" && changes.hoverEnabled) {
+      hoverEnabledCache = changes.hoverEnabled.newValue !== false;
+    }
+  });
+
+  chrome.webRequest.onHeadersReceived.addListener(
+    (details) => {
+      if (details.statusCode !== 200) return {};
+      if (!hoverEnabledCache) return {};
+
+      const contentType = headerValue(
+        details.responseHeaders,
+        "content-type",
+      ).toLowerCase();
+      if (!contentType.includes("application/pdf")) return {};
+
+      // Downloads stay downloads — parity with Chrome, where attachment
+      // responses never render and are therefore never intercepted.
+      const disposition = headerValue(
+        details.responseHeaders,
+        "content-disposition",
+      ).toLowerCase();
+      if (disposition.startsWith("attachment")) return {};
+
+      // "Use default viewer" flow
+      if (bypassUrls.has(details.url)) {
+        bypassUrls.delete(details.url);
+        return {};
+      }
+
+      return {
+        redirectUrl:
+          chrome.runtime.getURL("index.html") +
+          "?url=" +
+          encodeURIComponent(details.url),
+      };
+    },
+    { urls: ["http://*/*", "https://*/*"], types: ["main_frame"] },
+    ["blocking", "responseHeaders"],
+  );
+}
 
 // ============================================
 // PDF Interception

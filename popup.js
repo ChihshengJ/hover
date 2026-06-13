@@ -1,3 +1,5 @@
+import { ingestFile } from "./src/ingest.js";
+
 document.addEventListener("DOMContentLoaded", async () => {
   const toggle = document.getElementById("toggle-enabled");
   const statusText = document.getElementById("status-text");
@@ -91,21 +93,11 @@ document.addEventListener("DOMContentLoaded", async () => {
 
   fileInput.addEventListener("change", async (e) => {
     const file = e.target.files[0];
-    if (!file || file.type !== "application/pdf") return;
+    if (!file) return;
 
     try {
-      const arrayBuffer = await file.arrayBuffer();
-      const base64 = arrayBufferToBase64(arrayBuffer);
-
-      await chrome.runtime.sendMessage({
-        type: "STORE_LOCAL_PDF",
-        data: base64,
-        name: file.name,
-      });
-
-      const viewerUrl = chrome.runtime.getURL("index.html");
-      chrome.tabs.create({ url: viewerUrl });
-
+      await ingestFile(file);
+      chrome.tabs.create({ url: chrome.runtime.getURL("index.html") });
       window.close();
     } catch (error) {
       console.error("Error loading PDF:", error);
@@ -122,16 +114,5 @@ document.addEventListener("DOMContentLoaded", async () => {
       statusText.classList.add("disabled");
       container.classList.add("disabled");
     }
-  }
-
-  function arrayBufferToBase64(buffer) {
-    const bytes = new Uint8Array(buffer);
-    let binary = "";
-    const chunkSize = 8192;
-    for (let i = 0; i < bytes.length; i += chunkSize) {
-      const chunk = bytes.subarray(i, Math.min(i + chunkSize, bytes.length));
-      binary += String.fromCharCode.apply(null, chunk);
-    }
-    return btoa(binary);
   }
 });

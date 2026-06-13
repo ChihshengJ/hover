@@ -117,25 +117,6 @@ export default defineConfig({
       },
     },
     {
-      name: "copy-popup-files",
-      closeBundle() {
-        // Copy popup.css and popup.js to the output dir (not processed by Vite)
-        try {
-          copyFileSync(
-            resolve(__dirname, "popup.css"),
-            resolve(__dirname, OUT_DIR, "popup.css"),
-          );
-          const popupJs = readFileSync(
-            resolve(__dirname, "popup.js"),
-            "utf8",
-          ).replace(/__APP_VERSION__/g, JSON.stringify(APP_VERSION));
-          writeFileSync(resolve(__dirname, OUT_DIR, "popup.js"), popupJs);
-        } catch (err) {
-          console.warn("Could not copy popup files:", err.message);
-        }
-      },
-    },
-    {
       name: "copy-wasm-to-public",
       buildStart() {
         const wasmSrc = resolve(

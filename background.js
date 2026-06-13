@@ -1,6 +1,10 @@
 // ============================================
 // Hover PDF Viewer - Background Script
 // ============================================
+// NOTE: this file is emitted as a standalone classic script (Firefox loads it
+// via background.scripts, Chrome as a service worker), so it cannot `import`
+// shared modules at runtime — keep its helpers self-contained. The ES-module
+// side of the app shares these via src/util/base64.js instead.
 
 let bypassUrls = new Set();
 

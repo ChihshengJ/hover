@@ -1,3 +1,6 @@
+// NOTE: emitted as a standalone classic content script, so it cannot `import`
+// shared modules at runtime — keep helpers self-contained. The ES-module side
+// of the app shares these via src/util/base64.js instead.
 (function() {
   if (window !== window.top) return;
   if (window.location.href.includes(chrome.runtime.id)) return;

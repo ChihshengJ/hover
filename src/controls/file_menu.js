@@ -7,6 +7,7 @@ import { OnboardingWalkthrough } from "../settings/onboarding.js";
 import { Settings } from "../settings/settings.js";
 import { Config } from "../settings/config.js";
 import { requestThrottle } from "./request_throttle.js";
+import { ingestFile } from "../ingest.js";
 
 const VERSION = __APP_VERSION__;
 
@@ -408,88 +409,13 @@ export class FileMenu {
     if (!file) return;
 
     try {
-      const arrayBuffer = await this.#readFileAsArrayBuffer(file);
-
-      sessionStorage.removeItem("hover_pdf_data");
-      sessionStorage.removeItem("hover_pdf_name");
-      try {
-        indexedDB.deleteDatabase("hover-pending-pdf");
-      } catch (e) {
-        /* ignore */
-      }
-
-      if (typeof chrome !== "undefined" && chrome.runtime?.sendMessage) {
-        const base64 = this.#arrayBufferToBase64(arrayBuffer);
-        await new Promise((resolve) => {
-          chrome.runtime.sendMessage(
-            { type: "STORE_LOCAL_PDF", data: base64, name: file.name },
-            () => resolve(),
-          );
-        });
-      } else {
-        await this.#storeLocalPdf(arrayBuffer, file.name);
-      }
-
-      // Reload the page to reinitialize with new PDF
+      await ingestFile(file);
+      // Reload the page to reinitialize with the new PDF.
       window.location.href = window.location.pathname;
     } catch (error) {
       console.error("Error loading file:", error);
       this.#showToast("Failed to load PDF file");
     }
-  }
-
-  /**
-   * @param {File} file
-   * @returns {Promise<ArrayBuffer>}
-   */
-  #readFileAsArrayBuffer(file) {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = (e) => resolve(e.target.result);
-      reader.onerror = (e) => reject(e.target.error);
-      reader.readAsArrayBuffer(file);
-    });
-  }
-
-  /**
-   * @param {ArrayBuffer} buffer
-   * @returns {string}
-   */
-  #arrayBufferToBase64(buffer) {
-    const bytes = new Uint8Array(buffer);
-    let binary = "";
-    for (let i = 0; i < bytes.byteLength; i++) {
-      binary += String.fromCharCode(bytes[i]);
-    }
-    return btoa(binary);
-  }
-
-  /**
-   * @param {ArrayBuffer} arrayBuffer
-   * @param {string} name
-   */
-  #storeLocalPdf(arrayBuffer, name) {
-    return new Promise((resolve, reject) => {
-      const req = indexedDB.open("hover-pending-pdf", 1);
-      req.onupgradeneeded = (e) => e.target.result.createObjectStore("data");
-      req.onsuccess = (e) => {
-        const db = e.target.result;
-        const tx = db.transaction("data", "readwrite");
-        tx.objectStore("data").put(
-          { data: arrayBuffer, name, url: null },
-          "pending",
-        );
-        tx.oncomplete = () => {
-          db.close();
-          resolve();
-        };
-        tx.onerror = () => {
-          db.close();
-          reject(tx.error);
-        };
-      };
-      req.onerror = () => reject(req.error);
-    });
   }
 
   async #print() {

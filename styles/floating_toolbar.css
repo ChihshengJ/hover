@@ -49,6 +49,11 @@
   --y: 50;
   --goo-opacity: 0;
   --brt: 1;
+  /* Hint the compositor to keep this subtree on its own GPU layer so the
+     SVG #goo filter on ::before is rasterized once and cached as a texture,
+     instead of being re-run every scroll frame (Safari does not accelerate
+     url(#…) reference filters — see ::before below). */
+  will-change: transform;
   transition:
     transform var(--transition-bounce),
     opacity var(--transition-slow);
@@ -71,6 +76,12 @@
   padding: 20px;
   z-index: 0;
   pointer-events: none;
+  /* Promote the filtered pseudo-element to its own compositor layer. The
+     filter inputs don't change while idle/scrolling, so WebKit can reuse the
+     cached filter texture and only re-blend it over the scrolling content
+     beneath the fixed toolbar — eliminating the per-frame filter re-render. */
+  transform: translateZ(0);
+  backface-visibility: hidden;
   transition:
     filter var(--transition-normal),
     --goo-opacity var(--transition-normal);
@@ -89,7 +100,7 @@
   justify-content: center;
   pointer-events: auto;
   cursor: grab;
-  -webkit-user-select: none; /* Safari < 18.4 ignores unprefixed user-select */
+  -webkit-user-select: none;
   user-select: none;
   touch-action: none;
   z-index: 1;
@@ -353,10 +364,6 @@
   color: #333;
 }
 
-/* Standalone circular jump button — mirrors .search-close-btn.
-   Sits to the left of the ball; popup sits further left of the button.
-   Absolute left/top are set in JS; transform here only handles vertical
-   centering and the bounce/scale entrance. */
 .jump-to-top-btn {
   position: fixed;
   z-index: calc(var(--z-modal) + 1);

@@ -5,6 +5,7 @@ export class PaneControls {
     this.isHidden = true;
     this.currentProgress = 0;
     this._scrollBound = false;
+    this._scrollRAF = null;
 
     /** @type {Set<Function>} */
     this.scrollCallbacks = new Set();
@@ -47,9 +48,18 @@ export class PaneControls {
 
   bindScrollEvents() {
     if (this._scrollBound) return;
-    this.pane.scroller.addEventListener("scroll", () => {
-      this.#onScroll();
-    });
+    // Coalesce bursts of scroll events into one update per animation frame.
+    this.pane.scroller.addEventListener(
+      "scroll",
+      () => {
+        if (this._scrollRAF !== null) return;
+        this._scrollRAF = requestAnimationFrame(() => {
+          this._scrollRAF = null;
+          this.#onScroll();
+        });
+      },
+      { passive: true },
+    );
     this._scrollBound = true;
   }
 
@@ -156,6 +166,18 @@ export class PaneControls {
     if (el) el.textContent = current;
   }
 
+  /**
+   * Refresh page-dependent UI when the current page changes off the scroll path.
+   */
+  notifyPageChange() {
+    if (!this.isHidden && this.element) {
+      this.#updatePageDisplay();
+    }
+    for (const callback of this.scrollCallbacks) {
+      callback(this.pane);
+    }
+  }
+
   updateZoomDisplay() {
     const pct = Math.round(this.pane.scale * 100);
     const el = this.element.querySelector(".pane-zoom-level");
@@ -180,6 +202,10 @@ export class PaneControls {
   }
 
   destroy() {
+    if (this._scrollRAF !== null) {
+      cancelAnimationFrame(this._scrollRAF);
+      this._scrollRAF = null;
+    }
     this.scrollCallbacks.clear();
     this.element?.remove();
   }

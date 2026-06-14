@@ -28,6 +28,10 @@ export class ViewerPane {
     this.pageMap = new Map();
     this.visiblePages = new Set();
     this.observer = null;
+    // Dedicated observer that reports which page(s) cross the viewport's vertical center for getCurrentPage
+    this.centerObserver = null;
+    /** @type {Set<import('./page.js').PageView>} pages currently over the center line */
+    this.centeredPages = new Set();
     this.controls = new PaneControls(this);
     this.currentPage = 0;
 
@@ -149,6 +153,58 @@ export class ViewerPane {
 
     for (const pageView of this.pages) {
       this.observer.observe(pageView.wrapper);
+    }
+
+    this.#setupCurrentPageTracking();
+  }
+
+  /**
+   * Tracks the current page under the viewport's vertical center.
+   * The negative top/bottom rootMargin collapses the observer root to a thin
+   * band at the scroller's mid-height, so a page is "intersecting" exactly
+   * while it crosses that center line.
+   */
+  #setupCurrentPageTracking() {
+    if (this.centerObserver) {
+      this.centerObserver.disconnect();
+    }
+    this.centeredPages.clear();
+
+    this.centerObserver = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          const pageView = this.pageMap.get(entry.target);
+          if (!pageView) continue;
+          if (entry.isIntersecting) {
+            this.centeredPages.add(pageView);
+          } else {
+            this.centeredPages.delete(pageView);
+          }
+        }
+        // In gaps between pages the set is briefly empty — keep the last value.
+        // In spread mode two pages share the center line; pick the lower number
+        // to match the old left-to-right scan order.
+        let min = Infinity;
+        for (const pv of this.centeredPages) {
+          if (pv.pageNumber < min) min = pv.pageNumber;
+        }
+        // Notify on change so page indicators refresh even when the page
+        // changed via an instant jump (where the scroll handler already ran
+        // before this async callback updated currentPage).
+        if (min !== Infinity && min !== this.currentPage) {
+          this.currentPage = min;
+          this.controls.notifyPageChange();
+        }
+      },
+      {
+        root: this.scroller,
+        rootMargin: "-50% 0px -50% 0px",
+        threshold: 0,
+      },
+    );
+
+    for (const pageView of this.pages) {
+      this.centerObserver.observe(pageView.wrapper);
     }
   }
 
@@ -339,6 +395,15 @@ export class ViewerPane {
   // ******************
 
   getCurrentPage() {
+    return this.currentPage || this.#computeCurrentPage();
+  }
+
+  /**
+   * Precise synchronous measurement of the centered page. Use after a
+   * programmatic instant scroll, where the async observer hasn't fired yet.
+   * Updates this.currentPage as a side effect.
+   */
+  #computeCurrentPage() {
     const viewRect = this.scroller.getBoundingClientRect();
     const viewportMidY = viewRect.top + viewRect.height / 2;
     for (const canvas of this.canvases) {
@@ -411,7 +476,7 @@ export class ViewerPane {
     if (!page) return;
 
     const originScrollTop = this.scroller.scrollTop;
-    const originPage = this.getCurrentPage();
+    const originPage = this.#computeCurrentPage();
 
     const pageHeight = page.size.height;
     const viewportY = (pageHeight - top) * this.scale;
@@ -430,7 +495,7 @@ export class ViewerPane {
       behavior: "instant",
     });
 
-    const landedPage = this.getCurrentPage();
+    const landedPage = this.#computeCurrentPage();
     if (landedPage !== originPage) {
       this.#showScrollBackButton(originScrollTop, originPage);
     }
@@ -583,6 +648,11 @@ export class ViewerPane {
       Object.assign(page.wrapper.style, {
         width: `${wrapperWidth}px`,
         height: `${wrapperHeight}px`,
+        // Placeholder size used while content-visibility:auto skips this page
+        // off-screen. `auto` lets the browser remember the real rendered size
+        // once seen; the lengths are the fallback for not-yet-rendered pages,
+        // matching the explicit box so the scrollbar never jumps.
+        containIntrinsicSize: `auto ${wrapperWidth}px auto ${wrapperHeight}px`,
       });
 
       // Overlay layers use original dimensions (inside rotateInner)
@@ -914,6 +984,11 @@ export class ViewerPane {
       }
       this.observer?.disconnect();
       this.observer = null;
+    }
+    if (this.centerObserver) {
+      this.centerObserver.disconnect();
+      this.centerObserver = null;
+      this.centeredPages.clear();
     }
     this.controls.destroy();
     this.textSelectionManager.destroy();

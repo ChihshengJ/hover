@@ -133,7 +133,7 @@ body.ui-dragging * {
 
 .split-resizer {
   flex-shrink: 0;
-  -webkit-user-select: none; /* Safari < 18.4 ignores unprefixed user-select */
+  -webkit-user-select: none;
   user-select: none;
   touch-action: none;
   background: rgba(50, 50, 50, 0.1);
@@ -244,8 +244,7 @@ body.ui-dragging * {
   align-items: center;
   gap: 2px;
   background:
-    linear-gradient(var(--bg-active), var(--bg-tertiary)),
-    var(--bg-glass-solid);
+    linear-gradient(var(--bg-active), var(--bg-tertiary)), var(--bg-glass-solid);
   box-shadow: var(--shadow-glass);
   border-radius: 6px;
   padding: 2px;
@@ -302,6 +301,13 @@ body.ui-dragging * {
   position: relative;
   background: transparent;
   box-shadow: 0px 4px 10px 5px rgba(0, 0, 0, 0.25);
+  /* Let the browser skip layout/paint of off-screen pages (incl. the page
+     box-shadow and overlay layers), cutting per-frame raster work while
+     scrolling long PDFs. The wrapper carries explicit width/height and a
+     per-page contain-intrinsic-size (set in resizeAllCanvases), so skipped
+     pages keep their exact layout box and the scrollbar stays accurate.
+     No-op on browsers without support (older Safari) — pages just render. */
+  content-visibility: auto;
 }
 
 .page-wrapper canvas {

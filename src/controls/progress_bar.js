@@ -331,6 +331,13 @@ export class ProgressBar {
     this.isSplitMode = false;
     this.container.classList.remove("split-mode");
 
+    // Re-bind the scroll callback to the current active pane.
+    if (this.#previousPane && this.#previousPane !== this.activePane) {
+      this.#previousPane.controls.offScroll(this.#scrollCallback);
+    }
+    this.activePane?.controls.onScroll(this.#scrollCallback);
+    this.#previousPane = this.activePane;
+
     this.#recalculateSections();
     this.#updateProgress();
   }

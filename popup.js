@@ -1,5 +1,10 @@
 import { ingestFile } from "./src/ingest.js";
 
+// Firefox destroys the toolbar popup the instant a native file dialog steals
+// focus, so a file <input> hosted here never fires `change`. Chrome/Safari
+// keep the popup alive, so they can pick inline. Branch on the build target.
+const IS_FIREFOX = __TARGET__ === "firefox";
+
 document.addEventListener("DOMContentLoaded", async () => {
   const toggle = document.getElementById("toggle-enabled");
   const statusText = document.getElementById("status-text");
@@ -35,7 +40,15 @@ document.addEventListener("DOMContentLoaded", async () => {
     }
   });
 
-  openPdfBtn.addEventListener("click", () => {
+  openPdfBtn.addEventListener("click", async () => {
+    // Firefox: route to the viewer's empty state, which hosts the picker in a
+    // persistent tab that survives the file dialog. Chrome/Safari: pick inline
+    // for the original one-click experience.
+    if (IS_FIREFOX) {
+      await chrome.tabs.create({ url: chrome.runtime.getURL("index.html") });
+      window.close();
+      return;
+    }
     fileInput.click();
   });
 
@@ -91,16 +104,20 @@ document.addEventListener("DOMContentLoaded", async () => {
 
   const openTabBtnOriginalHTML = openTabBtn.innerHTML;
 
+  // Chrome/Safari one-click path: the popup stays alive across the file dialog,
+  // so park the bytes and open the viewer straight from here.
   fileInput.addEventListener("change", async (e) => {
     const file = e.target.files[0];
     if (!file) return;
 
     try {
       await ingestFile(file);
-      chrome.tabs.create({ url: chrome.runtime.getURL("index.html") });
+      await chrome.tabs.create({
+        url: chrome.runtime.getURL("index.html"),
+      });
       window.close();
     } catch (error) {
-      console.error("Error loading PDF:", error);
+      console.error("[Hover/popup] Error loading PDF:", error);
     }
   });
 

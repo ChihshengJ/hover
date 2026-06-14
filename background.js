@@ -90,6 +90,51 @@ function hasPdfMagic(buffer) {
   return String.fromCharCode(...header).startsWith("%PDF-");
 }
 
+/**
+ * Fetch a URL into an ArrayBuffer, streaming download progress to a tab when
+ * the content length is known. Shared by the Chrome/Safari content-script
+ * capture and the Firefox viewer-triggered park.
+ * @param {string} url
+ * @param {number} [tabId] tab to receive PDF_PROGRESS messages, if any
+ * @returns {Promise<ArrayBuffer>}
+ */
+async function fetchPdfBuffer(url, tabId) {
+  const response = await fetch(url);
+  if (!response.ok) throw new Error(`HTTP ${response.status}`);
+
+  const contentLength = response.headers.get("content-length");
+  const total = contentLength ? parseInt(contentLength, 10) : 0;
+  if (!(total > 0 && response.body)) {
+    return await response.arrayBuffer();
+  }
+
+  const reader = response.body.getReader();
+  const chunks = [];
+  let loaded = 0;
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    chunks.push(value);
+    loaded += value.length;
+    if (tabId != null) {
+      chrome.tabs
+        .sendMessage(tabId, {
+          type: "PDF_PROGRESS",
+          percent: Math.round((loaded / total) * 80),
+        })
+        .catch(() => { });
+    }
+  }
+
+  const combined = new Uint8Array(loaded);
+  let offset = 0;
+  for (const chunk of chunks) {
+    combined.set(chunk, offset);
+    offset += chunk.length;
+  }
+  return combined.buffer;
+}
+
 // ============================================
 // Message Handlers
 // ============================================
@@ -120,6 +165,13 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     handlePdfDataReady(message, sender)
       .then((result) => sendResponse(result))
       .catch((err) => sendResponse({ error: err.message }));
+    return true;
+  }
+
+  if (message.type === "FETCH_URL_TO_PENDING") {
+    handleFetchUrlToPending(message, sender)
+      .then((result) => sendResponse(result))
+      .catch((err) => sendResponse({ success: false, error: err.message }));
     return true;
   }
 
@@ -285,43 +337,7 @@ async function handlePdfPageDetected(message, sender) {
   }
 
   try {
-    const tabId = sender.tab.id;
-    const response = await fetch(url);
-    if (!response.ok) return { action: "content_fetch" };
-
-    const contentLength = response.headers.get("content-length");
-    const total = contentLength ? parseInt(contentLength, 10) : 0;
-    let arrayBuffer;
-
-    if (total > 0 && response.body) {
-      const reader = response.body.getReader();
-      const chunks = [];
-      let loaded = 0;
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        chunks.push(value);
-        loaded += value.length;
-        chrome.tabs
-          .sendMessage(tabId, {
-            type: "PDF_PROGRESS",
-            percent: Math.round((loaded / total) * 80),
-          })
-          .catch(() => { });
-      }
-
-      const combined = new Uint8Array(loaded);
-      let offset = 0;
-      for (const chunk of chunks) {
-        combined.set(chunk, offset);
-        offset += chunk.length;
-      }
-      arrayBuffer = combined.buffer;
-    } else {
-      arrayBuffer = await response.arrayBuffer();
-    }
-
+    const arrayBuffer = await fetchPdfBuffer(url, sender.tab.id);
     if (!hasPdfMagic(arrayBuffer)) return { action: "content_fetch" };
 
     await storePendingPdf({
@@ -338,6 +354,29 @@ async function handlePdfPageDetected(message, sender) {
   } catch {
     return { action: isLocal ? "file_access_denied" : "content_fetch" };
   }
+}
+
+/**
+ * Firefox: the blocking webRequest listener redirects a PDF navigation to
+ * index.html?url=… but can't capture the response body, so the viewer lands
+ * with nothing parked. It calls this to have us fetch the URL into the pending
+ * store, after which it consumes the bytes exactly like the Chrome/Safari
+ * content-script capture — one viewer code path across all browsers.
+ * @param {{ url: string }} message
+ * @param {chrome.runtime.MessageSender} sender
+ */
+async function handleFetchUrlToPending(message, sender) {
+  const { url } = message;
+  const arrayBuffer = await fetchPdfBuffer(url, sender.tab?.id);
+  if (!hasPdfMagic(arrayBuffer)) {
+    return { success: false, error: "Response is not a PDF" };
+  }
+  await storePendingPdf({
+    data: arrayBuffer,
+    url: url,
+    name: extractFilename(url),
+  });
+  return { success: true };
 }
 
 /**

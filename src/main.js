@@ -1,6 +1,7 @@
 import { PDFDocumentModel } from "./doc.js";
 import { SplitWindowManager } from "./window_manager.js";
 import { FileMenu } from "./controls/file_menu.js";
+import { EmptyState } from "./controls/empty_state.js";
 import { LoadingOverlay } from "./controls/loading_overlay.js";
 import { OnboardingWalkthrough } from "./settings/onboarding.js";
 import { Config } from "./settings/config.js";
@@ -217,16 +218,47 @@ async function loadPdf(isFirstLaunch = false) {
     let originalUrl = null;
 
     if (inExtension) {
-      const pending = await consumePendingPdf();
+      // Chrome/Safari park bytes via the content-script capture before the
+      // viewer opens, so drain that first.
+      let pending = await consumePendingPdf();
+
+      // Firefox: the webRequest redirect lands with ?url= and nothing parked.
+      // Ask the background to fetch the URL into the pending store, then drain
+      // it the same way — one viewer code path across browsers, and bytes
+      // always reach the low-level (UTF-8-safe) parser via the buffer.
+      if (!pending && intendedUrl) {
+        loadingOverlay.setIndeterminate("Downloading document...");
+        const onPdfProgress = (msg) => {
+          if (msg?.type === "PDF_PROGRESS") {
+            loadingOverlay.setProgress(
+              msg.percent / 100,
+              "Downloading document...",
+            );
+          }
+        };
+        chrome.runtime.onMessage.addListener(onPdfProgress);
+        try {
+          await chrome.runtime.sendMessage({
+            type: "FETCH_URL_TO_PENDING",
+            url: intendedUrl,
+          });
+          pending = await consumePendingPdf();
+        } catch (e) {
+          console.warn("[Main] Background URL park failed:", e);
+        } finally {
+          chrome.runtime.onMessage.removeListener(onPdfProgress);
+        }
+      }
+
       if (pending) {
         pdfSource = pending.data;
         pdfName = pending.name;
         originalUrl = pending.url || null;
         console.log("[Main] Loading PDF from IDB:", pdfName);
       } else if (intendedUrl) {
-        // Firefox flow: the background webRequest redirect lands here with
-        // no pending record — the viewer downloads the document itself.
-        console.log("[Main] Loading PDF from URL:", intendedUrl);
+        // Fallback: background park didn't yield bytes (messaging hiccup or an
+        // event-page restart) — fetch directly so we still render something.
+        console.log("[Main] Falling back to viewer-side fetch:", intendedUrl);
         loadingOverlay.setIndeterminate("Downloading document...");
         pdfSource = await fetchPdfFromUrl(intendedUrl, onProgress);
         pdfName =
@@ -263,6 +295,15 @@ async function loadPdf(isFirstLaunch = false) {
     }
 
     if (!pdfSource) {
+      // No document to render. In the extension this is the normal landing
+      // when the user opens the viewer with nothing queued (e.g. the popup's
+      // "Open Local PDF"); show the empty state so they can pick a file from
+      // this persistent tab (the popup can't host the picker on Firefox).
+      if (inExtension) {
+        loadingOverlay.destroy();
+        new EmptyState(el.wd);
+        return;
+      }
       throw new Error(
         "No PDF document to display. Please open a PDF file or navigate to a PDF URL.",
       );

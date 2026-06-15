@@ -8,7 +8,6 @@
     <a href="https://chromewebstore.google.com/detail/cpnjpgkmfmdnfaonlhmfaalojnilnilg?utm_source=item-share-cb" target="_blank">
         <img src="assets/CWS.png" width="145" alt="Chrome Web Store link"/>
     </a>
-    &nbsp;&nbsp;&nbsp;
     <a href="https://chihshengj.github.io/hover-pdf/demo/" target="_blank">
         <img src="https://img.shields.io/badge/▶%20Live%20Demo-FFFFFF?style=for-the-badge&logo=googlechrome" height="32" alt="Live Demo"/>
     </a>

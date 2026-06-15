@@ -188,7 +188,12 @@ export class FileMenu {
     svgFilter.style.position = "absolute";
     svgFilter.innerHTML = `
       <defs>
-        <filter id="file-menu-goo-filter" x="-150%" y="-200%" width="350%" height="350%">
+        <!-- Region kept tight (just enough margin for the 3px blur). Safari
+             rasterizes url() filters on the CPU, so an oversized region (the
+             old 350% ≈ 980x1750px canvas) is re-blurred on every frame the
+             source changes, which is what made the menu's goo lag on open.
+             ~120% (≈336x600px) is ~8x less area to rasterize per frame. -->
+        <filter id="file-menu-goo-filter" x="-10%" y="-10%" width="120%" height="120%">
           <feGaussianBlur in="SourceGraphic" stdDeviation="3" result="blur" />
           <feColorMatrix in="blur" mode="matrix" 
             values="1 0 0 0 0  
@@ -309,26 +314,22 @@ export class FileMenu {
     if (this.isOpen) return;
     this.isOpen = true;
 
-    requestAnimationFrame(() => {
-      this.gooLayer.style.setProperty(
-        "--menu-w",
-        this.menuList.offsetWidth + "px",
-      );
-      this.gooLayer.style.setProperty(
-        "--menu-h",
-        this.menuList.offsetHeight + "px",
-      );
-    });
+    // Size the goo layer's card blob (::after) to the real menu card so the
+    // filtered background mass matches the content exactly. They share the same
+    // anchor/origin/transform in CSS, so once sized they scale/slide in as one
+    // gooey shape fused with the button blob. Measured synchronously (offsetWidth
+    // ignores the closed-state transform) so it's right on the first open frame.
+    this.gooLayer.style.setProperty(
+      "--menu-w",
+      this.menuList.offsetWidth + "px",
+    );
+    this.gooLayer.style.setProperty(
+      "--menu-h",
+      this.menuList.offsetHeight + "px",
+    );
+
     this.container.classList.add("open");
     this.button.classList.add("open");
-
-    // Stagger animate menu items
-    const items = this.menuList.querySelectorAll(
-      ".file-menu-item, .file-menu-divider",
-    );
-    items.forEach((item, i) => {
-      item.style.setProperty("--item-delay", `${i * 40}ms`);
-    });
   }
 
   closeMenu() {

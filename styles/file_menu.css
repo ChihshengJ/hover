@@ -65,6 +65,11 @@
   color: var(--text-primary);
 }
 
+/* The menu card is a TRANSPARENT content layer: it only holds the items/text and
+   carries the open/close motion. Its visible background + the unified shadow are
+   drawn by the goo layer's card blob (::after) sitting directly behind it, which
+   shares the exact same anchor/origin/transform so the two move as one shape.
+   Keeping text out of the filtered layer is what keeps it crisp. */
 .file-menu-list {
   font-family: "Elms Sans", monospace;
   position: absolute;
@@ -73,23 +78,28 @@
   min-width: 200px;
   padding: 8px 0;
   pointer-events: none;
-  z-index: 0;
-  border-radius: var(--radius-xl);
+  z-index: 1;
+  background: transparent;
   opacity: 0;
-  transform: scale(0.2) translateX(50px) translateY(50px);
+  transform: scale(0.85) translate(8px, 16px);
   transform-origin: bottom right;
   transition:
-    opacity var(--transition-normal),
-    transform var(--transition-fast);
+    opacity var(--transition-fast),
+    transform var(--transition-bounce);
 }
 
 .file-menu-container.open .file-menu-list {
   opacity: 1;
-  border-radius: var(--radius-xl);
-  transform: scale(1) translateX(0) translateY(0);
+  transform: scale(1) translate(0, 0);
   pointer-events: auto;
 }
 
+/* Single filtered layer holding EVERY visible background mass:
+   ::before = the button pill, ::after = the menu card. The goo filter fuses them
+   into one metaball and the drop-shadow in the same chain lays a single unified
+   shadow under their union — so button + card read as one blob of goo. The
+   text/icons live in the unfiltered button/list stacked on top, so they stay
+   sharp. */
 .file-menu-goo-layer {
   position: absolute;
   inset: 0;
@@ -97,8 +107,14 @@
   pointer-events: none !important;
   filter: url(#file-menu-goo-filter) drop-shadow(0 0 5px rgba(0, 0, 0, 0.4))
     drop-shadow(-1px -1px 1px rgba(255, 255, 255, 0.2));
+  /* GPU-promote: forces WebKit to give the filter its own layer so it
+     re-rasterizes on change instead of caching a ghost — clears Safari's stale
+     shadow on close. */
+  transform: translateZ(0);
+  backface-visibility: hidden;
 }
 
+/* Button pill — fades in on hover/active to match the button footprint. */
 .file-menu-goo-layer::before {
   content: "";
   position: absolute;
@@ -108,11 +124,15 @@
   height: 40px;
   border-radius: var(--radius-xl);
   background: transparent;
-  transition:
-    opacity var(--transition-bounce),
-    background var(--transition-bounce);
+  transition: background var(--transition-bounce);
 }
 
+/* Card blob — the menu's visible background. Sized in JS to the real card and
+   anchored identically, with the SAME origin/transform/transition as
+   .file-menu-list so the goo background and the content scale/slide out of the
+   bottom-right corner in lockstep. Animating its transform (not just opacity)
+   also forces Safari to repaint the filter every frame, which is what clears the
+   lingering shadow on close. */
 .file-menu-goo-layer::after {
   content: "";
   position: absolute;
@@ -123,16 +143,20 @@
   border-radius: var(--radius-xl);
   background: var(--bg-secondary);
   opacity: 0;
-  transition: opacity var(--transition-bounce);
+  transform: scale(0.85) translate(8px, 16px);
+  transform-origin: bottom right;
+  transition:
+    opacity var(--transition-fast),
+    transform var(--transition-bounce);
 }
 
 .file-menu-container.active .file-menu-goo-layer::before {
   background: var(--bg-secondary);
 }
 
-.file-menu-container.open .file-menu-goo-layer::before,
 .file-menu-container.open .file-menu-goo-layer::after {
   opacity: 1;
+  transform: scale(1) translate(0, 0);
 }
 
 /* ===========================================
@@ -156,18 +180,9 @@ input[type="file"] {
   font-size: 14px;
   color: var(--text-primary);
   text-align: left;
-  opacity: 0;
-  transform: translateX(10px);
   transition:
-    opacity var(--transition-normal) var(--item-delay, 0ms),
-    transform var(--transition-bounce) var(--item-delay, 0ms),
-    background var(--transition-fast),
-    color var(--transition-fast);
-}
-
-.file-menu-container.open .file-menu-item {
-  opacity: 1;
-  transform: translateX(0);
+    background var(--transition-normal),
+    color var(--transition-normal);
 }
 
 .file-menu-item:hover {
@@ -278,17 +293,6 @@ input[type="file"] {
   height: 1px;
   margin: 6px 12px;
   background: var(--border-color);
-  opacity: 0;
-  transform: scaleX(0);
-  transform-origin: left;
-  transition:
-    opacity var(--transition-normal) var(--item-delay, 0ms),
-    transform var(--transition-slow) var(--item-delay, 0ms);
-}
-
-.file-menu-container.open .file-menu-divider {
-  opacity: 1;
-  transform: scaleX(1);
 }
 
 /* ===========================================
@@ -629,7 +633,7 @@ input[type="file"] {
    Night Mode Overrides
    =========================================== */
 
-.night-mode .file-menu-container.active {
+.night-mode .file-menu-goo-layer {
   filter: url(#file-menu-goo-filter) drop-shadow(0 0 3px rgb(0, 0, 0, 0.5))
     drop-shadow(-1px -1px 2px rgb(255, 255, 255, 0.1));
 }

@@ -214,7 +214,7 @@ export class NavigationTree {
       pageIndex: item.pageIndex,
       left: item.left,
       top: item.top, // PDF coordinates (origin bottom-left)
-      columnIndex: item.columnIndex ?? -1, // Preserve column info, default to full-width
+      columnIndex: this.#getColumnIndex(item.pageIndex, item.left),
       children:
         item.children.length > 0
           ? this.#convertOutlineToTreeNodes(item.children)
@@ -378,10 +378,10 @@ export class NavigationTree {
           ? "table"
           : "figure";
 
-        // Estimate column from left position
-        const columnIndex = this.#estimateColumnFromLeft(
-          position.left,
+        // Derive column from left position using detected column geometry
+        const columnIndex = this.#getColumnIndex(
           position.pageIndex,
+          position.left,
         );
 
         items.push({
@@ -558,35 +558,20 @@ export class NavigationTree {
   }
 
   /**
-   * Estimate which column a position belongs to based on X coordinate
+   * Resolve the column index for a position using the document's detected
+   * column geometry (from the text index). This is the single source of truth
+   * for column assignment, so sections, figures, and annotations are all
+   * classified against the same boundaries.
    *
-   * @param {number} leftX - X position in PDF coordinates
    * @param {number} pageIndex - 0-based page index
-   * @returns {number} Column index: -1 for ambiguous/full-width, 0 for left, 1 for right
+   * @param {number} leftX - X position in PDF coordinates (absolute, not ratio)
+   * @returns {number} Column index: -1 for full-width/single-column, 0 for left, 1+ for further columns
    */
-  #estimateColumnFromLeft(leftX, pageIndex) {
-    const pageWidth = this.#getPageWidth(pageIndex);
-    const leftRatio = leftX / pageWidth;
-
-    // Heuristic thresholds for two-column layout
-    // Left margin to ~45% = column 0
-    // ~55% to right margin = column 1
-    // Middle zone (45-55%) = ambiguous, treat as full-width
-    if (leftRatio < 0.45) return 0;
-    if (leftRatio > 0.55) return 1;
-    return -1; // Ambiguous, treat as full-width
-  }
-
-  /**
-   * Estimate column from a ratio (0-1) left position
-   *
-   * @param {number} leftRatio - Left position as ratio (0 = left edge, 1 = right edge)
-   * @returns {number} Column index: -1 for ambiguous/full-width, 0 for left, 1 for right
-   */
-  #estimateColumnFromLeftRatio(leftRatio) {
-    if (leftRatio < 0.495) return 0;
-    if (leftRatio > 0.505) return 1;
-    return -1;
+  #getColumnIndex(pageIndex, leftX) {
+    const textIndex = this.doc.textIndex;
+    if (!textIndex) return -1;
+    // text index is 1-based; navigation tree works in 0-based page indices
+    return textIndex.getColumnIndexForX(pageIndex + 1, leftX);
   }
 
   // Annotation Integration
@@ -623,9 +608,15 @@ export class NavigationTree {
       const aTopRatio = a.pageRanges[0]?.rects[0]?.topRatio ?? 0;
       const bTopRatio = b.pageRanges[0]?.rects[0]?.topRatio ?? 0;
 
-      // Estimate columns
-      const aCol = this.#estimateColumnFromLeftRatio(aLeftRatio);
-      const bCol = this.#estimateColumnFromLeftRatio(bLeftRatio);
+      // Resolve columns against the page's detected column geometry
+      const aCol = this.#getColumnIndex(
+        aPage - 1,
+        aLeftRatio * this.#getPageWidth(aPage - 1),
+      );
+      const bCol = this.#getColumnIndex(
+        bPage - 1,
+        bLeftRatio * this.#getPageWidth(bPage - 1),
+      );
 
       // Sort by column first (left column before right)
       if (aCol !== bCol && aCol !== -1 && bCol !== -1) {
@@ -669,9 +660,12 @@ export class NavigationTree {
     const pageHeight = this.#getPageHeight(pageIndex);
     const pdfY = pageHeight * (1 - topRatio); // Convert to PDF coords
 
-    // Estimate column from left position
+    // Resolve column from left position using detected column geometry
     const leftRatio = firstPage?.rects[0]?.leftRatio ?? 0;
-    const columnIndex = this.#estimateColumnFromLeftRatio(leftRatio);
+    const columnIndex = this.#getColumnIndex(
+      pageIndex,
+      leftRatio * this.#getPageWidth(pageIndex),
+    );
 
     // Store original topRatio for navigation (used in #navigateTo)
     const originalTopRatio = topRatio;

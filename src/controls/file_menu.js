@@ -532,8 +532,12 @@ export class FileMenu {
       return;
     }
 
+    // Firefox's redirect -> BYPASS_NEXT
+    // Chrome/Safari -> #hover-bypass marker
+    const sep = url.includes("#") ? "&" : "#";
+    const originalUrl = `${url}${sep}hover-bypass`;
     chrome.runtime.sendMessage({ type: "BYPASS_NEXT", url }, () => {
-      window.open(url, "_blank");
+      window.open(originalUrl, "_blank");
     });
   }
 

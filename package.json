@@ -12,7 +12,7 @@
     "build:store": "STORE_BUILD=1 npm run build:all",
     "package": "npm run build:all && node scripts/package.mjs",
     "watch:chrome": "TARGET=chrome vite build --watch",
-    "dev:firefox": "npm run build:firefox && web-ext run --source-dir dist/firefox",
+    "dev:firefox": "npm run build:firefox && web-ext run --source-dir dist/firefox --firefox-profile '/Users/zs_jin/Library/Application Support/Firefox/profiles/bncnexsu.default-release' & TARGET=firefox vite build --watch",
     "lint:firefox": "web-ext lint --source-dir dist/firefox",
     "preview": "vite preview"
   },

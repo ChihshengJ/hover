@@ -12,10 +12,12 @@ mkdirSync("releases", { recursive: true });
 for (const target of ["chrome", "firefox"]) {
   const dir = `dist/${target}`;
   if (!existsSync(`${dir}/manifest.json`)) {
-    console.error(`Skipping ${target}: ${dir} not built (run npm run build:${target})`);
+    console.error(
+      `Skipping ${target}: ${dir} not built (run npm run build:${target})`,
+    );
     continue;
   }
-  const zip = `releases/hovercite-${target}-${version}.zip`;
+  const zip = `releases/hover-${target}-${version}.zip`;
   execSync(`rm -f "../../${zip}"; zip -rqX "../../${zip}" .`, {
     cwd: dir,
     stdio: "inherit",

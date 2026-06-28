@@ -95,13 +95,16 @@
   // ============================================
 
   if (document.contentType !== "application/pdf") return;
+  if (window.location.hash.includes("hover-bypass")) return;
 
   console.log("[Hover] PDF detected at document_start:", window.location.href);
 
   const hideStyle = document.createElement("style");
   hideStyle.textContent = `
+    /* visibility keeps the viewer alive and reversible; 
+       the opaque overlay below hides it during loading, 
+       so there's still no flash. */
     body, embed[type="application/pdf"] {
-      display: none !important;
       visibility: hidden !important;
     }
     #hover-loading-overlay {

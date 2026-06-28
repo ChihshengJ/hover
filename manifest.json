@@ -1,6 +1,6 @@
 {
   "manifest_version": 3,
-  "name": "Hover PDF Reader",
+  "name": "Hover PDF",
   "version": "0.10.2",
   "description": "Enhanced PDF reader for immersive academic reading experience",
   "content_security_policy": {
@@ -21,7 +21,7 @@
       "48": "icon48.png",
       "128": "icon128.png"
     },
-    "default_title": "Hover PDF Reader"
+    "default_title": "Hover PDF"
   },
   "background": {
     "service_worker": "background.js"

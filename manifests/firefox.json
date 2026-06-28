@@ -1,13 +1,22 @@
 {
   "background": {
     "service_worker": null,
-    "scripts": ["background.js"]
+    "scripts": [
+      "background.js"
+    ]
   },
-  "permissions": ["tabs", "storage", "webRequest", "webRequestBlocking"],
-  "host_permissions": ["<all_urls>"],
+  "permissions": [
+    "tabs",
+    "storage",
+    "webRequest",
+    "webRequestBlocking"
+  ],
+  "host_permissions": [
+    "<all_urls>"
+  ],
   "browser_specific_settings": {
     "gecko": {
-      "id": "hovercite@chihshengj.dev",
+      "id": "hoverpdf@chihshengj.dev",
       "strict_min_version": "128.0"
     }
   }

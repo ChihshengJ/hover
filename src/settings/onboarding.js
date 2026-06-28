@@ -763,7 +763,12 @@ export class OnboardingWalkthrough {
   #handlePostOnboarding() {
     const intendedUrl = OnboardingWalkthrough.getAndClearIntendedUrl();
     if (intendedUrl) {
-      if (window.location.protocol === "chrome-extension:") {
+      // Match any extension origin — chrome-extension:, moz-extension:
+      // (Firefox), and safari-web-extension: all end in "-extension:".
+      // Gating only on "chrome-extension:" sent Firefox down the dev-mode
+      // branch below, which reloads with ?file= (the viewer only reads ?url=
+      // in the extension), leaving it on the empty "open local PDF" page.
+      if (window.location.protocol.endsWith("-extension:")) {
         // In extension context, navigate to the original PDF URL.
         // The extension's interception will kick in and reload the viewer
         // with the correct PDF data.

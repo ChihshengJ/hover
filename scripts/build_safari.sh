@@ -12,8 +12,8 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 DIST="$ROOT/dist/safari"
 PROJ_ROOT="$ROOT/safari"
-APP_NAME="Hover PDF Reader"
-BUNDLE_ID="${BUNDLE_ID:-com.chihshengj.hovercite}"
+APP_NAME="Hover PDF"
+BUNDLE_ID="${BUNDLE_ID:-com.chihshengj.hoverpdf}"
 
 if [[ ! -f "$DIST/manifest.json" ]]; then
   echo "error: $DIST not built — run 'npm run build:safari'" >&2

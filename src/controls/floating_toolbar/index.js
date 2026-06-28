@@ -96,6 +96,18 @@ export class FloatingToolbar {
     this.dragController.init();
     this.#setupEventListeners();
     this.#updatePosition();
+    this.#forceGooRepaint();
+  }
+
+  /**
+   * Force repaint the goo filter on Safari so it renders
+   */
+  #forceGooRepaint() {
+    requestAnimationFrame(() => {
+      this.gooContainer.style.display = "none";
+      void this.gooContainer.offsetHeight; // flush layout
+      this.gooContainer.style.display = "";
+    });
   }
 
   get isExpanded() {

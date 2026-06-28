@@ -108,6 +108,7 @@ export class DocumentTextIndex {
         width: data.pageWidth,
         height: data.pageHeight,
         multiColumn: data.multiColumn,
+        columnXs: data.columnXs ?? null,
       };
     }
     const page = this.#doc.pdfDoc?.pages?.[pageNumber - 1];
@@ -116,9 +117,37 @@ export class DocumentTextIndex {
         width: page.size.width,
         height: page.size.height,
         multiColumn: false,
+        columnXs: null,
       };
     }
     return null;
+  }
+
+  /**
+   * Map an absolute x position (PDF units, page coordinate space) to a column
+   * index for the given page.
+   *
+   * Returns -1 for single-column pages (full-width), or when column geometry is
+   * unavailable, so callers can treat such content as spanning the page. For a
+   * multi-column page, returns 0 for the left column, 1 for the next, etc.,
+   * using the midpoints between detected column left-edges as boundaries.
+   *
+   * @param {number} pageNumber - 1-based page number
+   * @param {number} x - X position in PDF units
+   * @returns {number} Column index, or -1 for full-width/unknown
+   */
+  getColumnIndexForX(pageNumber, x) {
+    const data = this.#pageData.get(pageNumber);
+    const xs = data?.columnXs;
+    if (!data?.multiColumn || !xs || xs.length < 2) return -1;
+
+    let idx = 0;
+    for (let i = 1; i < xs.length; i++) {
+      const boundary = (xs[i - 1] + xs[i]) / 2;
+      if (x >= boundary) idx = i;
+      else break;
+    }
+    return idx;
   }
 
   getBodyFontSize() {
@@ -231,7 +260,7 @@ export class DocumentTextIndex {
 
       this.#headerFooterAnalyzed = false;
 
-      const multiColumn = this.#detectMultiColumn(
+      const { multiColumn, columnXs } = this.#detectMultiColumn(
         lines,
         headerLines,
         footerLines,
@@ -250,6 +279,7 @@ export class DocumentTextIndex {
         headerSepY,
         footerSepY,
         multiColumn,
+        columnXs,
       });
       this.#indexedPages.add(pageNumber);
     } catch (error) {
@@ -459,11 +489,15 @@ export class DocumentTextIndex {
    * Detect whether a page has a multi-column layout by clustering x-positions
    * of body-text lines.
    *
+   * Returns both the boolean flag and, when multi-column, the column left-edge
+   * x-positions (sorted ascending, in PDF units). Callers can map any x to a
+   * column index via {@link getColumnIndexForX}.
+   *
    * @param {TextLine[]} lines
    * @param {TextLine[]} headerLines
    * @param {TextLine[]} footerLines
    * @param {number} pageWidth
-   * @returns {boolean}
+   * @returns {{multiColumn: boolean, columnXs: number[]|null}}
    */
   #detectMultiColumn(lines, headerLines, footerLines, pageWidth) {
     const excludeSet = new Set();
@@ -477,7 +511,7 @@ export class DocumentTextIndex {
         l.lineWidth < pageWidth * 0.6,
     );
 
-    if (bodyLines.length < 6) return false;
+    if (bodyLines.length < 6) return { multiColumn: false, columnXs: null };
 
     const quantize = (v) => Math.round(v / 2) * 2;
     const xCounts = new Map();
@@ -488,12 +522,18 @@ export class DocumentTextIndex {
 
     // Find the two most frequent x-positions
     const sorted = [...xCounts.entries()].sort((a, b) => b[1] - a[1]);
-    if (sorted.length < 2) return false;
+    if (sorted.length < 2) return { multiColumn: false, columnXs: null };
 
     const [x1, count1] = sorted[0];
     const [x2, count2] = sorted[1];
 
-    return count1 >= 3 && count2 >= 3 && Math.abs(x1 - x2) > pageWidth * 0.2;
+    const multiColumn =
+      count1 >= 3 && count2 >= 3 && Math.abs(x1 - x2) > pageWidth * 0.2;
+
+    return {
+      multiColumn,
+      columnXs: multiColumn ? [x1, x2].sort((a, b) => a - b) : null,
+    };
   }
 
   /**
@@ -556,6 +596,7 @@ export class DocumentTextIndex {
       headerSepY: null,
       footerSepY: null,
       multiColumn: false,
+      columnXs: null,
     });
     this.#indexedPages.add(pageNumber);
   }

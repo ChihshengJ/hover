@@ -1,6 +1,6 @@
 {
-  "name": "hover-pdf-viewer",
-  "version": "1.0.0",
+  "name": "hover-pdf",
+  "version": "0.10.2",
   "type": "module",
   "scripts": {
     "dev": "vite",

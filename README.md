@@ -8,6 +8,12 @@
     <a href="https://chromewebstore.google.com/detail/cpnjpgkmfmdnfaonlhmfaalojnilnilg?utm_source=item-share-cb" target="_blank">
         <img src="assets/CWS.png" width="145" alt="Chrome Web Store link"/>
     </a>
+    <a href="https://apps.apple.com/cn/app/hover-pdf/id6784959748?l=en-GB&mt=12" target="_blank">
+        <img src="assets/safari-badge.svg" width="145" alt="Safari link"/>
+    </a>
+    <a href="https://addons.mozilla.org/en-US/firefox/addon/hover-pdf/" target="_blank">
+        <img src="assets/firefox-badge.webp" width="110" alt="Firefox link"/>
+    </a>
     <a href="https://chihshengj.github.io/hover-pdf/demo/" target="_blank">
         <img src="https://img.shields.io/badge/▶%20Live%20Demo-FFFFFF?style=for-the-badge&logo=googlechrome" height="32" alt="Live Demo"/>
     </a>
@@ -62,11 +68,13 @@ It all starts with a ball:
 
 - **Double-click**: go to top
 - **Drag it vertically**: scroll the document
+
 <p align="center">
 <img src="assets/drag_scroll.gif" width="800" alt="Hover Banner"/>
 </p>
 
 - **Drag it to the left**: expose the table of content that also tracks your annotations
+
 <p align="center">
 <img src="assets/tree_demo.gif" width="800" alt="Hover Banner"/>
 </p>
@@ -75,7 +83,7 @@ Everything you need for focused reading stays right under your fingertip.
 
 ### 3. Split Window Mode
 
-Sometimes you gotta wonder, PDFs are longer than codes, so why isn't there a split window mode for most PDF readers?
+Sometimes you gotta wonder, PDFs are longer than code, so why isn't there a split window mode for most PDF readers?
 
 Hover enables split window mode for a single document.
 No more jumping between experiment results and metrics or figures and methodologies, enjoy doubling your reading speed without wasting time on scrolling around.
@@ -169,8 +177,9 @@ _If your team happen to be working on PDF related research or services, I'm more
 
 ## Road map
 
-- **Hover PDF for Safari**
-- Touch screen support
+- Optimized touchscreen support
+- PaddleOCR (or any client-side OCR model) integration (as a plugin)
+- Multiple reference block support
 - Building a test suite from Semantic Scholar's database
 - Image/table extraction & text block analysis
 - AI reading assistant (bring your own endpoint and API key) and Translation if there is a demand

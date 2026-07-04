@@ -236,6 +236,17 @@ export class Settings {
               </div>
               <div class="settings-toggle-row">
                 <div class="settings-toggle-info">
+                  <span class="settings-toggle-label">Liquid Glass Ball</span>
+                  <span class="settings-toggle-description">Render the floating ball and buttons as translucent glass (experimental)</span>
+                </div>
+                <label class="settings-toggle-switch">
+                  <input type="checkbox" class="liquid-glass-toggle">
+                  <span class="settings-toggle-slider"></span>
+                  <span class="settings-toggle-knob"></span>
+                </label>
+              </div>
+              <div class="settings-toggle-row">
+                <div class="settings-toggle-info">
                   <span class="settings-toggle-label">Theme-colored Buttons</span>
                   <span class="settings-toggle-description">Tint tool buttons with the floating ball's dominant color</span>
                 </div>
@@ -460,6 +471,18 @@ export class Settings {
         Config.set("toolbar_auto_collapse", collapseToggle.checked);
         if (this.wm.toolbar) {
           this.wm.toolbar.setAutoCollapse(collapseToggle.checked);
+        }
+      });
+    }
+
+    // Liquid glass toggle
+    const liquidGlassToggle = overlay.querySelector(".liquid-glass-toggle");
+    if (liquidGlassToggle) {
+      liquidGlassToggle.checked = Config.get("liquid_glass_enabled");
+      liquidGlassToggle.addEventListener("change", () => {
+        Config.set("liquid_glass_enabled", liquidGlassToggle.checked);
+        if (this.wm.toolbar) {
+          this.wm.toolbar.setLiquidGlass(liquidGlassToggle.checked);
         }
       });
     }

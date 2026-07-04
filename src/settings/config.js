@@ -52,6 +52,10 @@ const SCHEMA = {
     storageKey: "hover_toolbar_auto_collapse",
     default: true,
   },
+  liquid_glass_enabled: {
+    storageKey: "hover_liquid_glass_enabled",
+    default: false,
+  },
   default_tool: {
     storageKey: "hover_action_button_default_tool",
     default: "search",

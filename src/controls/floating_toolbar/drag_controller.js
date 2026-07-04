@@ -24,6 +24,10 @@ export class DragController {
    * @param {() => boolean} opts.isTreeOpen
    * @param {{show: () => void, hide: () => void, checkZones: (y: number) => void}} opts.jumpIndicators
    * @param {number} opts.treeOpenThreshold
+   * @param {import('./liquid_glass/glass_effect.js').GlassEffect} [opts.glassEffect]
+   *   Optional liquid-glass collaborator; receives the same normalized goo
+   *   coordinates as the CSS --x/--y custom properties. No-ops when the
+   *   feature is disabled.
    * @param {Object} opts.hooks
    * @param {() => void} opts.hooks.onDragStart           Called at the start of a drag (cancel timers etc.).
    * @param {() => void} opts.hooks.onDragEnd             Called after a drag ends and the ball has snapped back.
@@ -37,6 +41,7 @@ export class DragController {
     isTreeOpen,
     jumpIndicators,
     treeOpenThreshold,
+    glassEffect,
     hooks,
   }) {
     this.ball = ball;
@@ -45,6 +50,7 @@ export class DragController {
     this.isTreeOpen = isTreeOpen;
     this.jumpIndicators = jumpIndicators;
     this.treeOpenThreshold = treeOpenThreshold;
+    this.glassEffect = glassEffect ?? null;
     this.hooks = hooks;
 
     this.isDragging = false;
@@ -127,6 +133,7 @@ export class DragController {
     this.dragStartY = e.clientY;
 
     this.gooContainer.classList.add("dragging");
+    this.glassEffect?.onDragStart();
 
     this.currentScrollVelocity = 0;
     this.currentDeltaY = 0;
@@ -239,6 +246,7 @@ export class DragController {
 
     this._pendingGooX = Math.max(0, Math.min(100, x));
     this._pendingGooY = Math.max(0, Math.min(100, y));
+    this.glassEffect?.onPointer(this._pendingGooX, this._pendingGooY);
   }
 
   #handleHorizontalDrag(deltaX) {
@@ -309,6 +317,7 @@ export class DragController {
     this.jumpIndicators.hide();
 
     this.gooContainer.classList.remove("dragging");
+    this.glassEffect?.onDragEnd();
     this.gooContainer.style.filter = "";
     this.gooContainer.style.willChange = "";
     document.body.style.cursor = "";

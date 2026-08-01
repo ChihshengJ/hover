@@ -470,20 +470,20 @@ body.theme-buttons.night-mode.ball-night-persist .tool-btn {
 /* Neutralize the default night-mode icon inversion so icon color is
    driven purely by button background luminance in themed state. */
 body.theme-buttons.night-mode.ball-night-persist .tool-btn .inner,
-body.theme-buttons.night-mode.ball-night-persist .tool-btn .inner img,
+body.theme-buttons.night-mode.ball-night-persist .tool-btn .inner .tool-icon,
 body.theme-buttons.night-mode.ball-night-persist .tool-btn .rotate-icon {
   filter: none;
 }
 
-/* When the dominant color is dark enough, invert img icons and
+/* When the dominant color is dark enough, invert the (dark) icon artwork and
    flip the inline rotate SVG to white via currentColor. */
 body.theme-buttons.theme-buttons-dark-icon:not(.night-mode) .tool-btn
   .inner
-  img,
+  .tool-icon,
 body.theme-buttons.theme-buttons-dark-icon.night-mode.ball-night-persist
   .tool-btn
   .inner
-  img {
+  .tool-icon {
   filter: invert(1);
 }
 

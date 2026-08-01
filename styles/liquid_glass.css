@@ -112,3 +112,20 @@ body.theme-buttons.night-mode.ball-night-persist [data-glass="on"] .tool-btn {
   filter: none;
   background: color-mix(in srgb, var(--theme-btn-color) 45%, transparent);
 }
+
+/* ================================
+   Adaptive tool-button icons
+   ================================
+*/
+
+[data-glass="on"] .tool-btn .inner,
+[data-glass="on"] .tool-btn .rotate-icon {
+  filter: none;
+}
+
+[data-glass="on"][data-glass-text="dark"] .tool-btn .inner {
+  color: #1a1a1a;
+}
+[data-glass="on"][data-glass-text="light"] .tool-btn .inner {
+  color: #f2f2f2;
+}

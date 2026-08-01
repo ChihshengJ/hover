@@ -121,11 +121,20 @@ export class GlassEffect {
       this.#refreshStyle(),
     );
     // The page number reads its color from the wallpaper where the ball floats
-    // over the page margin, so recolor when the wallpaper changes (kicks the
-    // image load) and again once that image has decoded.
-    this._unsubWallpaperMeta = Config.subscribe("wallpaper_meta", () =>
-      this.refreshTextColor(),
-    );
+    // over the page margin, so recolor when the wallpaper changes. The applied
+    // image lands in body's inline style (WallpaperManager sets
+    // body.style.backgroundImage), which happens *after* the wallpaper_meta
+    // config write — so watch the DOM directly rather than the config event,
+    // and dedupe on the background-image value so unrelated inline-style
+    // changes (e.g. the drag cursor) don't trigger a resample. A second pass
+    // fires via onWallpaperReady once the new image has decoded.
+    this._lastBg = "";
+    this._wallpaperObserver = new MutationObserver(() => {
+      const bg = document.body.style.backgroundImage;
+      if (bg === this._lastBg) return;
+      this._lastBg = bg;
+      this.refreshTextColor();
+    });
     this._unsubWallpaperReady = onWallpaperReady(() => this.refreshTextColor());
   }
 
@@ -142,11 +151,17 @@ export class GlassEffect {
         attributes: true,
         attributeFilter: ["class"],
       });
+      this._lastBg = document.body.style.backgroundImage;
+      this._wallpaperObserver.observe(document.body, {
+        attributes: true,
+        attributeFilter: ["style"],
+      });
       this.#refreshStyle();
     } else {
       this.enabled = false;
       delete this.wrapper.dataset.glass;
       this._bodyObserver.disconnect();
+      this._wallpaperObserver.disconnect();
       this.#unmount();
     }
   }
@@ -298,7 +313,6 @@ export class GlassEffect {
   destroy() {
     this.setEnabled(false);
     this._unsubBallStyle();
-    this._unsubWallpaperMeta();
     this._unsubWallpaperReady();
   }
 
@@ -479,9 +493,9 @@ export class GlassEffect {
     if (this.textLight === null) {
       light = lum < 0.5;
     } else if (this.textLight) {
-      light = lum <= 0.65; // stay light until the backdrop is clearly bright
+      light = lum <= 0.6; // stay light until the backdrop is clearly bright
     } else {
-      light = lum < 0.45; // stay dark until the backdrop is clearly dark
+      light = lum < 0.4; // stay dark until the backdrop is clearly dark
     }
 
     if (light === this.textLight) return;

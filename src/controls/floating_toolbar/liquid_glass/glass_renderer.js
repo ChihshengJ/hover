@@ -88,6 +88,7 @@ export class GlassRenderer {
       "u_tintB",
       "u_grad",
       "u_night",
+      "u_glow",
     ]) {
       this.uniforms[name] = gl.getUniformLocation(this.program, name);
     }
@@ -129,8 +130,9 @@ export class GlassRenderer {
    * Draw one frame.
    * @param {ReturnType<import('./goo_state.js').GooState['sample']>} s
    * @param {{tintA: number[], tintB: number[], grad: number[], night: number}} style
+   * @param {ReturnType<import('./glow_state.js').GlowState['sample']>} [glow]
    */
-  render(s, style) {
+  render(s, style, glow) {
     const gl = this.gl;
     if (!gl || this.lost) return;
 
@@ -145,6 +147,11 @@ export class GlassRenderer {
     gl.uniform3fv(u.u_tintB, style.tintB);
     gl.uniform2fv(u.u_grad, style.grad);
     gl.uniform1f(u.u_night, style.night);
+    if (glow) {
+      gl.uniform3f(u.u_glow, glow.x, glow.y, glow.intensity);
+    } else {
+      gl.uniform3f(u.u_glow, s.ballX, s.ballY, 0);
+    }
 
     gl.clear(gl.COLOR_BUFFER_BIT);
     gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);

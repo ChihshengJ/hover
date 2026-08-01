@@ -195,7 +195,7 @@ export class Settings {
                     <input type="text" class="page-color-hex" id="page-color-hex"
                            placeholder="#000000" spellcheck="false" maxlength="7">
                   </div>
-                  <span class="page-color-adaptive-note">Adaptive — follows the page behind the glass ball</span>
+                  <span class="page-color-adaptive-note">*Adaptive when liquid glass is on</span>
                 </div>
 
               </div>
@@ -678,24 +678,26 @@ export class Settings {
 
     card.innerHTML = `
       <div class="wallpaper-card-preview">
-        ${thumbSrc
-        ? `<img src="${thumbSrc}" alt="${this._escapeHtml(entry.name)}">`
-        : `<div class="wallpaper-card-placeholder">
+        ${
+          thumbSrc
+            ? `<img src="${thumbSrc}" alt="${this._escapeHtml(entry.name)}">`
+            : `<div class="wallpaper-card-placeholder">
                <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.5" opacity="0.3">
                  <rect x="3" y="3" width="18" height="18" rx="2"/>
                  <circle cx="8.5" cy="8.5" r="1.5"/>
                  <polyline points="21 15 16 10 5 21"/>
                </svg>
              </div>`
-      }
-        ${this._editMode
-        ? `<div class="wallpaper-delete-check ${this._deleteSet.has(entry.id) ? "checked" : ""}">
+        }
+        ${
+          this._editMode
+            ? `<div class="wallpaper-delete-check ${this._deleteSet.has(entry.id) ? "checked" : ""}">
                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="white" stroke-width="3">
                  <polyline points="20 6 9 17 4 12"/>
                </svg>
              </div>`
-        : ""
-      }
+            : ""
+        }
       </div>
       <span class="wallpaper-card-label">${this._escapeHtml(this._truncate(entry.name, 14))}</span>
     `;

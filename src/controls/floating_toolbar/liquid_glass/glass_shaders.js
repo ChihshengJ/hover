@@ -38,6 +38,7 @@ uniform vec3  u_tintA;  // ball-style gradient endpoints (linear-ish sRGB)
 uniform vec3  u_tintB;
 uniform vec2  u_grad;   // unit direction of the tint gradient, y-down
 uniform float u_night;  // 0 = day, 1 = night
+uniform vec3  u_glow;   // pointer glow: center x, y (CSS px), intensity 0..1
 
 // ── Edge-rim knobs. Tunable. ────────────────────────────────────────
 // Width of the lit band inside the silhouette, px.
@@ -51,6 +52,15 @@ const float RIM_AMBIENT = 0.12;
 // Unit direction toward the light, y-down (top-left, matching the
 // app's shadow language and the tool buttons' inset highlights).
 const vec2  RIM_LIGHT   = vec2(-0.5547, -0.8321);
+
+// ── Pointer-glow knobs. Tunable. ────────────────────────────────────
+// Gaussian falloff radius, px: wide+faint on hover, tight+bright on press
+// (interpolated by u_glow.z, which carries the hover/press intensity).
+const float GLOW_HOVER_R = 30.0;
+const float GLOW_PRESS_R  = 20.0;
+// Additive gains for the glow's color and its contribution to alpha.
+const float GLOW_GAIN    = 0.45;
+const float GLOW_ALPHA   = 0.25;
 
 float smin(float a, float b, float k) {
   float h = clamp(0.5 + 0.5 * (b - a) / k, 0.0, 1.0);
@@ -97,7 +107,17 @@ void main() {
   float rimGain = mix(1.0, 0.72, u_night);
 
   vec3 col = tint * bodyAlpha + rimColor * rim * rimGain;
-  float alpha = clamp(bodyAlpha + rim * rimGain, 0.0, 1.0);
+  float alpha = bodyAlpha + rim * rimGain;
+
+  // Pointer-tracking specular glow. Follows the cursor over the surface
+  // (faint on hover, bright on press); the body multiply at output masks
+  // it to the metaball silhouette, so it rides the goo like the rim.
+  float gdist = length(p - u_glow.xy);
+  float grad  = mix(GLOW_HOVER_R, GLOW_PRESS_R, smoothstep(0.4, 1.0, u_glow.z));
+  float glow  = exp(-gdist * gdist / (2.0 * grad * grad)) * u_glow.z;
+  vec3 glowColor = mix(vec3(1.0), vec3(0.80, 0.87, 1.0), u_night);
+  col += glowColor * glow * GLOW_GAIN;
+  alpha = clamp(alpha + glow * GLOW_ALPHA, 0.0, 1.0);
 
   // Premultiplied output; the shadow is pure black so it only adds alpha.
   outColor = vec4(col * body, alpha * body + shadow);

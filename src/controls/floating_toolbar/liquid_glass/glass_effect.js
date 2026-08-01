@@ -25,6 +25,7 @@
 
 import { Config } from "../../../settings/config.js";
 import { GooState } from "./goo_state.js";
+import { GlowState } from "./glow_state.js";
 import { GlassRenderer } from "./glass_renderer.js";
 import { fieldContourPath, circlePath } from "./metaball_path.js";
 import {
@@ -81,10 +82,12 @@ export class GlassEffect {
    * @param {Object} opts
    * @param {HTMLElement} opts.wrapper      Toolbar wrapper — carries data-glass.
    * @param {HTMLElement} opts.gooContainer Host for the glass layers.
+   * @param {HTMLElement} opts.ball         Top hit layer — source of hover events.
    */
-  constructor({ wrapper, gooContainer }) {
+  constructor({ wrapper, gooContainer, ball }) {
     this.wrapper = wrapper;
     this.gooContainer = gooContainer;
+    this.ball = ball;
     this.enabled = false;
 
     this.backdrop = null;
@@ -106,6 +109,24 @@ export class GlassEffect {
 
     const c = CONTAINER_SIZE / 2 + MARGIN;
     this.state = new GooState({ cx: c, cy: c, ballR: BALL_R });
+    this.glow = new GlowState({ cx: c, cy: c });
+
+    // Hover glow is self-contained here (DragController is untouched): the
+    // ball is the top hit layer, so it sees pointer moves both while merely
+    // hovering and — via pointer capture — throughout a drag.
+    this._onHoverMove = (e) => {
+      this.#setGlowFromClient(e.clientX, e.clientY);
+      this.glow.setHovering(true);
+      this.#wake();
+    };
+    this._onHoverEnter = () => {
+      this.glow.setHovering(true);
+      this.#wake();
+    };
+    this._onHoverLeave = () => {
+      this.glow.setHovering(false);
+      this.#wake();
+    };
 
     this.style = {
       tintA: [1, 1, 1],
@@ -186,6 +207,11 @@ export class GlassEffect {
     const size = CONTAINER_SIZE + MARGIN * 2;
     this.renderer.resize(size, size, window.devicePixelRatio || 1);
     this.#mountRefraction(size);
+
+    this.ball?.addEventListener("pointermove", this._onHoverMove);
+    this.ball?.addEventListener("pointerenter", this._onHoverEnter);
+    this.ball?.addEventListener("pointerleave", this._onHoverLeave);
+
     this.#renderFrame();
     return true;
   }
@@ -281,6 +307,11 @@ export class GlassEffect {
 
   #unmount() {
     this.#stopLoop();
+    this.ball?.removeEventListener("pointermove", this._onHoverMove);
+    this.ball?.removeEventListener("pointerenter", this._onHoverEnter);
+    this.ball?.removeEventListener("pointerleave", this._onHoverLeave);
+    this.glow.setHovering(false);
+    this.glow.setPressed(false);
     this.renderer?.destroy();
     this.renderer = null;
     this.backdrop?.remove();
@@ -331,15 +362,30 @@ export class GlassEffect {
     );
   }
 
+  /**
+   * Map a viewport point to the glow's canvas-local px space (origin at the
+   * layer's top-left, i.e. the container inset by MARGIN). The scale factor
+   * absorbs page zoom; a drag translateX shifts rect and clientX together.
+   */
+  #setGlowFromClient(clientX, clientY) {
+    const rect = this.gooContainer.getBoundingClientRect();
+    if (!rect.width || !rect.height) return;
+    const x = (clientX - rect.left) * (CONTAINER_SIZE / rect.width) + MARGIN;
+    const y = (clientY - rect.top) * (CONTAINER_SIZE / rect.height) + MARGIN;
+    this.glow.setTarget(x, y);
+  }
+
   onDragStart() {
     if (!this.enabled) return;
     this.state.setDragging(true);
+    this.glow.setPressed(true);
     this.#wake();
   }
 
   onDragEnd() {
     if (!this.enabled) return;
     this.state.setDragging(false);
+    this.glow.setPressed(false);
     this.#wake();
   }
 
@@ -359,8 +405,12 @@ export class GlassEffect {
       const dt = (now - this.lastT) / 1000;
       this.lastT = now;
       this.state.step(dt);
+      // Leash the press glow to the live lag blob so it rides the dragged
+      // secondary circle, not the fixed main ball.
+      this.glow.setLeash(this.state.blobX, this.state.blobY, this.state.blobR);
+      this.glow.step(dt);
       this.#renderFrame();
-      if (this.state.isSettled()) {
+      if (this.state.isSettled() && this.glow.isSettled()) {
         this.rafId = null;
         // One extra frame outside the loop re-splats the refraction map
         // at resting resolution (the in-loop frames run at 1×).
@@ -383,7 +433,7 @@ export class GlassEffect {
   #renderFrame() {
     if (!this.renderer) return;
     const s = this.state.sample();
-    this.renderer.render(s, this.style);
+    this.renderer.render(s, this.style, this.glow.sample());
     this.#updateTextColor(false);
 
     if (this.refraction) {

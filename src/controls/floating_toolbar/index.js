@@ -73,6 +73,7 @@ export class FloatingToolbar {
     this.glassEffect = new GlassEffect({
       wrapper: this.wrapper,
       gooContainer: this.gooContainer,
+      ball: this.ball,
     });
     this.dragController = new DragController({
       ball: this.ball,

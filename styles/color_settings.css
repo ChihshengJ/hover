@@ -413,3 +413,22 @@
 .page-color-hex:focus {
   border-color: var(--color-accent);
 }
+
+/* Adaptive lock: liquid glass drives the page-number color from the content
+   behind the ball, so the manual picker is dimmed/disabled and replaced by a
+   short note. */
+.page-color-adaptive-note {
+  display: none;
+  font-size: 12px;
+  color: var(--text-secondary);
+  font-style: italic;
+}
+
+.ball-control-group.adaptive .page-color-row {
+  opacity: 0.4;
+  pointer-events: none;
+}
+
+.ball-control-group.adaptive .page-color-adaptive-note {
+  display: block;
+}

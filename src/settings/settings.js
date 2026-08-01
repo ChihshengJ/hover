@@ -186,7 +186,7 @@ export class Settings {
                 </div>
 
                 <!-- Page Number Color -->
-                <div class="ball-control-group">
+                <div class="ball-control-group" id="page-color-group">
                   <span class="ball-control-label">Page Number Color</span>
                   <div class="page-color-row">
                     <div class="page-color-swatch" id="page-color-swatch">
@@ -195,6 +195,7 @@ export class Settings {
                     <input type="text" class="page-color-hex" id="page-color-hex"
                            placeholder="#000000" spellcheck="false" maxlength="7">
                   </div>
+                  <span class="page-color-adaptive-note">Adaptive — follows the page behind the glass ball</span>
                 </div>
 
               </div>
@@ -484,6 +485,8 @@ export class Settings {
         if (this.wm.toolbar) {
           this.wm.toolbar.setLiquidGlass(liquidGlassToggle.checked);
         }
+        // Lock the manual page-color picker to "adaptive" while glass is on.
+        this.ballStyle.setPageColorAdaptive(liquidGlassToggle.checked);
       });
     }
 

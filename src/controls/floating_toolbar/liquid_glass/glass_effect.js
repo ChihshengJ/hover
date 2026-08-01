@@ -96,6 +96,14 @@ export class GlassEffect {
     this.lastT = 0;
     this.lastClip = "";
 
+    // Adaptive page-number color (see #updateTextColor). Null until the first
+    // sample; then true = light text, false = dark. Hysteresis holds the last
+    // decision so scrolling past mixed content doesn't flicker it.
+    this.pageDisplay = null;
+    this.textLight = null;
+    this.lastSampleX = null;
+    this.lastSampleY = null;
+
     const c = CONTAINER_SIZE / 2 + MARGIN;
     this.state = new GooState({ cx: c, cy: c, ballR: BALL_R });
 
@@ -112,6 +120,13 @@ export class GlassEffect {
     this._unsubBallStyle = Config.subscribe("ball_style", () =>
       this.#refreshStyle(),
     );
+    // The page number reads its color from the wallpaper where the ball floats
+    // over the page margin, so recolor when the wallpaper changes (kicks the
+    // image load) and again once that image has decoded.
+    this._unsubWallpaperMeta = Config.subscribe("wallpaper_meta", () =>
+      this.refreshTextColor(),
+    );
+    this._unsubWallpaperReady = onWallpaperReady(() => this.refreshTextColor());
   }
 
   // ╍╍╍ Lifecycle ╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍
@@ -137,6 +152,8 @@ export class GlassEffect {
   }
 
   #mount() {
+    this.pageDisplay = this.gooContainer.querySelector(".page-display");
+
     this.backdrop = document.createElement("div");
     this.backdrop.className = "glass-backdrop";
     this.canvas = document.createElement("canvas");
@@ -259,6 +276,11 @@ export class GlassEffect {
     this.refractionSvg = null;
     this.refraction = null;
     delete this.wrapper.dataset.glassRefract;
+    delete this.wrapper.dataset.glassText;
+    this.pageDisplay = null;
+    this.textLight = null;
+    this.lastSampleX = null;
+    this.lastSampleY = null;
     this.lastClip = "";
   }
 
@@ -276,6 +298,8 @@ export class GlassEffect {
   destroy() {
     this.setEnabled(false);
     this._unsubBallStyle();
+    this._unsubWallpaperMeta();
+    this._unsubWallpaperReady();
   }
 
   // ╍╍╍ DragController / facade hooks ╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍
@@ -346,6 +370,7 @@ export class GlassEffect {
     if (!this.renderer) return;
     const s = this.state.sample();
     this.renderer.render(s, this.style);
+    this.#updateTextColor(false);
 
     if (this.refraction) {
       // Refract mode: the filter masks its own output with the field's
@@ -397,7 +422,200 @@ export class GlassEffect {
       };
     }
     this.#renderFrame();
+    // Night-mode flip inverts the page canvases; force a fresh read so the
+    // digits recolor even if the ball hasn't moved.
+    this.#updateTextColor(true);
   }
+
+  // ╍╍╍ Adaptive page-number color ╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍
+
+  /**
+   * Re-sample the page behind the ball and recolor the page number. Called
+   * externally (from FloatingToolbar) when the content scrolls or the ball is
+   * repositioned without an animation frame running.
+   */
+  refreshTextColor() {
+    if (this.enabled) this.#updateTextColor(true);
+  }
+
+  /**
+   * Pick light or dark digits from the displayed luminance of whatever is
+   * directly behind the page-number text — a PDF page canvas or the body
+   * wallpaper (see sampleBackdropLuminance). A dead-band around 0.5 holds the
+   * last choice so mixed content doesn't cause flicker.
+   * @param {boolean} force Bypass the movement throttle (scroll / mode change).
+   */
+  #updateTextColor(force) {
+    if (!this.enabled || !this.pageDisplay) return;
+
+    const rect = this.pageDisplay.getBoundingClientRect();
+    if (!rect.width) return;
+    const cx = rect.left + rect.width / 2;
+    const cy = rect.top + rect.height / 2;
+
+    // The animation loop calls this every frame; skip re-sampling until the
+    // text has moved enough to matter. Forced calls (scroll, reposition,
+    // mode change) always sample — the ball may be still while content isn't.
+    if (
+      !force &&
+      this.lastSampleX !== null &&
+      Math.abs(cx - this.lastSampleX) < 4 &&
+      Math.abs(cy - this.lastSampleY) < 4
+    ) {
+      return;
+    }
+    this.lastSampleX = cx;
+    this.lastSampleY = cy;
+
+    const night = this.style.night === 1;
+    // Displayed luminance of whatever is behind the digits — a PDF canvas
+    // (night mode shows it CSS-inverted), or the body wallpaper. Null means
+    // nothing readable there (the default gradient, or a cross-origin image):
+    // fall back to the known backdrop tone for the current mode.
+    const sampled = sampleBackdropLuminance(cx, cy, night);
+    const lum = sampled === null ? (night ? 0.15 : 0.75) : sampled;
+
+    let light;
+    if (this.textLight === null) {
+      light = lum < 0.5;
+    } else if (this.textLight) {
+      light = lum <= 0.65; // stay light until the backdrop is clearly bright
+    } else {
+      light = lum < 0.45; // stay dark until the backdrop is clearly dark
+    }
+
+    if (light === this.textLight) return;
+    this.textLight = light;
+    this.wrapper.dataset.glassText = light ? "light" : "dark";
+  }
+}
+
+/**
+ * Displayed luminance (0..1) of the backdrop under a viewport point, or null
+ * when nothing readable is there. The ball floats over two possible opaque
+ * layers: a PDF page canvas (only where a page is) or, in the margins around
+ * the page, the body wallpaper. Both are checked. Night mode CSS-inverts the
+ * page canvases (but not the wallpaper), so canvas samples are flipped here to
+ * match what's on screen.
+ * @param {number} x @param {number} y viewport CSS px
+ * @param {boolean} night body.night-mode is active
+ */
+function sampleBackdropLuminance(x, y, night) {
+  const canvas = document
+    .elementsFromPoint(x, y)
+    .find(
+      (el) => el instanceof HTMLCanvasElement && el.dataset.pageNumber != null,
+    );
+  if (canvas && canvas.width) {
+    const rect = canvas.getBoundingClientRect();
+    if (rect.width && rect.height) {
+      const raw = sampleCanvasLuminance(
+        canvas,
+        (x - rect.left) * (canvas.width / rect.width),
+        (y - rect.top) * (canvas.height / rect.height),
+      );
+      if (raw !== null) return night ? 1 - raw : raw;
+    }
+  }
+
+  // No page under the ball — read the wallpaper (not inverted in night mode).
+  return sampleWallpaperLuminance(x, y);
+}
+
+/**
+ * Average perceived luminance (0..1) of a small patch of a canvas backing
+ * store around image-space (px, py), or null if it can't be read.
+ */
+function sampleCanvasLuminance(canvas, px, py) {
+  const S = 28; // sample patch, canvas px
+  const x0 = Math.max(0, Math.min(canvas.width - S, Math.round(px - S / 2)));
+  const y0 = Math.max(0, Math.min(canvas.height - S, Math.round(py - S / 2)));
+  try {
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return null;
+    return averageLuminance(ctx.getImageData(x0, y0, S, S).data);
+  } catch {
+    return null; // tainted canvas — leave the caller on its fallback
+  }
+}
+
+// Wallpaper image cache: the loaded <img> plus a scratch canvas to read it.
+// Keyed by the resolved url so a wallpaper change reloads on the next sample.
+let _wpUrl = null;
+let _wpImg = null;
+let _wpReady = false;
+let _wpScratch = null;
+// Notified when a wallpaper image finishes decoding, so a resting ball can
+// recolor once the pixels are actually readable (the sample that triggered the
+// load returned null and used the fallback).
+const _wpReadyListeners = new Set();
+
+/** Subscribe to wallpaper-decode-complete. @returns {() => void} unsubscribe */
+export function onWallpaperReady(fn) {
+  _wpReadyListeners.add(fn);
+  return () => _wpReadyListeners.delete(fn);
+}
+
+/**
+ * Displayed luminance (0..1) of the body wallpaper under a viewport point, or
+ * null when there's no readable image wallpaper (the default gradient shows no
+ * url; a cross-origin image taints the scratch canvas; the image is still
+ * loading). The background is `cover`, `center`, `fixed`, so it's mapped from
+ * the viewport, not the document.
+ * @param {number} x @param {number} y viewport CSS px
+ */
+function sampleWallpaperLuminance(x, y) {
+  const bg = getComputedStyle(document.body).backgroundImage;
+  const m = bg && bg.match(/url\((?:"|')?(.*?)(?:"|')?\)/);
+  if (!m) return null; // gradient default / no image (also night-mode hidden)
+  const url = m[1];
+
+  if (url !== _wpUrl) {
+    _wpUrl = url;
+    _wpReady = false;
+    _wpImg = new Image();
+    _wpImg.crossOrigin = "anonymous"; // blob:/extension urls are same-origin
+    _wpImg.onload = () => {
+      _wpReady = true;
+      _wpReadyListeners.forEach((fn) => fn());
+    };
+    _wpImg.src = url;
+    return null; // not decoded yet — caller uses its fallback this frame
+  }
+  if (!_wpReady || !_wpImg.naturalWidth) return null;
+
+  // cover: scale so the image fills the viewport, centered.
+  const vw = window.innerWidth;
+  const vh = window.innerHeight;
+  const nw = _wpImg.naturalWidth;
+  const nh = _wpImg.naturalHeight;
+  const scale = Math.max(vw / nw, vh / nh);
+  const ix = (x - (vw - nw * scale) / 2) / scale;
+  const iy = (y - (vh - nh * scale) / 2) / scale;
+
+  const S = 8;
+  const sx = Math.max(0, Math.min(nw - S, Math.round(ix - S / 2)));
+  const sy = Math.max(0, Math.min(nh - S, Math.round(iy - S / 2)));
+
+  if (!_wpScratch) _wpScratch = document.createElement("canvas");
+  _wpScratch.width = S;
+  _wpScratch.height = S;
+  try {
+    const ctx = _wpScratch.getContext("2d", { willReadFrequently: true });
+    ctx.drawImage(_wpImg, sx, sy, S, S, 0, 0, S, S);
+    return averageLuminance(ctx.getImageData(0, 0, S, S).data);
+  } catch {
+    return null; // tainted (cross-origin without CORS)
+  }
+}
+
+/** Mean Rec.601 luminance (0..1) of an RGBA pixel buffer. */
+function averageLuminance(data) {
+  let sum = 0;
+  for (let i = 0; i < data.length; i += 4) {
+    sum += 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
+  }
+  return sum / (data.length / 4) / 255;
 }
 
 /** CSS gradient angle (0deg = to top, clockwise) → unit vector in y-down px space. */

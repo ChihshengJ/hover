@@ -72,8 +72,8 @@ void main() {
   float body = smoothstep(aa, -aa, d);
 
   // Soft shadow below the shape, only visible outside the body.
-  float ds = field(p - vec2(0.0, 4.0));
-  float shadow = (1.0 - body) * smoothstep(10.0, -6.0, ds) * 0.28;
+  float ds = field(p - vec2(0.0, 6.0));
+  float shadow = (1.0 - body) * smoothstep(8.0, -12.0, ds) * 0.32;
 
   // Outward silhouette direction from the field's screen-space gradient.
   vec2 g = vec2(dFdx(d), dFdy(d)) * u_dpr;

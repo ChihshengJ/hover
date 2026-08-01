@@ -1,18 +1,13 @@
 {
   "manifest_version": 3,
   "name": "Hover PDF",
-  "version": "0.10.2",
+  "version": "0.10.3",
   "description": "Enhanced PDF reader for immersive academic reading experience",
   "content_security_policy": {
     "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'"
   },
-  "permissions": [
-    "tabs",
-    "storage"
-  ],
-  "host_permissions": [
-    "https://scholar.google.com/*"
-  ],
+  "permissions": ["tabs", "storage"],
+  "host_permissions": ["https://scholar.google.com/*"],
   "action": {
     "default_popup": "popup.html",
     "default_icon": {
@@ -28,12 +23,8 @@
   },
   "content_scripts": [
     {
-      "matches": [
-        "<all_urls>"
-      ],
-      "js": [
-        "content.js"
-      ],
+      "matches": ["<all_urls>"],
+      "js": ["content.js"],
       "run_at": "document_start"
     }
   ],
@@ -47,9 +38,7 @@
         "popup.js",
         "pdfium.wasm"
       ],
-      "matches": [
-        "<all_urls>"
-      ]
+      "matches": ["<all_urls>"]
     }
   ],
   "icons": {

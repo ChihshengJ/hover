@@ -68,11 +68,11 @@
   background:
     var(--ball-body) content-box,
     radial-gradient(
-        40px 40px at calc(var(--x) * 1%) calc(var(--y) * 1%),
-        rgba(var(--goo-body), var(--goo-opacity)) 0%,
-        transparent 100%
-      )
-      border-box;
+      40px 40px at calc(var(--x) * 1%) calc(var(--y) * 1%),
+      rgba(var(--goo-body), var(--goo-opacity)) 0%,
+      transparent 100%
+    )
+    border-box;
   padding: 20px;
   z-index: 0;
   pointer-events: none;
@@ -301,11 +301,7 @@
 }
 
 .tool-btn-tooltip-title {
-  font-family:
-    "DM Sans",
-    -apple-system,
-    BlinkMacSystemFont,
-    sans-serif;
+  font-family: "DM Sans", -apple-system, BlinkMacSystemFont, sans-serif;
   font-size: 13px;
   font-weight: 600;
   color: #ffffff;
@@ -313,11 +309,7 @@
 }
 
 .tool-btn-tooltip-desc {
-  font-family:
-    "DM Sans",
-    -apple-system,
-    BlinkMacSystemFont,
-    sans-serif;
+  font-family: "DM Sans", -apple-system, BlinkMacSystemFont, sans-serif;
   font-size: 11px;
   font-weight: 400;
   color: rgba(255, 255, 255, 0.65);
@@ -485,8 +477,7 @@ body.theme-buttons.night-mode.ball-night-persist .tool-btn .rotate-icon {
 
 /* When the dominant color is dark enough, invert img icons and
    flip the inline rotate SVG to white via currentColor. */
-body.theme-buttons.theme-buttons-dark-icon:not(.night-mode)
-  .tool-btn
+body.theme-buttons.theme-buttons-dark-icon:not(.night-mode) .tool-btn
   .inner
   img,
 body.theme-buttons.theme-buttons-dark-icon.night-mode.ball-night-persist

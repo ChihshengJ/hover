@@ -264,6 +264,7 @@ export class FloatingToolbar {
     }
 
     this.autoHide.reposition(centerY);
+    this.glassEffect.refreshTextColor();
   }
 
   updatePageNumber() {
@@ -272,6 +273,10 @@ export class FloatingToolbar {
 
     this.ball.querySelector(".page-current").textContent = currentPage;
     this.ball.querySelector(".page-total").textContent = totalPages;
+
+    // Content scrolled behind a resting ball — recolor the page number to the
+    // page now under it (no-op unless liquid glass is on).
+    this.glassEffect.refreshTextColor();
   }
 
   updateActivePane() {

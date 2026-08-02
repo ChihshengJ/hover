@@ -186,7 +186,7 @@ export class Settings {
                 </div>
 
                 <!-- Page Number Color -->
-                <div class="ball-control-group">
+                <div class="ball-control-group" id="page-color-group">
                   <span class="ball-control-label">Page Number Color</span>
                   <div class="page-color-row">
                     <div class="page-color-swatch" id="page-color-swatch">
@@ -195,6 +195,7 @@ export class Settings {
                     <input type="text" class="page-color-hex" id="page-color-hex"
                            placeholder="#000000" spellcheck="false" maxlength="7">
                   </div>
+                  <span class="page-color-adaptive-note">*Adaptive when liquid glass is on</span>
                 </div>
 
               </div>
@@ -230,6 +231,17 @@ export class Settings {
                 </div>
                 <label class="settings-toggle-switch">
                   <input type="checkbox" class="auto-collapse-toggle">
+                  <span class="settings-toggle-slider"></span>
+                  <span class="settings-toggle-knob"></span>
+                </label>
+              </div>
+              <div class="settings-toggle-row">
+                <div class="settings-toggle-info">
+                  <span class="settings-toggle-label">Liquid Glass Ball</span>
+                  <span class="settings-toggle-description">Render the floating ball and buttons as translucent glass (experimental)</span>
+                </div>
+                <label class="settings-toggle-switch">
+                  <input type="checkbox" class="liquid-glass-toggle">
                   <span class="settings-toggle-slider"></span>
                   <span class="settings-toggle-knob"></span>
                 </label>
@@ -464,6 +476,20 @@ export class Settings {
       });
     }
 
+    // Liquid glass toggle
+    const liquidGlassToggle = overlay.querySelector(".liquid-glass-toggle");
+    if (liquidGlassToggle) {
+      liquidGlassToggle.checked = Config.get("liquid_glass_enabled");
+      liquidGlassToggle.addEventListener("change", () => {
+        Config.set("liquid_glass_enabled", liquidGlassToggle.checked);
+        if (this.wm.toolbar) {
+          this.wm.toolbar.setLiquidGlass(liquidGlassToggle.checked);
+        }
+        // Lock the manual page-color picker to "adaptive" while glass is on.
+        this.ballStyle.setPageColorAdaptive(liquidGlassToggle.checked);
+      });
+    }
+
     // Default tool select
     const defaultToolSelect = overlay.querySelector(".default-tool-select");
     if (defaultToolSelect) {
@@ -652,24 +678,26 @@ export class Settings {
 
     card.innerHTML = `
       <div class="wallpaper-card-preview">
-        ${thumbSrc
-        ? `<img src="${thumbSrc}" alt="${this._escapeHtml(entry.name)}">`
-        : `<div class="wallpaper-card-placeholder">
+        ${
+          thumbSrc
+            ? `<img src="${thumbSrc}" alt="${this._escapeHtml(entry.name)}">`
+            : `<div class="wallpaper-card-placeholder">
                <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.5" opacity="0.3">
                  <rect x="3" y="3" width="18" height="18" rx="2"/>
                  <circle cx="8.5" cy="8.5" r="1.5"/>
                  <polyline points="21 15 16 10 5 21"/>
                </svg>
              </div>`
-      }
-        ${this._editMode
-        ? `<div class="wallpaper-delete-check ${this._deleteSet.has(entry.id) ? "checked" : ""}">
+        }
+        ${
+          this._editMode
+            ? `<div class="wallpaper-delete-check ${this._deleteSet.has(entry.id) ? "checked" : ""}">
                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="white" stroke-width="3">
                  <polyline points="20 6 9 17 4 12"/>
                </svg>
              </div>`
-        : ""
-      }
+            : ""
+        }
       </div>
       <span class="wallpaper-card-label">${this._escapeHtml(this._truncate(entry.name, 14))}</span>
     `;

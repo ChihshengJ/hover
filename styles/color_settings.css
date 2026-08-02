@@ -110,8 +110,8 @@
   position: absolute;
   inset: 0;
   border-radius: 12px;
-  background: repeating-conic-gradient(#d0d0d0 0% 25%, #f0f0f0 0% 50%) 0 0 /
-    10px 10px;
+  background:
+    repeating-conic-gradient(#d0d0d0 0% 25%, #f0f0f0 0% 50%) 0 0 / 10px 10px;
   z-index: 0;
 }
 
@@ -412,4 +412,23 @@
 
 .page-color-hex:focus {
   border-color: var(--color-accent);
+}
+
+/* Adaptive lock: liquid glass drives the page-number color from the content
+   behind the ball, so the manual picker is dimmed/disabled and replaced by a
+   short note. */
+.page-color-adaptive-note {
+  display: none;
+  font-size: 12px;
+  color: var(--text-primary);
+  font-style: bold;
+}
+
+.ball-control-group.adaptive .page-color-row {
+  opacity: 0.4;
+  pointer-events: none;
+}
+
+.ball-control-group.adaptive .page-color-adaptive-note {
+  display: block;
 }

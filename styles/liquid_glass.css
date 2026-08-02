@@ -1,0 +1,131 @@
+/* ===========================================
+   Liquid Glass Ball (experimental)
+   ===========================================
+   Active while the toolbar wrapper carries data-glass="on", driven by the
+   `liquid_glass_enabled` setting through GlassEffect. Toggling off removes
+   the attribute and the injected layers, restoring the original SVG #goo
+   rendering untouched.
+
+   Layer order inside .goo-container:
+     .glass-backdrop → .glass-canvas → .floating-ball (hit target + page number)
+   =========================================== */
+
+/* Disable the SVG goo pseudo-element entirely in glass mode. */
+[data-glass="on"] .goo-container::before {
+  content: none;
+}
+
+/* Native frost: blurs the live page behind the ball (PDF canvases with
+   night-mode inversion included). GlassEffect shapes it per frame — via
+   clip-path to the Bézier metaball outline here, or via the refraction
+   filter's own coverage mask in the Chromium rule below (no clip-path:
+   the two outlines disagree at the bridge taper). Ancestors must not
+   carry filter/opacity — those become backdrop roots and blank the blur. */
+[data-glass="on"] .glass-backdrop {
+  position: absolute;
+  inset: -60px; /* keep in sync with MARGIN in glass_effect.js */
+  pointer-events: none;
+  z-index: 0;
+  backdrop-filter: blur(2px) saturate(150%) brightness(150%);
+  -webkit-backdrop-filter: blur(2px) saturate(150%) brightness(150%);
+}
+
+/* Keep the tool buttons out of the glass: backdrop-filter captures
+   everything painted below it, and the toolbars normally stack under the
+   goo container, so their icons were sampled by the frost and refracted
+   into the ball's rim as inward ghosts. Painting them above the goo
+   container excludes them — the glass only ever bends the page. They
+   never overlap the resting ball (anchored 10px outside the container,
+   collapsing in place), so this reorder is otherwise invisible; a ball
+   dragged across expanded buttons now slides under their frost, which
+   matches the physical layering anyway. */
+[data-glass="on"] .floating-toolbar {
+  z-index: calc(var(--z-overlay) + 2);
+}
+
+/* Chromium upgrade (GlassEffect sets data-glass-refract after injecting
+   the filter): the SVG filter refracts the backdrop at the rim and bakes
+   the same blur+saturate frost, so it replaces the plain stack above.
+   Safari/Firefox would parse this but paint nothing — hence the gate. */
+[data-glass="on"][data-glass-refract="on"] .glass-backdrop {
+  backdrop-filter: url(#hover-glass-refraction);
+  -webkit-backdrop-filter: url(#hover-glass-refraction);
+}
+
+/* WebGL pass: tint, fresnel rim, specular, drop shadow.
+   The explicit width/height are required: a canvas is a replaced element,
+   so with insets alone it would size to its intrinsic (DPR-scaled) buffer
+   instead of the 200px CSS box the shader assumes. */
+[data-glass="on"] .glass-canvas {
+  position: absolute;
+  inset: -60px; /* keep in sync with MARGIN in glass_effect.js */
+  width: 200px; /* CONTAINER_SIZE + 2 * MARGIN */
+  height: 200px;
+  pointer-events: none;
+  z-index: 0;
+}
+
+/* Adaptive page-number color. In glass mode the ball is translucent, so the
+   page number sits directly over the live page. GlassEffect samples the
+   luminance of the content behind the ball each frame and sets data-glass-text
+   on the wrapper; these rules override --page-color accordingly. The faint
+   shadow keeps the digits legible over busy or mid-tone backdrops. */
+[data-glass="on"][data-glass-text="dark"] .page-display {
+  color: #1a1a1a;
+  text-shadow: 0 1px 2px rgba(255, 255, 255, 0.35);
+}
+[data-glass="on"][data-glass-text="light"] .page-display {
+  color: #f2f2f2;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
+}
+
+/* ================================
+   Glass tool buttons
+   ================================
+   Buttons keep their DOM, expand animation and hit-testing; only the
+   material changes. Simple circles, so plain backdrop-filter suffices. */
+
+[data-glass="on"] .tool-btn {
+  background: rgba(255, 255, 255, 0.3);
+  backdrop-filter: blur(3px) saturate(160%);
+  -webkit-backdrop-filter: blur(3px) saturate(160%);
+  box-shadow:
+    inset 1.5px 1.5px 1px -1px rgba(255, 255, 255, 0.95),
+    inset -1.5px -1.5px 1px -1px rgba(255, 255, 255, 0.55),
+    inset 0 0 12px rgba(255, 255, 255, 0.2),
+    0 4px 10px rgba(0, 0, 0, 0.25);
+}
+
+.night-mode [data-glass="on"] .tool-btn {
+  background: rgba(40, 42, 48, 0.35);
+  box-shadow:
+    inset 1.5px 1.5px 1px -1px rgba(255, 255, 255, 0.4),
+    inset -1.5px -1.5px 1px -1px rgba(255, 255, 255, 0.2),
+    inset 0 0 12px rgba(255, 255, 255, 0.08),
+    0 4px 10px rgba(0, 0, 0, 0.45);
+}
+
+/* Theme-colored buttons + glass: keep the user's tint but translucent,
+   over the same frost. Mirrors the state gating in floating_toolbar.css. */
+body.theme-buttons:not(.night-mode) [data-glass="on"] .tool-btn,
+body.theme-buttons.night-mode.ball-night-persist [data-glass="on"] .tool-btn {
+  filter: none;
+  background: color-mix(in srgb, var(--theme-btn-color) 45%, transparent);
+}
+
+/* ================================
+   Adaptive tool-button icons
+   ================================
+*/
+
+[data-glass="on"] .tool-btn .inner,
+[data-glass="on"] .tool-btn .rotate-icon {
+  filter: none;
+}
+
+[data-glass="on"][data-glass-text="dark"] .tool-btn .inner {
+  color: #1a1a1a;
+}
+[data-glass="on"][data-glass-text="light"] .tool-btn .inner {
+  color: #f2f2f2;
+}

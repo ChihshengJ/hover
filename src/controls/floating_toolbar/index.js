@@ -15,6 +15,7 @@ import { ToolActions } from "./tool_actions.js";
 import { TreeIntegration } from "./tree_integration.js";
 import { DragController } from "./drag_controller.js";
 import { buildToolbarDom } from "./toolbar_dom.js";
+import { GlassEffect } from "./liquid_glass/glass_effect.js";
 
 export class FloatingToolbar {
   /**
@@ -69,9 +70,15 @@ export class FloatingToolbar {
       expandController: this.expandController,
       ballOriginalRight: this.ballOriginalRight,
     });
+    this.glassEffect = new GlassEffect({
+      wrapper: this.wrapper,
+      gooContainer: this.gooContainer,
+      ball: this.ball,
+    });
     this.dragController = new DragController({
       ball: this.ball,
       gooContainer: this.gooContainer,
+      glassEffect: this.glassEffect,
       getPane: () => this.pane,
       isTreeOpen: () => this.isTreeOpen,
       jumpIndicators: this.jumpIndicators,
@@ -97,6 +104,9 @@ export class FloatingToolbar {
     this.#setupEventListeners();
     this.#updatePosition();
     this.#forceGooRepaint();
+    if (Config.get("liquid_glass_enabled")) {
+      this.glassEffect.setEnabled(true);
+    }
   }
 
   /**
@@ -190,6 +200,7 @@ export class FloatingToolbar {
 
     window.addEventListener("resize", () => {
       this.#updatePosition();
+      this.glassEffect.handleResize();
       if (this.isTreeOpen) {
         this.treeIntegration.close();
       }
@@ -206,6 +217,11 @@ export class FloatingToolbar {
     this.expandController.setAutoCollapse(enabled);
   }
 
+  /** @param {boolean} enabled */
+  setLiquidGlass(enabled) {
+    this.glassEffect.setEnabled(enabled);
+  }
+
   enterSplitMode() {
     this.autoHide.enterSplitMode();
   }
@@ -216,6 +232,7 @@ export class FloatingToolbar {
   }
 
   #handleClick() {
+    this.glassEffect.pulse();
     const now = Date.now();
     const timeSinceLastClick = now - this.lastClickTime;
 
@@ -248,6 +265,7 @@ export class FloatingToolbar {
     }
 
     this.autoHide.reposition(centerY);
+    this.glassEffect.refreshTextColor();
   }
 
   updatePageNumber() {
@@ -256,6 +274,10 @@ export class FloatingToolbar {
 
     this.ball.querySelector(".page-current").textContent = currentPage;
     this.ball.querySelector(".page-total").textContent = totalPages;
+
+    // Content scrolled behind a resting ball — recolor the page number to the
+    // page now under it (no-op unless liquid glass is on).
+    this.glassEffect.refreshTextColor();
   }
 
   updateActivePane() {
@@ -270,6 +292,7 @@ export class FloatingToolbar {
 
   destroy() {
     this.autoHide.destroy();
+    this.glassEffect.destroy();
     this.navigationTree?.destroy();
     this.wrapper.remove();
   }

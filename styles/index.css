@@ -16,6 +16,7 @@
 @import "./viewer.css" layer(base);
 @import "./text_layer.css" layer(components);
 @import "./floating_toolbar.css" layer(components);
+@import "./liquid_glass.css" layer(components);
 @import "./citation_popup.css" layer(components);
 @import "./navigation_tree.css" layer(components);
 @import "./annotations.css" layer(components);

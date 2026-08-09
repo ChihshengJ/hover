@@ -49,6 +49,15 @@ function hexToRgb(hex) {
     : null;
 }
 
+/**
+ * Whether two page-number lists cover the same pages, in the same order.
+ * @param {number[]} a
+ * @param {number[]} b
+ */
+function samePages(a, b) {
+  return a.length === b.length && a.every((page, i) => page === b[i]);
+}
+
 const PdfAnnotationSubtype = {
   HIGHLIGHT: 9,
   UNDERLINE: 10,
@@ -199,6 +208,7 @@ export class AnnotationStore {
 
     const oldComment = annotation.comment;
     const oldType = annotation.type;
+    const oldPages = annotation.pageRanges.map((pr) => pr.pageNumber);
     if (updates.color !== undefined) annotation.color = updates.color;
     if (updates.type !== undefined) annotation.type = updates.type;
     if (updates.comment !== undefined) annotation.comment = updates.comment;
@@ -207,8 +217,26 @@ export class AnnotationStore {
     if (updates.rotation !== undefined) annotation.rotation = updates.rotation;
     annotation.updatedAt = new Date().toISOString();
 
+    // A drawing dragged across a page boundary changes pages. The page index
+    // and the engine both key off the page, so neither can be updated in place.
+    const newPages = annotation.pageRanges.map((pr) => pr.pageNumber);
+    const movedPages = !samePages(oldPages, newPages);
+    if (movedPages) {
+      for (const pageNumber of oldPages) {
+        this.#removeFromPageIndex(id, pageNumber);
+      }
+      for (const pageNumber of newPages) {
+        this.#addToPageIndex(id, pageNumber);
+      }
+    }
+
     const typeChanged = oldType !== annotation.type;
-    await this.#updateInEngine(annotation, oldComment, typeChanged);
+    await this.#updateInEngine(
+      annotation,
+      oldComment,
+      typeChanged,
+      movedPages ? oldPages : null,
+    );
     this.#doc.notify("annotation-updated", { annotation });
     return annotation;
   }
@@ -519,17 +547,30 @@ export class AnnotationStore {
     }
   }
 
-  async #updateInEngine(annotation, oldComment, typeChanged = false) {
+  /**
+   * @param {Object} annotation
+   * @param {string|null} oldComment
+   * @param {boolean} typeChanged
+   * @param {number[]|null} oldPages - Pages the annotation occupied before this
+   *   update, when it has since moved to different ones. The engine object is
+   *   owned by its page, so it has to be recreated rather than updated.
+   */
+  async #updateInEngine(
+    annotation,
+    oldComment,
+    typeChanged = false,
+    oldPages = null,
+  ) {
     if (!this.#pdfDoc || !this.#engine) return;
 
-    if (annotation.type === "drawing") {
-      await this.#updateDrawingInEngine(annotation);
+    if (typeChanged || oldPages) {
+      await this.#deleteFromEngine(annotation, oldPages);
+      await this.#createInEngine(annotation);
       return;
     }
 
-    if (typeChanged) {
-      await this.#deleteFromEngine(annotation);
-      await this.#createInEngine(annotation);
+    if (annotation.type === "drawing") {
+      await this.#updateDrawingInEngine(annotation);
       return;
     }
 
@@ -637,13 +678,20 @@ export class AnnotationStore {
     }
   }
 
-  async #deleteFromEngine(annotation) {
+  /**
+   * @param {Object} annotation
+   * @param {number[]|null} [pages] - Pages to remove from, when they differ
+   *   from the annotation's current ones (i.e. it has just been moved).
+   */
+  async #deleteFromEngine(annotation, pages = null) {
     if (!this.#pdfDoc || !this.#engine) return;
 
     const pdfId = this.#annotationIdToPdfId.get(annotation.id);
+    const pageNumbers =
+      pages || annotation.pageRanges.map((pr) => pr.pageNumber);
 
-    for (const pr of annotation.pageRanges) {
-      const page = this.#doc.getPage(pr.pageNumber);
+    for (const pageNumber of pageNumbers) {
+      const page = this.#doc.getPage(pageNumber);
       if (!page) continue;
 
       try {

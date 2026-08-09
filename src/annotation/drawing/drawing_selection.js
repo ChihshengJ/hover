@@ -4,18 +4,32 @@
  *
  * Shows a bounding box overlay with controls when a drawing is selected.
  *
+ * The overlay lives on the pane stage rather than inside a page, in the same
+ * pixel space as the rendered SVG strokes. Anchoring it to a page clipped the
+ * controls away (`.page-wrapper` has `content-visibility: auto`, which paints
+ * with containment) as soon as a drawing was dragged past that page's edge, so
+ * a drawing moved onto a neighbouring page could be selected but never edited
+ * again. Every edit re-homes the annotation to whichever page it now covers.
+ *
  * @typedef {import('../../viewpane.js').ViewerPane} ViewerPane
  */
 
 import { onPointerDrag } from "../../pointer_gesture.js";
+import {
+  COLOR_NAME_TO_HEX,
+  computeBounds,
+  computeBoundsRaw,
+  findPageAtStagePoint,
+  getPageMetrics,
+  pageToStage,
+  stageToPage,
+} from "./drawing_geometry.js";
 
-const COLOR_NAME_TO_HEX = {
-  black: "#000000",
-  yellow: "#FFB300",
-  red: "#E53935",
-  blue: "#1E88E5",
-  green: "#43A047",
-};
+/** Gap between the strokes and the dashed border, in stage pixels. */
+const BBOX_PADDING = 8;
+
+/** Smallest content box a resize can produce, in stage pixels. */
+const MIN_SIZE = 20;
 
 export class DrawingSelectionManager {
   /** @type {ViewerPane} */
@@ -34,6 +48,8 @@ export class DrawingSelectionManager {
   #dragMode = "none"; // "none" | "move" | "resize" | "rotate"
 
   #dragStart = { x: 0, y: 0 };
+
+  /** Content box (padding excluded) at drag start, in stage pixels. */
   #origBounds = { x: 0, y: 0, w: 0, h: 0 };
   #origRotation = 0;
 
@@ -44,9 +60,6 @@ export class DrawingSelectionManager {
   #onDragMove = (e) => this.#handleDragMove(e);
   #onDragEnd = (e) => this.#handleDragEnd(e);
 
-  /**
-   * @param {ViewerPane} pane
-   */
   /**
    * @param {ViewerPane} pane
    */
@@ -87,6 +100,23 @@ export class DrawingSelectionManager {
   }
 
   /**
+   * Re-measure the bounding box against the current page layout. Called after
+   * zoom or resize, which move the pages under a stage-positioned overlay.
+   */
+  refresh() {
+    if (!this.#selectedId || this.#dragMode !== "none") return;
+
+    const annotation = this.#pane.document.getAnnotation(this.#selectedId);
+    if (!annotation) {
+      this.deselect();
+      return;
+    }
+
+    this.#selectedAnnotation = annotation;
+    this.#showBoundingBox(annotation);
+  }
+
+  /**
    * Deselect and remove the bounding box.
    */
   deselect() {
@@ -101,48 +131,48 @@ export class DrawingSelectionManager {
   // Bounding Box
   // =========================================================================
 
+  /**
+   * Content box of a drawing's strokes in stage pixels, or null if the
+   * annotation has no usable geometry.
+   * @param {Object} annotation
+   */
+  #stageBoundsOf(annotation) {
+    const pr = annotation.pageRanges?.[0];
+    if (!pr) return null;
+
+    const pageView = this.#pane.pages[pr.pageNumber - 1];
+    if (!pageView) return null;
+
+    const bounds = computeBoundsRaw(annotation.strokes);
+    if (!isFinite(bounds.minX)) return null;
+
+    const metrics = getPageMetrics(pageView);
+    const topLeft = pageToStage({ x: bounds.minX, y: bounds.minY }, metrics);
+    const bottomRight = pageToStage({ x: bounds.maxX, y: bounds.maxY }, metrics);
+
+    return {
+      x: topLeft.x,
+      y: topLeft.y,
+      w: bottomRight.x - topLeft.x,
+      h: bottomRight.y - topLeft.y,
+    };
+  }
+
   #showBoundingBox(annotation) {
     this.#removeBoundingBox();
 
-    const pr = annotation.pageRanges[0];
-    if (!pr || pr.rects.length === 0) return;
-
-    const pageView = this.#pane.pages[pr.pageNumber - 1];
-    if (!pageView) return;
-
-    const layerWidth =
-      parseFloat(pageView.textLayer.style.width) || pageView.wrapper.clientWidth;
-    const layerHeight =
-      parseFloat(pageView.textLayer.style.height) || pageView.wrapper.clientHeight;
-
-    // Compute bounding rect from strokes
-    let minX = Infinity, minY = Infinity;
-    let maxX = -Infinity, maxY = -Infinity;
-    for (const stroke of annotation.strokes || []) {
-      for (const p of stroke.points) {
-        minX = Math.min(minX, p.x);
-        minY = Math.min(minY, p.y);
-        maxX = Math.max(maxX, p.x);
-        maxY = Math.max(maxY, p.y);
-      }
-    }
-    if (!isFinite(minX)) return;
-
-    const padding = 8;
-    const pxLeft = minX * layerWidth - padding;
-    const pxTop = minY * layerHeight - padding;
-    const pxWidth = (maxX - minX) * layerWidth + padding * 2;
-    const pxHeight = (maxY - minY) * layerHeight + padding * 2;
+    const bounds = this.#stageBoundsOf(annotation);
+    if (!bounds) return;
 
     const hexColor = COLOR_NAME_TO_HEX[annotation.color] || "#000000";
 
     this.#bbox = document.createElement("div");
     this.#bbox.className = "drawing-bounding-box";
     this.#bbox.style.cssText = `
-      left: ${pxLeft}px;
-      top: ${pxTop}px;
-      width: ${pxWidth}px;
-      height: ${pxHeight}px;
+      left: ${bounds.x - BBOX_PADDING}px;
+      top: ${bounds.y - BBOX_PADDING}px;
+      width: ${bounds.w + BBOX_PADDING * 2}px;
+      height: ${bounds.h + BBOX_PADDING * 2}px;
       border-color: ${hexColor};
       color: ${hexColor};
     `;
@@ -202,7 +232,7 @@ export class DrawingSelectionManager {
       this.#startDrag(e, "move");
     });
 
-    pageView.rotateInner.appendChild(this.#bbox);
+    this.#pane.stage.appendChild(this.#bbox);
   }
 
   #removeBoundingBox() {
@@ -217,23 +247,60 @@ export class DrawingSelectionManager {
   // =========================================================================
 
   #startDrag(e, mode) {
+    const bounds =
+      this.#selectedAnnotation && this.#stageBoundsOf(this.#selectedAnnotation);
+    if (!bounds) return;
+
     this.#dragMode = mode;
     this.#dragStart = { x: e.clientX, y: e.clientY };
-
-    if (this.#bbox) {
-      this.#origBounds = {
-        x: parseFloat(this.#bbox.style.left),
-        y: parseFloat(this.#bbox.style.top),
-        w: parseFloat(this.#bbox.style.width),
-        h: parseFloat(this.#bbox.style.height),
-      };
-    }
+    this.#origBounds = bounds;
     this.#origRotation = this.#selectedAnnotation?.rotation || 0;
 
     onPointerDrag(e, {
       onMove: this.#onDragMove,
       onEnd: this.#onDragEnd,
     });
+  }
+
+  /**
+   * Rotation implied by the pointer's position relative to the bounding box
+   * centre, measured from where the drag started.
+   * @param {PointerEvent} e
+   */
+  #rotationFor(e) {
+    const cx = this.#origBounds.x + this.#origBounds.w / 2;
+    const cy = this.#origBounds.y + this.#origBounds.h / 2;
+
+    // Stage pixels -> client coords
+    const stageRect = this.#pane.stage.getBoundingClientRect();
+    const clientCx = stageRect.left + cx;
+    const clientCy = stageRect.top + cy;
+
+    const startAngle = Math.atan2(
+      this.#dragStart.y - clientCy,
+      this.#dragStart.x - clientCx,
+    );
+    const currentAngle = Math.atan2(e.clientY - clientCy, e.clientX - clientCx);
+    const angleDelta = ((currentAngle - startAngle) * 180) / Math.PI;
+
+    return this.#origRotation + angleDelta;
+  }
+
+  /**
+   * Content-box size a resize drag implies, clamped to a usable minimum.
+   *
+   * An axis-aligned line has zero extent on one axis; there is no scale factor
+   * that stretches it, so that axis is left alone rather than dividing by zero.
+   *
+   * @param {number} dx
+   * @param {number} dy
+   */
+  #resizeFor(dx, dy) {
+    const { w, h } = this.#origBounds;
+    return {
+      w: w > 0 ? Math.max(MIN_SIZE, w + dx) : w,
+      h: h > 0 ? Math.max(MIN_SIZE, h + dy) : h,
+    };
   }
 
   /** @param {PointerEvent} e */
@@ -244,156 +311,119 @@ export class DrawingSelectionManager {
     const dy = e.clientY - this.#dragStart.y;
 
     if (this.#dragMode === "move") {
-      this.#bbox.style.left = `${this.#origBounds.x + dx}px`;
-      this.#bbox.style.top = `${this.#origBounds.y + dy}px`;
+      this.#bbox.style.left = `${this.#origBounds.x + dx - BBOX_PADDING}px`;
+      this.#bbox.style.top = `${this.#origBounds.y + dy - BBOX_PADDING}px`;
     } else if (this.#dragMode === "resize") {
-      const newW = Math.max(20, this.#origBounds.w + dx);
-      const newH = Math.max(20, this.#origBounds.h + dy);
-      this.#bbox.style.width = `${newW}px`;
-      this.#bbox.style.height = `${newH}px`;
+      const { w, h } = this.#resizeFor(dx, dy);
+      this.#bbox.style.width = `${w + BBOX_PADDING * 2}px`;
+      this.#bbox.style.height = `${h + BBOX_PADDING * 2}px`;
     } else if (this.#dragMode === "rotate") {
-      const cx = this.#origBounds.x + this.#origBounds.w / 2;
-      const cy = this.#origBounds.y + this.#origBounds.h / 2;
-
-      // Convert center to client coords
-      const bboxParent = this.#bbox.parentElement;
-      const parentRect = bboxParent.getBoundingClientRect();
-      const clientCx = parentRect.left + cx;
-      const clientCy = parentRect.top + cy;
-
-      const startAngle = Math.atan2(
-        this.#dragStart.y - clientCy,
-        this.#dragStart.x - clientCx,
-      );
-      const currentAngle = Math.atan2(
-        e.clientY - clientCy,
-        e.clientX - clientCx,
-      );
-      const angleDelta = ((currentAngle - startAngle) * 180) / Math.PI;
-      const newRotation = this.#origRotation + angleDelta;
-
-      this.#bbox.style.transform = `rotate(${newRotation}deg)`;
+      this.#bbox.style.transform = `rotate(${this.#rotationFor(e)}deg)`;
       this.#bbox.style.transformOrigin = "center center";
     }
   }
 
   /** @param {PointerEvent} e */
   #handleDragEnd(e) {
-    if (!this.#selectedAnnotation || !this.#selectedId) {
-      this.#dragMode = "none";
-      return;
-    }
+    const mode = this.#dragMode;
+    this.#dragMode = "none";
 
-    const annotation = this.#selectedAnnotation;
-    const pr = annotation.pageRanges[0];
-    if (!pr) {
-      this.#dragMode = "none";
-      return;
-    }
-
-    const pageView = this.#pane.pages[pr.pageNumber - 1];
-    if (!pageView) {
-      this.#dragMode = "none";
-      return;
-    }
-
-    const layerWidth =
-      parseFloat(pageView.textLayer.style.width) || pageView.wrapper.clientWidth;
-    const layerHeight =
-      parseFloat(pageView.textLayer.style.height) || pageView.wrapper.clientHeight;
+    if (!this.#selectedAnnotation || !this.#selectedId) return;
 
     const dx = e.clientX - this.#dragStart.x;
     const dy = e.clientY - this.#dragStart.y;
 
-    if (this.#dragMode === "move") {
-      const dxNorm = dx / layerWidth;
-      const dyNorm = dy / layerHeight;
-
-      // Shift all stroke points
-      const updatedStrokes = annotation.strokes.map((stroke) => ({
-        ...stroke,
-        points: stroke.points.map((p) => ({
-          x: p.x + dxNorm,
-          y: p.y + dyNorm,
-        })),
-      }));
-
-      // Recompute bounding rect
-      const bounds = computeBounds(updatedStrokes);
-      const updatedPageRanges = [{
-        ...pr,
-        rects: [bounds],
-      }];
-
-      this.#pane.document.updateAnnotation(this.#selectedId, {
-        strokes: updatedStrokes,
-        pageRanges: updatedPageRanges,
+    if (mode === "move") {
+      this.#commitTransform({ dx, dy, scaleX: 1, scaleY: 1 });
+    } else if (mode === "resize") {
+      const { w, h } = this.#resizeFor(dx, dy);
+      this.#commitTransform({
+        dx: 0,
+        dy: 0,
+        scaleX: this.#origBounds.w > 0 ? w / this.#origBounds.w : 1,
+        scaleY: this.#origBounds.h > 0 ? h / this.#origBounds.h : 1,
       });
-    } else if (this.#dragMode === "resize") {
-      const newW = Math.max(20, this.#origBounds.w + dx);
-      const newH = Math.max(20, this.#origBounds.h + dy);
-      const scaleX = newW / this.#origBounds.w;
-      const scaleY = newH / this.#origBounds.h;
-
-      // Compute original bounds in normalized coords
-      const origBounds = computeBoundsRaw(annotation.strokes);
-
-      // Scale all stroke points relative to top-left of bounding box
-      const updatedStrokes = annotation.strokes.map((stroke) => ({
-        ...stroke,
-        points: stroke.points.map((p) => ({
-          x: origBounds.minX + (p.x - origBounds.minX) * scaleX,
-          y: origBounds.minY + (p.y - origBounds.minY) * scaleY,
-        })),
-      }));
-
-      const bounds = computeBounds(updatedStrokes);
-      const updatedPageRanges = [{
-        ...pr,
-        rects: [bounds],
-      }];
-
-      this.#pane.document.updateAnnotation(this.#selectedId, {
-        strokes: updatedStrokes,
-        pageRanges: updatedPageRanges,
-      });
-    } else if (this.#dragMode === "rotate") {
-      const cx = this.#origBounds.x + this.#origBounds.w / 2;
-      const cy = this.#origBounds.y + this.#origBounds.h / 2;
-
-      const bboxParent = this.#bbox.parentElement;
-      const parentRect = bboxParent.getBoundingClientRect();
-      const clientCx = parentRect.left + cx;
-      const clientCy = parentRect.top + cy;
-
-      const startAngle = Math.atan2(
-        this.#dragStart.y - clientCy,
-        this.#dragStart.x - clientCx,
-      );
-      const currentAngle = Math.atan2(
-        e.clientY - clientCy,
-        e.clientX - clientCx,
-      );
-      const angleDelta = ((currentAngle - startAngle) * 180) / Math.PI;
-      const newRotation = this.#origRotation + angleDelta;
-
-      this.#pane.document.updateAnnotation(this.#selectedId, {
-        rotation: newRotation,
-      });
+    } else if (mode === "rotate") {
+      this.#commit({ rotation: this.#rotationFor(e) });
     }
+  }
 
-    this.#dragMode = "none";
+  /**
+   * Apply a translate/scale (in stage pixels, anchored at the drawing's
+   * top-left) to every stroke point, then store the result against whichever
+   * page the drawing now sits on.
+   *
+   * @param {{dx: number, dy: number, scaleX: number, scaleY: number}} transform
+   */
+  #commitTransform({ dx, dy, scaleX, scaleY }) {
+    const annotation = this.#selectedAnnotation;
+    const pr = annotation.pageRanges[0];
+    const sourcePage = this.#pane.pages[pr.pageNumber - 1];
+    if (!sourcePage) return;
 
-    // Refresh selection after annotation update
-    const refreshed = this.#pane.document.getAnnotation(this.#selectedId);
-    if (refreshed) {
-      // Re-select to update bounding box position
-      const id = this.#selectedId;
-      this.deselect();
-      requestAnimationFrame(() => {
-        this.select(id, refreshed);
-      });
-    }
+    const source = getPageMetrics(sourcePage);
+    const origin = { x: this.#origBounds.x, y: this.#origBounds.y };
+
+    // Strokes in stage pixels, with the drag applied.
+    const stageStrokes = annotation.strokes.map((stroke) => ({
+      ...stroke,
+      points: stroke.points.map((p) => {
+        const stagePoint = pageToStage(p, source);
+        return {
+          x: origin.x + dx + (stagePoint.x - origin.x) * scaleX,
+          y: origin.y + dy + (stagePoint.y - origin.y) * scaleY,
+        };
+      }),
+    }));
+
+    // Re-home to the page the drawing now covers — the drag may have carried it
+    // onto a neighbour.
+    const moved = computeBoundsRaw(stageStrokes);
+    const targetPage =
+      findPageAtStagePoint(
+        this.#pane,
+        (moved.minX + moved.maxX) / 2,
+        (moved.minY + moved.maxY) / 2,
+      ) || sourcePage;
+    const target = getPageMetrics(targetPage);
+
+    // Stroke widths are ratios of page width; rescale so a drawing that lands
+    // on a differently sized page keeps its on-screen thickness.
+    const widthRatio = source.width / target.width;
+
+    const updatedStrokes = stageStrokes.map((stroke) => ({
+      ...stroke,
+      strokeWidth: (stroke.strokeWidth || 0.003) * widthRatio,
+      points: stroke.points.map((p) => stageToPage(p, target)),
+    }));
+
+    this.#commit({
+      strokes: updatedStrokes,
+      pageRanges: [
+        {
+          ...pr,
+          pageNumber: targetPage.pageNumber,
+          rects: [computeBounds(updatedStrokes)],
+        },
+      ],
+    });
+  }
+
+  /**
+   * Persist an update and rebuild the bounding box around the stored result.
+   * @param {Object} changes
+   */
+  #commit(changes) {
+    const id = this.#selectedId;
+    this.#pane.document.updateAnnotation(id, changes);
+
+    const refreshed = this.#pane.document.getAnnotation(id);
+    if (!refreshed) return;
+
+    this.deselect();
+    requestAnimationFrame(() => {
+      this.select(id, refreshed);
+    });
   }
 
   // =========================================================================
@@ -410,32 +440,4 @@ export class DrawingSelectionManager {
   destroy() {
     this.deselect();
   }
-}
-
-// ===========================================================================
-// Helpers
-// ===========================================================================
-
-function computeBoundsRaw(strokes) {
-  let minX = Infinity, minY = Infinity;
-  let maxX = -Infinity, maxY = -Infinity;
-  for (const stroke of strokes || []) {
-    for (const p of stroke.points) {
-      minX = Math.min(minX, p.x);
-      minY = Math.min(minY, p.y);
-      maxX = Math.max(maxX, p.x);
-      maxY = Math.max(maxY, p.y);
-    }
-  }
-  return { minX, minY, maxX, maxY };
-}
-
-function computeBounds(strokes) {
-  const { minX, minY, maxX, maxY } = computeBoundsRaw(strokes);
-  return {
-    leftRatio: minX,
-    topRatio: minY,
-    widthRatio: maxX - minX,
-    heightRatio: maxY - minY,
-  };
 }

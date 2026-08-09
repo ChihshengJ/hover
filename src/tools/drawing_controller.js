@@ -13,6 +13,7 @@
 import { DrawingCanvasLayer } from "../annotation/drawing/drawing_canvas_layer.js";
 import { DrawingToolbar } from "../annotation/drawing/drawing_toolbar.js";
 import { LazyBrush } from "../annotation/drawing/lazy_brush.js";
+import { beginDragGesture } from "../pointer_gesture.js";
 
 const COMMIT_DELAY_MS = 1000;
 
@@ -31,6 +32,9 @@ export class DrawingController {
 
   #isActive = false;
   #isDrawing = false;
+
+  /** Releases the drag claim taken for the active stroke. @type {(() => void)|null} */
+  #releaseGesture = null;
 
   /** @type {{x: number, y: number}[]} */
   #currentStroke = [];
@@ -199,6 +203,7 @@ export class DrawingController {
     if (!page) return;
 
     e.preventDefault();
+    this.#releaseGesture = beginDragGesture();
 
     // Cancel commit timer (new stroke within the 3s window)
     if (this.#commitTimer !== null) {
@@ -265,6 +270,8 @@ export class DrawingController {
   #handlePointerUp(e) {
     if (!this.#isDrawing || !this.#currentPage) return;
 
+    this.#releaseGesture?.();
+    this.#releaseGesture = null;
     document.removeEventListener("pointermove", this.#onPointerMove);
     document.removeEventListener("pointerup", this.#onPointerUp);
 

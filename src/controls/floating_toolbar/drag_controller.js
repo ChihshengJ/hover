@@ -13,7 +13,7 @@
  * The facade reads `isDragging` / `dragMode` / `wasDragged` as getters and
  * clears `wasDragged` after each click.
  */
-import { beginDragGuard, endDragGuard } from "../../drag_guard.js";
+import { beginDragGesture } from "../../pointer_gesture.js";
 
 export class DragController {
   /**
@@ -64,6 +64,9 @@ export class DragController {
     this.currentDeltaY = 0;
     this.currentScrollVelocity = 0;
     this.scrollAnimationFrame = null;
+
+    /** Releases the drag claim taken in #startDrag. @type {(() => void)|null} */
+    this.releaseGesture = null;
 
     // rAF-batched pending writes — see class comment.
     this._pendingTransform = null;
@@ -126,7 +129,7 @@ export class DragController {
     this.ball.setPointerCapture(e.pointerId);
     // Suppress native text selection for the duration of the drag —
     // preventDefault() below only achieves that on Chrome, not Safari/Firefox.
-    beginDragGuard();
+    this.releaseGesture = beginDragGesture();
     this.isDragging = true;
     this.isJumping = false;
     this.dragStartX = e.clientX;
@@ -303,7 +306,8 @@ export class DragController {
     if (this.isJumping) return;
     if (!this.isDragging) return;
 
-    endDragGuard();
+    this.releaseGesture?.();
+    this.releaseGesture = null;
     this.isDragging = false;
     this.currentScrollVelocity = 0;
     this.dragMode = null;

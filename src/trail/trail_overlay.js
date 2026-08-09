@@ -3,7 +3,7 @@
  */
 
 import { normalizeTitle } from "./trail_store.js";
-import { beginDragGuard, endDragGuard } from "../drag_guard.js";
+import { beginDragGesture } from "../pointer_gesture.js";
 
 const SVG_NS = "http://www.w3.org/2000/svg";
 
@@ -643,7 +643,7 @@ export class TrailOverlay {
     if (e.button !== 0) return;
     // Suppress native text selection while panning the tree (Safari and
     // Firefox would otherwise drag out a selection alongside the pan).
-    beginDragGuard();
+    this.releasePanGesture = beginDragGesture();
     this.isPanning = true;
     this.wasDragged = false;
     this.panStartX = e.clientX - this.panOffsetX;
@@ -667,6 +667,7 @@ export class TrailOverlay {
   #onPanEnd() {
     if (!this.isPanning) return;
     this.isPanning = false;
-    endDragGuard();
+    this.releasePanGesture?.();
+    this.releasePanGesture = null;
   }
 }

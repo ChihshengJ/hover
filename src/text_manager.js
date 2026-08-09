@@ -21,6 +21,13 @@ export class TextSelectionManager {
    */
   #pointerDownInTextLayer = false;
 
+  /**
+   * The text layer the live pointer gesture started in — the reference every
+   * other layer's endOfContent is parked against for the duration.
+   * @type {HTMLElement|null}
+   */
+  #gestureLayer = null;
+
   /** @type {Range|null} */
   #prevRange = null;
 
@@ -108,14 +115,25 @@ export class TextSelectionManager {
   }
 
   /**
-   * Reset a text layer's selection state
+   * Reset a text layer's selection state.
+   *
+   * `referenceLayer` is the layer the live gesture is anchored in, if any. A
+   * layer the selection has left is still a layer the drag may re-enter, so it
+   * keeps its overlay parked on the near edge rather than returning it to the
+   * end of the layer — see #parkEndOfContent.
+   *
    * @param {{endOfContent: HTMLElement, pageView: import('./page.js').PageView}} entry
    * @param {HTMLElement} textLayerDiv
+   * @param {HTMLElement|null} [referenceLayer]
    */
-  #reset(entry, textLayerDiv) {
+  #reset(entry, textLayerDiv, referenceLayer = null) {
     const { endOfContent, pageView } = entry;
-    // Move endOfContent back to the end of the text layer
-    textLayerDiv.append(endOfContent);
+    if (referenceLayer && referenceLayer !== textLayerDiv) {
+      this.#parkEndOfContent(entry, textLayerDiv, referenceLayer);
+    } else {
+      // Move endOfContent back to the end of the text layer
+      textLayerDiv.append(endOfContent);
+    }
     endOfContent.style.width = "";
     endOfContent.style.height = "";
     endOfContent.style.userSelect = "";
@@ -137,6 +155,31 @@ export class TextSelectionManager {
         this.#pointerDownInTextLayer = !!(
           e.target instanceof Element && e.target.closest(".textLayer")
         );
+
+        if (!this.#pointerDownInTextLayer) return;
+
+        // WebKit occasionally strands a range after the endOfContent DOM
+        // shuffle — one that a plain click elsewhere does not collapse. A
+        // gesture starting inside a text layer always starts from a clean
+        // slate; shift-click still extends, and the pane's own click-to-select
+        // has already installed its collapsed range by the time this runs.
+        if (e.isPrimary && !e.shiftKey) {
+          const selection = document.getSelection();
+          if (selection && !selection.isCollapsed) {
+            selection.removeAllRanges();
+          }
+        }
+
+        // Park every other page's overlay before the drag can reach it, so no
+        // page is ever entered while its endOfContent still sits after the
+        // last span. Doing it here rather than on first activation keeps the
+        // whole-page flash from ever being painted.
+        this.#gestureLayer = e.target.closest(".textLayer");
+        for (const [textLayerDiv, entry] of this.#textLayers) {
+          if (textLayerDiv !== this.#gestureLayer) {
+            this.#parkEndOfContent(entry, textLayerDiv, this.#gestureLayer);
+          }
+        }
       },
       { signal },
     );
@@ -145,6 +188,7 @@ export class TextSelectionManager {
       "pointerup",
       () => {
         this.#isPointerDown = false;
+        this.#gestureLayer = null;
         this.#textLayers.forEach((entry, div) => this.#reset(entry, div));
       },
       { signal },
@@ -154,6 +198,7 @@ export class TextSelectionManager {
       "blur",
       () => {
         this.#isPointerDown = false;
+        this.#gestureLayer = null;
         this.#textLayers.forEach((entry, div) => this.#reset(entry, div));
       },
       { signal },
@@ -192,7 +237,10 @@ export class TextSelectionManager {
     const selection = document.getSelection();
 
     if (selection.rangeCount === 0) {
-      this.#textLayers.forEach((entry, div) => this.#reset(entry, div));
+      this.#textLayers.forEach((entry, div) =>
+        this.#reset(entry, div, this.#gestureLayer),
+      );
+      this.#prevRange = null;
       return;
     }
 
@@ -210,17 +258,6 @@ export class TextSelectionManager {
       }
     }
 
-    // Update selecting class on each text layer
-    for (const [textLayerDiv, entry] of this.#textLayers) {
-      const wrapper = entry.pageView.wrapper;
-      if (activeTextLayers.has(textLayerDiv)) {
-        textLayerDiv.classList.add("selecting");
-        wrapper.classList.add("text-selecting");
-      } else {
-        this.#reset(entry, textLayerDiv);
-      }
-    }
-
     // Firefox handles selection natively without the endOfContent trick.
     // The probe must run against an element that has `user-select: none`
     // applied (endOfContent) — only Gecko aliases it to -moz-user-select,
@@ -235,9 +272,7 @@ export class TextSelectionManager {
           ) === "none";
       }
     }
-    if (this.#isFirefox) return;
 
-    // Chrome/Safari: Reposition endOfContent to limit selection jumps
     const range = selection.getRangeAt(0);
 
     const modifyStart =
@@ -250,8 +285,35 @@ export class TextSelectionManager {
       anchor = anchor.parentNode;
     }
 
-    const parentTextLayer = anchor.closest?.(".textLayer");
-    if (!parentTextLayer) {
+    // Resolve from the anchor's *parent*. When the endpoint lands on the text
+    // layer div itself — which WebKit does whenever the point falls on the
+    // endOfContent overlay — the layer is not a valid insertion parent, and
+    // inserting relative to it would move endOfContent out of the layer and
+    // next to the <canvas>, dragging the whole page into the range.
+    const anchorLayer = this.#isFirefox
+      ? null
+      : (anchor.parentElement?.closest(".textLayer") ?? null);
+
+    // Update selecting class on each text layer. Layers the selection has left
+    // keep their overlay parked against the live anchor — the drag can still
+    // come back to them.
+    const referenceLayer = anchorLayer ?? this.#gestureLayer;
+    for (const [textLayerDiv, entry] of this.#textLayers) {
+      if (!activeTextLayers.has(textLayerDiv)) {
+        this.#reset(entry, textLayerDiv, referenceLayer);
+        continue;
+      }
+      const wasSelecting = textLayerDiv.classList.contains("selecting");
+      textLayerDiv.classList.add("selecting");
+      entry.pageView.wrapper.classList.add("text-selecting");
+      if (!wasSelecting && textLayerDiv !== referenceLayer) {
+        this.#parkEndOfContent(entry, textLayerDiv, referenceLayer);
+      }
+    }
+
+    if (this.#isFirefox) return;
+
+    if (!anchorLayer) {
       this.#prevRange = range.cloneRange();
       return;
     }
@@ -271,23 +333,55 @@ export class TextSelectionManager {
       }
     }
 
-    const entry = this.#textLayers.get(parentTextLayer);
+    const entry = this.#textLayers.get(anchorLayer);
 
-    if (entry) {
+    // The walk above can climb out of the layer; endOfContent must never leave it.
+    if (
+      entry &&
+      anchor.parentElement &&
+      anchorLayer.contains(anchor.parentElement)
+    ) {
       const { endOfContent } = entry;
-      endOfContent.style.width = parentTextLayer.style.width;
-      endOfContent.style.height = parentTextLayer.style.height;
+      endOfContent.style.width = anchorLayer.style.width;
+      endOfContent.style.height = anchorLayer.style.height;
       endOfContent.style.userSelect = "text";
       // Safari < 18.4 only honors the prefixed property
       endOfContent.style.webkitUserSelect = "text";
 
-      anchor.parentElement?.insertBefore(
+      anchor.parentElement.insertBefore(
         endOfContent,
         modifyStart ? anchor : anchor.nextSibling,
       );
     }
 
     this.#prevRange = range.cloneRange();
+  }
+
+  /**
+   * Park a newly activated layer's endOfContent on the edge facing the anchor.
+   *
+   * `.selecting` stretches endOfContent over the whole page. WebKit resolves a
+   * point over that overlay to a DOM position inside it, so an overlay sitting
+   * after the last span means "this entire page is selected" the instant a
+   * drag crosses the page boundary. Parking it on the near edge makes the same
+   * landing select none of the new page — which is what Blink already does, by
+   * refusing to move a selection into non-selectable content at all.
+   *
+   * @param {{endOfContent: HTMLElement}} entry
+   * @param {HTMLElement} textLayerDiv
+   * @param {HTMLElement|null} anchorLayer
+   */
+  #parkEndOfContent(entry, textLayerDiv, anchorLayer) {
+    const enteredFromAbove =
+      anchorLayer &&
+      anchorLayer.compareDocumentPosition(textLayerDiv) &
+        Node.DOCUMENT_POSITION_FOLLOWING;
+
+    if (enteredFromAbove) {
+      textLayerDiv.prepend(entry.endOfContent);
+    } else {
+      textLayerDiv.append(entry.endOfContent);
+    }
   }
 
   /**

@@ -7,6 +7,8 @@
  * @typedef {import('../../viewpane.js').ViewerPane} ViewerPane
  */
 
+import { onPointerDrag } from "../../pointer_gesture.js";
+
 const COLOR_NAME_TO_HEX = {
   black: "#000000",
   yellow: "#FFB300",
@@ -228,8 +230,11 @@ export class DrawingSelectionManager {
     }
     this.#origRotation = this.#selectedAnnotation?.rotation || 0;
 
-    document.addEventListener("pointermove", this.#onDragMove);
-    document.addEventListener("pointerup", this.#onDragEnd);
+    onPointerDrag(e, {
+      target: e.currentTarget instanceof Element ? e.currentTarget : this.#bbox,
+      onMove: this.#onDragMove,
+      onEnd: this.#onDragEnd,
+    });
   }
 
   /** @param {PointerEvent} e */
@@ -275,9 +280,6 @@ export class DrawingSelectionManager {
 
   /** @param {PointerEvent} e */
   #handleDragEnd(e) {
-    document.removeEventListener("pointermove", this.#onDragMove);
-    document.removeEventListener("pointerup", this.#onDragEnd);
-
     if (!this.#selectedAnnotation || !this.#selectedId) {
       this.#dragMode = "none";
       return;

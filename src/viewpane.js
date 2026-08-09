@@ -2,6 +2,7 @@ import { PageView } from "./page.js";
 import { PaneControls } from "./controls/pane_controls.js";
 import { TextSelectionManager } from "./text_manager.js";
 import { AnnotationManager } from "./annotation/annotation_manager.js";
+import { beginCustomSelectionGesture } from "./pointer_gesture.js";
 
 /**
  * @typedef {import('./page.js').PageView} PageView;
@@ -225,10 +226,17 @@ export class ViewerPane {
     }
   }
 
+  /**
+   * Selection for pointerdowns that land *off* a text span: anchor to the
+   * nearest span and drive the range ourselves. Because we compute the
+   * selection, the engine must not also run its own — see pointer_gesture.js.
+   */
   #setupGlobalClickToSelect() {
     let isSelecting = false;
     let anchorNode = null;
     let anchorOffset = 0;
+    /** @type {(() => void)|null} */
+    let releaseGesture = null;
 
     const findNearestSpanAndOffset = (clientX, clientY) => {
       let nearestSpan = null;
@@ -360,6 +368,10 @@ export class ViewerPane {
       if (dx * dx + dy * dy > maxDistance * maxDistance) return;
 
       e.preventDefault();
+      // Blink stops here; WebKit/Gecko would otherwise start their own
+      // selection alongside ours and the two would fight over the range for
+      // the rest of the gesture.
+      releaseGesture = beginCustomSelectionGesture();
 
       isSelecting = true;
       anchorNode = anchor.node;
@@ -382,11 +394,13 @@ export class ViewerPane {
       updateSelection(e.clientX, e.clientY);
     });
 
-    document.addEventListener("pointerup", (e) => {
+    document.addEventListener("pointerup", () => {
       if (!isSelecting) return;
       isSelecting = false;
       anchorNode = null;
       anchorOffset = 0;
+      releaseGesture?.();
+      releaseGesture = null;
     });
   }
 

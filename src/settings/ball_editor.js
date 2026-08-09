@@ -4,6 +4,7 @@
  */
 
 import { Config } from "./config.js";
+import { beginDragGesture } from "../pointer_gesture.js";
 
 export class BallEditor {
   /** @type {number} Max gradient stops */
@@ -587,9 +588,13 @@ export class BallEditor {
       }
     };
 
+    let releaseGesture = null;
+
     const onUp = () => {
       marker.classList.remove("dragging");
       this._isDraggingStop = false;
+      releaseGesture?.();
+      releaseGesture = null;
       document.removeEventListener("pointermove", onMove);
       document.removeEventListener("pointerup", onUp);
       document.removeEventListener("touchmove", onMove);
@@ -604,6 +609,7 @@ export class BallEditor {
 
       e.preventDefault();
       e.stopPropagation();
+      releaseGesture = beginDragGesture();
 
       // Select this stop — update classes directly instead of rebuilding
       this._selectedStopIndex = idx;

@@ -410,24 +410,37 @@ export class BallEditor {
   // ╍╍╍ Editor UI Refresh ╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍
 
   /**
-   * Full refresh of the ball editor UI from current state.
-   */
-  /**
-   * Lock or unlock the manual page-number color picker. When liquid glass is
-   * on the color is sampled from the page behind the ball, so the picker is
-   * disabled and an "Adaptive" note is shown in its place.
+   * Reflect liquid-glass state in the editor by locking the two controls it
+   * takes over. Glass is its own material: it samples the page behind the ball
+   * for the number color, and it ignores the theme tint entirely in favour of
+   * the frost. Both controls keep their saved values — they are only disabled,
+   * so switching glass back off restores what the user had.
    * @param {boolean} on
    */
-  setPageColorAdaptive(on) {
+  setGlassActive(on) {
     if (!this._overlay) return;
+
+    // Page-number color: sampled from the content behind the ball.
     const group = this._overlay.querySelector("#page-color-group");
     if (group) group.classList.toggle("adaptive", on);
     const input = this._overlay.querySelector("#page-color-input");
     const hex = this._overlay.querySelector("#page-color-hex");
     if (input) input.disabled = on;
     if (hex) hex.disabled = on;
+
+    // Theme-colored buttons: glass outranks the classic-mode tint.
+    const themeBtns = this._overlay.querySelector(".ball-theme-buttons-toggle");
+    if (themeBtns) {
+      themeBtns.disabled = on;
+      themeBtns
+        .closest(".settings-toggle-row")
+        ?.classList.toggle("glass-locked", on);
+    }
   }
 
+  /**
+   * Full refresh of the ball editor UI from current state.
+   */
   refreshEditor() {
     if (!this._overlay || !this._ballStyle) return;
 
@@ -463,9 +476,9 @@ export class BallEditor {
       pageColorHex.value = style.pageColor;
     }
 
-    // Liquid glass derives the page-number color from the content behind the
-    // ball, so the manual picker is locked to "adaptive" while it's on.
-    this.setPageColorAdaptive(Config.get("liquid_glass_enabled"));
+    // Liquid glass takes over the page-number color and overrides the theme
+    // tint, so both of those controls are locked while it's on.
+    this.setGlassActive(Config.get("liquid_glass_enabled"));
 
     // Toggle states
     const persistToggle = this._overlay.querySelector(

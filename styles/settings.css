@@ -499,6 +499,31 @@
   transition: color 0.3s ease;
 }
 
+/* Glass lock: liquid glass is its own material and overrides the theme tint,
+   so the toggle is dimmed and its description swapped for a note explaining
+   why. The saved preference is untouched — it takes effect again the moment
+   glass goes off. Mirrors the .adaptive lock on the page-color picker in
+   color_settings.css. */
+.settings-toggle-locked-note {
+  display: none;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.settings-toggle-row.glass-locked .settings-toggle-description {
+  display: none;
+}
+
+.settings-toggle-row.glass-locked .settings-toggle-locked-note {
+  display: block;
+}
+
+.settings-toggle-row.glass-locked .settings-toggle-switch {
+  opacity: 0.4;
+  pointer-events: none;
+}
+
 .settings-toggle-switch {
   position: relative;
   width: 52px;

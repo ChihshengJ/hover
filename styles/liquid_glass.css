@@ -145,29 +145,33 @@
     0 4px 10px rgba(0, 0, 0, 0.45);
 }
 
-/* Theme-colored buttons + glass: keep the user's tint but translucent,
-   over the same frost. Mirrors the state gating in floating_toolbar.css. */
-body.theme-buttons:not(.night-mode) [data-glass="on"] .tool-btn,
-body.theme-buttons.night-mode.ball-night-persist [data-glass="on"] .tool-btn {
-  filter: none;
-  background: color-mix(in srgb, var(--theme-btn-color) 45%, transparent);
-}
+/* The "Theme-colored Buttons" setting has no effect here by design: glass is
+   itself a theme, and it wins over whatever was chosen for classic mode. The
+   themed rules in floating_toolbar.css exclude a glass wrapper outright, so
+   there is nothing to override — no tint, no themed hover, no themed icon
+   color anywhere below. */
 
 /* ================================
    Adaptive tool-button icons
    ================================
-*/
+   --tool-icon-color is declared on <body> in floating_toolbar.css and
+   inherited by the buttons; restating it here on .tool-btn itself overrides
+   that, because an element's own declaration always beats an inherited one.
 
-[data-glass="on"] .tool-btn .inner,
-[data-glass="on"] .tool-btn .rotate-icon {
-  filter: none;
+   The unqualified rule drops back to the plain light/night token, so the
+   themed value can't reach the icons during the frame before the first
+   backdrop sample lands (or if sampling ever bails). The two adaptive rules
+   below outrank it on specificity once data-glass-text exists. */
+
+[data-glass="on"] .tool-btn {
+  --tool-icon-color: var(--text-primary);
 }
 
-[data-glass="on"][data-glass-text="dark"] .tool-btn .inner {
-  color: #1a1a1a;
+[data-glass="on"][data-glass-text="dark"] .tool-btn {
+  --tool-icon-color: #1a1a1a;
 }
-[data-glass="on"][data-glass-text="light"] .tool-btn .inner {
-  color: #f2f2f2;
+[data-glass="on"][data-glass-text="light"] .tool-btn {
+  --tool-icon-color: #f2f2f2;
 }
 
 /* ================================
@@ -216,21 +220,6 @@ body.theme-buttons.night-mode.ball-night-persist [data-glass="on"] .tool-btn {
     inset 0 0 12px rgba(255, 255, 255, 0.08), 0 4px 10px rgba(0, 0, 0, 0.45);
   background: var(--jump-glass-fill);
   box-shadow: var(--jump-glass-shadow);
-}
-
-/* Theme-colored chrome + glass: the user's tint, translucent, over the same
-   frost. Mirrors the tool-button rule above. */
-body.theme-buttons:not(.night-mode) [data-glass="on"].jump-to-page-popup,
-body.theme-buttons:not(.night-mode) [data-glass="on"].jump-to-top-btn,
-body.theme-buttons.night-mode.ball-night-persist
-  [data-glass="on"].jump-to-page-popup,
-body.theme-buttons.night-mode.ball-night-persist
-  [data-glass="on"].jump-to-top-btn {
-  --jump-glass-fill: color-mix(
-    in srgb,
-    var(--theme-btn-color) 45%,
-    transparent
-  );
 }
 
 /* Hover keeps the button's blue identity, but as a tint in the glass rather

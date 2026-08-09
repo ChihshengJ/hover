@@ -168,6 +168,22 @@
   top: calc(100% + 10px);
 }
 
+/* Tool-button icon color.
+   Every glyph in the toolbar is a currentColor SVG, so this single token
+   drives all of them — no filter inversion anywhere (a filter on .inner and
+   a second one on .rotate-icon used to compose, which is why the rotate
+   glyph alone tracked the theme while the other five double-flipped back).
+
+   Declared on <body>, not on .tool-btn, for two reasons:
+     · the themed overrides below also key off <body> classes, so they win
+       on specificity without having to restate the .tool-btn descendant;
+     · glass mode declares the token on .tool-btn itself, and an element's
+       own declaration always beats an inherited one — no specificity war
+       between the themed state and the adaptive glass state. */
+body {
+  --tool-icon-color: var(--text-primary);
+}
+
 .tool-btn {
   --btn-scale: 1;
   --btn-delay: 0ms;
@@ -177,7 +193,7 @@
   border-radius: 50%;
   border: none;
   background: rgba(255, 255, 255, 1);
-  color: var(--text-primary);
+  color: var(--tool-icon-color);
   cursor: pointer;
   box-shadow:
     inset 2px 2px 5px #00000033,
@@ -435,16 +451,21 @@
     drop-shadow(0 -0.05em 1em #ffffff4d);
 }
 
+/* Same three-stop metallic sweep as light mode, dropped into the night
+   palette's hue family (--bg-body is rgba(46,48,53), the glass night fill
+   rgba(40,42,48)). The 90% stop stays a highlight rather than a blowout, so
+   the white icons the night token paints keep ~10:1 over the button body. */
 .night-mode .tool-btn {
   background: linear-gradient(
     135deg,
-    rgba(130, 130, 130, 1) 18%,
-    rgba(150, 150, 150, 1) 65%,
-    rgba(250, 250, 250, 1) 90%
+    rgba(56, 58, 65, 1) 18%,
+    rgba(72, 75, 83, 1) 65%,
+    rgba(150, 154, 163, 1) 90%
   );
   box-shadow:
-    inset -2px -2px 5px 1px #0000008e,
-    inset 1px 1px 5px 1px #0000006d,
+    inset -2px -2px 5px 1px #000000b3,
+    /* light rim, not a second dark one — the bevel has to read on a dark face */
+    inset 1px 1px 5px 1px #ffffff26,
     0 3px 5px 2px #ffffff10,
     0 0 10px 2px #ffffff05;
 }
@@ -454,9 +475,20 @@
    ================================
    Applies in light mode, or in night mode ONLY when the ball's
    persist-in-night-mode toggle is on (so button state follows
-   ball state). */
-body.theme-buttons:not(.night-mode) .tool-btn,
-body.theme-buttons.night-mode.ball-night-persist .tool-btn {
+   ball state).
+
+   Glass is its own material and outranks the user's tint entirely, so these
+   rules opt out under a glass wrapper rather than being overridden downstream
+   in liquid_glass.css. The gate is the rendered `data-glass` attribute, not
+   the `liquid_glass_enabled` config value: GlassEffect.setEnabled bails when
+   WebGL2 is unavailable and stays on the SVG goo, and on that fallback the
+   buttons are classic — so the theme tint must still apply. */
+body.theme-buttons:not(.night-mode)
+  .floating-toolbar-wrapper:not([data-glass="on"])
+  .tool-btn,
+body.theme-buttons.night-mode.ball-night-persist
+  .floating-toolbar-wrapper:not([data-glass="on"])
+  .tool-btn {
   filter: brightness(1.13);
   background: var(--theme-btn-color);
   box-shadow:
@@ -467,44 +499,19 @@ body.theme-buttons.night-mode.ball-night-persist .tool-btn {
     0 4px 10px rgba(0, 0, 0, 0.3);
 }
 
-/* Neutralize the default night-mode icon inversion so icon color is
-   driven purely by button background luminance in themed state. */
-body.theme-buttons.night-mode.ball-night-persist .tool-btn .inner,
-body.theme-buttons.night-mode.ball-night-persist .tool-btn .inner .tool-icon,
-body.theme-buttons.night-mode.ball-night-persist .tool-btn .rotate-icon {
-  filter: none;
+/* A themed button carries the user's own color in both light and night mode,
+   so the icon tracks *that color's* luminance rather than the light/night text
+   token — BallEditor sets .theme-buttons-dark-icon when the dominant gradient
+   stop falls below 0.5 relative luminance. Without this the night token would
+   paint white icons onto a pale custom tint. */
+body.theme-buttons:not(.night-mode),
+body.theme-buttons.night-mode.ball-night-persist {
+  --tool-icon-color: #222;
 }
 
-/* When the dominant color is dark enough, invert the (dark) icon artwork and
-   flip the inline rotate SVG to white via currentColor. */
-body.theme-buttons.theme-buttons-dark-icon:not(.night-mode)
-  .tool-btn
-  .inner
-  .tool-icon,
-body.theme-buttons.theme-buttons-dark-icon.night-mode.ball-night-persist
-  .tool-btn
-  .inner
-  .tool-icon {
-  filter: invert(1);
-}
-
-body.theme-buttons.theme-buttons-dark-icon:not(.night-mode)
-  .tool-btn
-  .inner
-  .rotate-icon,
-body.theme-buttons.theme-buttons-dark-icon.night-mode.ball-night-persist
-  .tool-btn
-  .inner
-  .rotate-icon {
-  color: #fff;
-}
-
-.night-mode .inner {
-  filter: invert(1);
-}
-
-.night-mode .rotate-icon {
-  filter: invert(1);
+body.theme-buttons.theme-buttons-dark-icon:not(.night-mode),
+body.theme-buttons.theme-buttons-dark-icon.night-mode.ball-night-persist {
+  --tool-icon-color: #fff;
 }
 
 .night-mode .jump-indicator {

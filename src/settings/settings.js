@@ -250,6 +250,7 @@ export class Settings {
                 <div class="settings-toggle-info">
                   <span class="settings-toggle-label">Theme-colored Buttons</span>
                   <span class="settings-toggle-description">Tint tool buttons with the floating ball's dominant color</span>
+                  <span class="settings-toggle-locked-note">*Overridden while the liquid glass effect is on</span>
                 </div>
                 <label class="settings-toggle-switch">
                   <input type="checkbox" class="ball-theme-buttons-toggle">
@@ -485,8 +486,9 @@ export class Settings {
         if (this.wm.toolbar) {
           this.wm.toolbar.setLiquidGlass(liquidGlassToggle.checked);
         }
-        // Lock the manual page-color picker to "adaptive" while glass is on.
-        this.ballStyle.setPageColorAdaptive(liquidGlassToggle.checked);
+        // Glass drives the page-number color from the backdrop and overrides
+        // the theme tint, so lock both of those controls while it's on.
+        this.ballStyle.setGlassActive(liquidGlassToggle.checked);
       });
     }
 

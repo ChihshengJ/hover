@@ -3,7 +3,7 @@
  */
 
 import { normalizeTitle } from "./trail_store.js";
-import { beginDragGuard, endDragGuard } from "../drag_guard.js";
+import { onPointerDrag } from "../pointer_gesture.js";
 
 const SVG_NS = "http://www.w3.org/2000/svg";
 
@@ -171,13 +171,10 @@ export class TrailOverlay {
     </svg>`;
     this.sidebar.appendChild(this.deleteBtn);
 
-    // Pan handling — no pointer capture, track drag vs click
+    // Pan handling — track drag vs click
     this.treeContainer.addEventListener("pointerdown", (e) =>
       this.#onPanStart(e),
     );
-    document.addEventListener("pointermove", (e) => this.#onPanMove(e));
-    document.addEventListener("pointerup", () => this.#onPanEnd());
-    document.addEventListener("pointercancel", () => this.#onPanEnd());
 
     // Scroll wheel to switch trails
     this.treeContainer.addEventListener("wheel", (e) => {
@@ -641,12 +638,15 @@ export class TrailOverlay {
 
   #onPanStart(e) {
     if (e.button !== 0) return;
-    // Suppress native text selection while panning the tree (Safari and
-    // Firefox would otherwise drag out a selection alongside the pan).
-    beginDragGuard();
     this.isPanning = true;
     this.wasDragged = false;
     this.panStartX = e.clientX - this.panOffsetX;
+    onPointerDrag(e, {
+      // No capture: it would retarget the click away from the tree nodes.
+      target: null,
+      onMove: (ev) => this.#onPanMove(ev),
+      onEnd: () => this.#onPanEnd(),
+    });
   }
 
   #onPanMove(e) {
@@ -665,8 +665,6 @@ export class TrailOverlay {
   }
 
   #onPanEnd() {
-    if (!this.isPanning) return;
     this.isPanning = false;
-    endDragGuard();
   }
 }

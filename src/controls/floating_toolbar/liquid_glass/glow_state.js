@@ -23,7 +23,7 @@
 /** Steady intensity while hovering (not pressed), 0..1. Tunable. */
 const HOVER_LEVEL = 0.3;
 /** Steady intensity while pressed / dragging, 0..1. Tunable. */
-const PRESS_LEVEL = 0.7;
+const PRESS_LEVEL = 0.6;
 /** Position ease rate, 1/s — higher tracks the pointer tighter. */
 const POS_RATE = 18;
 /** Intensity ease rates, 1/s — attack (rising) is snappier than release. */

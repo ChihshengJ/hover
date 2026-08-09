@@ -7,7 +7,7 @@
  */
 
 import { getSharedImageModal } from "../controls/image_modal.js";
-import { beginDragGuard, endDragGuard } from "../drag_guard.js";
+import { onPointerDrag } from "../pointer_gesture.js";
 
 const MIN_SELECTION_PX = 5;
 const RENDER_SCALE_FACTOR = 3;
@@ -28,6 +28,9 @@ export class RegionSelectController {
 
   /** @type {HTMLElement|null} */
   #boundScroller = null;
+
+  /** Ends the active drag early (deactivate / Escape). @type {(() => void)|null} */
+  #endDrag = null;
 
   // Bound event handlers (arrow functions for stable references)
   #onPointerDown = (e) => this.#handlePointerDown(e);
@@ -91,9 +94,6 @@ export class RegionSelectController {
     if (!page) return;
 
     e.preventDefault();
-    // preventDefault() on pointerdown doesn't stop native text selection
-    // on Safari/Firefox — the guard does.
-    beginDragGuard();
 
     this.#isDragging = true;
     this.#startPage = page;
@@ -104,8 +104,10 @@ export class RegionSelectController {
 
     this.#createOverlay(page, coords.x, coords.y);
 
-    document.addEventListener("pointermove", this.#onPointerMove);
-    document.addEventListener("pointerup", this.#onPointerUp);
+    this.#endDrag = onPointerDrag(e, {
+      onMove: this.#onPointerMove,
+      onEnd: this.#onPointerUp,
+    });
   }
 
   /** @param {PointerEvent} e */
@@ -129,12 +131,10 @@ export class RegionSelectController {
 
   /** @param {PointerEvent} e */
   #handlePointerUp(e) {
+    this.#endDrag = null;
     if (!this.#isDragging || !this.#startPage) return;
 
-    document.removeEventListener("pointermove", this.#onPointerMove);
-    document.removeEventListener("pointerup", this.#onPointerUp);
     this.#isDragging = false;
-    endDragGuard();
 
     const coords = this.#clientToPageCoords(
       e.clientX,
@@ -220,11 +220,11 @@ export class RegionSelectController {
 
   #cancelDrag() {
     if (!this.#isDragging) return;
+    // Cleared first so the onEnd below short-circuits instead of cropping.
     this.#isDragging = false;
     this.#startPage = null;
-    endDragGuard();
-    document.removeEventListener("pointermove", this.#onPointerMove);
-    document.removeEventListener("pointerup", this.#onPointerUp);
+    this.#endDrag?.();
+    this.#endDrag = null;
   }
 
   // ===========================================================================

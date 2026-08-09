@@ -113,12 +113,29 @@ body {
 }
 
 /* ===========================================
-   Drag guard
+   Selectable surface
    ===========================================
-   Applied to <body> by drag_guard.js while a custom pointer drag is in
-   progress. Safari/Firefox don't suppress native text selection on a
-   preventDefault()ed pointerdown, so we have to do it ourselves.
-   !important is needed to beat the inline user-select that
+   The text layer is the only selectable thing on a page, so a stray endpoint
+   (WebKit resolves them onto whatever renderer is under the pointer) can't
+   paint the <canvas>, the page label or an overlay as "selected". */
+
+.page-wrapper {
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.page-wrapper .textLayer {
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+/* ===========================================
+   Drag claim
+   ===========================================
+   Applied to <body> by pointer_gesture.js while a custom pointer drag is in
+   progress. It covers pointer types with no compatibility mouse events (touch,
+   pen); mouse input is handled by that module's mousedown/selectstart
+   suppression. !important beats the inline user-select that
    TextSelectionManager sets on endOfContent. */
 
 body.ui-dragging,

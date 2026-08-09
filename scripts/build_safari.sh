@@ -52,6 +52,16 @@ open(path, "w").write(src)
 print(f"[build_safari] Normalized bundle ids to {bundle_id}(.Extension)")
 EOF
 
+MACOS_MIN="${MACOS_MIN:-15.0}"
+MACOS_MIN="$MACOS_MIN" python3 - "$PBXPROJ" <<'EOF'
+import os, re, sys
+path, mn = sys.argv[1], os.environ["MACOS_MIN"]
+src = open(path).read()
+src = re.sub(r"MACOSX_DEPLOYMENT_TARGET = [^;]+", f"MACOSX_DEPLOYMENT_TARGET = {mn}", src)
+open(path, "w").write(src)
+print(f"[build_safari] Deployment target -> macOS {mn}")
+EOF
+
 # --- 2. Pick a signing team -------------------------------------------------
 # OU of the first Apple Development certificate in the keychain, unless
 # DEVELOPMENT_TEAM is set.

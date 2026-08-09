@@ -4,6 +4,7 @@
  */
 
 import { Config } from "./config.js";
+import { onPointerDrag } from "../pointer_gesture.js";
 
 export class BallEditor {
   /** @type {number} Max gradient stops */
@@ -564,11 +565,10 @@ export class BallEditor {
   _setupStopDrag(marker, idx, bar) {
     const onMove = (e) => {
       e.preventDefault();
-      const clientX = e.touches ? e.touches[0].clientX : e.clientX;
       const rect = bar.getBoundingClientRect();
       const clamped = Math.max(
         0,
-        Math.min(100, Math.round(((clientX - rect.left) / rect.width) * 100)),
+        Math.min(100, Math.round(((e.clientX - rect.left) / rect.width) * 100)),
       );
 
       this._ballStyle.gradient.stops[idx].position = clamped;
@@ -590,11 +590,6 @@ export class BallEditor {
     const onUp = () => {
       marker.classList.remove("dragging");
       this._isDraggingStop = false;
-      document.removeEventListener("pointermove", onMove);
-      document.removeEventListener("pointerup", onUp);
-      document.removeEventListener("touchmove", onMove);
-      document.removeEventListener("touchend", onUp);
-
       this._refreshStopDetail();
     };
 
@@ -615,14 +610,10 @@ export class BallEditor {
       this._isDraggingStop = true;
       marker.classList.add("dragging");
 
-      document.addEventListener("pointermove", onMove);
-      document.addEventListener("pointerup", onUp);
-      document.addEventListener("touchmove", onMove, { passive: false });
-      document.addEventListener("touchend", onUp);
+      onPointerDrag(e, { onMove, onEnd: onUp });
     };
 
     marker.addEventListener("pointerdown", onDown);
-    marker.addEventListener("touchstart", onDown, { passive: false });
   }
 
   /**

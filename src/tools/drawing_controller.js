@@ -13,6 +13,7 @@
 import { DrawingCanvasLayer } from "../annotation/drawing/drawing_canvas_layer.js";
 import { DrawingToolbar } from "../annotation/drawing/drawing_toolbar.js";
 import { LazyBrush } from "../annotation/drawing/lazy_brush.js";
+import { onPointerDrag } from "../pointer_gesture.js";
 
 const COMMIT_DELAY_MS = 1000;
 
@@ -230,8 +231,10 @@ export class DrawingController {
 
     this.#updateBrushCursor(brush, page);
 
-    document.addEventListener("pointermove", this.#onPointerMove);
-    document.addEventListener("pointerup", this.#onPointerUp);
+    onPointerDrag(e, {
+      onMove: this.#onPointerMove,
+      onEnd: this.#onPointerUp,
+    });
   }
 
   /** @param {PointerEvent} e */
@@ -264,9 +267,6 @@ export class DrawingController {
   /** @param {PointerEvent} e */
   #handlePointerUp(e) {
     if (!this.#isDrawing || !this.#currentPage) return;
-
-    document.removeEventListener("pointermove", this.#onPointerMove);
-    document.removeEventListener("pointerup", this.#onPointerUp);
 
     if (this.#brushCursor) this.#brushCursor.style.display = "none";
 

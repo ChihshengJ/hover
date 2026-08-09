@@ -119,7 +119,7 @@ export class Settings {
           <!-- ─── Floating Ball Section ─── -->
           <div class="settings-section">
             <div class="settings-section-header">
-              <h3 class="settings-section-title">Floating Controller</h3>
+              <h3 class="settings-section-title">Controller</h3>
             </div>
             <div class="ball-style-editor" id="ball-style-editor">
 
@@ -238,7 +238,7 @@ export class Settings {
               <div class="settings-toggle-row">
                 <div class="settings-toggle-info">
                   <span class="settings-toggle-label">Liquid Glass Controller</span>
-                  <span class="settings-toggle-description">Render the floating controller and buttons as liquid glass (experimental, Chrome is recommended for the full experience)</span>
+                  <span class="settings-toggle-description">Render the controller and buttons as liquid glass (experimental, Chrome is recommended for the full experience)</span>
                 </div>
                 <label class="settings-toggle-switch">
                   <input type="checkbox" class="liquid-glass-toggle">
@@ -249,7 +249,7 @@ export class Settings {
               <div class="settings-toggle-row">
                 <div class="settings-toggle-info">
                   <span class="settings-toggle-label">Theme-colored Buttons</span>
-                  <span class="settings-toggle-description">Tint tool buttons with the floating ball's dominant color</span>
+                  <span class="settings-toggle-description">Tint tool buttons with the controller's dominant color</span>
                   <span class="settings-toggle-locked-note">*Overridden while the liquid glass effect is on</span>
                 </div>
                 <label class="settings-toggle-switch">
@@ -300,8 +300,8 @@ export class Settings {
               </div>
               <div class="settings-toggle-row">
                 <div class="settings-toggle-info">
-                  <span class="settings-toggle-label">Persist Floating Controller</span>
-                  <span class="settings-toggle-description">Keep the custom ball style in night mode instead of the default dark style</span>
+                  <span class="settings-toggle-label">Persist Controller Style</span>
+                  <span class="settings-toggle-description">Keep the custom controller style in night mode instead of the default dark style</span>
                 </div>
                 <label class="settings-toggle-switch">
                   <input type="checkbox" class="ball-night-persist-toggle">

@@ -10,6 +10,9 @@ export class BallEditor {
   /** @type {number} Max gradient stops */
   static MAX_STOPS = 3;
 
+  /** @type {number} Window for reading two marker presses as a double-click */
+  static DOUBLE_CLICK_MS = 400;
+
   /**
    * Default ball style matching the CSS variables in _variables.css.
    * Authoritative copy lives in Config.DEFAULTS.ball_style.
@@ -30,6 +33,8 @@ export class BallEditor {
     this._selectedStopIndex = 0;
     /** @type {boolean} Whether a stop is being dragged */
     this._isDraggingStop = false;
+    /** @type {{idx: number, at: number}|null} Last marker press, for double-click */
+    this._lastStopDown = null;
     /** @type {number} Debounce timer for saving ball style */
     this._ballSaveTimer = null;
     /** @type {HTMLElement|null} Reference to the settings overlay */
@@ -536,34 +541,7 @@ export class BallEditor {
         marker.appendChild(removeBtn);
       }
 
-      // Hidden color input for this stop
-      const colorInput = document.createElement("input");
-      colorInput.type = "color";
-      colorInput.className = "gradient-stop-color-input";
-      colorInput.value = stop.color;
-      colorInput.addEventListener("input", () => {
-        stop.color = colorInput.value;
-        marker.style.backgroundColor = colorInput.value;
-        this._onBallStyleChanged();
-        this._refreshStopDetail();
-      });
-      marker.appendChild(colorInput);
-
-      // Click to select
-      marker.addEventListener("click", (e) => {
-        e.stopPropagation();
-        this._selectedStopIndex = idx;
-        this._refreshStopMarkers();
-        this._refreshStopDetail();
-      });
-
-      // Double-click to open color picker
-      marker.addEventListener("dblclick", (e) => {
-        e.stopPropagation();
-        colorInput.click();
-      });
-
-      // Drag handling
+      // Selection, double-click and drag all start from pointerdown.
       this._setupStopDrag(marker, idx, bar);
 
       bar.appendChild(marker);
@@ -576,6 +554,9 @@ export class BallEditor {
    * on the existing marker and updates the data model + previews.
    */
   _setupStopDrag(marker, idx, bar) {
+    /** Set while the current press is the second half of a double-click. */
+    let pickerPending = false;
+
     const onMove = (e) => {
       e.preventDefault();
       const rect = bar.getBoundingClientRect();
@@ -583,6 +564,12 @@ export class BallEditor {
         0,
         Math.min(100, Math.round(((e.clientX - rect.left) / rect.width) * 100)),
       );
+
+      // A press that moved the stop is a drag, not half of a double-click.
+      if (this._ballStyle.gradient.stops[idx].position !== clamped) {
+        this._lastStopDown = null;
+        pickerPending = false;
+      }
 
       this._ballStyle.gradient.stops[idx].position = clamped;
       marker.style.left = `${clamped}%`;
@@ -604,14 +591,29 @@ export class BallEditor {
       marker.classList.remove("dragging");
       this._isDraggingStop = false;
       this._refreshStopDetail();
+
+      if (pickerPending) {
+        pickerPending = false;
+        this._openStopColorPicker();
+      }
     };
 
     const onDown = (e) => {
       if (e.target.closest(".gradient-stop-remove")) return;
-      if (e.target.closest(".gradient-stop-color-input")) return;
 
       e.preventDefault();
       e.stopPropagation();
+
+      // Double-click opens the picker, on release — a second press that turns
+      // into a drag stays a drag. Tracked here rather than through a `dblclick`
+      // listener: this handler suppresses the native gesture, and the marker is
+      // rebuilt between clicks, so neither the event nor its target survives on
+      // every engine.
+      const now = performance.now();
+      pickerPending =
+        this._lastStopDown?.idx === idx &&
+        now - this._lastStopDown.at < BallEditor.DOUBLE_CLICK_MS;
+      this._lastStopDown = pickerPending ? null : { idx, at: now };
 
       // Select this stop — update classes directly instead of rebuilding
       this._selectedStopIndex = idx;
@@ -650,14 +652,42 @@ export class BallEditor {
   }
 
   /**
+   * Open the native picker for the selected stop's color input.
+   *
+   * WebKit only opens a color picker for an input the user clicked directly,
+   * or one `showPicker()` names — and in both cases the input must be laid out
+   * and hit-testable. A synthetic `.click()` on an off-screen input, which is
+   * what the stop markers used to carry, is silently ignored there while
+   * Blink and Gecko honour it. The detail row's input is a real box under the
+   * swatch, so it works as a picker anchor on every engine.
+   */
+  _openStopColorPicker() {
+    const input = this._overlay?.querySelector("#stop-detail-color");
+    if (!input) return;
+
+    // The input was just re-created by _refreshStopDetail; WebKit needs it
+    // laid out before it can anchor a picker to it.
+    void input.offsetWidth;
+
+    try {
+      input.showPicker();
+    } catch {
+      // No showPicker (or it refused): the plain activation path still works
+      // where the input is rendered.
+      input.click();
+    }
+  }
+
+  /**
    * Render the selected stop detail row (swatch + hex + position).
    */
   _refreshStopDetail() {
     const container = this._overlay?.querySelector("#gradient-stop-detail");
     if (!container) return;
 
+    const idx = this._selectedStopIndex;
     const stops = this._ballStyle.gradient.stops;
-    const stop = stops[this._selectedStopIndex];
+    const stop = stops[idx];
 
     if (!stop) {
       container.innerHTML = `<span class="empty">No stop selected</span>`;
@@ -668,30 +698,41 @@ export class BallEditor {
     container.classList.remove("empty");
     container.innerHTML = `
       <div class="stop-color-swatch" id="stop-detail-swatch"
-           style="background-color: ${stop.color}" title="Click to change color"></div>
+           style="background-color: ${stop.color}" title="Click to change color">
+        <input type="color" class="stop-color-native-input" id="stop-detail-color"
+               value="${stop.color}">
+      </div>
       <input type="text" class="stop-hex-input" id="stop-detail-hex"
              value="${stop.color}" spellcheck="false" maxlength="7">
       <span class="stop-position-label">${stop.position}%</span>
     `;
 
     const swatch = container.querySelector("#stop-detail-swatch");
+    const colorInput = container.querySelector("#stop-detail-color");
     const hexInput = container.querySelector("#stop-detail-hex");
 
-    swatch.addEventListener("click", () => {
+    /** Push a new color everywhere without rebuilding the live picker's input. */
+    const setColor = (val) => {
+      stop.color = val;
+      swatch.style.backgroundColor = val;
       const marker = this._overlay?.querySelector(
-        `.gradient-stop[data-index="${this._selectedStopIndex}"] .gradient-stop-color-input`,
+        `.gradient-stop[data-index="${idx}"]`,
       );
-      if (marker) marker.click();
+      if (marker) marker.style.backgroundColor = val;
+      this._onBallStyleChanged();
+    };
+
+    colorInput.addEventListener("input", () => {
+      hexInput.value = colorInput.value;
+      setColor(colorInput.value);
     });
 
     hexInput.addEventListener("input", () => {
       let val = hexInput.value.trim();
       if (!val.startsWith("#")) val = "#" + val;
       if (/^#[0-9a-fA-F]{6}$/.test(val)) {
-        stop.color = val;
-        swatch.style.backgroundColor = val;
-        this._onBallStyleChanged();
-        this._refreshStopMarkers();
+        colorInput.value = val;
+        setColor(val);
       }
     });
 

@@ -62,33 +62,84 @@ const float GLOW_PRESS_R  = 20.0;
 const float GLOW_GAIN    = 0.45;
 const float GLOW_ALPHA   = 0.25;
 
-float smin(float a, float b, float k) {
-  float h = clamp(0.5 + 0.5 * (b - a) / k, 0.0, 1.0);
-  return mix(b, a, h) - k * h * (1.0 - h);
+/**
+ * The field and its exact gradient: vec3(gradient.xy, distance).
+ *
+ * The two circles are joined by the cubic (C2) polynomial smooth-min
+ *   smin(a, b, k) = min(a, b) - h^3 * k / 6,  h = max(k - |a - b|, 0) / k
+ * inlined below. The quadratic form this replaces is only C1: its second
+ * derivative steps where the clamp releases, so the silhouette's curvature
+ * jumped discontinuously at |a - b| = k (measured: 1/35 exactly, then 35%
+ * lower one sample later). Shading reads curvature, so a G1-but-not-G2 join
+ * is invisible in the outline and shows as a hard crease in the rim — the
+ * "glass cone edge" on the stretched bridge. h^3 has zero first *and*
+ * second derivative at h = 0, which removes it. Peak correction is k/6
+ * against the quadratic's k/4, so u_k carries a matching 1.5x (see
+ * GooState.sample) and the silhouette is otherwise unchanged.
+ * refraction_map.js's smin() must stay identical to this.
+ *
+ * The gradient is analytic rather than dFdx/dFdy-derived — screen
+ * derivatives are constant across a 2x2 fragment quad, which is enough to
+ * stipple the rim on a shape this small. Differentiating the above:
+ *   grad = (g1 + g2)/2 + sign(a - b) * (h^2 - 1)/2 * (g1 - g2)
+ * The sign() discontinuity at a == b is multiplied by (h^2 - 1), which is
+ * exactly 0 there, so the gradient stays continuous across the seam.
+ *
+ * Note |grad| < 1 wherever the two circles blend (it sags to ~0.78 over a
+ * fully stretched bridge): a smooth-min is not a distance field. Callers
+ * that spend the distance in px must divide it out.
+ */
+vec3 fieldAndGrad(vec2 p) {
+  vec2 r1 = p - u_ball.xy;
+  vec2 r2 = p - u_blob.xy;
+  float l1 = max(length(r1), 1e-5);
+  float l2 = max(length(r2), 1e-5);
+  float a = l1 - u_ball.z;
+  float b = l2 - u_blob.z;
+  vec2 g1 = r1 / l1;
+  vec2 g2 = r2 / l2;
+
+  float u = a - b;
+  float h = max(u_k - abs(u), 0.0) / u_k;
+  float d = min(a, b) - h * h * h * u_k * (1.0 / 6.0);
+  vec2  g = 0.5 * (g1 + g2) + 0.5 * sign(u) * (h * h - 1.0) * (g1 - g2);
+  return vec3(g, d);
 }
 
-float field(vec2 p) {
-  float d1 = length(p - u_ball.xy) - u_ball.z;
-  float d2 = length(p - u_blob.xy) - u_blob.z;
-  return smin(d1, d2, u_k);
+/** Euclidean-corrected distance, px — see fieldAndGrad's |grad| note. */
+float fieldDist(vec2 p) {
+  vec3 fg = fieldAndGrad(p);
+  return fg.z / max(length(fg.xy), 1e-4);
 }
 
 void main() {
   // DOM-matched coordinates: CSS px, origin top-left, y-down.
   vec2 p = vec2(gl_FragCoord.x, u_size.y * u_dpr - gl_FragCoord.y) / u_dpr;
 
-  float d = field(p);
-  float aa = max(fwidth(d), 0.001);
-  float body = smoothstep(aa, -aa, d);
+  // Distance and outward normal in one evaluation.
+  vec3 fg = fieldAndGrad(p);
+  float gm = max(length(fg.xy), 1e-4);
+  vec2 g = fg.xy / gm;
+
+  // Silhouette AA runs on the *raw* field: fwidth already divides out the
+  // field's local scale, and the raw value stays finite at the interior
+  // point where the two circles' gradients cancel (|grad| -> 0). The
+  // normalized distance blows up there, and fwidth of it with it, which
+  // would punch a soft hole through the middle of the bridge.
+  float aa = max(fwidth(fg.z), 0.001);
+  float body = smoothstep(aa, -aa, fg.z);
+
+  // Everything below spends the distance as an absolute length in px, so it
+  // uses the gradient-normalized distance: the raw smooth-min under-reports
+  // depth by up to 1.28x over the bridge, which used to fatten the rim band
+  // exactly where the blend seam already drew the eye. Near that same
+  // interior singularity d -> -inf, which every consumer below saturates on
+  // as "deep interior" — the correct answer there.
+  float d = fg.z / gm;
 
   // Soft shadow below the shape, only visible outside the body.
-  float ds = field(p - vec2(0.0, 6.0));
+  float ds = fieldDist(p - vec2(0.0, 6.0));
   float shadow = (1.0 - body) * smoothstep(8.0, -12.0, ds) * 0.32;
-
-  // Outward silhouette direction from the field's screen-space gradient.
-  vec2 g = vec2(dFdx(d), dFdy(d)) * u_dpr;
-  float gl2 = length(g);
-  g = gl2 > 1e-5 ? g / gl2 : vec2(0.0);
 
   // Bimodal rim: a band hugging the edge, bright where it faces the
   // light, half-bright on the opposite edge, faint everywhere else.

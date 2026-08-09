@@ -111,20 +111,26 @@ export class GlassEffect {
     this.state = new GooState({ cx: c, cy: c, ballR: BALL_R });
     this.glow = new GlowState({ cx: c, cy: c });
 
-    // Hover glow is self-contained here (DragController is untouched): the
-    // ball is the top hit layer, so it sees pointer moves both while merely
-    // hovering and — via pointer capture — throughout a drag.
+    // Hover glow and hover swell are self-contained here (DragController is
+    // untouched): the ball is the top hit layer, so it sees pointer moves
+    // both while merely hovering and — via pointer capture — throughout a
+    // drag. The swell is the glass replacement for `.goo-container:hover`'s
+    // CSS scale, which liquid_glass.css suppresses; see GooState's
+    // HOVER_SWELL for why the size change can't ride a transform here.
     this._onHoverMove = (e) => {
       this.#setGlowFromClient(e.clientX, e.clientY);
       this.glow.setHovering(true);
+      this.state.setHovering(true);
       this.#wake();
     };
     this._onHoverEnter = () => {
       this.glow.setHovering(true);
+      this.state.setHovering(true);
       this.#wake();
     };
     this._onHoverLeave = () => {
       this.glow.setHovering(false);
+      this.state.setHovering(false);
       this.#wake();
     };
 
@@ -312,6 +318,11 @@ export class GlassEffect {
     this.ball?.removeEventListener("pointerleave", this._onHoverLeave);
     this.glow.setHovering(false);
     this.glow.setPressed(false);
+    this.state.setHovering(false);
+    // The loop is stopping, so nothing will spring the swell back down —
+    // snap it so a re-enable starts from the rest radius.
+    this.state.swell = 0;
+    this.state.swellVel = 0;
     this.renderer?.destroy();
     this.renderer = null;
     this.backdrop?.remove();

@@ -119,7 +119,7 @@ export class Settings {
           <!-- ─── Floating Ball Section ─── -->
           <div class="settings-section">
             <div class="settings-section-header">
-              <h3 class="settings-section-title">Floating Ball</h3>
+              <h3 class="settings-section-title">Floating Controller</h3>
             </div>
             <div class="ball-style-editor" id="ball-style-editor">
 
@@ -139,7 +139,7 @@ export class Settings {
 
                 <!-- Gradient Editor -->
                 <div class="ball-control-group">
-                  <span class="ball-control-label">Ball Color</span>
+                  <span class="ball-control-label">Controller Color</span>
                   <div class="gradient-editor" id="gradient-editor">
 
                     <!-- Gradient bar with stops -->
@@ -195,7 +195,7 @@ export class Settings {
                     <input type="text" class="page-color-hex" id="page-color-hex"
                            placeholder="#000000" spellcheck="false" maxlength="7">
                   </div>
-                  <span class="page-color-adaptive-note">*Adaptive when liquid glass is on</span>
+                  <span class="page-color-adaptive-note">*Adaptive when the liquid glass effect is on</span>
                 </div>
 
               </div>
@@ -237,8 +237,8 @@ export class Settings {
               </div>
               <div class="settings-toggle-row">
                 <div class="settings-toggle-info">
-                  <span class="settings-toggle-label">Liquid Glass Ball</span>
-                  <span class="settings-toggle-description">Render the floating ball and buttons as translucent glass (experimental)</span>
+                  <span class="settings-toggle-label">Liquid Glass Controller</span>
+                  <span class="settings-toggle-description">Render the floating controller and buttons as liquid glass (experimental, Chrome is recommended for the full experience)</span>
                 </div>
                 <label class="settings-toggle-switch">
                   <input type="checkbox" class="liquid-glass-toggle">
@@ -299,7 +299,7 @@ export class Settings {
               </div>
               <div class="settings-toggle-row">
                 <div class="settings-toggle-info">
-                  <span class="settings-toggle-label">Persist Floating Ball</span>
+                  <span class="settings-toggle-label">Persist Floating Controller</span>
                   <span class="settings-toggle-description">Keep the custom ball style in night mode instead of the default dark style</span>
                 </div>
                 <label class="settings-toggle-switch">

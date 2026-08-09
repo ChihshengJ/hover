@@ -15,6 +15,46 @@
   content: none;
 }
 
+/* ===========================================
+   Never transform an ancestor of the glass layers
+   ===========================================
+   `.goo-container:hover` grows the ball with a CSS scale, and the glass
+   layers live inside that container. Scaling an ancestor of a
+   backdrop-filtered element makes Chromium (on the SVG refraction path)
+   and Gecko (on every backdrop-filter) re-register the backdrop against
+   the live transform each frame: the page seen *through* the glass swims
+   while the scale animates, and the overshooting bounce easing swings it
+   out and back — the jiggle. Safari does the spec's transform round trip
+   and is unaffected.
+
+   So in glass mode the container stays put and the swell is rendered as
+   geometry instead — GooState springs the ball radius, which grows the
+   shader silhouette and the refraction map inside a fixed, untransformed
+   200px box (see HOVER_SWELL in goo_state.js). Physically truer too: a
+   growing lens should reveal more of the page, not magnify it. */
+[data-glass="on"] .goo-container:hover:not(.dragging) {
+  transform: none;
+}
+
+/* The digits still scale with the ball — .floating-ball is the hit/text
+   layer above the glass and carries no backdrop-filter of its own, so
+   transforming it costs nothing. Keeping the scale here also preserves the
+   grown hover hit area the container scale used to provide. */
+[data-glass="on"] .floating-ball {
+  transition: transform var(--transition-bounce);
+}
+[data-glass="on"] .goo-container:hover:not(.dragging) .floating-ball {
+  transform: scale(1.1);
+}
+
+/* The will-change hint exists to cache the SVG #goo filter texture on
+   ::before, which glass mode disables outright (rule at the top). With the
+   container no longer animating either, it would only pin a compositor
+   layer nothing draws into. */
+[data-glass="on"] .goo-container {
+  will-change: auto;
+}
+
 /* Native frost: blurs the live page behind the ball (PDF canvases with
    night-mode inversion included). GlassEffect shapes it per frame — via
    clip-path to the Bézier metaball outline here, or via the refraction

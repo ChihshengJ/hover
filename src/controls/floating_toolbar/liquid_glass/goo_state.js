@@ -3,7 +3,8 @@
  *
  * Models two circles in canvas-local CSS px (y-down):
  *   - the ball: fixed at the container center, radius perturbed by a
- *     decaying click impulse ("bump") for the jelly bounce,
+ *     decaying click impulse ("bump") for the jelly bounce and by the
+ *     hover swell (see below),
  *   - the lag blob: spring-follows the pointer during a drag and shrinks
  *     back into the ball on release. The renderer's smooth-min of the two
  *     circle SDFs produces the dough bridge between them.
@@ -31,6 +32,30 @@ const BUMP_FREQ = 24;
 /** Impulse is fully decayed after this many seconds. */
 const BUMP_LIFETIME = 1.2;
 
+/**
+ * Hover swell: radius multiplier while the pointer is over the ball.
+ * Matches the 1.1 of `.goo-container:hover` — but in glass mode the swell
+ * has to be *geometry*, not a CSS transform on the container. Scaling an
+ * ancestor of a backdrop-filtered layer makes Chromium (on the SVG
+ * refraction path) and Gecko (on every backdrop-filter) re-register the
+ * backdrop against the live transform each frame, so the page seen through
+ * the glass swims while the scale animates — and the overshooting bounce
+ * easing turns that swim into a visible jiggle. Growing the SDF instead
+ * leaves the glass layers untransformed, so the backdrop stays pinned and
+ * only the silhouette moves.
+ */
+const HOVER_SWELL = 1.1;
+/**
+ * Swell spring, rad/s + damping ratio. Underdamped so the radius lands with
+ * the same small overshoot as the CSS bounce easing the SVG ball animates
+ * with (var(--transition-bounce)).
+ */
+const SWELL_OMEGA = 26;
+const SWELL_ZETA = 0.6;
+/** Settle thresholds for the swell spring. */
+const SWELL_EPS = 0.002;
+const SWELL_VEL_EPS = 0.02;
+
 export class GooState {
   /**
    * @param {Object} opts
@@ -51,6 +76,10 @@ export class GooState {
     this.targetY = cy;
     this.blobR = 0;
     this.dragging = false;
+    this.hovering = false;
+    /** Hover swell progress, 0 (rest) → 1 (fully swollen). Spring-eased. */
+    this.swell = 0;
+    this.swellVel = 0;
     /** Seconds since the last pulse; Infinity = no pulse pending. */
     this.pulseT = Infinity;
   }
@@ -78,6 +107,20 @@ export class GooState {
     }
   }
 
+  /** @param {boolean} on Pointer is over the ball. */
+  setHovering(on) {
+    this.hovering = on;
+  }
+
+  /**
+   * Swell the radius eases toward, 0..1. Suppressed while dragging, which
+   * mirrors the `:not(.dragging)` on the CSS hover rule: a ball being
+   * dragged sits at its rest size and lets the lag blob do the deforming.
+   */
+  get #swellTarget() {
+    return this.hovering && !this.dragging ? 1 : 0;
+  }
+
   /** Trigger the click bounce. */
   pulse() {
     this.pulseT = 0;
@@ -103,6 +146,14 @@ export class GooState {
     const targetR = this.dragging ? ACTIVE_BLOB_R : 0;
     this.blobR += (targetR - this.blobR) * (1 - Math.exp(-10 * dt));
 
+    // Hover swell: damped spring on the 0..1 progress, x'' = -ω²(x − t) − 2ζωx'
+    const swellTarget = this.#swellTarget;
+    const as =
+      -SWELL_OMEGA * SWELL_OMEGA * (this.swell - swellTarget) -
+      2 * SWELL_ZETA * SWELL_OMEGA * this.swellVel;
+    this.swellVel += as * dt;
+    this.swell += this.swellVel * dt;
+
     if (isFinite(this.pulseT)) {
       this.pulseT += dt;
     }
@@ -115,12 +166,17 @@ export class GooState {
     return BUMP_AMP * Math.exp(-BUMP_DECAY * t) * Math.cos(BUMP_FREQ * t);
   }
 
+  /** Radius multiplier from the hover swell, 1 at rest → HOVER_SWELL. */
+  get swellScale() {
+    return 1 + (HOVER_SWELL - 1) * this.swell;
+  }
+
   /** Snapshot for the renderer / clip-path generator. */
   sample() {
     return {
       ballX: this.cx,
       ballY: this.cy,
-      ballR: this.ballR * (1 + this.bump),
+      ballR: this.ballR * this.swellScale * (1 + this.bump),
       blobX: this.blobX,
       blobY: this.blobY,
       blobR: this.blobR,
@@ -140,7 +196,9 @@ export class GooState {
       Math.abs(this.blobY - this.targetY) < 0.1 &&
       Math.abs(this.velX) < 0.5 &&
       Math.abs(this.velY) < 0.5 &&
-      this.blobR < 0.1
+      this.blobR < 0.1 &&
+      Math.abs(this.swell - this.#swellTarget) < SWELL_EPS &&
+      Math.abs(this.swellVel) < SWELL_VEL_EPS
     );
   }
 }

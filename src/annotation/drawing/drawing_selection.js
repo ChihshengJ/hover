@@ -231,7 +231,6 @@ export class DrawingSelectionManager {
     this.#origRotation = this.#selectedAnnotation?.rotation || 0;
 
     onPointerDrag(e, {
-      target: e.currentTarget instanceof Element ? e.currentTarget : this.#bbox,
       onMove: this.#onDragMove,
       onEnd: this.#onDragEnd,
     });

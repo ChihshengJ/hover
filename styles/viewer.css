@@ -115,10 +115,9 @@ body {
 /* ===========================================
    Selectable surface
    ===========================================
-   The text layer is the only selectable thing on a page. Saying so up front
-   keeps a selection that runs past a text layer — WebKit resolves stray
-   endpoints onto whatever renderer is under the pointer — from painting the
-   <canvas>, the page label or an overlay as "selected". */
+   The text layer is the only selectable thing on a page, so a stray endpoint
+   (WebKit resolves them onto whatever renderer is under the pointer) can't
+   paint the <canvas>, the page label or an overlay as "selected". */
 
 .page-wrapper {
   -webkit-user-select: none;
@@ -131,13 +130,13 @@ body {
 }
 
 /* ===========================================
-   Drag guard
+   Drag claim
    ===========================================
    Applied to <body> by pointer_gesture.js while a custom pointer drag is in
    progress. It covers pointer types with no compatibility mouse events (touch,
-   pen); for mouse input the mousedown/selectstart suppression in that module
-   is what actually stops WebKit and Gecko. !important is needed to beat the
-   inline user-select that TextSelectionManager sets on endOfContent. */
+   pen); mouse input is handled by that module's mousedown/selectstart
+   suppression. !important beats the inline user-select that
+   TextSelectionManager sets on endOfContent. */
 
 body.ui-dragging,
 body.ui-dragging * {

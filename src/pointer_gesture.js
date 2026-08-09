@@ -2,44 +2,26 @@
  * Pointer gesture ownership — the single place that decides who drives a
  * gesture: the browser's native selection machinery, or our own code.
  *
- * WHY THIS EXISTS
- * ---------------
  * `preventDefault()` on `pointerdown` cancels the native text-selection
- * gesture **only in Blink**. WebKit and Gecko dispatch `pointerdown` as an
- * observer event: the selection is started by the default action of the
- * following `mousedown` (and announced by `selectstart`). So code that calls
- * `e.preventDefault()` in a `pointerdown` handler and assumes "no native
- * selection will happen" is silently Chrome-only — in Safari the native
- * selection runs *in parallel* with whatever the handler implements.
+ * gesture only in Blink; WebKit and Gecko start it from the default action of
+ * the following `mousedown` (announced by `selectstart`). The `ui-dragging`
+ * class is the complement: `user-select: none` is the only lever for pointer
+ * types with no compatibility mouse events (touch, pen), but it cannot abort a
+ * selection WebKit has already armed.
  *
- * Toggling `user-select` on <body> (the `ui-dragging` class) is the other
- * half: it is the only mechanism all three engines respect for pointer types
- * that have no compatibility mouse events (touch, pen). It cannot replace the
- * mousedown lever — in WebKit `user-select: none` stops a selection from
- * starting, it does not abort one the engine has already armed.
+ * Which to call:
+ *   custom drag — control, handle, resizer, pan, drawing, region select
+ *     -> beginDragGesture(), or onPointerDrag() for the common drag shape
+ *   selection we compute in JS (viewpane's nearest-span selection)
+ *     -> beginCustomSelectionGesture(); the `user-select: none` blanket is
+ *        omitted, since it would block our own programmatic ranges
+ *   native browser selection (pointerdown on a .textLayer span)
+ *     -> claim nothing; TextSelectionManager constrains it via endOfContent
  *
- * DECISION TREE — which one do I call?
- * ------------------------------------
- *   The gesture starts a custom drag (control, handle, resizer, pan, drawing,
- *   region select)?
- *     -> beginDragGesture(), or onPointerDrag() for the common drag shape.
- *        Nothing may be selected for the whole gesture.
- *
- *   The gesture drives a selection that *we* compute in JS (viewpane's
- *   nearest-span selection)?
- *     -> beginCustomSelectionGesture(). The engine must not run its own
- *        selection, but programmatic ranges must still work, so the
- *        `user-select: none` blanket is NOT applied.
- *
- *   The gesture lets the browser select text natively (pointerdown landing on
- *   a .textLayer span)?
- *     -> Claim nothing. TextSelectionManager constrains it via endOfContent.
- *
- * Both claim functions must be called synchronously from the `pointerdown`
- * handler — the only point that still precedes `mousedown` on every engine.
- * Each returns a `release()`; calling it twice is safe, and the claim
- * self-releases on pointerup/pointercancel/blur, so a missed release can never
- * strand the document in a non-interactive state.
+ * Both claim functions must be called synchronously from `pointerdown` — the
+ * last point that precedes `mousedown` on every engine. Each returns an
+ * idempotent `release()` that also fires on pointerup/pointercancel/blur, so a
+ * missed release cannot strand the document.
  */
 
 /** Claims that suppress the engine's own selection for this gesture. */
@@ -51,9 +33,8 @@ const swallow = (e) => e.preventDefault();
 
 function suppressNativeSelection() {
   if (++nativeClaims === 1) {
-    // mousedown: cancelling its default action is what actually stops WebKit
-    // and Gecko from starting a selection. selectstart: an independent belt
-    // for gestures that reach the engine by another path.
+    // mousedown is the lever WebKit and Gecko actually respect; selectstart
+    // catches gestures that reach the engine by another path.
     document.addEventListener("mousedown", swallow, true);
     document.addEventListener("selectstart", swallow, true);
   }
@@ -129,15 +110,20 @@ export function beginCustomSelectionGesture() {
  * @param {object} [opts]
  * @param {(e: PointerEvent) => void} [opts.onMove]
  * @param {(e: PointerEvent) => void} [opts.onEnd]
- * @param {Element} [opts.target] capture target; defaults to the handler's element
- * @returns {() => void} cancel — ends the drag early
+ * @param {Element|null} [opts.target] capture target; defaults to the handler's
+ *   element. Pass `null` where capture would get in the way — it retargets
+ *   `click` to the capturing element, past any handler on a descendant.
+ * @returns {() => void} end — ends the drag now; `onEnd` still runs
  */
 export function onPointerDrag(event, { onMove, onEnd, target } = {}) {
   const release = beginDragGesture();
   const { pointerId } = event;
   const captureTarget =
-    target ??
-    (event.currentTarget instanceof Element ? event.currentTarget : null);
+    target === undefined
+      ? event.currentTarget instanceof Element
+        ? event.currentTarget
+        : null
+      : target;
 
   try {
     captureTarget?.setPointerCapture(pointerId);

@@ -368,9 +368,8 @@ export class ViewerPane {
       if (dx * dx + dy * dy > maxDistance * maxDistance) return;
 
       e.preventDefault();
-      // Blink stops here; WebKit/Gecko would otherwise start their own
-      // selection alongside ours and the two would fight over the range for
-      // the rest of the gesture.
+      // preventDefault() above only suppresses the engine's own selection on
+      // Blink; WebKit/Gecko need the claim.
       releaseGesture = beginCustomSelectionGesture();
 
       isSelecting = true;

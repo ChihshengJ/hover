@@ -14,16 +14,11 @@ export class TextSelectionManager {
   #isPointerDown = false;
 
   /**
-   * Whether the current pointer gesture started inside a text layer.
-   * Selections caused by other drags (floating ball, resizer, region
-   * select, ...) must not trigger the endOfContent machinery.
-   * @type {boolean}
-   */
-  #pointerDownInTextLayer = false;
-
-  /**
-   * The text layer the live pointer gesture started in — the reference every
-   * other layer's endOfContent is parked against for the duration.
+   * The text layer the live pointer gesture started in, or null when the
+   * gesture started elsewhere — selections dragged out by other gestures
+   * (floating ball, resizer, region select, ...) must not trigger the
+   * endOfContent machinery. Doubles as the reference every other layer's
+   * endOfContent is parked against for the duration.
    * @type {HTMLElement|null}
    */
   #gestureLayer = null;
@@ -117,10 +112,9 @@ export class TextSelectionManager {
   /**
    * Reset a text layer's selection state.
    *
-   * `referenceLayer` is the layer the live gesture is anchored in, if any. A
-   * layer the selection has left is still a layer the drag may re-enter, so it
-   * keeps its overlay parked on the near edge rather than returning it to the
-   * end of the layer — see #parkEndOfContent.
+   * A layer the selection has left is still one the drag may re-enter, so when
+   * a gesture is live its overlay is parked on the edge facing
+   * `referenceLayer` instead of returning to the end of the layer.
    *
    * @param {{endOfContent: HTMLElement, pageView: import('./page.js').PageView}} entry
    * @param {HTMLElement} textLayerDiv
@@ -152,17 +146,14 @@ export class TextSelectionManager {
       "pointerdown",
       (e) => {
         this.#isPointerDown = true;
-        this.#pointerDownInTextLayer = !!(
-          e.target instanceof Element && e.target.closest(".textLayer")
-        );
+        this.#gestureLayer =
+          e.target instanceof Element ? e.target.closest(".textLayer") : null;
 
-        if (!this.#pointerDownInTextLayer) return;
+        if (!this.#gestureLayer) return;
 
-        // WebKit occasionally strands a range after the endOfContent DOM
-        // shuffle — one that a plain click elsewhere does not collapse. A
-        // gesture starting inside a text layer always starts from a clean
-        // slate; shift-click still extends, and the pane's own click-to-select
-        // has already installed its collapsed range by the time this runs.
+        // A gesture starting inside a text layer starts from a clean slate:
+        // WebKit can strand a range that a click elsewhere won't collapse.
+        // Shift-click still extends.
         if (e.isPrimary && !e.shiftKey) {
           const selection = document.getSelection();
           if (selection && !selection.isCollapsed) {
@@ -172,9 +163,7 @@ export class TextSelectionManager {
 
         // Park every other page's overlay before the drag can reach it, so no
         // page is ever entered while its endOfContent still sits after the
-        // last span. Doing it here rather than on first activation keeps the
-        // whole-page flash from ever being painted.
-        this.#gestureLayer = e.target.closest(".textLayer");
+        // last span.
         for (const [textLayerDiv, entry] of this.#textLayers) {
           if (textLayerDiv !== this.#gestureLayer) {
             this.#parkEndOfContent(entry, textLayerDiv, this.#gestureLayer);
@@ -230,7 +219,7 @@ export class TextSelectionManager {
     // pointerdown; reacting here would expand endOfContent and shuffle
     // the DOM in the middle of their drag. Keyboard-driven selection
     // changes (pointer up) still pass through.
-    if (this.#isPointerDown && !this.#pointerDownInTextLayer) {
+    if (this.#isPointerDown && !this.#gestureLayer) {
       return;
     }
 
@@ -285,18 +274,16 @@ export class TextSelectionManager {
       anchor = anchor.parentNode;
     }
 
-    // Resolve from the anchor's *parent*. When the endpoint lands on the text
-    // layer div itself — which WebKit does whenever the point falls on the
-    // endOfContent overlay — the layer is not a valid insertion parent, and
-    // inserting relative to it would move endOfContent out of the layer and
-    // next to the <canvas>, dragging the whole page into the range.
+    // Resolve from the anchor's *parent*: when the endpoint lands on the text
+    // layer div itself (WebKit does this for points over the endOfContent
+    // overlay) the layer is not a valid insertion parent, and inserting
+    // relative to it moves endOfContent out next to the <canvas>.
     const anchorLayer = this.#isFirefox
       ? null
       : (anchor.parentElement?.closest(".textLayer") ?? null);
 
-    // Update selecting class on each text layer. Layers the selection has left
-    // keep their overlay parked against the live anchor — the drag can still
-    // come back to them.
+    // Update selecting class on each text layer, parking newly involved and
+    // departed layers against the live anchor.
     const referenceLayer = anchorLayer ?? this.#gestureLayer;
     for (const [textLayerDiv, entry] of this.#textLayers) {
       if (!activeTextLayers.has(textLayerDiv)) {
@@ -358,14 +345,12 @@ export class TextSelectionManager {
   }
 
   /**
-   * Park a newly activated layer's endOfContent on the edge facing the anchor.
+   * Park a layer's endOfContent on the edge facing the anchor.
    *
-   * `.selecting` stretches endOfContent over the whole page. WebKit resolves a
-   * point over that overlay to a DOM position inside it, so an overlay sitting
-   * after the last span means "this entire page is selected" the instant a
-   * drag crosses the page boundary. Parking it on the near edge makes the same
-   * landing select none of the new page — which is what Blink already does, by
-   * refusing to move a selection into non-selectable content at all.
+   * `.selecting` stretches endOfContent over the whole page, and WebKit
+   * resolves a point over it to a DOM position inside it — so an overlay
+   * sitting after the last span selects the entire page the instant a drag
+   * crosses the boundary. On the near edge, the same landing selects nothing.
    *
    * @param {{endOfContent: HTMLElement}} entry
    * @param {HTMLElement} textLayerDiv

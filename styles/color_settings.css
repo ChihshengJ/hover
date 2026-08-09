@@ -130,6 +130,8 @@
   border-radius: 50%;
   transform: translate(-50%, -50%);
   cursor: grab;
+  /* Dragging the stop must not scroll the settings panel on touch. */
+  touch-action: none;
   z-index: 2;
   border: 2.5px solid #fff;
   box-shadow:

@@ -13,7 +13,7 @@
  * The facade reads `isDragging` / `dragMode` / `wasDragged` as getters and
  * clears `wasDragged` after each click.
  */
-import { beginDragGesture } from "../../pointer_gesture.js";
+import { onPointerDrag } from "../../pointer_gesture.js";
 
 export class DragController {
   /**
@@ -65,9 +65,6 @@ export class DragController {
     this.currentScrollVelocity = 0;
     this.scrollAnimationFrame = null;
 
-    /** Releases the drag claim taken in #startDrag. @type {(() => void)|null} */
-    this.releaseGesture = null;
-
     // rAF-batched pending writes — see class comment.
     this._pendingTransform = null;
     this._pendingGooX = null;
@@ -81,24 +78,6 @@ export class DragController {
       if (e.button === 0) {
         this.wasDragged = false;
         this.#startDrag(e);
-      }
-    });
-
-    document.addEventListener("pointermove", (e) => {
-      if (this.isDragging) {
-        this.#handleDrag(e);
-      }
-    });
-
-    document.addEventListener("pointerup", () => {
-      if (this.isDragging) {
-        this.endDrag();
-      }
-    });
-
-    document.addEventListener("pointercancel", () => {
-      if (this.isDragging) {
-        this.endDrag();
       }
     });
   }
@@ -126,10 +105,11 @@ export class DragController {
     this.hooks.onDragStart();
     // Route the rest of the gesture to the ball and keep receiving events
     // even when the pointer leaves the window.
-    this.ball.setPointerCapture(e.pointerId);
-    // Suppress native text selection for the duration of the drag —
-    // preventDefault() below only achieves that on Chrome, not Safari/Firefox.
-    this.releaseGesture = beginDragGesture();
+    onPointerDrag(e, {
+      target: this.ball,
+      onMove: (ev) => this.#handleDrag(ev),
+      onEnd: () => this.endDrag(),
+    });
     this.isDragging = true;
     this.isJumping = false;
     this.dragStartX = e.clientX;
@@ -306,8 +286,6 @@ export class DragController {
     if (this.isJumping) return;
     if (!this.isDragging) return;
 
-    this.releaseGesture?.();
-    this.releaseGesture = null;
     this.isDragging = false;
     this.currentScrollVelocity = 0;
     this.dragMode = null;

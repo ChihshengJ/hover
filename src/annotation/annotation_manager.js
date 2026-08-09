@@ -446,14 +446,14 @@ export class AnnotationManager {
   #refreshAllAnnotations() {
     this.#svgLayer.refresh();
     this.#commentDisplay.refresh();
+    this.#drawingSelection.refresh();
   }
 
   /**
    * Public refresh method for external calls (e.g., after zoom/resize)
    */
   refresh() {
-    this.#svgLayer.refresh();
-    this.#commentDisplay.refresh();
+    this.#refreshAllAnnotations();
   }
 
   destroy() {

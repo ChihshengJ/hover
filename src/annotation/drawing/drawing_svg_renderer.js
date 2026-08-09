@@ -4,13 +4,11 @@
  * and builds smooth bezier curve paths.
  */
 
-const COLOR_NAME_TO_HEX = {
-  black: "#000000",
-  yellow: "#FFB300",
-  red: "#E53935",
-  blue: "#1E88E5",
-  green: "#43A047",
-};
+import {
+  COLOR_NAME_TO_HEX,
+  getPageMetrics,
+  pageToStage,
+} from "./drawing_geometry.js";
 
 /**
  * Render a drawing annotation into an SVG group element.
@@ -28,12 +26,7 @@ export function renderDrawingAnnotation(annotation, pane) {
   const pageView = pane.pages[pr.pageNumber - 1];
   if (!pageView) return null;
 
-  const pageTop = pageView.wrapper.offsetTop;
-  const pageLeft = pageView.wrapper.offsetLeft;
-  const layerWidth =
-    parseFloat(pageView.textLayer.style.width) || pageView.wrapper.clientWidth;
-  const layerHeight =
-    parseFloat(pageView.textLayer.style.height) || pageView.wrapper.clientHeight;
+  const metrics = getPageMetrics(pageView);
 
   const group = document.createElementNS(ns, "g");
   group.classList.add("annotation-group");
@@ -43,17 +36,14 @@ export function renderDrawingAnnotation(annotation, pane) {
 
   const hexColor = COLOR_NAME_TO_HEX[annotation.color] || "#000000";
 
-  // Collect all pixel rects for outline computation
+  // Bounds of every stroke, for the rotation origin and the hit area
   let allMinX = Infinity, allMinY = Infinity;
   let allMaxX = -Infinity, allMaxY = -Infinity;
 
   for (const stroke of annotation.strokes) {
     if (!stroke.points || stroke.points.length === 0) continue;
 
-    const pixelPoints = stroke.points.map((p) => ({
-      x: pageLeft + p.x * layerWidth,
-      y: pageTop + p.y * layerHeight,
-    }));
+    const pixelPoints = stroke.points.map((p) => pageToStage(p, metrics));
 
     // Track bounds
     for (const p of pixelPoints) {
@@ -64,7 +54,7 @@ export function renderDrawingAnnotation(annotation, pane) {
     }
 
     const pathData = buildSmoothPath(pixelPoints);
-    const strokeWidthPx = (stroke.strokeWidth || 0.003) * layerWidth;
+    const strokeWidthPx = (stroke.strokeWidth || 0.003) * metrics.width;
 
     const path = document.createElementNS(ns, "path");
     path.classList.add("annotation-mark", "drawing");
@@ -87,11 +77,14 @@ export function renderDrawingAnnotation(annotation, pane) {
     group.setAttribute("transform", `rotate(${annotation.rotation} ${cx} ${cy})`);
   }
 
-  // Create outline rect and invisible hit area for easier selection
+  // Invisible hit-area rect covering the full bounding box (easier to click).
+  // Drawings deliberately have no hover/selected outline: the selection manager
+  // draws the dashed bounding box, and a second outline underneath it read as a
+  // doubled border that vanished the moment a drag pulled the pointer off the
+  // group.
   if (isFinite(allMinX)) {
     const padding = 6;
 
-    // Invisible hit-area rect covering the full bounding box (easier to click)
     const hitArea = document.createElementNS(ns, "rect");
     hitArea.classList.add("annotation-mark", "drawing", "drawing-hit-area");
     hitArea.dataset.color = annotation.color;
@@ -106,22 +99,6 @@ export function renderDrawingAnnotation(annotation, pane) {
     hitArea.style.pointerEvents = "auto";
     hitArea.style.cursor = "pointer";
     group.insertBefore(hitArea, group.firstChild);
-
-    // Visible outline (shown on hover/select via CSS)
-    const outline = document.createElementNS(ns, "rect");
-    outline.classList.add("annotation-outline");
-    outline.dataset.color = annotation.color;
-    outline.setAttribute("x", allMinX - padding);
-    outline.setAttribute("y", allMinY - padding);
-    outline.setAttribute("width", allMaxX - allMinX + padding * 2);
-    outline.setAttribute("height", allMaxY - allMinY + padding * 2);
-    outline.setAttribute("rx", 4);
-    outline.setAttribute("ry", 4);
-    outline.setAttribute("fill", "none");
-    outline.setAttribute("stroke", hexColor);
-    outline.setAttribute("stroke-width", 2);
-    outline.setAttribute("stroke-dasharray", "6 3");
-    group.insertBefore(outline, hitArea.nextSibling);
   }
 
   return group;

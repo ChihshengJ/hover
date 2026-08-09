@@ -107,6 +107,12 @@ export class GlassEffect {
     this.lastSampleX = null;
     this.lastSampleY = null;
 
+    // Elements that follow the glass state but can't inherit it from the
+    // wrapper: the jump popup and its to-top button are positioned against
+    // the viewport and live on <body>, so data-glass/data-glass-text are
+    // mirrored onto them directly (see attachGlassState).
+    this.satellites = new Set();
+
     const c = CONTAINER_SIZE / 2 + MARGIN;
     this.state = new GooState({ cx: c, cy: c, ballR: BALL_R });
     this.glow = new GlowState({ cx: c, cy: c });
@@ -184,13 +190,49 @@ export class GlassEffect {
         attributeFilter: ["style"],
       });
       this.#refreshStyle();
+      this.#broadcastGlassState();
     } else {
       this.enabled = false;
       delete this.wrapper.dataset.glass;
       this._bodyObserver.disconnect();
       this._wallpaperObserver.disconnect();
       this.#unmount();
+      this.#broadcastGlassState();
     }
+  }
+
+  /**
+   * Mirror the glass state attributes onto an element outside the toolbar
+   * wrapper, so wrapper-scoped rules in liquid_glass.css can be written
+   * against it as `[data-glass="on"].the-element`.
+   *
+   * Only data-glass and data-glass-text travel: data-glass-refract drives the
+   * ball's SVG backdrop filter, which satellites don't have.
+   *
+   * @param {HTMLElement} el
+   * @returns {() => void} detach — stops mirroring and clears the attributes.
+   */
+  attachGlassState(el) {
+    this.satellites.add(el);
+    this.#syncGlassState(el);
+    return () => {
+      this.satellites.delete(el);
+      delete el.dataset.glass;
+      delete el.dataset.glassText;
+    };
+  }
+
+  #broadcastGlassState() {
+    this.satellites.forEach((el) => this.#syncGlassState(el));
+  }
+
+  /** @param {HTMLElement} el */
+  #syncGlassState(el) {
+    const { glass, glassText } = this.wrapper.dataset;
+    if (glass) el.dataset.glass = glass;
+    else delete el.dataset.glass;
+    if (glassText) el.dataset.glassText = glassText;
+    else delete el.dataset.glassText;
   }
 
   #mount() {
@@ -562,6 +604,7 @@ export class GlassEffect {
     if (light === this.textLight) return;
     this.textLight = light;
     this.wrapper.dataset.glassText = light ? "light" : "dark";
+    this.#broadcastGlassState();
   }
 }
 

@@ -477,7 +477,8 @@ body.theme-buttons.night-mode.ball-night-persist .tool-btn .rotate-icon {
 
 /* When the dominant color is dark enough, invert the (dark) icon artwork and
    flip the inline rotate SVG to white via currentColor. */
-body.theme-buttons.theme-buttons-dark-icon:not(.night-mode) .tool-btn
+body.theme-buttons.theme-buttons-dark-icon:not(.night-mode)
+  .tool-btn
   .inner
   .tool-icon,
 body.theme-buttons.theme-buttons-dark-icon.night-mode.ball-night-persist

@@ -45,6 +45,16 @@ export class JumpPopup {
     this.input = this.popup.querySelector(".jump-to-page-input");
   }
 
+  /**
+   * The two chrome elements that carry the popup's material. Both sit on
+   * <body> rather than inside the toolbar wrapper, so GlassEffect has to
+   * mirror data-glass onto them for liquid_glass.css to reach them.
+   * @returns {HTMLElement[]}
+   */
+  get glassElements() {
+    return [this.popup, this.topBtn];
+  }
+
   #bindEvents() {
     this.input.addEventListener("keydown", (e) => {
       if (e.key === "Enter") {

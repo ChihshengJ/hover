@@ -75,6 +75,13 @@ export class FloatingToolbar {
       gooContainer: this.gooContainer,
       ball: this.ball,
     });
+    // The jump popup renders on <body>, outside the wrapper that carries
+    // data-glass, so hand its chrome to GlassEffect explicitly. It then
+    // follows the liquid-glass toggle and the adaptive text color in step
+    // with the tool buttons and the page number.
+    this.jumpPopup.glassElements.forEach((el) =>
+      this.glassEffect.attachGlassState(el),
+    );
     this.dragController = new DragController({
       ball: this.ball,
       gooContainer: this.gooContainer,

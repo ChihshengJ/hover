@@ -169,3 +169,180 @@ body.theme-buttons.night-mode.ball-night-persist [data-glass="on"] .tool-btn {
 [data-glass="on"][data-glass-text="light"] .tool-btn .inner {
   color: #f2f2f2;
 }
+
+/* ================================
+   Glass jump-to-page popup
+   ================================
+   The popup pill and its to-top button are positioned against the viewport
+   and live on <body>, outside the wrapper that carries data-glass — so
+   GlassEffect mirrors data-glass/data-glass-text onto the elements
+   themselves (attachGlassState), which is why every selector below is
+   `[data-glass="on"].jump-…` rather than a descendant selector.
+
+   The material is the tool buttons' verbatim: same fill, same rim insets,
+   same frost. Plain backdrop-filter on all three engines — no refraction
+   path, no WebGL — so Safari, Firefox and Chromium render it identically.
+   Only the shape differs (a pill instead of a circle), so the popup reads as
+   the same family of objects as the buttons it sits beside.
+
+   --jump-glass-fill / --jump-glass-shadow carry the per-mode material so the
+   night, themed and hover variants each restate one value instead of the
+   whole stack — and so the hover rule can neutralize the opaque blue from
+   floating_toolbar.css while keeping its blue hue. */
+
+[data-glass="on"].jump-to-page-popup,
+[data-glass="on"].jump-to-top-btn {
+  --jump-glass-fill: rgba(255, 255, 255, 0.3);
+  --jump-glass-shadow:
+    inset 1.5px 1.5px 1px -1px rgba(255, 255, 255, 0.95),
+    inset -1.5px -1.5px 1px -1px rgba(255, 255, 255, 0.55),
+    inset 0 0 12px rgba(255, 255, 255, 0.2), 0 4px 10px rgba(0, 0, 0, 0.25);
+  background: var(--jump-glass-fill);
+  box-shadow: var(--jump-glass-shadow);
+  backdrop-filter: blur(3px) saturate(160%);
+  -webkit-backdrop-filter: blur(3px) saturate(160%);
+}
+
+/* The background/box-shadow restatement is not redundant: the night rules in
+   floating_toolbar.css target `.night-mode .jump-to-page-popup`, which ties
+   with the base glass rule above on specificity. Repeating the two properties
+   here settles it on specificity instead of on import order. */
+.night-mode [data-glass="on"].jump-to-page-popup,
+.night-mode [data-glass="on"].jump-to-top-btn {
+  --jump-glass-fill: rgba(40, 42, 48, 0.35);
+  --jump-glass-shadow:
+    inset 1.5px 1.5px 1px -1px rgba(255, 255, 255, 0.4),
+    inset -1.5px -1.5px 1px -1px rgba(255, 255, 255, 0.2),
+    inset 0 0 12px rgba(255, 255, 255, 0.08), 0 4px 10px rgba(0, 0, 0, 0.45);
+  background: var(--jump-glass-fill);
+  box-shadow: var(--jump-glass-shadow);
+}
+
+/* Theme-colored chrome + glass: the user's tint, translucent, over the same
+   frost. Mirrors the tool-button rule above. */
+body.theme-buttons:not(.night-mode) [data-glass="on"].jump-to-page-popup,
+body.theme-buttons:not(.night-mode) [data-glass="on"].jump-to-top-btn,
+body.theme-buttons.night-mode.ball-night-persist
+  [data-glass="on"].jump-to-page-popup,
+body.theme-buttons.night-mode.ball-night-persist
+  [data-glass="on"].jump-to-top-btn {
+  --jump-glass-fill: color-mix(
+    in srgb,
+    var(--theme-btn-color) 45%,
+    transparent
+  );
+}
+
+/* Hover keeps the button's blue identity, but as a tint in the glass rather
+   than the opaque #cfe9ff fill — the frost still shows the page through it.
+   Stated for every mode (not scoped to a variant) so the affordance reads
+   the same in night and themed states. */
+[data-glass="on"].jump-to-top-btn:hover {
+  background: rgba(180, 220, 255, 0.68);
+  box-shadow:
+    inset 1.5px 1.5px 1px -1px rgba(255, 255, 255, 0.95),
+    inset -1.5px -1.5px 1px -1px rgba(255, 255, 255, 0.55),
+    inset 0 0 12px rgba(255, 255, 255, 0.25),
+    0 8px 12px rgba(42, 110, 186, 0.4);
+}
+
+.night-mode [data-glass="on"].jump-to-top-btn:hover {
+  background: rgba(74, 124, 184, 0.42);
+  box-shadow:
+    inset 1.5px 1.5px 1px -1px rgba(255, 255, 255, 0.45),
+    inset -1.5px -1.5px 1px -1px rgba(255, 255, 255, 0.25),
+    inset 0 0 12px rgba(255, 255, 255, 0.12),
+    0 8px 12px rgba(20, 60, 110, 0.5);
+}
+
+/* ================================
+   The input as an aperture
+   ================================
+   The field is not a box drawn *on* the pill — it's an opening milled *into*
+   it, the way a watch's date window is sunk through the dial. So there is no
+   line border at all (the 1px border stays, transparent, only to keep the
+   metrics the non-glass rule established); the edge is carried entirely by
+   the light on the aperture walls:
+
+     · a shadow across the near wall (top-left), where the lip overhangs
+     · a bright catch on the far wall (bottom-right), which faces the light
+     · a soft dark-to-light wash down the floor, so it reads as concave
+     · a thin highlight on the pill surface below the opening — the outer
+       edge of the bevel picking up the same light
+
+   All of it is neutral black/white alpha rather than currentColor. That was
+   the bug in the first pass: keying the fill and the hairline to the text
+   color meant light mode drew a black line around a *darkened* well, which
+   inverts the lighting — a recess lit from above cannot be darker at the
+   bottom than the surface around it. Neutral alphas shade whatever hue the
+   frost happens to be showing, so the same rule reads correctly over a pale
+   page and over a dark one. */
+[data-glass="on"].jump-to-page-popup .jump-to-page-input {
+  border-color: transparent;
+  color: inherit;
+  background: linear-gradient(
+    to bottom,
+    rgba(0, 0, 0, 0.13),
+    rgba(255, 255, 255, 0.1)
+  );
+  box-shadow:
+    inset 2px 2px 3px rgba(0, 0, 0, 0.26),
+    inset 1px 1px 1px rgba(0, 0, 0, 0.2),
+    inset -1.5px -1.5px 2px rgba(255, 255, 255, 0.4),
+    0 1px 0 rgba(255, 255, 255, 0.3);
+}
+
+/* Night keeps the same geometry with the contrast redistributed: the pill is
+   already dark, so the floor can't sink much further, and the read comes off
+   the lit far wall instead. */
+.night-mode [data-glass="on"].jump-to-page-popup .jump-to-page-input {
+  /* Restated so it outranks `.night-mode .jump-to-page-input:focus`, which
+     would otherwise tie with the base rule above and paint an accent line
+     back onto the focused field in night mode. */
+  border-color: transparent;
+  background: linear-gradient(
+    to bottom,
+    rgba(0, 0, 0, 0.3),
+    rgba(255, 255, 255, 0.08)
+  );
+  box-shadow:
+    inset 2px 2px 3px rgba(0, 0, 0, 0.45),
+    inset 1px 1px 1px rgba(0, 0, 0, 0.35),
+    inset -1.5px -1.5px 2px rgba(255, 255, 255, 0.42),
+    0 1px 0 rgba(255, 255, 255, 0.16);
+}
+
+/* ================================
+   Adaptive jump-popup text
+   ================================
+   Same data-glass-text flip that drives the page number and the tool-button
+   icons, so the label, the typed page number and the arrow all shift with the
+   backdrop in lockstep with the rest of the ball's chrome. The hover blue is
+   restated per tone: the light-text case needs a pale blue to stay legible
+   over the dark backdrop that put it there. */
+
+[data-glass="on"][data-glass-text="dark"].jump-to-page-popup,
+[data-glass="on"][data-glass-text="dark"].jump-to-page-popup
+  .jump-to-page-label,
+[data-glass="on"][data-glass-text="dark"].jump-to-page-popup
+  .jump-to-page-input,
+[data-glass="on"][data-glass-text="dark"].jump-to-top-btn {
+  color: #1a1a1a;
+}
+
+[data-glass="on"][data-glass-text="light"].jump-to-page-popup,
+[data-glass="on"][data-glass-text="light"].jump-to-page-popup
+  .jump-to-page-label,
+[data-glass="on"][data-glass-text="light"].jump-to-page-popup
+  .jump-to-page-input,
+[data-glass="on"][data-glass-text="light"].jump-to-top-btn {
+  color: #f2f2f2;
+}
+
+[data-glass="on"][data-glass-text="dark"].jump-to-top-btn:hover {
+  color: #1d4ed8;
+}
+
+[data-glass="on"][data-glass-text="light"].jump-to-top-btn:hover {
+  color: #cfe4ff;
+}

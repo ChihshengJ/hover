@@ -41,10 +41,15 @@ export function supportsSvgBackdropFilter() {
   return Array.isArray(navigator.userAgentData?.brands);
 }
 
-/** Polynomial smooth-min, matching the shader's field() exactly. */
+/**
+ * Cubic (C2) polynomial smooth-min, matching the shader's smin() exactly —
+ * the two must stay in lockstep or the refraction will disagree with the
+ * body it is masked to. See glass_shaders.js for why the quadratic form
+ * this replaces creased the rim at |a - b| = k.
+ */
 function smin(a, b, k) {
-  const h = Math.min(Math.max(0.5 + (0.5 * (b - a)) / k, 0), 1);
-  return b + (a - b) * h - k * h * (1 - h);
+  const h = Math.max(k - Math.abs(a - b), 0) / k;
+  return Math.min(a, b) - (h * h * h * k) / 6;
 }
 
 /**
@@ -191,24 +196,40 @@ export function computeDisplacementField({
       let r = 128;
       let g = 128;
 
+      // The raw smooth-min is not a Euclidean distance — |grad| sags to
+      // ~0.78 over a stretched bridge — so `d` under-reports depth there
+      // and would widen the bezel band (and the mask's AA ramp) by 1/|grad|
+      // exactly over the bridge. `dn` is the gradient-normalized distance;
+      // it is what gets spent in px below.
       const d = sdf(x, y);
+      let dn = d;
+      // Cheap prefilter on the raw distance. |grad| <= 1, so d >= CLIP_SLACK
+      // implies dn >= CLIP_SLACK and d <= -bezelWidth implies
+      // dn <= -bezelWidth: no pixel that matters is skipped, and the
+      // gradient (4 extra sdf calls) stays confined to the band as before.
       if (d < CLIP_SLACK && d > -bezelWidth) {
-        const disp = sampleLut(lut, -d / bezelWidth);
         // Inward direction = negative SDF gradient (numeric, y-down).
+        // Sampled over a 1px span, so len is |grad| directly.
         const e = 0.5;
         const gx = sdf(x + e, y) - sdf(x - e, y);
         const gy = sdf(x, y + e) - sdf(x, y - e);
         const len = Math.hypot(gx, gy);
         if (len > 1e-6) {
-          const s = (127 * disp) / (len * maxDisp);
-          r = 128 - gx * s;
-          g = 128 - gy * s;
+          dn = d / len;
+          if (dn < CLIP_SLACK && dn > -bezelWidth) {
+            const disp = sampleLut(lut, -dn / bezelWidth);
+            const s = (127 * disp) / (len * maxDisp);
+            r = 128 - gx * s;
+            g = 128 - gy * s;
+          }
         }
       }
 
       data[o] = r;
       data[o + 1] = g;
-      data[o + 2] = 255 * Math.min(Math.max(0.5 - d / (2 * MASK_AA), 0), 1);
+      // Outside the prefilter dn === d, but the ramp is saturated there
+      // either way (|d| far exceeds MASK_AA), so the mask is unaffected.
+      data[o + 2] = 255 * Math.min(Math.max(0.5 - dn / (2 * MASK_AA), 0), 1);
       data[o + 3] = 255;
     }
   }

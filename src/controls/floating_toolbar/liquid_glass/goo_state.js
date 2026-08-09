@@ -181,8 +181,11 @@ export class GooState {
       blobY: this.blobY,
       blobR: this.blobR,
       // Smoothing radius for the SDF smooth-min: grows with the blob so a
-      // retracted blob leaves the ball a clean circle.
-      k: 25 + 0.8 * this.blobR,
+      // retracted blob leaves the ball a clean circle. The cubic smin's
+      // peak correction is k/6 against the old quadratic's k/4, so these
+      // carry a 1.5x to hold the bridge at the same depth (25 -> 37.5,
+      // 0.8 -> 1.2). At rest the 37.5 leaves the circle off by 0.002px.
+      k: 37.5 + 1.2 * this.blobR,
       bump: this.bump,
     };
   }

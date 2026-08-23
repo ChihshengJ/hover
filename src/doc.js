@@ -1,7 +1,7 @@
 /**
  * @typedef {import('@embedpdf/engines/pdfium').PdfEngine} PdfEngine
  * @typedef {import('@embedpdf/engines/pdfium').PdfiumNative} PdfiumNative
- * @typedef {import('@embedpdf/engines').PdfDocumentObject} PdfDocumentObject
+ * @typedef {import('@embedpdf/models').PdfDocumentObject} PdfDocumentObject
  */
 
 import { initPdfiumEngine } from "./pdfium-init.js";
@@ -57,9 +57,9 @@ export class PDFDocumentModel {
     this.outline = [];
     /** @type {DocumentTextIndex|null} */
     this.textIndex = null;
-    /** @type {import('./reference_builder.js').ReferenceIndex|null} */
+    /** @type {import('./data/reference_builder.js').ReferenceIndex|null} */
     this.referenceIndex = null;
-    /** @type {{title: string|null, abstractInfo: Object|null}} */
+    /** @type {{title: string|null, lines: Object[]|null, abstractInfo: Object|null}} */
     this.detectedMetadata = { title: null, lines: null, abstractInfo: null };
 
     /** @type {Uint8Array|null} */
@@ -111,7 +111,11 @@ export class PDFDocumentModel {
       this.pdfDoc = await this.engine
         .openDocumentBuffer({
           id: `doc-${Date.now()}`,
-          content: this.pdfData,
+          // The engine does `new Uint8Array(file.content)`, so a typed array
+          // works, but PdfFileContent is declared as ArrayBuffer.
+          content: /** @type {ArrayBuffer} */ (
+            /** @type {unknown} */ (this.pdfData)
+          ),
         })
         .toPromise();
 
@@ -615,15 +619,17 @@ export class PDFDocumentModel {
   // Image Extraction
   // ============================================================================
 
-  #scanImages() {
-    const docPtr = this.lowLevelHandle.docPtr;
-    for (let i = 0; i < this.numPages; i++) {
-      const { images } = this.imageExtractor.getPageImageInfos(docPtr, i);
-      if (images.length > 0) {
-        this.imagesByPage.set(i + 1, images);
-      }
-    }
-  }
+  // Parked along with `imageExtractor` / `imagesByPage` and the call site in
+  // #buildIndex(); it was the only live half left of that feature.
+  // #scanImages() {
+  //   const docPtr = this.lowLevelHandle.docPtr;
+  //   for (let i = 0; i < this.numPages; i++) {
+  //     const { images } = this.imageExtractor.getPageImageInfos(docPtr, i);
+  //     if (images.length > 0) {
+  //       this.imagesByPage.set(i + 1, images);
+  //     }
+  //   }
+  // }
 
   // getPageImages(pageNumber) {
   //   return this.imagesByPage?.get(pageNumber) || [];

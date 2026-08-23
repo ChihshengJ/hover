@@ -33,9 +33,15 @@
  * @property {number} charCount - Number of characters
  * @property {Array<{x: number, y: number, width: number, height: number}>} rects
  *
+ * @typedef {Object} DetectedCitationFormat
+ * @property {string} type - Entry-pattern name, or 'unknown'
+ * @property {number} confidence - 0-1, share of section lines matching `type`
+ * @property {boolean} isAuthorYear
+ *
  * @typedef {Object} ExtractionResult
  * @property {RawCitation[]} citations
  * @property {RawCrossRef[]} crossRefs
+ * @property {DetectedCitationFormat} detectedFormat
  */
 
 import {
@@ -216,7 +222,7 @@ export class InlineExtractor {
   #abbrKeyIndex = null;
 
   /**
-   * @param {InlineTextExtractor} textExtractor
+   * @param {InlineTextAdapter} textExtractor
    * @param {Object} textIndex - DocumentTextIndex instance
    * @param {Object} referenceIndex - Reference index from buildReferenceIndex
    * @param {number} numPages - Total page count
@@ -1274,7 +1280,7 @@ export class InlineExtractor {
 /**
  * Factory function to create InlineExtractor
  *
- * @param {import('./doc.js').PDFDocumentModel} doc
+ * @param {import('../doc.js').PDFDocumentModel} doc
  * @returns {InlineExtractor|null}
  */
 export function createInlineExtractor(doc) {

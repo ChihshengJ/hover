@@ -240,7 +240,7 @@ export class BallEditor {
    * @param {Object} style
    */
   _applyBallStyleToPreview(style) {
-    const preview = this._overlay?.querySelector(".ball-preview-container");
+    const preview = /** @type {HTMLElement} */ (this._overlay?.querySelector(".ball-preview-container"));
     if (!preview) return;
 
     preview.style.setProperty(
@@ -258,7 +258,7 @@ export class BallEditor {
    * Update the gradient bar preview.
    */
   _updateGradientBarPreview() {
-    const barInner = this._overlay?.querySelector(".gradient-bar-inner");
+    const barInner = /** @type {HTMLElement} */ (this._overlay?.querySelector(".gradient-bar-inner"));
     if (!barInner) return;
     barInner.style.background = this._buildGradientCSS(
       this._ballStyle.gradient,
@@ -273,7 +273,7 @@ export class BallEditor {
    */
   setupEvents(overlay) {
     // ── Direction slider ──
-    const dirSlider = overlay.querySelector("#gradient-direction");
+    const dirSlider = /** @type {HTMLInputElement} */ (overlay.querySelector("#gradient-direction"));
     const dirValue = overlay.querySelector("#gradient-direction-value");
 
     dirSlider.addEventListener("input", () => {
@@ -328,9 +328,9 @@ export class BallEditor {
     });
 
     // ── Page color native input ──
-    const pageColorInput = overlay.querySelector("#page-color-input");
-    const pageColorSwatch = overlay.querySelector("#page-color-swatch");
-    const pageColorHex = overlay.querySelector("#page-color-hex");
+    const pageColorInput = /** @type {HTMLInputElement} */ (overlay.querySelector("#page-color-input"));
+    const pageColorSwatch = /** @type {HTMLElement} */ (overlay.querySelector("#page-color-swatch"));
+    const pageColorHex = /** @type {HTMLInputElement} */ (overlay.querySelector("#page-color-hex"));
 
     pageColorInput.addEventListener("input", () => {
       const color = pageColorInput.value;
@@ -362,7 +362,7 @@ export class BallEditor {
     });
 
     // ── Night-mode persist toggle ──
-    const persistToggle = overlay.querySelector(".ball-night-persist-toggle");
+    const persistToggle = /** @type {HTMLInputElement} */ (overlay.querySelector(".ball-night-persist-toggle"));
     if (persistToggle) {
       persistToggle.addEventListener("change", () => {
         this._ballStyle.persistInNight = persistToggle.checked;
@@ -371,7 +371,7 @@ export class BallEditor {
     }
 
     // ── Use theme color for buttons toggle ──
-    const themeBtnsToggle = overlay.querySelector(".ball-theme-buttons-toggle");
+    const themeBtnsToggle = /** @type {HTMLInputElement} */ (overlay.querySelector(".ball-theme-buttons-toggle"));
     if (themeBtnsToggle) {
       themeBtnsToggle.addEventListener("change", () => {
         this._ballStyle.useThemeButtons = themeBtnsToggle.checked;
@@ -380,9 +380,9 @@ export class BallEditor {
     }
 
     // ── Gradient bar click to add stop ──
-    const gradientBar = overlay.querySelector("#gradient-bar");
+    const gradientBar = /** @type {HTMLElement} */ (overlay.querySelector("#gradient-bar"));
     gradientBar.addEventListener("click", (e) => {
-      if (e.target.closest(".gradient-stop")) return;
+      if (/** @type {Element} */ (e.target).closest(".gradient-stop")) return;
 
       const stops = this._ballStyle.gradient.stops;
       if (stops.length >= BallEditor.MAX_STOPS) return;
@@ -428,13 +428,13 @@ export class BallEditor {
     // Page-number color: sampled from the content behind the ball.
     const group = this._overlay.querySelector("#page-color-group");
     if (group) group.classList.toggle("adaptive", on);
-    const input = this._overlay.querySelector("#page-color-input");
-    const hex = this._overlay.querySelector("#page-color-hex");
+    const input = /** @type {HTMLInputElement} */ (this._overlay.querySelector("#page-color-input"));
+    const hex = /** @type {HTMLInputElement} */ (this._overlay.querySelector("#page-color-hex"));
     if (input) input.disabled = on;
     if (hex) hex.disabled = on;
 
     // Theme-colored buttons: glass outranks the classic-mode tint.
-    const themeBtns = this._overlay.querySelector(".ball-theme-buttons-toggle");
+    const themeBtns = /** @type {HTMLInputElement} */ (this._overlay.querySelector(".ball-theme-buttons-toggle"));
     if (themeBtns) {
       themeBtns.disabled = on;
       themeBtns
@@ -452,7 +452,7 @@ export class BallEditor {
     const style = this._ballStyle;
 
     // Direction slider
-    const dirSlider = this._overlay.querySelector("#gradient-direction");
+    const dirSlider = /** @type {HTMLInputElement} */ (this._overlay.querySelector("#gradient-direction"));
     const dirValue = this._overlay.querySelector("#gradient-direction-value");
     if (dirSlider) {
       dirSlider.value = style.gradient.direction;
@@ -472,9 +472,9 @@ export class BallEditor {
     this._applyBallStyleToPreview(style);
 
     // Page color
-    const pageColorInput = this._overlay.querySelector("#page-color-input");
-    const pageColorSwatch = this._overlay.querySelector("#page-color-swatch");
-    const pageColorHex = this._overlay.querySelector("#page-color-hex");
+    const pageColorInput = /** @type {HTMLInputElement} */ (this._overlay.querySelector("#page-color-input"));
+    const pageColorSwatch = /** @type {HTMLElement} */ (this._overlay.querySelector("#page-color-swatch"));
+    const pageColorHex = /** @type {HTMLInputElement} */ (this._overlay.querySelector("#page-color-hex"));
     if (pageColorInput) {
       pageColorInput.value = style.pageColor;
       pageColorSwatch.style.backgroundColor = style.pageColor;
@@ -486,14 +486,14 @@ export class BallEditor {
     this.setGlassActive(Config.get("liquid_glass_enabled"));
 
     // Toggle states
-    const persistToggle = this._overlay.querySelector(
+    const persistToggle = /** @type {HTMLInputElement} */ (this._overlay.querySelector(
       ".ball-night-persist-toggle",
-    );
+    ));
     if (persistToggle) persistToggle.checked = !!style.persistInNight;
 
-    const themeBtnsToggle = this._overlay.querySelector(
+    const themeBtnsToggle = /** @type {HTMLInputElement} */ (this._overlay.querySelector(
       ".ball-theme-buttons-toggle",
-    );
+    ));
     if (themeBtnsToggle) themeBtnsToggle.checked = !!style.useThemeButtons;
 
     // Add stop button state
@@ -501,7 +501,7 @@ export class BallEditor {
   }
 
   _updateAddStopButton() {
-    const btn = this._overlay?.querySelector("#gradient-add-stop");
+    const btn = /** @type {HTMLButtonElement} */ (this._overlay?.querySelector("#gradient-add-stop"));
     if (!btn) return;
     const atMax = this._ballStyle.gradient.stops.length >= BallEditor.MAX_STOPS;
     btn.disabled = atMax;
@@ -514,7 +514,7 @@ export class BallEditor {
    * Render stop markers on the gradient bar.
    */
   _refreshStopMarkers() {
-    const bar = this._overlay?.querySelector("#gradient-bar");
+    const bar = /** @type {HTMLElement} */ (this._overlay?.querySelector("#gradient-bar"));
     if (!bar) return;
 
     bar.querySelectorAll(".gradient-stop").forEach((el) => el.remove());
@@ -599,7 +599,7 @@ export class BallEditor {
     };
 
     const onDown = (e) => {
-      if (e.target.closest(".gradient-stop-remove")) return;
+      if (/** @type {Element} */ (e.target).closest(".gradient-stop-remove")) return;
 
       e.preventDefault();
       e.stopPropagation();
@@ -662,7 +662,7 @@ export class BallEditor {
    * swatch, so it works as a picker anchor on every engine.
    */
   _openStopColorPicker() {
-    const input = this._overlay?.querySelector("#stop-detail-color");
+    const input = /** @type {HTMLInputElement} */ (this._overlay?.querySelector("#stop-detail-color"));
     if (!input) return;
 
     // The input was just re-created by _refreshStopDetail; WebKit needs it
@@ -707,16 +707,16 @@ export class BallEditor {
       <span class="stop-position-label">${stop.position}%</span>
     `;
 
-    const swatch = container.querySelector("#stop-detail-swatch");
-    const colorInput = container.querySelector("#stop-detail-color");
-    const hexInput = container.querySelector("#stop-detail-hex");
+    const swatch = /** @type {HTMLElement} */ (container.querySelector("#stop-detail-swatch"));
+    const colorInput = /** @type {HTMLInputElement} */ (container.querySelector("#stop-detail-color"));
+    const hexInput = /** @type {HTMLInputElement} */ (container.querySelector("#stop-detail-hex"));
 
     /** Push a new color everywhere without rebuilding the live picker's input. */
     const setColor = (val) => {
       stop.color = val;
       swatch.style.backgroundColor = val;
-      const marker = this._overlay?.querySelector(
-        `.gradient-stop[data-index="${idx}"]`,
+      const marker = /** @type {HTMLElement} */ (
+        this._overlay?.querySelector(`.gradient-stop[data-index="${idx}"]`)
       );
       if (marker) marker.style.backgroundColor = val;
       this._onBallStyleChanged();

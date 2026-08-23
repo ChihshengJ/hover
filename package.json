@@ -4,6 +4,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.node.json",
     "build": "vite build",
     "build:chrome": "TARGET=chrome vite build",
     "build:firefox": "TARGET=firefox vite build",
@@ -17,6 +18,8 @@
     "preview": "vite preview"
   },
   "devDependencies": {
+    "@types/chrome": "^0.2.7",
+    "typescript": "^7.0.2",
     "vite": "^7.3.1",
     "web-ext": "^10.3.0"
   },

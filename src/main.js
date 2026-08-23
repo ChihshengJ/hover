@@ -29,11 +29,11 @@ const PENDING_DB_STORE = "data";
 async function consumePendingPdf() {
   return new Promise((resolve, reject) => {
     const req = indexedDB.open(PENDING_DB_NAME, 1);
-    req.onupgradeneeded = (e) =>
-      e.target.result.createObjectStore(PENDING_DB_STORE);
-    req.onerror = (e) => reject(e.target.error);
-    req.onsuccess = (e) => {
-      const db = e.target.result;
+    req.onupgradeneeded = () =>
+      req.result.createObjectStore(PENDING_DB_STORE);
+    req.onerror = () => reject(req.error);
+    req.onsuccess = () => {
+      const db = req.result;
       const tx = db.transaction(PENDING_DB_STORE, "readwrite");
       const store = tx.objectStore(PENDING_DB_STORE);
       const getReq = store.get("pending");
@@ -42,9 +42,9 @@ async function consumePendingPdf() {
         db.close();
         resolve(getReq.result || null);
       };
-      tx.onerror = (err) => {
+      tx.onerror = () => {
         db.close();
-        reject(err.target.error);
+        reject(tx.error);
       };
     };
   });

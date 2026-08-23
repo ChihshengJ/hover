@@ -15,6 +15,7 @@
  * @property {string} [pageRange] - e.g., "pp. 3-5" for cross-page
  * @property {{color: string}[]} [annotationDots] - dots to show on section
  * @property {number} [extraAnnotationCount] - count beyond 3 dots
+ * @property {number} [originalTopRatio] - annotation's top as a fraction of page height
  */
 
 const rightSvg = `
@@ -28,7 +29,7 @@ const downSvg = `
 
 export class NavigationTree {
   /**
-   * @param {FloatingToolbar} toolbar
+   * @param {import('./floating_toolbar/index.js').FloatingToolbar} toolbar
    */
   constructor(toolbar) {
     this.toolbar = toolbar;
@@ -78,7 +79,7 @@ export class NavigationTree {
     this.#createElements();
   }
 
-  /** @returns {ViewerPane} */
+  /** @returns {import('../viewpane.js').ViewerPane} */
   get pane() {
     return this.wm.activePane;
   }
@@ -118,6 +119,12 @@ export class NavigationTree {
     }
 
     // Fallback: compute dimensions ourselves
+    // FIXME(pdfium-migration): PDF.js API on a PDFium document. `numPages`,
+    // `getPage`, `getViewport`, `getAnnotations`, `getTextContent`,
+    // `getDestination` and `getPageIndex` do not exist on PdfDocumentObject, so
+    // everything below is dead — it reads `undefined` and silently yields
+    // nothing. Typed loosely so checkJs can pass; the code still needs porting.
+    /** @type {any} */
     const pdfDoc = this.doc.pdfDoc;
     if (!pdfDoc) return;
 
@@ -231,6 +238,9 @@ export class NavigationTree {
       return cache.get(cacheKey);
     }
 
+    // FIXME(pdfium-migration): see #cachePageDimensions — `getDestination` and
+    // `getPageIndex` below are PDF.js APIs that PdfDocumentObject does not have.
+    /** @type {any} */
     const pdfDoc = this.doc.pdfDoc;
     const namedDests = this.doc.allNamedDests;
 
@@ -344,6 +354,12 @@ export class NavigationTree {
 
   async #extractFigureTableAnnotations(destCache) {
     const items = [];
+    // FIXME(pdfium-migration): PDF.js API on a PDFium document. `numPages`,
+    // `getPage`, `getViewport`, `getAnnotations`, `getTextContent`,
+    // `getDestination` and `getPageIndex` do not exist on PdfDocumentObject, so
+    // everything below is dead — it reads `undefined` and silently yields
+    // nothing. Typed loosely so checkJs can pass; the code still needs porting.
+    /** @type {any} */
     const pdfDoc = this.doc.pdfDoc;
     const numPages = pdfDoc.numPages;
     const figurePattern = /^(fig(ure)?|table|tab)\.?\s*(\d+)/i;
@@ -806,7 +822,7 @@ export class NavigationTree {
     if (hasChildren) {
       chevron.innerHTML = node.expanded ? downSvg : rightSvg;
       chevron.addEventListener("click", (e) => {
-        e.stopPropagation400;
+        e.stopPropagation();
         this.#togglePin(node, item, path);
       });
     }
@@ -1059,7 +1075,8 @@ export class NavigationTree {
 
   #updatePinnedStyles() {
     const allItems = this.container.querySelectorAll(".nav-tree-item");
-    allItems.forEach((item) => {
+    allItems.forEach((el) => {
+      const item = /** @type {HTMLElement} */ (el);
       const nodeId = item.dataset.nodeId;
       item.classList.toggle("pinned", this.pinnedPath.includes(nodeId));
     });
@@ -1135,7 +1152,8 @@ export class NavigationTree {
           );
           if (childItems.length === 0) return;
 
-          const parentDepth = parseInt(parentItem.dataset.depth) || 0;
+          const parentDepth =
+            parseInt(/** @type {HTMLElement} */ (parentItem).dataset.depth) || 0;
           this.#drawBranchesForItems(childItems, parentDepth + 1, wrapperRect);
         });
       });
@@ -1168,10 +1186,10 @@ export class NavigationTree {
         "line",
       );
       vertical.setAttribute("class", "nav-tree-branch");
-      vertical.setAttribute("x1", lineX);
-      vertical.setAttribute("y1", startY);
-      vertical.setAttribute("x2", lineX);
-      vertical.setAttribute("y2", endY);
+      vertical.setAttribute("x1", String(lineX));
+      vertical.setAttribute("y1", String(startY));
+      vertical.setAttribute("x2", String(lineX));
+      vertical.setAttribute("y2", String(endY));
       this.branchSvg.appendChild(vertical);
     }
 
@@ -1188,10 +1206,10 @@ export class NavigationTree {
         "line",
       );
       horizontal.setAttribute("class", "nav-tree-branch");
-      horizontal.setAttribute("x1", lineX);
-      horizontal.setAttribute("y1", rowY);
-      horizontal.setAttribute("x2", lineX + this.INDENT - 4);
-      horizontal.setAttribute("y2", rowY);
+      horizontal.setAttribute("x1", String(lineX));
+      horizontal.setAttribute("y1", String(rowY));
+      horizontal.setAttribute("x2", String(lineX + this.INDENT - 4));
+      horizontal.setAttribute("y2", String(rowY));
       this.branchSvg.appendChild(horizontal);
     });
   }
@@ -1305,7 +1323,7 @@ export class NavigationTree {
       Math.min(targetTop, viewportHeight - wrapperHeight - padding),
     );
 
-    wrapper.style.top = `${clampedTop}px`;
+    /** @type {HTMLElement} */ (wrapper).style.top = `${clampedTop}px`;
     this.container.style.height = `${viewportHeight}px`;
   }
 

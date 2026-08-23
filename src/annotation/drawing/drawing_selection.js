@@ -32,7 +32,7 @@ const BBOX_PADDING = 8;
 const MIN_SIZE = 20;
 
 export class DrawingSelectionManager {
-  /** @type {ViewerPane} */
+  /** @type {import('../../viewpane.js').ViewerPane} */
   #pane;
 
   /** @type {string|null} */
@@ -61,7 +61,7 @@ export class DrawingSelectionManager {
   #onDragEnd = (e) => this.#handleDragEnd(e);
 
   /**
-   * @param {ViewerPane} pane
+   * @param {import('../../viewpane.js').ViewerPane} pane
    */
   constructor(pane) {
     this.#pane = pane;
@@ -91,8 +91,8 @@ export class DrawingSelectionManager {
     document.addEventListener(
       "pointerdown",
       (e) => {
-        if (e.target.closest(".drawing-bounding-box")) return;
-        if (e.target.closest(".annotation-mark.drawing")) return;
+        if (/** @type {Element} */ (e.target).closest(".drawing-bounding-box")) return;
+        if (/** @type {Element} */ (e.target).closest(".annotation-mark.drawing")) return;
         this.deselect();
       },
       { signal: this.#abortController.signal },
@@ -227,7 +227,7 @@ export class DrawingSelectionManager {
 
     // Move: drag the bounding box itself
     this.#bbox.addEventListener("pointerdown", (e) => {
-      if (e.target.closest(".drawing-bbox-btn, .drawing-bbox-resize-handle")) return;
+      if (/** @type {Element} */ (e.target).closest(".drawing-bbox-btn, .drawing-bbox-resize-handle")) return;
       e.stopPropagation();
       this.#startDrag(e, "move");
     });

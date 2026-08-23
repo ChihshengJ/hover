@@ -1,5 +1,17 @@
 // Adapted from Chromium PDF viewer (BSD-3-Clause License)
 // https://github.com/chromium/chromium/blob/main/pdf/...
+
+/**
+ * The upstream code assumes Chromium's `assert`, which did not come across with
+ * it — so every pinch threw a ReferenceError before reaching the maths below.
+ *
+ * @param {boolean} condition
+ * @param {string} [message]
+ */
+function assert(condition, message = "assertion failed") {
+  if (!condition) throw new Error(`[GestureDetector] ${message}`);
+}
+
 export class GestureDetector {
   element_;
   pinchStartEvent_ = null;

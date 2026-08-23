@@ -9,12 +9,20 @@ import { init } from "@embedpdf/pdfium";
 import { PdfiumNative, PdfEngine } from "@embedpdf/engines/pdfium";
 import { browserImageDataToBlobConverter } from "@embedpdf/engines/converters";
 
+/**
+ * @typedef {Object} EngineInstances
+ * @property {PdfEngine} engine
+ * @property {PdfiumNative} native
+ * @property {import('@embedpdf/pdfium').WrappedPdfiumModule} pdfiumModule
+ */
+
 /** @type {PdfEngine|null} */
 let engineInstance = null;
 
 /** @type {PdfiumNative|null} */
 let nativeInstance = null;
 
+/** @type {import('@embedpdf/pdfium').WrappedPdfiumModule|null} */
 let pdfiumModule = null;
 
 /** @type {Promise<void>|null} */
@@ -23,7 +31,7 @@ let initPromise = null;
 /**
  * Initialize the PDFium engine
  * @param {(progress: {percent: number, phase: string}) => void} [onProgress]
- * @returns {Promise<{engine: PdfEngine, native: PdfiumNative}>}
+ * @returns {Promise<EngineInstances>}
  */
 export async function initPdfiumEngine(onProgress) {
   if (engineInstance && nativeInstance && pdfiumModule) {
@@ -102,8 +110,10 @@ export async function initPdfiumEngine(onProgress) {
 }
 
 /**
- * Get the initialized engine instances
- * @returns {{engine: PdfEngine|null, native: PdfiumNative|null}}
+ * Get the initialized engine instances, or null before initPdfiumEngine()
+ * has resolved.
+ *
+ * @returns {EngineInstances|null}
  */
 export function getEngineInstances() {
   if (!engineInstance || !nativeInstance || !pdfiumModule) {

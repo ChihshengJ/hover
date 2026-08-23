@@ -72,10 +72,10 @@ export class ToolActions {
   }
 
   #updateSpreadIcon(mode) {
-    const btn = this.toolbarTop.querySelector(
-      '[data-action="horizontal-spread"]',
+    const btn = /** @type {HTMLElement} */ (
+      this.toolbarTop.querySelector('[data-action="horizontal-spread"]')
     );
-    const img = btn.querySelector("img");
+    const img = /** @type {HTMLImageElement} */ (btn.querySelector("img"));
 
     const config = {
       0: { src: "assets/book.svg", title: "Single page view" },
@@ -89,17 +89,19 @@ export class ToolActions {
   }
 
   #updateFitIcon(fitMode) {
-    const btn = this.toolbarBottom.querySelector('[data-action="fit-width"]');
-    const img = btn.querySelector("img");
+    const btn = /** @type {HTMLElement} */ (
+      this.toolbarBottom.querySelector('[data-action="fit-width"]')
+    );
+    const img = /** @type {HTMLImageElement} */ (btn.querySelector("img"));
 
     if (fitMode === 1) {
       img.src = "assets/fit_width.svg";
-      img.width = "20";
+      img.width = 20;
       btn.title = "Fit horizontal";
       btn.classList.add("active");
     } else {
       img.src = "assets/fit_height.svg";
-      img.width = "18";
+      img.width = 18;
       btn.title = "Fit vertical";
       btn.classList.remove("active");
     }
@@ -133,7 +135,7 @@ export class ToolActions {
 
   #updateRotateIcon() {
     const btn = this.toolbarTop.querySelector('[data-action="rotate"]');
-    const icon = btn?.querySelector(".rotate-icon");
+    const icon = /** @type {HTMLElement} */ (btn?.querySelector(".rotate-icon"));
     if (!icon) return;
 
     icon.style.transform = `rotate(${this._cumulativeRotation}deg)`;

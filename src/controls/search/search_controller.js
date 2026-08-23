@@ -50,10 +50,6 @@ export class SearchController {
     return this.#wm.document;
   }
 
-  get #searchIndex() {
-    return this.#doc.searchIndex;
-  }
-
   get totalPages() {
     return this.#doc.numPages;
   }
@@ -186,7 +182,7 @@ export class SearchController {
    * @param {string} query - Search query
    * @param {number} fromPage - Start page (1-based, inclusive)
    * @param {number} toPage - End page (1-based, inclusive)
-   * @returns {Promise<SearchMatch[]>}
+   * @returns {Promise<Array<{id: string, pageNumber: number, rects: Array<{x: number, y: number, width: number, height: number}>}>>}
    */
   async search(query, fromPage = 1, toPage = this.#doc.numPages) {
     if (!query.trim() || query.length < 2) return [];
@@ -202,9 +198,11 @@ export class SearchController {
       if (!page) continue;
 
       try {
-        // Use PDFium's native search
+        // Use PDFium's native search. The 4th argument is PDFium's MatchFlag
+        // bitmask; 0 (None) is case-insensitive substring search, which is what
+        // this omitted argument was already coercing to.
         const pageMatches = await native
-          .searchInPage(pdfDoc, page, query)
+          .searchInPage(pdfDoc, page, query, 0)
           .toPromise();
 
         for (const match of pageMatches) {

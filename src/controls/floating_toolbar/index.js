@@ -1,7 +1,9 @@
 /**
- * @typedef {import('../../window_manager.js').SplitWindowManager} SplitWindowManager;
- * @typedef {import('../../viewpane.js').ViewerPane} ViewerPane;
- * @typedef {import('../navigation_tree.js').NavigationTree} NavigationTree;
+ * `NavigationTree` is imported as a value below, so it is already usable as a
+ * type.
+ *
+ * @typedef {import('../../window_manager.js').SplitWindowManager} SplitWindowManager
+ * @typedef {import('../../viewpane.js').ViewerPane} ViewerPane
  */
 
 import { NavigationTree } from "../navigation_tree.js";
@@ -97,7 +99,7 @@ export class FloatingToolbar {
         },
         onDragEnd: () => {
           setTimeout(() => {
-            this.glassEffect.refreshTextColor(true);
+            this.glassEffect.refreshTextColor();
           }, 500);
           if (!this.isTreeOpen) {
             this.expandController.startExpandTimer();
@@ -185,14 +187,18 @@ export class FloatingToolbar {
     });
 
     this.toolbarTop.addEventListener("click", (e) => {
-      const btn = e.target.closest(".tool-btn");
+      const btn = /** @type {HTMLElement} */ (
+        /** @type {Element} */ (e.target).closest(".tool-btn")
+      );
       if (btn) {
         this.toolActions.handle(btn.dataset.action);
       }
     });
 
     this.toolbarBottom.addEventListener("click", (e) => {
-      const btn = e.target.closest(".tool-btn");
+      const btn = /** @type {HTMLElement} */ (
+        /** @type {Element} */ (e.target).closest(".tool-btn")
+      );
       if (btn) {
         this.toolActions.handle(btn.dataset.action);
       }
@@ -282,8 +288,8 @@ export class FloatingToolbar {
     const currentPage = this.pane.getCurrentPage();
     const totalPages = this.pane.pages.length || "?";
 
-    this.ball.querySelector(".page-current").textContent = currentPage;
-    this.ball.querySelector(".page-total").textContent = totalPages;
+    this.ball.querySelector(".page-current").textContent = String(currentPage);
+    this.ball.querySelector(".page-total").textContent = String(totalPages);
 
     // Content scrolled behind a resting ball — recolor the page number to the
     // page now under it (no-op unless liquid glass is on).

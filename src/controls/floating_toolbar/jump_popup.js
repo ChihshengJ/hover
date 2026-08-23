@@ -10,7 +10,7 @@ export class JumpPopup {
   /**
    * @param {Object} opts
    * @param {HTMLElement} opts.ball   The floating ball element (used for positioning + outside-click exclusion).
-   * @param {() => {pages:any[], goToPage:(n:number)=>void, scrollToTop:()=>void, scrollToBottom:()=>void}} opts.getPane
+   * @param {() => import('../../viewpane.js').ViewerPane} opts.getPane
    *    Lazily resolves the currently active pane — the popup may outlive any single pane instance.
    * @param {() => void} [opts.onOpen]  Called right after the popup opens (used to cancel auto-hide timers).
    */
@@ -42,7 +42,9 @@ export class JumpPopup {
     this.topBtn.innerHTML = `<span class="jump-to-top-btn-icon">↑</span>`;
     document.body.appendChild(this.topBtn);
 
-    this.input = this.popup.querySelector(".jump-to-page-input");
+    this.input = /** @type {HTMLInputElement} */ (
+      this.popup.querySelector(".jump-to-page-input")
+    );
   }
 
   /**

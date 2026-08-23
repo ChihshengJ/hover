@@ -69,10 +69,10 @@ export function extractUrlFragment(url) {
 function openTrailDb() {
   return new Promise((resolve, reject) => {
     const req = indexedDB.open(TRAIL_DB_NAME, 1);
-    req.onupgradeneeded = (e) =>
-      e.target.result.createObjectStore(TRAIL_DB_STORE);
-    req.onsuccess = (e) => resolve(e.target.result);
-    req.onerror = (e) => reject(e.target.error);
+    req.onupgradeneeded = () =>
+      req.result.createObjectStore(TRAIL_DB_STORE);
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
   });
 }
 
@@ -85,8 +85,8 @@ function dbGetAll(db) {
     const tx = db.transaction(TRAIL_DB_STORE, "readonly");
     const req = tx.objectStore(TRAIL_DB_STORE).getAll();
     req.onsuccess = () => resolve(req.result || []);
-    req.onerror = (e) => reject(e.target.error);
-    tx.onerror = (e) => reject(e.target.error);
+    req.onerror = () => reject(req.error);
+    tx.onerror = () => reject(tx.error);
   });
 }
 
@@ -101,7 +101,7 @@ function dbPut(db, key, value) {
     const tx = db.transaction(TRAIL_DB_STORE, "readwrite");
     tx.objectStore(TRAIL_DB_STORE).put(value, key);
     tx.oncomplete = () => resolve();
-    tx.onerror = (e) => reject(e.target.error);
+    tx.onerror = () => reject(tx.error);
   });
 }
 
@@ -115,7 +115,7 @@ function dbDelete(db, key) {
     const tx = db.transaction(TRAIL_DB_STORE, "readwrite");
     tx.objectStore(TRAIL_DB_STORE).delete(key);
     tx.oncomplete = () => resolve();
-    tx.onerror = (e) => reject(e.target.error);
+    tx.onerror = () => reject(tx.error);
   });
 }
 
@@ -189,6 +189,8 @@ function findNode(node, nodeId) {
  * @property {string} referenceText - the citation text
  * @property {string} destinationUrl - href from the clicked link
  * @property {string} destinationUrlFragment - extracted identifier
+ * @property {string} destinationTitle - link text of the clicked citation
+ * @property {string} destinationTitleNormalized - `destinationTitle`, normalized for matching
  * @property {number} timestamp
  */
 
@@ -204,6 +206,7 @@ export class TrailStore {
     /** @type {BroadcastChannel} */
     this.channel = new BroadcastChannel(BROADCAST_CHANNEL);
     /** @type {((event: string) => void)|null} */
+    /** @type {(() => void)|null} */
     this.onSync = null;
     this.channel.onmessage = () => this.#handleSync();
   }
@@ -269,7 +272,7 @@ export class TrailStore {
   /**
    * Create a new trail with the given root node data.
    * Prunes oldest non-starred trail if over cap.
-   * @param {Omit<TrailNode, 'children'>} rootNodeData
+   * @param {Omit<TrailNode, 'children'> & {children?: TrailNode[]}} rootNodeData
    * @returns {Promise<Trail>}
    */
   async createTrail(rootNodeData) {
@@ -395,7 +398,7 @@ export class TrailStore {
         return;
       }
       chrome.storage.local.get(PENDING_KEY, (result) => {
-        resolve(result[PENDING_KEY] || []);
+        resolve(/** @type {PendingConnection[]} */ (result[PENDING_KEY]) || []);
       });
     });
   }

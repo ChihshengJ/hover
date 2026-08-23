@@ -331,7 +331,9 @@ export class SearchBar {
    */
   #navigateDropdown(dropdown, direction) {
     const visibleOptions = Array.from(
-      dropdown.querySelectorAll(".search-dropdown-option"),
+      /** @type {NodeListOf<HTMLElement>} */ (
+        dropdown.querySelectorAll(".search-dropdown-option")
+      ),
     ).filter((opt) => opt.style.display !== "none");
 
     if (visibleOptions.length === 0) return;
@@ -356,7 +358,9 @@ export class SearchBar {
    * @param {HTMLElement} dropdown - The dropdown element
    */
   #updateDropdownSelection(dropdown) {
-    const options = dropdown.querySelectorAll(".search-dropdown-option");
+    const options = /** @type {NodeListOf<HTMLElement>} */ (
+      dropdown.querySelectorAll(".search-dropdown-option")
+    );
     const visibleOptions = Array.from(options).filter(
       (opt) => opt.style.display !== "none",
     );
@@ -382,7 +386,9 @@ export class SearchBar {
    */
   #selectDropdownItem(dropdown) {
     const visibleOptions = Array.from(
-      dropdown.querySelectorAll(".search-dropdown-option"),
+      /** @type {NodeListOf<HTMLElement>} */ (
+        dropdown.querySelectorAll(".search-dropdown-option")
+      ),
     ).filter((opt) => opt.style.display !== "none");
 
     if (
@@ -465,7 +471,9 @@ export class SearchBar {
     this.#disableToField();
 
     const dropdown = this.#fromSelect;
-    const options = dropdown.querySelectorAll(".search-dropdown-option");
+    const options = /** @type {NodeListOf<HTMLElement>} */ (
+      dropdown.querySelectorAll(".search-dropdown-option")
+    );
 
     for (const option of options) {
       const text = option.textContent.toLowerCase();
@@ -596,7 +604,7 @@ export class SearchBar {
           this.#currentFromPage + offset,
           this.#controller.totalPages,
         );
-        this.#toInput.dataset.page = toPage;
+        this.#toInput.dataset.page = String(toPage);
 
         // Update placeholder to show computed value
         this.#toInput.placeholder = `= Page ${toPage}`;
@@ -618,7 +626,9 @@ export class SearchBar {
       }
 
       const dropdown = this.#toSelect;
-      const options = dropdown.querySelectorAll(".search-dropdown-option");
+      const options = /** @type {NodeListOf<HTMLElement>} */ (
+      dropdown.querySelectorAll(".search-dropdown-option")
+    );
       const pageNum = parseInt(value, 10);
 
       for (const option of options) {
@@ -684,7 +694,7 @@ export class SearchBar {
 
         // Update display to show the resolved page
         this.#toInput.value = `+${offset} (Page ${toPage})`;
-        this.#toInput.dataset.page = toPage;
+        this.#toInput.dataset.page = String(toPage);
         this.#toInput.placeholder = "Page or section";
         this.#updateRange();
       }
@@ -787,8 +797,12 @@ export class SearchBar {
    * @param {number} total - Total number of results
    */
   updateResultCount(current, total) {
-    this.#container.querySelector(".search-current").textContent = current;
-    this.#container.querySelector(".search-total").textContent = total;
+    /** @type {HTMLElement} */ (
+      this.#container.querySelector(".search-current")
+    ).textContent = String(current);
+    /** @type {HTMLElement} */ (
+      this.#container.querySelector(".search-total")
+    ).textContent = String(total);
 
     const resultCount = this.#container.querySelector(".search-result-count");
     resultCount.classList.toggle("has-results", total > 0);

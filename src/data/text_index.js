@@ -15,6 +15,8 @@
  * @property {number} x
  * @property {number} y
  * @property {number} originalY
+ * @property {number} lineHeight
+ * @property {number} lineWidth
  * @property {number} fontSize
  * @property {number} fontStyle - FontStyle enum value
  * @property {TextItem[]} items
@@ -423,7 +425,7 @@ export class DocumentTextIndex {
    * All Y coordinates use PDF native bottom-left origin (higher Y = top of page).
    *
    * @param {TextLine[]} lines
-   * @param {PathObjectInfo[]} paths - from extractPagePaths
+   * @param {import('./text_extractor.js').PathObjectInfo[]} paths - from extractPagePaths
    * @param {number} pageWidth
    * @param {number} pageHeight
    * @returns {{headerLines: TextLine[], footerLines: TextLine[], headerSepY: number|null, footerSepY: number|null}}

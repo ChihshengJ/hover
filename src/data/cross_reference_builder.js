@@ -63,7 +63,7 @@ export class CrossReferenceBuilder {
    * @param {Map<number, Array>} nativeAnnotationsByPage - Native annotations by page
    * @param {Object} referenceIndex - Reference index
    * @param {number} numPages - Total page count
-   * @param {OutlineItem[]} outline - Document outline tree
+   * @param {import('./outline_builder.js').OutlineItem[]} outline - Document outline tree
    */
   constructor(
     textIndex,
@@ -599,7 +599,7 @@ export class CrossReferenceBuilder {
 /**
  * Factory function to create CrossReferenceBuilder
  *
- * @param {import('./doc.js').PDFDocumentModel} doc
+ * @param {import('../doc.js').PDFDocumentModel} doc
  * @returns {CrossReferenceBuilder}
  */
 export function createCrossReferenceBuilder(doc) {

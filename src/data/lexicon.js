@@ -766,9 +766,7 @@ export const PARENTHETICAL_CITATION_BLOCK = new RegExp(
   `${AUTHOR_YEAR_BLOCKS.etAl}?` +
   `\\s*,?\\s*` +
   `${AUTHOR_YEAR_BLOCKS.multipleYears}` +
-  `${(`)*` + `(?:\\s*${AUTHOR_YEAR_BLOCKS.postfixPhrases})?` + `\\)`,
-    AUTHOR_YEAR_BLOCKS.pages)
-  }` +
+  `${AUTHOR_YEAR_BLOCKS.pages}` +
   `)*` +
   `(?:\\s*${AUTHOR_YEAR_BLOCKS.postfixPhrases})?` +
   `\\)`,

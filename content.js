@@ -49,10 +49,14 @@
 
       const candidates = [];
 
-      const pdfIframe = document.getElementById("pdf-iframe");
+      const pdfIframe = /** @type {HTMLIFrameElement} */ (
+        document.getElementById("pdf-iframe")
+      );
       if (pdfIframe?.src) candidates.push(pdfIframe.src);
 
-      for (const iframe of document.querySelectorAll("iframe[src]")) {
+      for (const iframe of /** @type {NodeListOf<HTMLIFrameElement>} */ (
+        document.querySelectorAll("iframe[src]")
+      )) {
         if (candidates.includes(iframe.src)) continue;
         try {
           const path = new URL(iframe.src).pathname.toLowerCase();
@@ -60,8 +64,8 @@
         } catch { }
       }
 
-      for (const embed of document.querySelectorAll(
-        'embed[type="application/pdf"]',
+      for (const embed of /** @type {NodeListOf<HTMLEmbedElement>} */ (
+        document.querySelectorAll('embed[type="application/pdf"]')
       )) {
         if (embed.src && !candidates.includes(embed.src)) {
           candidates.push(embed.src);

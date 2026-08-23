@@ -68,7 +68,7 @@ export function stageToPage(point, metrics) {
  * re-home a drawing after it has been dragged, so editing never depends on the
  * page the drawing was originally created on.
  *
- * @param {ViewerPane} pane
+ * @param {import('../../viewpane.js').ViewerPane} pane
  * @param {number} x - Stage pixel X
  * @param {number} y - Stage pixel Y
  * @returns {PageView|null}

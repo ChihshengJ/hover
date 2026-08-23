@@ -23,6 +23,20 @@ export const PAGEOBJ = Object.freeze({
 });
 
 /**
+ * Emscripten's typed heap views. `@embedpdf/pdfium` types its module object as
+ * `PdfiumModule & PdfiumRuntimeMethods`, and `PdfiumRuntimeMethods` only
+ * declares the handful of runtime helpers the wrapper re-exports — the HEAP*
+ * views are always present at runtime but absent from that type.
+ *
+ * @typedef {Object} PdfiumHeaps
+ * @property {Float64Array} HEAPF64
+ * @property {Float32Array} HEAPF32
+ * @property {Int32Array} HEAP32
+ * @property {Uint32Array} HEAPU32
+ * @property {Uint8Array} HEAPU8
+ */
+
+/**
  * Size of the persistent out-parameter scratch block. The widest single use is
  * four f64 slots (32 bytes); the rest is headroom for nested frames, which
  * throw rather than silently overrun.
@@ -241,24 +255,29 @@ export class PdfiumFFI {
   // Heap readers
   // ==========================================================================
 
+  /** @returns {PdfiumHeaps} */
+  get #heap() {
+    return /** @type {any} */ (this.#pdfium.pdfium);
+  }
+
   /** @param {number} ptr @returns {number} */
   f64(ptr) {
-    return this.#pdfium.pdfium.HEAPF64[ptr >> 3];
+    return this.#heap.HEAPF64[ptr >> 3];
   }
 
   /** @param {number} ptr @returns {number} */
   f32(ptr) {
-    return this.#pdfium.pdfium.HEAPF32[ptr >> 2];
+    return this.#heap.HEAPF32[ptr >> 2];
   }
 
   /** @param {number} ptr @returns {number} */
   i32(ptr) {
-    return this.#pdfium.pdfium.HEAP32[ptr >> 2];
+    return this.#heap.HEAP32[ptr >> 2];
   }
 
   /** @param {number} ptr @returns {number} */
   u32(ptr) {
-    return this.#pdfium.pdfium.HEAPU32[ptr >> 2];
+    return this.#heap.HEAPU32[ptr >> 2];
   }
 
   /**
@@ -284,7 +303,7 @@ export class PdfiumFFI {
    * @param {number} ptr
    */
   writeBytes(bytes, ptr) {
-    this.#pdfium.pdfium.HEAPU8.set(bytes, ptr);
+    this.#heap.HEAPU8.set(bytes, ptr);
   }
 
   /**
@@ -296,7 +315,7 @@ export class PdfiumFFI {
    * @returns {Uint8Array}
    */
   bytes(ptr, length) {
-    return this.#pdfium.pdfium.HEAPU8.subarray(ptr, ptr + length);
+    return this.#heap.HEAPU8.subarray(ptr, ptr + length);
   }
 
   /**

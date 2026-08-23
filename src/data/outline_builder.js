@@ -127,7 +127,7 @@ function resolveBookmarkDestination(bookmark, allNamedDests) {
 
 /**
  * @param {OutlineItem[]} outline
- * @param {object} textIndex
+ * @param {import('./text_index.js').DocumentTextIndex} textIndex
  */
 function resolveCoords(outline, textIndex) {
   if (!textIndex) return;
@@ -734,8 +734,11 @@ function buildOutlineTree(candidates) {
     return true;
   });
 
+  // Same-page candidates keep the reading order collectHeadingCandidates gave
+  // them, so the tie case must be 0 — returning a truthy non-zero here made the
+  // comparator inconsistent and let same-page headings reorder arbitrarily.
   const sorted = [...filtered].sort((a, b) =>
-    a.pageIndex !== b.pageIndex ? a.pageIndex - b.pageIndex : true,
+    a.pageIndex !== b.pageIndex ? a.pageIndex - b.pageIndex : 0,
   );
 
   const root = { children: [] };
@@ -822,9 +825,12 @@ function purgeReferenceChildren(outline) {
 
 /**
  * Detect document title and abstract from first pages
+ *
+ * @param {import('./text_index.js').DocumentTextIndex} textIndex
+ * @returns {{title: string|null, lines: Object[]|null, abstractInfo: Object|null}}
  */
 export function detectDocumentMetadata(textIndex) {
-  if (!textIndex) return { title: null, abstractInfo: null };
+  if (!textIndex) return { title: null, lines: null, abstractInfo: null };
 
   const result = { title: null, lines: null, abstractInfo: null };
   const pagesToScan = Math.min(3, textIndex.getPageCount?.() || 2);

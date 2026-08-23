@@ -349,7 +349,7 @@ export class GlassEffect {
     r.feImage.setAttribute("href", map.url);
     if (!r.scaleSet) {
       r.scaleSet = true;
-      r.feDisp.setAttribute("scale", map.scale);
+      r.feDisp.setAttribute("scale", String(map.scale));
     }
   }
 
@@ -619,11 +619,14 @@ export class GlassEffect {
  * @param {boolean} night body.night-mode is active
  */
 function sampleBackdropLuminance(x, y, night) {
-  const canvas = document
-    .elementsFromPoint(x, y)
-    .find(
-      (el) => el instanceof HTMLCanvasElement && el.dataset.pageNumber != null,
-    );
+  const canvas = /** @type {HTMLCanvasElement|undefined} */ (
+    document
+      .elementsFromPoint(x, y)
+      .find(
+        (el) =>
+          el instanceof HTMLCanvasElement && el.dataset.pageNumber != null,
+      )
+  );
   if (canvas && canvas.width) {
     const rect = canvas.getBoundingClientRect();
     if (rect.width && rect.height) {

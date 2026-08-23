@@ -1,8 +1,8 @@
 /**
- * @typedef {import('./viewpane.js').ViewerPane} ViewerPane;
- * @typedef {import('./doc.js').PDFDocumentModel} PDFDocumentModel;
- * @typedef {import('./controls/floating_toolbar/index.js') FloatingToolbar};
- * @typedef {import('./controls/progress_bar.js') ProgressBar};
+ * `ViewerPane`, `FloatingToolbar` and `ProgressBar` are imported as values
+ * below, so they are already usable as types; only the model needs a typedef.
+ *
+ * @typedef {import('./doc.js').PDFDocumentModel} PDFDocumentModel
  */
 
 import { ViewerPane } from "./viewpane.js";
@@ -14,8 +14,8 @@ import { onPointerDrag } from "./pointer_gesture.js";
 
 export class SplitWindowManager {
   /**
-   * @param {HTMLElement} rootEl;
-   * @param {PDFDocumentModel} DocumentModel;
+   * @param {HTMLElement} rootEl
+   * @param {PDFDocumentModel} documentModel
    */
   constructor(rootEl, documentModel) {
     this.rootEl = rootEl;
@@ -193,8 +193,8 @@ export class SplitWindowManager {
     this.splitDirection = null;
 
     this.toolbar.exitSplitMode();
-    this.toolbar.updateActivePane(paneToKeep);
-    this.controls.updateActivePane(paneToKeep);
+    this.toolbar.updateActivePane();
+    this.controls.updateActivePane();
 
     this.progressBar?.exitSplitMode();
 

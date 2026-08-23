@@ -390,8 +390,8 @@ export class TrailOverlay {
     const svgH = maxY + 40;
 
     const svg = document.createElementNS(SVG_NS, "svg");
-    svg.setAttribute("width", svgW);
-    svg.setAttribute("height", svgH);
+    svg.setAttribute("width", String(svgW));
+    svg.setAttribute("height", String(svgH));
     svg.setAttribute("viewBox", `0 0 ${svgW} ${svgH}`);
 
     const group = document.createElementNS(SVG_NS, "g");
@@ -496,26 +496,26 @@ export class TrailOverlay {
 
     // Background rect
     const rect = document.createElementNS(SVG_NS, "rect");
-    rect.setAttribute("width", NODE_W);
-    rect.setAttribute("height", NODE_H);
-    rect.setAttribute("rx", NODE_RX);
-    rect.setAttribute("ry", NODE_RX);
+    rect.setAttribute("width", String(NODE_W));
+    rect.setAttribute("height", String(NODE_H));
+    rect.setAttribute("rx", String(NODE_RX));
+    rect.setAttribute("ry", String(NODE_RX));
     g.appendChild(rect);
 
     // Root dot indicator
     if (isRoot) {
       const dot = document.createElementNS(SVG_NS, "circle");
-      dot.setAttribute("cx", -8);
-      dot.setAttribute("cy", NODE_H / 2);
-      dot.setAttribute("r", 3);
+      dot.setAttribute("cx", String(-8));
+      dot.setAttribute("cy", String(NODE_H / 2));
+      dot.setAttribute("r", "3");
       dot.setAttribute("class", "trail-root-dot");
       g.appendChild(dot);
 
       // Star icon for starred trails
       if (trail.starred) {
         const star = document.createElementNS(SVG_NS, "text");
-        star.setAttribute("x", -8);
-        star.setAttribute("y", NODE_H / 2 - 10);
+        star.setAttribute("x", String(-8));
+        star.setAttribute("y", String(NODE_H / 2 - 10));
         star.setAttribute("text-anchor", "middle");
         star.setAttribute("class", "trail-star-icon");
         star.textContent = "\u2605";
@@ -526,8 +526,8 @@ export class TrailOverlay {
     // Title text
     const titleText = this.#truncateText(node.displayTitle, TITLE_MAX_CHARS);
     const title = document.createElementNS(SVG_NS, "text");
-    title.setAttribute("x", NODE_W / 2);
-    title.setAttribute("y", node.referenceText ? 20 : NODE_H / 2 + 4);
+    title.setAttribute("x", String(NODE_W / 2));
+    title.setAttribute("y", String(node.referenceText ? 20 : NODE_H / 2 + 4));
     title.setAttribute("text-anchor", "middle");
     title.setAttribute("class", "node-title");
     title.textContent = titleText;
@@ -536,8 +536,8 @@ export class TrailOverlay {
     // Subtitle (reference text) if available
     if (node.referenceText) {
       const sub = document.createElementNS(SVG_NS, "text");
-      sub.setAttribute("x", NODE_W / 2);
-      sub.setAttribute("y", 36);
+      sub.setAttribute("x", String(NODE_W / 2));
+      sub.setAttribute("y", "36");
       sub.setAttribute("text-anchor", "middle");
       sub.setAttribute("class", "node-subtitle");
       sub.textContent = this.#truncateText(node.referenceText, 28);

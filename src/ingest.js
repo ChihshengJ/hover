@@ -28,10 +28,10 @@ function inExtension() {
 function parkInPage(record) {
   return new Promise((resolve, reject) => {
     const req = indexedDB.open(PENDING_DB_NAME, 1);
-    req.onupgradeneeded = (e) =>
-      e.target.result.createObjectStore(PENDING_DB_STORE);
-    req.onsuccess = (e) => {
-      const db = e.target.result;
+    req.onupgradeneeded = () =>
+      req.result.createObjectStore(PENDING_DB_STORE);
+    req.onsuccess = () => {
+      const db = req.result;
       const tx = db.transaction(PENDING_DB_STORE, "readwrite");
       tx.objectStore(PENDING_DB_STORE).put(record, "pending");
       tx.oncomplete = () => {

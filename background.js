@@ -21,15 +21,16 @@ const PENDING_DB_STORE = "data";
 function openPendingDb() {
   return new Promise((resolve, reject) => {
     const req = indexedDB.open(PENDING_DB_NAME, 1);
-    req.onupgradeneeded = (e) =>
-      e.target.result.createObjectStore(PENDING_DB_STORE);
-    req.onsuccess = (e) => resolve(e.target.result);
-    req.onerror = (e) => reject(e.target.error);
+    req.onupgradeneeded = () =>
+      req.result.createObjectStore(PENDING_DB_STORE);
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
   });
 }
 
 /**
  * @param {{ data: ArrayBuffer, name: string, url: string|null }} record
+ * @returns {Promise<void>}
  */
 async function storePendingPdf(record) {
   const db = await openPendingDb();
@@ -40,9 +41,9 @@ async function storePendingPdf(record) {
       db.close();
       resolve();
     };
-    tx.onerror = (e) => {
+    tx.onerror = () => {
       db.close();
-      reject(e.target.error);
+      reject(tx.error);
     };
   });
 }
@@ -263,7 +264,7 @@ if (chrome.webRequest?.onHeadersReceived) {
   // Defaults to true (intercept) until the first storage read resolves.
   let hoverEnabledCache = true;
   chrome.storage.local.get("hoverEnabled").then(({ hoverEnabled = true }) => {
-    hoverEnabledCache = hoverEnabled;
+    hoverEnabledCache = Boolean(hoverEnabled);
   });
   chrome.storage.onChanged.addListener((changes, area) => {
     if (area === "local" && changes.hoverEnabled) {
@@ -487,7 +488,8 @@ async function purgeStaleTrailConnections() {
   try {
     const key = "hover-pending-connections";
     const result = await chrome.storage.local.get(key);
-    const connections = result[key] || [];
+    const connections =
+      /** @type {Array<{timestamp: number}>} */ (result[key]) || [];
     const cutoff = Date.now() - 10 * 60 * 1000;
     const fresh = connections.filter((c) => c.timestamp > cutoff);
     if (fresh.length !== connections.length) {

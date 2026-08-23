@@ -1,9 +1,9 @@
 /**
  * Onboarding Walkthrough for Hover PDF Viewer
  *
- * @typedef {import('./window_manager.js').SplitWindowManager} SplitWindowManager
- * @typedef {import('./controls/floating_toolbar/index.js').FloatingToolbar} FloatingToolbar
- * @typedef {import('./controls/file_menu.js').FileMenu} FileMenu
+ * @typedef {import('../window_manager.js').SplitWindowManager} SplitWindowManager
+ * @typedef {import('../controls/floating_toolbar/index.js').FloatingToolbar} FloatingToolbar
+ * @typedef {import('../controls/file_menu.js').FileMenu} FileMenu
  */
 
 /**
@@ -892,7 +892,9 @@ export class OnboardingWalkthrough {
   #updateTooltip(config, spotlightConfig, isFloating = false) {
     // Update content
     const textEl = this.tooltip.querySelector(".onboarding-tooltip-text");
-    const subtextEl = this.tooltip.querySelector(".onboarding-tooltip-subtext");
+    const subtextEl = /** @type {HTMLElement} */ (
+      this.tooltip.querySelector(".onboarding-tooltip-subtext")
+    );
     const buttonsEl = this.tooltip.querySelector(".onboarding-tooltip-buttons");
 
     textEl.textContent = config.text;
@@ -936,7 +938,7 @@ export class OnboardingWalkthrough {
 
   /**
    * Position tooltip relative to spotlight or element
-   * @param {'top'|'bottom'|'left'|'right'} position
+   * @param {'top'|'bottom'|'left'|'right'|'center'} position - 'center' takes the default (bottom) arm
    * @param {SpotlightConfig|null} spotlightConfig
    * @param {number} offsetX
    * @param {number} offsetY
@@ -1069,7 +1071,7 @@ export class OnboardingWalkthrough {
       case "citationPopupShown": {
         // Watch for citation popup
         const observer = new MutationObserver((mutations) => {
-          const popup = document.querySelector(".citation-popup");
+          const popup = /** @type {HTMLElement} */ (document.querySelector(".citation-popup"));
           if (
             popup &&
             popup.style.display !== "none" &&
@@ -1091,7 +1093,7 @@ export class OnboardingWalkthrough {
         // Watch for abstract tab click
         const handler = (e) => {
           if (
-            e.target.closest('[data-tab="abstract"]') ||
+            /** @type {Element} */ (e.target).closest('[data-tab="abstract"]') ||
             e.target.textContent?.includes("Abstract")
           ) {
             document.removeEventListener("click", handler, true);
@@ -1160,11 +1162,11 @@ export class OnboardingWalkthrough {
         // Watch for pin/arrow click in outline
         const handler = (e) => {
           if (
-            e.target.closest(".nav-tree-toggle") ||
-            e.target.closest(".tree-toggle") ||
-            e.target.closest(".nav-node-toggle") ||
+            /** @type {Element} */ (e.target).closest(".nav-tree-toggle") ||
+            /** @type {Element} */ (e.target).closest(".tree-toggle") ||
+            /** @type {Element} */ (e.target).closest(".nav-node-toggle") ||
             e.target.tagName === "svg" ||
-            e.target.closest("svg")
+            /** @type {Element} */ (e.target).closest("svg")
           ) {
             document.removeEventListener("click", handler, true);
             advance();
@@ -1469,13 +1471,12 @@ export class OnboardingWalkthrough {
   // --- Step 4: Citation Link ---
   #onCitationLinkEnter() {
     const step = this.steps[4];
-    const link = document.querySelectorAll("span.citation-rect")[3];
+    const link = /** @type {HTMLElement} */ (
+      document.querySelectorAll("span.citation-rect")[3]
+    );
     console.log(link);
-    link.scrollIntoView({
-      top: link.style.top,
-      block: "center",
-      behavior: "instant",
-    });
+    // `top` is not a ScrollIntoViewOptions member — it was always ignored.
+    link.scrollIntoView({ block: "center", behavior: "instant" });
     step.spotlight = this.#getSpotlightFromElement(link, 4);
     if (step.spotlight) {
       this.#showSpotlightOverlay(step.spotlight);
@@ -1491,7 +1492,7 @@ export class OnboardingWalkthrough {
     this.overlayContainer.style.pointerEvents = "none";
 
     setTimeout(() => {
-      const popup = document.querySelector(".citation-popup");
+      const popup = /** @type {HTMLElement} */ (document.querySelector(".citation-popup"));
       if (popup) {
         const config = this.#getSpotlightFromElement(popup, 10);
         this.steps[5].spotlight = config;
@@ -1509,7 +1510,7 @@ export class OnboardingWalkthrough {
     this.overlayContainer.style.pointerEvents = "none";
 
     setTimeout(() => {
-      const popup = document.querySelector(".citation-popup");
+      const popup = /** @type {HTMLElement} */ (document.querySelector(".citation-popup"));
       if (popup) {
         const config = this.#getSpotlightFromElement(popup, 10);
         this.steps[6].spotlight = config;
@@ -1520,7 +1521,7 @@ export class OnboardingWalkthrough {
   }
   #onCitationAbstractExit() {
     // Hide citation popup
-    const popup = document.querySelector(".citation-popup");
+    const popup = /** @type {HTMLElement} */ (document.querySelector(".citation-popup"));
     if (popup) {
       popup.style.display = "none";
     }
@@ -1595,8 +1596,8 @@ export class OnboardingWalkthrough {
   #onOutlineExplanationEnter() {
     // Show blue circle on first toggle arrow after a delay
     setTimeout(() => {
-      const toggle = document.querySelector(
-        ".nav-tree-toggle, .tree-toggle, .nav-node-toggle",
+      const toggle = /** @type {HTMLElement} */ (
+        document.querySelector(".nav-tree-toggle, .tree-toggle, .nav-node-toggle")
       );
       if (toggle) {
         this.#showCircleIndicator(toggle);

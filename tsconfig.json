@@ -1,0 +1,23 @@
+{
+  // `tsc` is a linter here, not a build step: `noEmit` is on and Vite keeps
+  // doing exactly what it did before. Run it with `npm run typecheck`.
+  //
+  // vite.config.js is checked separately by tsconfig.node.json — it is the one
+  // file that runs under Node, and pulling @types/node in here would redeclare
+  // browser globals (setTimeout returning a Timeout rather than a number).
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "allowJs": true,
+    "checkJs": true,
+    "noEmit": true,
+    "strict": false,
+    "skipLibCheck": true,
+    "types": ["chrome"],
+    // Mirrors the Vite alias. TypeScript 7 removed `baseUrl`, so the target is
+    // written relative to this file.
+    "paths": { "@/*": ["./src/*"] }
+  },
+  "include": ["src/**/*", "background.js", "content.js", "popup.js"]
+}

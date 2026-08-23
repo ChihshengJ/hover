@@ -1,8 +1,9 @@
 /**
- * @typedef {import('../window_manager.js').SplitWindowManager} SplitWindowManager;
- * @typedef {import('../viewpane.js').ViewerPane} ViewerPane;
- * @typedef {import('./touch_controls.js').GestureDetector} GestureDetector;
- * @typedef {import('./search/search_controller.js').SearchController} SearchController;
+ * `GestureDetector` and `SearchController` are imported as values below, so
+ * they are already usable as types.
+ *
+ * @typedef {import('../window_manager.js').SplitWindowManager} SplitWindowManager
+ * @typedef {import('../viewpane.js').ViewerPane} ViewerPane
  */
 
 import { GestureDetector } from "./touch_controls.js";
@@ -120,7 +121,7 @@ export class WindowControls {
         return;
       }
 
-      const activeEl = document.activeElement;
+      const activeEl = /** @type {HTMLElement} */ (document.activeElement);
       const isInputActive =
         activeEl &&
         (activeEl.tagName === "INPUT" ||
@@ -143,9 +144,15 @@ export class WindowControls {
       const scroller = this.activePane?.scroller;
       if (!pane || !scroller) return;
 
+      // "_" is what shift+minus reports; the zoom-out branch below already
+      // handled it but the gate never let it through.
       const isZoomKey =
         (e.metaKey || e.ctrlKey) &&
-        (e.key === "+" || e.key === "-" || e.key === "=" || e.key === "0");
+        (e.key === "+" ||
+          e.key === "-" ||
+          e.key === "_" ||
+          e.key === "=" ||
+          e.key === "0");
 
       const stepY = scroller.clientHeight * 0.15;
       const stepX = scroller.clientWidth * 0.1;
@@ -243,7 +250,7 @@ export class WindowControls {
     let isTransforming = false;
     let pageStates = new Map();
 
-    gesture.getEventTarget().addEventListener("pinchstart", (e) => {
+    gesture.getEventTarget().addEventListener("pinchstart", (/** @type {CustomEvent} */ e) => {
       this.wm.setActivePane(pane);
 
       startScale = pane.scale;
@@ -275,7 +282,7 @@ export class WindowControls {
       });
     });
 
-    gesture.getEventTarget().addEventListener("pinchupdate", (e) => {
+    gesture.getEventTarget().addEventListener("pinchupdate", (/** @type {CustomEvent} */ e) => {
       if (!isTransforming) return;
 
       const ratio = e.detail.startScaleRatio;
@@ -295,7 +302,7 @@ export class WindowControls {
       });
     });
 
-    gesture.getEventTarget().addEventListener("pinchend", (e) => {
+    gesture.getEventTarget().addEventListener("pinchend", (/** @type {CustomEvent} */ e) => {
       if (!isTransforming) return;
 
       // Clear transforms first

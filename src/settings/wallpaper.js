@@ -357,7 +357,7 @@ export class WallpaperManager {
       await this._saveMeta(this._meta);
 
       const img = card.querySelector("img");
-      const loading = card.querySelector(".wallpaper-card-loading");
+      const loading = /** @type {HTMLElement} */ (card.querySelector(".wallpaper-card-loading"));
       if (img) {
         img.src = thumb;
         img.style.display = "";
@@ -393,8 +393,8 @@ export class WallpaperManager {
         return;
       }
 
-      request.onupgradeneeded = (e) => {
-        const db = e.target.result;
+      request.onupgradeneeded = () => {
+        const db = request.result;
         if (!db.objectStoreNames.contains(WallpaperManager.STORE_NAME)) {
           db.createObjectStore(WallpaperManager.STORE_NAME, {
             keyPath: "id",
@@ -402,13 +402,13 @@ export class WallpaperManager {
         }
       };
 
-      request.onsuccess = (e) => {
-        this._db = e.target.result;
+      request.onsuccess = () => {
+        this._db = request.result;
         resolve(this._db);
       };
 
-      request.onerror = (e) => {
-        reject(new Error("IndexedDB open failed: " + e.target.error?.message));
+      request.onerror = () => {
+        reject(new Error("IndexedDB open failed: " + request.error?.message));
       };
     });
   }
@@ -417,6 +417,7 @@ export class WallpaperManager {
    * Store a full-resolution image in IndexedDB as a Blob.
    * @param {string} id
    * @param {Blob} blob  image Blob
+   * @returns {Promise<void>}
    */
   _putImage(id, blob) {
     return new Promise((resolve, reject) => {
@@ -424,7 +425,7 @@ export class WallpaperManager {
       const store = tx.objectStore(WallpaperManager.STORE_NAME);
       store.put({ id, data: blob });
       tx.oncomplete = () => resolve();
-      tx.onerror = (e) => reject(e.target.error);
+      tx.onerror = () => reject(tx.error);
     });
   }
 
@@ -439,13 +440,14 @@ export class WallpaperManager {
       const store = tx.objectStore(WallpaperManager.STORE_NAME);
       const req = store.get(id);
       req.onsuccess = () => resolve(req.result?.data ?? null);
-      req.onerror = (e) => reject(e.target.error);
+      req.onerror = () => reject(req.error);
     });
   }
 
   /**
    * Delete an image from IndexedDB.
    * @param {string} id
+   * @returns {Promise<void>}
    */
   _deleteImage(id) {
     return new Promise((resolve, reject) => {
@@ -453,7 +455,7 @@ export class WallpaperManager {
       const store = tx.objectStore(WallpaperManager.STORE_NAME);
       store.delete(id);
       tx.oncomplete = () => resolve();
-      tx.onerror = (e) => reject(e.target.error);
+      tx.onerror = () => reject(tx.error);
     });
   }
 

@@ -1,5 +1,5 @@
 export class CommentDisplay {
-  /** @type {ViewerPane} */
+  /** @type {import('../viewpane.js').ViewerPane} */
   #pane = null;
 
   /** @type {HTMLElement} */
@@ -15,7 +15,7 @@ export class CommentDisplay {
   #expandedCommentId = null;
 
   /**
-   * @param {ViewerPane} pane
+   * @param {import('../viewpane.js').ViewerPane} pane
    */
   constructor(pane) {
     this.#pane = pane;

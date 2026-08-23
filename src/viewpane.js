@@ -5,10 +5,10 @@ import { AnnotationManager } from "./annotation/annotation_manager.js";
 import { beginCustomSelectionGesture } from "./pointer_gesture.js";
 
 /**
- * @typedef {import('./page.js').PageView} PageView;
- * @typedef {import('./doc.js').PDFDocumentModel} PDFDocumentModel;
- * @typedef {import('./text_manager.js').TextSelectionManager} TextSelectionManager;
- * @typedef {import('./annotation/annotation_manager.js').AnnotationManager} AnnotationManager;
+ * `PageView`, `TextSelectionManager` and `AnnotationManager` are imported as
+ * values above, so they are already usable as types.
+ *
+ * @typedef {import('./doc.js').PDFDocumentModel} PDFDocumentModel
  */
 
 export class ViewerPane {
@@ -108,7 +108,7 @@ export class ViewerPane {
       label.textContent = `| Page ${i}`;
 
       const canvas = document.createElement("canvas");
-      canvas.dataset.pageNumber = i;
+      canvas.dataset.pageNumber = String(i);
 
       wrapper.appendChild(canvas);
       wrapper.appendChild(label);
@@ -345,9 +345,9 @@ export class ViewerPane {
     };
 
     this.scroller.addEventListener("pointerdown", (e) => {
-      if (e.target.closest(".textLayer span")) return;
+      if (/** @type {Element} */ (e.target).closest(".textLayer span")) return;
 
-      if (e.target.closest("a, button, .pane-controls, .annotationLayer a"))
+      if (/** @type {Element} */ (e.target).closest("a, button, .pane-controls, .annotationLayer a"))
         return;
 
       if (e.button !== 0) return;
@@ -939,7 +939,7 @@ export class ViewerPane {
 
       // Ignore clicks on interactive elements
       if (
-        e.target.closest(
+        /** @type {Element} */ (e.target).closest(
           "a, button, .pane-controls, .annotation-toolbar-container",
         )
       )

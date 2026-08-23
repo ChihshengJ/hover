@@ -4,7 +4,13 @@
  */
 
 export class TextSelectionManager {
-  /** @type {Map<HTMLElement, {endOfContent: HTMLElement, pageView: import('./page.js').PageView}>} */
+  /**
+   * @type {Map<HTMLElement, {
+   *   endOfContent: HTMLElement,
+   *   pageView: import('./page.js').PageView,
+   *   handlers: {mousedownHandler: (e: PointerEvent) => void, copyHandler: (e: ClipboardEvent) => void},
+   * }>}
+   */
   #textLayers = new Map();
 
   /** @type {AbortController|null} */
@@ -54,7 +60,7 @@ export class TextSelectionManager {
     const mousedownHandler = (e) => {
       if (
         e.target.matches(".textLayer span") ||
-        e.target.closest(".textLayer span")
+        /** @type {Element} */ (e.target).closest(".textLayer span")
       ) {
         return;
       }
@@ -147,7 +153,7 @@ export class TextSelectionManager {
       (e) => {
         this.#isPointerDown = true;
         this.#gestureLayer =
-          e.target instanceof Element ? e.target.closest(".textLayer") : null;
+          e.target instanceof Element ? /** @type {Element} */ (e.target).closest(".textLayer") : null;
 
         if (!this.#gestureLayer) return;
 
@@ -278,9 +284,11 @@ export class TextSelectionManager {
     // layer div itself (WebKit does this for points over the endOfContent
     // overlay) the layer is not a valid insertion parent, and inserting
     // relative to it moves endOfContent out next to the <canvas>.
-    const anchorLayer = this.#isFirefox
-      ? null
-      : (anchor.parentElement?.closest(".textLayer") ?? null);
+    const anchorLayer = /** @type {HTMLElement|null} */ (
+      this.#isFirefox
+        ? null
+        : (anchor.parentElement?.closest(".textLayer") ?? null)
+    );
 
     // Update selecting class on each text layer, parking newly involved and
     // departed layers against the live anchor.

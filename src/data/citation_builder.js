@@ -13,7 +13,11 @@
  * @property {string} author - First author surname
  * @property {string|null} secondAuthor - Second author surname (for two-author citations)
  * @property {string} year - Year string
- * @property {boolean} isRange - Whether this is a year range (e.g., 1996-2004) @typedef {Object} Citation
+ * @property {boolean} isRange - Whether this is a year range (e.g., 1996-2004)
+ */
+
+/**
+ * @typedef {Object} Citation
  * @property {string} type - 'numeric' | 'abbreviated' | 'author-year' | 'superscript'
  * @property {string} text - The matched text
  * @property {number} pageNumber - 1-based page number
@@ -25,6 +29,21 @@
  * @property {number} flags - CitationFlags bitmask
  * @property {{pageIndex: number, x: number, y: number}|null} targetLocation - Primary navigation target
  * @property {Array<{refIndex: number, refKey: RefKey|null, location: {pageIndex: number, x: number, y: number}}>} allTargets - All reference targets
+ */
+
+/**
+ * A native PDF link annotation that points into the reference section, keyed
+ * by its position on the page.
+ *
+ * @typedef {Object} NativeCitationLink
+ * @property {number} pageNumber - 1-based page the link sits on
+ * @property {{x: number, y: number, width: number, height: number}} rect
+ * @property {boolean} hasValidDest - False for the x=0/y=0 degenerate targets
+ * @property {number} destPageIndex - 0-based destination page
+ * @property {number} destX
+ * @property {number} destY
+ * @property {number|null} matchedRefIndex
+ * @property {import('./reference_builder.js').ReferenceAnchor|null} matchedRefAnchor
  */
 
 import { CitationFlags } from "./lexicon.js";
@@ -477,7 +496,7 @@ export class CitationBuilder {
 /**
  * Factory function to create CitationBuilder
  *
- * @param {import('./doc.js').PDFDocumentModel} doc
+ * @param {import('../doc.js').PDFDocumentModel} doc
  * @returns {CitationBuilder}
  */
 export function createCitationBuilder(doc) {

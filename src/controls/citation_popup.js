@@ -36,8 +36,8 @@ export class CitationPopup {
     document.addEventListener("click", (e) => {
       if (
         this.popup.style.display !== "none" &&
-        !this.popup.contains(e.target) &&
-        !this.currentAnchor?.contains(e.target)
+        !this.popup.contains(/** @type {Node} */ (e.target)) &&
+        !this.currentAnchor?.contains(/** @type {Node} */ (e.target))
       ) {
         this.hide();
       }
@@ -302,7 +302,7 @@ export class CitationPopup {
     this.popup.style.top = `${finalY}px`;
 
     // Store positioning info for debugging if needed
-    this.popup.dataset.positionedAbove = positionedAbove;
+    this.popup.dataset.positionedAbove = String(positionedAbove);
   }
 
   renderContent(text) {
@@ -424,7 +424,7 @@ export class CitationPopup {
 
     // Update tab button states
     const tabs = this.popup.querySelectorAll(".citation-tab");
-    tabs.forEach((tab) => {
+    tabs.forEach((/** @type {HTMLElement} */ tab) => {
       tab.classList.toggle("active", tab.dataset.tab === tabName);
     });
 
@@ -742,7 +742,9 @@ export class CitationPopup {
     }
 
     // Extract title and link from gs_rt
-    const titleEl = firstResult.querySelector(".gs_rt a");
+    const titleEl = /** @type {HTMLAnchorElement} */ (
+      firstResult.querySelector(".gs_rt a")
+    );
     const title = titleEl?.textContent?.trim() || null;
     const link = titleEl?.href || null;
 

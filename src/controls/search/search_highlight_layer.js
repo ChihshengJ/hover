@@ -29,7 +29,7 @@ export class SearchHighlightLayer {
   /** @type {boolean} */
   #layoutCacheValid = false;
 
-  /** @type {Function|null} */
+  /** @type {(() => void)|null} */
   #scrollHandler = null;
 
   /** @type {number|null} */
@@ -90,8 +90,8 @@ export class SearchHighlightLayer {
 
   #updateSVGSize() {
     const stageRect = this.#pane.stage.getBoundingClientRect();
-    this.#svg.setAttribute("width", stageRect.width);
-    this.#svg.setAttribute("height", stageRect.height);
+    this.#svg.setAttribute("width", String(stageRect.width));
+    this.#svg.setAttribute("height", String(stageRect.height));
     this.#svg.setAttribute(
       "viewBox",
       `0 0 ${stageRect.width} ${stageRect.height}`,
@@ -279,12 +279,12 @@ export class SearchHighlightLayer {
       const width = rect.width * scale;
       const height = rect.height * scale;
 
-      element.setAttribute("x", x);
-      element.setAttribute("y", y);
-      element.setAttribute("width", width);
-      element.setAttribute("height", height);
-      element.setAttribute("rx", 2);
-      element.setAttribute("ry", 2);
+      element.setAttribute("x", String(x));
+      element.setAttribute("y", String(y));
+      element.setAttribute("width", String(width));
+      element.setAttribute("height", String(height));
+      element.setAttribute("rx", "2");
+      element.setAttribute("ry", "2");
       element.setAttribute("fill", SearchHighlightLayer.HIGHLIGHT_COLOR);
       element.setAttribute("fill-opacity", "0.3");
 
@@ -330,12 +330,12 @@ export class SearchHighlightLayer {
     const padding = 2;
     const outline = document.createElementNS(ns, "rect");
     outline.classList.add("search-focus-outline");
-    outline.setAttribute("x", minX - padding);
-    outline.setAttribute("y", minY - padding);
-    outline.setAttribute("width", maxX - minX + padding * 2);
-    outline.setAttribute("height", maxY - minY + padding * 2);
-    outline.setAttribute("rx", 4);
-    outline.setAttribute("ry", 4);
+    outline.setAttribute("x", String(minX - padding));
+    outline.setAttribute("y", String(minY - padding));
+    outline.setAttribute("width", String(maxX - minX + padding * 2));
+    outline.setAttribute("height", String(maxY - minY + padding * 2));
+    outline.setAttribute("rx", "4");
+    outline.setAttribute("ry", "4");
     outline.setAttribute("fill", "none");
     outline.setAttribute("stroke", "#2563eb");
     outline.setAttribute("stroke-width", "2");

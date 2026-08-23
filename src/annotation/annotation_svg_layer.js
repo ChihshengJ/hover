@@ -1,7 +1,7 @@
 import { renderDrawingAnnotation } from "./drawing/drawing_svg_renderer.js";
 
 export class AnnotationSVGLayer {
-  /** @type {ViewerPane} */
+  /** @type {import('../viewpane.js').ViewerPane} */
   #pane = null;
 
   /** @type {SVGSVGElement} */
@@ -56,8 +56,8 @@ export class AnnotationSVGLayer {
   #updateSVGSize() {
     // Match SVG size to stage scroll dimensions
     const stageRect = this.#pane.stage.getBoundingClientRect();
-    this.#svg.setAttribute("width", stageRect.width);
-    this.#svg.setAttribute("height", stageRect.height);
+    this.#svg.setAttribute("width", String(stageRect.width));
+    this.#svg.setAttribute("height", String(stageRect.height));
     this.#svg.setAttribute(
       "viewBox",
       `0 0 ${stageRect.width} ${stageRect.height}`,
@@ -166,16 +166,16 @@ export class AnnotationSVGLayer {
       element.setAttribute("y", rect.y);
       element.setAttribute("width", rect.width);
       element.setAttribute("height", rect.height);
-      element.setAttribute("rx", 3);
-      element.setAttribute("ry", 3);
+      element.setAttribute("rx", "3");
+      element.setAttribute("ry", "3");
     } else {
       const underlineHeight = 2;
       element.setAttribute("x", rect.x);
       element.setAttribute("y", rect.y + rect.height + underlineHeight);
       element.setAttribute("width", rect.width);
-      element.setAttribute("height", underlineHeight);
-      element.setAttribute("rx", 1);
-      element.setAttribute("ry", 1);
+      element.setAttribute("height", String(underlineHeight));
+      element.setAttribute("rx", "1");
+      element.setAttribute("ry", "1");
     }
 
     element.style.pointerEvents = "auto";
@@ -206,14 +206,14 @@ export class AnnotationSVGLayer {
     element.classList.add("annotation-outline");
     element.dataset.color = annotation.color;
 
-    element.setAttribute("x", minX - padding);
-    element.setAttribute("y", minY - padding);
-    element.setAttribute("width", maxX - minX + padding * 2);
-    element.setAttribute("height", maxY - minY + padding * 2);
-    element.setAttribute("rx", 4);
-    element.setAttribute("ry", 4);
+    element.setAttribute("x", String(minX - padding));
+    element.setAttribute("y", String(minY - padding));
+    element.setAttribute("width", String(maxX - minX + padding * 2));
+    element.setAttribute("height", String(maxY - minY + padding * 2));
+    element.setAttribute("rx", "4");
+    element.setAttribute("ry", "4");
     element.setAttribute("fill", "none");
-    element.setAttribute("stroke-width", 2);
+    element.setAttribute("stroke-width", "2");
     element.setAttribute("stroke-dasharray", "6 3");
 
     return element;

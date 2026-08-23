@@ -151,13 +151,17 @@ export class DrawingToolbar {
   #updateActiveStates() {
     if (!this.#container) return;
 
-    this.#container.querySelectorAll(".drawing-color-btn").forEach((btn) => {
-      btn.classList.toggle("active", btn.dataset.color === this.#activeColor);
-    });
+    this.#container
+      .querySelectorAll(".drawing-color-btn")
+      .forEach((/** @type {HTMLElement} */ btn) => {
+        btn.classList.toggle("active", btn.dataset.color === this.#activeColor);
+      });
 
-    this.#container.querySelectorAll(".drawing-width-btn").forEach((btn) => {
-      btn.classList.toggle("active", btn.dataset.width === this.#activeWidth);
-    });
+    this.#container
+      .querySelectorAll(".drawing-width-btn")
+      .forEach((/** @type {HTMLElement} */ btn) => {
+        btn.classList.toggle("active", btn.dataset.width === this.#activeWidth);
+      });
   }
 
   destroy() {

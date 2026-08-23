@@ -65,7 +65,11 @@ class ImageModal {
 
     // Events
     this.backdrop.addEventListener("mousedown", (e) => {
-      if (e.target === this.backdrop || e.target.classList.contains("image-modal-container")) {
+      const target = /** @type {HTMLElement} */ (e.target);
+      if (
+        target === this.backdrop ||
+        target.classList.contains("image-modal-container")
+      ) {
         this.hide();
       }
     });

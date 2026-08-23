@@ -88,7 +88,7 @@ export class RegionSelectController {
   /** @param {PointerEvent} e */
   #handlePointerDown(e) {
     if (e.button !== 0) return;
-    if (e.target.closest("a, button, .pane-controls")) return;
+    if (/** @type {Element} */ (e.target).closest("a, button, .pane-controls")) return;
 
     const page = this.#findPageFromPoint(e.clientX, e.clientY);
     if (!page) return;

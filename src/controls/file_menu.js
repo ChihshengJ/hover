@@ -1,6 +1,5 @@
 /**
- * @typedef {import('./window_manager.js').SplitWindowManager} SplitWindowManager;
- * @typedef {import('../settings/onboarding.js').OnboardingWalkThrough} OnboardingWalkThrough;
+ * @typedef {import('../window_manager.js').SplitWindowManager} SplitWindowManager
  */
 
 import { OnboardingWalkthrough } from "../settings/onboarding.js";
@@ -42,8 +41,10 @@ export class FileMenu {
 
   /** Sync the night-mode checkbox to whatever class main.js applied to body. */
   #syncNightModeToggleFromBody() {
-    const checkbox = this.menuList.querySelector(
-      '[data-action="night-mode"] .file-menu-toggle-input',
+    const checkbox = /** @type {HTMLInputElement} */ (
+      this.menuList.querySelector(
+        '[data-action="night-mode"] .file-menu-toggle-input',
+      )
     );
     if (checkbox) {
       checkbox.checked = document.body.classList.contains("night-mode");
@@ -171,7 +172,9 @@ export class FileMenu {
     document.body.appendChild(this.hitArea);
     document.body.appendChild(this.container);
 
-    this.fileInput = document.getElementById("file-import");
+    this.fileInput = /** @type {HTMLInputElement} */ (
+      document.getElementById("file-import")
+    );
     this.#createGooFilter();
   }
 
@@ -238,18 +241,25 @@ export class FileMenu {
 
     // Menu item clicks
     this.menuList.addEventListener("click", (e) => {
-      const toggleItem = e.target.closest(".file-menu-toggle-item");
+      const target = /** @type {HTMLElement} */ (e.target);
+      const toggleItem = /** @type {HTMLElement} */ (
+        target.closest(".file-menu-toggle-item")
+      );
       if (toggleItem) {
         e.preventDefault();
-        const checkbox = toggleItem.querySelector(".file-menu-toggle-input");
-        if (!e.target.classList.contains("file-menu-toggle-input")) {
+        const checkbox = /** @type {HTMLInputElement} */ (
+          toggleItem.querySelector(".file-menu-toggle-input")
+        );
+        if (!target.classList.contains("file-menu-toggle-input")) {
           checkbox.checked = !checkbox.checked;
         }
         this.#handleToggleAction(toggleItem.dataset.action, checkbox.checked);
         return; // Don't close menu
       }
 
-      const item = e.target.closest(".file-menu-item");
+      const item = /** @type {HTMLElement} */ (
+        target.closest(".file-menu-item")
+      );
       if (item) {
         this.#handleAction(item.dataset.action);
       }
@@ -257,7 +267,7 @@ export class FileMenu {
 
     // File input
     this.fileInput.addEventListener("change", (e) => {
-      const file = e.target.files[0];
+      const file = /** @type {HTMLInputElement} */ (e.target).files[0];
       if (!file || file.type !== "application/pdf") return;
 
       this.load(file);
@@ -267,8 +277,8 @@ export class FileMenu {
     document.addEventListener("click", (e) => {
       if (
         this.isOpen &&
-        !this.container.contains(e.target) &&
-        !this.hitArea.contains(e.target)
+        !this.container.contains(/** @type {Node} */ (e.target)) &&
+        !this.hitArea.contains(/** @type {Node} */ (e.target))
       ) {
         this.closeMenu();
       }
@@ -395,8 +405,10 @@ export class FileMenu {
 
   // Called externally to sync toggle state (e.g. if keyboard shortcut triggers night mode)
   syncNightModeToggle(isNight) {
-    const checkbox = this.menuList.querySelector(
-      '[data-action="night-mode"] .file-menu-toggle-input',
+    const checkbox = /** @type {HTMLInputElement} */ (
+      this.menuList.querySelector(
+        '[data-action="night-mode"] .file-menu-toggle-input',
+      )
     );
     if (checkbox) checkbox.checked = isNight;
   }
@@ -470,13 +482,6 @@ export class FileMenu {
       setTimeout(() => URL.revokeObjectURL(url), 1000);
     } catch (error) {
       console.error("Error saving PDF:", error);
-      const pdfUrl = docModel.pdfDoc?.loadingTask?.source?.url;
-      if (pdfUrl) {
-        const link = document.createElement("a");
-        link.href = pdfUrl;
-        link.download = document.title.replace(" - Hover PDF", "") + ".pdf";
-        link.click();
-      }
     }
   }
 
@@ -602,7 +607,9 @@ export class FileMenu {
 
     // Fallback: look for cite link with cluster ID
     // Format: /scholar?cites=PAPER_ID or onclick with data-cid
-    const citeLink = doc.querySelector('a[href*="cites="]');
+    const citeLink = /** @type {HTMLAnchorElement} */ (
+      doc.querySelector('a[href*="cites="]')
+    );
     if (citeLink) {
       const match = citeLink.href.match(/cites=([^&]+)/);
       if (match) return match[1];
@@ -782,11 +789,12 @@ export class FileMenu {
     document.addEventListener("keydown", handleEscape);
 
     // Copy button handlers
-    overlay.querySelectorAll(".citation-copy-btn").forEach((btn) => {
+    overlay.querySelectorAll(".citation-copy-btn").forEach((el) => {
+      const btn = /** @type {HTMLElement} */ (el);
       btn.addEventListener("click", async (e) => {
         e.stopPropagation();
         const citation = btn.dataset.citation;
-        const spanEl = btn.querySelector("span");
+        const spanEl = /** @type {HTMLElement} */ (btn.querySelector("span"));
 
         try {
           await navigator.clipboard.writeText(citation);

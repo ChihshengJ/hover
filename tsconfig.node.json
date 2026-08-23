@@ -1,0 +1,16 @@
+{
+  // The build tooling, which runs under Node rather than in the browser.
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "allowJs": true,
+    "checkJs": true,
+    "noEmit": true,
+    "strict": false,
+    "skipLibCheck": true,
+    "lib": ["ES2022"],
+    "types": ["node"]
+  },
+  "include": ["vite.config.js", "scripts/**/*"]
+}

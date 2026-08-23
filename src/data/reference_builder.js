@@ -12,6 +12,24 @@
  * @property {Array<{pageNumber: number, rects: Array}>} pageRanges
  */
 
+/**
+ * @typedef {Object} ReferenceSectionEdge
+ * @property {number} pageNumber
+ * @property {number} lineIndex
+ * @property {number} y
+ */
+
+/**
+ * What `buildReferenceIndex()` returns. One flat section for the whole
+ * document; see docs/architecture_plan.md Phase 4 for the multi-section shape.
+ *
+ * @typedef {Object} ReferenceIndex
+ * @property {ReferenceAnchor[]} anchors
+ * @property {string} format
+ * @property {ReferenceSectionEdge|null} sectionStart
+ * @property {ReferenceSectionEdge|null} sectionEnd
+ */
+
 import { FontStyle } from "./text_index.js";
 import {
   REFERENCE_SECTION_PATTERN,
@@ -53,6 +71,7 @@ const BACKWARD_SCAN_RATIO = 0.4;
 /**
  * @param {import('./text_index.js').DocumentTextIndex} textIndex
  * @param {Array<{title: string, pageIndex: number, left: number, top: number, children: Array}>} [outline]
+ * @returns {Promise<ReferenceIndex>}
  */
 export async function buildReferenceIndex(textIndex, outline) {
   if (!textIndex) return EMPTY_RESULT;

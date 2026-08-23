@@ -15,7 +15,7 @@ import { DrawingSelectionManager } from "./drawing/drawing_selection.js";
  * - SVG-based annotation rendering
  */
 export class AnnotationManager {
-  /** @type {ViewerPane} */
+  /** @type {import('../viewpane.js').ViewerPane} */
   #pane = null;
 
   /** @type {AnnotationToolbar} */
@@ -46,7 +46,7 @@ export class AnnotationManager {
   #isCreatingAnnotation = false;
 
   /**
-   * @param {ViewerPane} pane
+   * @param {import('../viewpane.js').ViewerPane} pane
    */
   constructor(pane) {
     this.#pane = pane;
@@ -73,14 +73,14 @@ export class AnnotationManager {
       "pointerdown",
       (e) => {
         if (
-          e.target.closest(".annotation-toolbar-container") ||
-          e.target.closest(".comment-input-container")
+          /** @type {Element} */ (e.target).closest(".annotation-toolbar-container") ||
+          /** @type {Element} */ (e.target).closest(".comment-input-container")
         ) {
           return;
         }
 
         // Don't hide if clicking on an annotation mark (will be handled by onAnnotationClick)
-        if (e.target.closest(".annotation-mark")) {
+        if (/** @type {Element} */ (e.target).closest(".annotation-mark")) {
           return;
         }
 
@@ -89,7 +89,7 @@ export class AnnotationManager {
           setTimeout(() => {
             if (!this.#hasActiveSelection()) {
               this.#toolbar.hide();
-              this.#selectAnnotation(null);
+              this.selectAnnotation(null);
             }
           }, 100);
         }
@@ -130,7 +130,7 @@ export class AnnotationManager {
     };
 
     this.#pane.selectAnnotation = (annotationId) => {
-      this.#selectAnnotation(annotationId);
+      this.selectAnnotation(annotationId);
     };
   }
 
@@ -299,7 +299,7 @@ export class AnnotationManager {
     if (!text) return;
     await this.#writeClipboardText(text);
     this.#toolbar.hide();
-    this.#selectAnnotation(null);
+    this.selectAnnotation(null);
   }
 
   async #writeClipboardText(text) {
@@ -333,7 +333,7 @@ export class AnnotationManager {
       return;
     }
 
-    this.#selectAnnotation(annotationId);
+    this.selectAnnotation(annotationId);
 
     const rect = this.#getAnnotationRect(annotationId);
     if (!rect) return;
@@ -342,7 +342,7 @@ export class AnnotationManager {
       onAnnotate: async (options) => {
         await this.#pane.document.updateAnnotation(annotationId, options);
         this.#toolbar.hide();
-        this.#selectAnnotation(null);
+        this.selectAnnotation(null);
       },
       onComment: () => {
         this.#commentInput.show(
@@ -362,13 +362,13 @@ export class AnnotationManager {
       },
       onDelete: async () => {
         await this.#pane.document.deleteAnnotation(annotationId);
-        this.#selectAnnotation(null);
+        this.selectAnnotation(null);
       },
       onCopy: () => this.#copyAnnotationText(annotationId),
     });
   }
 
-  #selectAnnotation(annotationId) {
+  selectAnnotation(annotationId) {
     // Deselect previous
     if (this.#selectedAnnotationId) {
       this.#setAnnotationSelected(this.#selectedAnnotationId, false);

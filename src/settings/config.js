@@ -270,6 +270,7 @@ export class Config {
    * Mirror a write to both chrome.storage.local and localStorage.
    * @param {string} storageKey
    * @param {any} value
+   * @returns {Promise<void>}
    */
   static _writeOne(storageKey, value) {
     try {

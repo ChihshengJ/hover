@@ -6,15 +6,21 @@ import { ingestFile } from "./src/ingest.js";
 const IS_FIREFOX = __TARGET__ === "firefox";
 
 document.addEventListener("DOMContentLoaded", async () => {
-  const toggle = document.getElementById("toggle-enabled");
+  const toggle = /** @type {HTMLInputElement} */ (
+    document.getElementById("toggle-enabled")
+  );
   const statusText = document.getElementById("status-text");
   const container = document.querySelector(".popup-container");
-  const openPdfBtn = document.getElementById("open-pdf-btn");
-  const fileInput = document.getElementById("file-input");
+  const openPdfBtn = /** @type {HTMLButtonElement} */ (
+    document.getElementById("open-pdf-btn")
+  );
+  const fileInput = /** @type {HTMLInputElement} */ (
+    document.getElementById("file-input")
+  );
 
   const { hoverEnabled = true } =
     await chrome.storage.local.get("hoverEnabled");
-  toggle.checked = hoverEnabled;
+  toggle.checked = Boolean(hoverEnabled);
   updateUI(hoverEnabled);
 
   toggle.addEventListener("change", async () => {
@@ -52,7 +58,9 @@ document.addEventListener("DOMContentLoaded", async () => {
     fileInput.click();
   });
 
-  const openTabBtn = document.getElementById("open-tab-btn");
+  const openTabBtn = /** @type {HTMLButtonElement} */ (
+    document.getElementById("open-tab-btn")
+  );
 
   openTabBtn.addEventListener("click", async () => {
     try {
@@ -107,7 +115,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   // Chrome/Safari one-click path: the popup stays alive across the file dialog,
   // so park the bytes and open the viewer straight from here.
   fileInput.addEventListener("change", async (e) => {
-    const file = e.target.files[0];
+    const file = /** @type {HTMLInputElement} */ (e.target).files[0];
     if (!file) return;
 
     try {

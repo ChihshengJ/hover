@@ -147,8 +147,8 @@ export class DragController {
 
       // 1. Apply goo custom properties
       if (this._pendingGooX !== null) {
-        this.gooContainer.style.setProperty("--x", this._pendingGooX);
-        this.gooContainer.style.setProperty("--y", this._pendingGooY);
+        this.gooContainer.style.setProperty("--x", String(this._pendingGooX));
+        this.gooContainer.style.setProperty("--y", String(this._pendingGooY));
         this._pendingGooX = null;
         this._pendingGooY = null;
       }

@@ -113,7 +113,7 @@ export class LoadingOverlay {
 
   /**
    * Hide the loading overlay with dissolve animation
-   * @returns {Promise} Resolves when animation completes
+   * @returns {Promise<void>} Resolves when animation completes
    */
   hide() {
     return new Promise((resolve) => {

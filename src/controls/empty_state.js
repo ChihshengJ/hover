@@ -41,13 +41,15 @@ export class EmptyState {
     `;
     this.container.appendChild(wrap);
 
-    const input = wrap.querySelector("#hover-empty-input");
+    const input = /** @type {HTMLInputElement} */ (
+      wrap.querySelector("#hover-empty-input")
+    );
     wrap.querySelector("#hover-empty-open").addEventListener("click", () => {
       input.value = "";
       input.click();
     });
     input.addEventListener("change", async (e) => {
-      const file = e.target.files[0];
+      const file = /** @type {HTMLInputElement} */ (e.target).files[0];
       if (!file) return;
       try {
         await ingestFile(file);

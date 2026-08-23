@@ -378,7 +378,7 @@ export class PageView {
               cursor: pointer;
             `;
             el.dataset.citationId = citRef.citationId;
-            el.dataset.targetIndex = ti;
+            el.dataset.targetIndex = String(ti);
             fragment.appendChild(el);
           }
         }
@@ -532,7 +532,7 @@ export class PageView {
     this.annotationLayer.addEventListener(
       "mouseenter",
       (e) => {
-        const citRect = e.target.closest(".citation-rect");
+        const citRect = /** @type {Element} */ (e.target).closest(".citation-rect");
         if (citRect) {
           this.#handleCitationEnter(citRect, citationPopup);
           return;
@@ -544,7 +544,7 @@ export class PageView {
     this.annotationLayer.addEventListener(
       "mouseleave",
       (e) => {
-        const citRect = e.target.closest(".citation-rect");
+        const citRect = /** @type {Element} */ (e.target).closest(".citation-rect");
         if (citRect) {
           this.#handleLeave(citRect, citationPopup);
           return;
@@ -554,21 +554,21 @@ export class PageView {
     );
 
     this.annotationLayer.addEventListener("click", (e) => {
-      const citRect = e.target.closest(".citation-rect");
+      const citRect = /** @type {Element} */ (e.target).closest(".citation-rect");
       if (citRect) {
         e.preventDefault();
         this.#handleCitationClick(citRect);
         return;
       }
 
-      const refRect = e.target.closest(".crossref-rect");
+      const refRect = /** @type {Element} */ (e.target).closest(".crossref-rect");
       if (refRect) {
         e.preventDefault();
         this.#handleCrossRefClick(refRect);
         return;
       }
 
-      // const imgRect = e.target.closest(".image-overlay-rect");
+      // const imgRect = /** @type {Element} */ (e.target).closest(".image-overlay-rect");
       // if (imgRect) {
       //   e.preventDefault();
       //   getSharedImageModal().show(imgRect._imageInfo);
@@ -869,7 +869,9 @@ export class PageView {
 
   #initLayer(layerType) {
     this.rotateInner.style.position = "relative";
-    let layer = this.rotateInner.querySelector(`.${layerType}Layer`);
+    let layer = /** @type {HTMLElement} */ (
+      this.rotateInner.querySelector(`.${layerType}Layer`)
+    );
     if (!layer) {
       layer = document.createElement("div");
       layer.className = `${layerType}Layer`;

@@ -134,7 +134,7 @@ export class AnnotationToolbar {
 
   #attachEventListeners() {
     // Color buttons
-    this.#toolbar.querySelectorAll(".color-btn").forEach((btn) => {
+    this.#toolbar.querySelectorAll(".color-btn").forEach((/** @type {HTMLElement} */ btn) => {
       btn.addEventListener("click", (e) => {
         e.stopPropagation();
         const color = btn.dataset.color;
@@ -145,7 +145,7 @@ export class AnnotationToolbar {
     });
 
     // Action buttons
-    this.#toolbar.querySelectorAll(".action-btn").forEach((btn) => {
+    this.#toolbar.querySelectorAll(".action-btn").forEach((/** @type {HTMLElement} */ btn) => {
       btn.addEventListener("click", (e) => {
         e.stopPropagation();
         const action = btn.dataset.action;
@@ -191,7 +191,7 @@ export class AnnotationToolbar {
     this.#toolbar.dataset.color = AnnotationToolbar.#lastColor;
 
     // Update color buttons
-    this.#toolbar.querySelectorAll(".color-btn").forEach((btn) => {
+    this.#toolbar.querySelectorAll(".color-btn").forEach((/** @type {HTMLElement} */ btn) => {
       btn.classList.toggle(
         "active",
         btn.dataset.color === AnnotationToolbar.#lastColor,
@@ -203,7 +203,7 @@ export class AnnotationToolbar {
       .querySelectorAll(
         '.action-btn[data-action="highlight"], .action-btn[data-action="underline"]',
       )
-      .forEach((btn) => {
+      .forEach((/** @type {HTMLElement} */ btn) => {
         btn.classList.toggle(
           "active",
           btn.dataset.action === AnnotationToolbar.#lastType,
@@ -236,6 +236,7 @@ export class AnnotationToolbar {
    * @param {Object} callbacks - Event callbacks
    * @param {Function} callbacks.onAnnotate - Called when annotation is created
    * @param {Function} callbacks.onComment - Called when comment button clicked
+   * @param {Function} callbacks.onCopy - Called when copy button clicked
    */
   showForSelection(selectionRect, { onAnnotate, onComment, onCopy }) {
     this.#selectionRect = selectionRect;

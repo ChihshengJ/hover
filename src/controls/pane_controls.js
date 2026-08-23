@@ -38,7 +38,9 @@ export class PaneControls {
     `;
 
     this.element.addEventListener("click", (e) => {
-      const btn = e.target.closest("[data-action]");
+      const btn = /** @type {HTMLElement} */ (
+        /** @type {Element} */ (e.target).closest("[data-action]")
+      );
       if (btn) this.#handleAction(btn.dataset.action);
     });
 

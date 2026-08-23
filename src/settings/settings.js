@@ -1,5 +1,5 @@
 /**
- * @typedef {import('./window_manager.js').SplitWindowManager} SplitWindowManager
+ * @typedef {import('../window_manager.js').SplitWindowManager} SplitWindowManager
  */
 
 import { WallpaperManager } from "./wallpaper.js";
@@ -407,7 +407,7 @@ export class Settings {
 
     // File input change
     this._fileInput.addEventListener("change", (e) => {
-      const file = e.target.files[0];
+      const file = /** @type {HTMLInputElement} */ (e.target).files[0];
       if (file) {
         this.wallpaper.addFromFile(file).then(() => this._refreshGrid());
       }
@@ -415,7 +415,7 @@ export class Settings {
     });
 
     // URL input
-    const urlArea = overlay.querySelector("#wallpaper-url-area");
+    const urlArea = /** @type {HTMLElement} */ (overlay.querySelector("#wallpaper-url-area"));
     const urlInput = overlay.querySelector("#wallpaper-url-input");
     const urlConfirm = overlay.querySelector("#wallpaper-url-confirm");
     const urlCancel = overlay.querySelector("#wallpaper-url-cancel");
@@ -553,9 +553,9 @@ export class Settings {
     if (!this._overlay) return;
 
     const editBtn = this._overlay.querySelector(".settings-edit-btn");
-    const deleteBtn = this._overlay.querySelector(
+    const deleteBtn = /** @type {HTMLElement} */ (this._overlay.querySelector(
       ".settings-delete-confirm-btn",
-    );
+    ));
 
     if (this._editMode) {
       editBtn.classList.add("active");
@@ -645,7 +645,7 @@ export class Settings {
     `;
 
     const img = card.querySelector("img");
-    const loading = card.querySelector(".wallpaper-card-loading");
+    const loading = /** @type {HTMLElement} */ (card.querySelector(".wallpaper-card-loading"));
 
     img.addEventListener("load", () => {
       img.style.display = "";
@@ -795,7 +795,7 @@ export class Settings {
       .addEventListener("click", (e) => {
         e.stopPropagation();
         popover.remove();
-        const urlArea = this._overlay?.querySelector("#wallpaper-url-area");
+        const urlArea = /** @type {HTMLElement} */ (this._overlay?.querySelector("#wallpaper-url-area"));
         if (urlArea) {
           urlArea.style.display = "flex";
           urlArea.querySelector("input")?.focus();
@@ -803,7 +803,10 @@ export class Settings {
       });
 
     const closePopover = (e) => {
-      if (!popover.contains(e.target) && e.target !== anchorCard) {
+      if (
+        !popover.contains(/** @type {Node} */ (e.target)) &&
+        e.target !== anchorCard
+      ) {
         popover.remove();
         document.removeEventListener("click", closePopover);
       }
@@ -812,8 +815,8 @@ export class Settings {
   }
 
   _updateDeleteCount() {
-    const btn = this._overlay?.querySelector(".settings-delete-confirm-btn");
-    const span = btn?.querySelector(".delete-count");
+    const btn = /** @type {HTMLElement} */ (this._overlay?.querySelector(".settings-delete-confirm-btn"));
+    const span = /** @type {HTMLElement} */ (btn?.querySelector(".delete-count"));
     if (!btn || !span) return;
 
     const count = this._deleteSet.size;

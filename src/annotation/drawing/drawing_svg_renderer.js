@@ -61,7 +61,7 @@ export function renderDrawingAnnotation(annotation, pane) {
     path.dataset.color = annotation.color;
     path.setAttribute("d", pathData);
     path.setAttribute("stroke", hexColor);
-    path.setAttribute("stroke-width", Math.max(1, strokeWidthPx));
+    path.setAttribute("stroke-width", String(Math.max(1, strokeWidthPx)));
     path.setAttribute("fill", "none");
     path.setAttribute("stroke-linecap", "round");
     path.setAttribute("stroke-linejoin", "round");
@@ -88,12 +88,12 @@ export function renderDrawingAnnotation(annotation, pane) {
     const hitArea = document.createElementNS(ns, "rect");
     hitArea.classList.add("annotation-mark", "drawing", "drawing-hit-area");
     hitArea.dataset.color = annotation.color;
-    hitArea.setAttribute("x", allMinX - padding);
-    hitArea.setAttribute("y", allMinY - padding);
-    hitArea.setAttribute("width", allMaxX - allMinX + padding * 2);
-    hitArea.setAttribute("height", allMaxY - allMinY + padding * 2);
-    hitArea.setAttribute("rx", 4);
-    hitArea.setAttribute("ry", 4);
+    hitArea.setAttribute("x", String(allMinX - padding));
+    hitArea.setAttribute("y", String(allMinY - padding));
+    hitArea.setAttribute("width", String(allMaxX - allMinX + padding * 2));
+    hitArea.setAttribute("height", String(allMaxY - allMinY + padding * 2));
+    hitArea.setAttribute("rx", "4");
+    hitArea.setAttribute("ry", "4");
     hitArea.setAttribute("fill", "transparent");
     hitArea.setAttribute("stroke", "none");
     hitArea.style.pointerEvents = "auto";

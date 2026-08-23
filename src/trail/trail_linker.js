@@ -60,11 +60,13 @@ export class TrailLinker {
     document.body.addEventListener(
       "click",
       (e) => {
-        const link = e.target.closest("a");
+        const link = /** @type {Element} */ (e.target).closest("a");
         if (!link) return;
 
         // Only capture clicks inside the citation popup
-        const popup = link.closest(".citation-popup");
+        const popup = /** @type {HTMLElement} */ (
+          link.closest(".citation-popup")
+        );
         if (!popup) return;
 
         // Must be an outbound link (scholar-title or URL/arXiv in reference text)

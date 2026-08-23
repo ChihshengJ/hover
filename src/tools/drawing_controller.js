@@ -185,11 +185,11 @@ export class DrawingController {
   /** @param {PointerEvent} e */
   #handlePointerDown(e) {
     if (e.button !== 0) return;
-    if (e.target.closest(".drawing-toolbar, .action-btn-container, button, a"))
+    if (/** @type {Element} */ (e.target).closest(".drawing-toolbar, .action-btn-container, button, a"))
       return;
 
     // Skip drawing if clicking on an existing drawing annotation (let selection handle it)
-    if (e.target.closest(".annotation-mark.drawing")) return;
+    if (/** @type {Element} */ (e.target).closest(".annotation-mark.drawing")) return;
 
 
 
@@ -430,12 +430,6 @@ export class DrawingController {
     return null;
   }
 
-  /**
-   * @param {number} clientX
-   * @param {number} clientY
-   * @param {PageView} pageView
-   * @returns {{x: number, y: number}}
-   */
   #updateBrushCursor(brush, page) {
     if (!this.#brushCursor) return;
     const rect = page.rotateInner.getBoundingClientRect();
@@ -444,6 +438,12 @@ export class DrawingController {
     this.#brushCursor.style.display = "block";
   }
 
+  /**
+   * @param {number} clientX
+   * @param {number} clientY
+   * @param {PageView} pageView
+   * @returns {{x: number, y: number}}
+   */
   #clientToPageCoords(clientX, clientY, pageView) {
     const rect = pageView.rotateInner.getBoundingClientRect();
     return {

@@ -1,8 +1,9 @@
 /**
- * @typedef {import('./window_manager.js').SplitWindowManager} SplitWindowManager;
- * @typedef {import('./viewpane.js').ViewerPane} ViewerPane;
- * @typedef {import('./controls/navigate_tree.js').NavigationPopup} NavigationPopup;
- *
+ * @typedef {import('../window_manager.js').SplitWindowManager} SplitWindowManager
+ * @typedef {import('../viewpane.js').ViewerPane} ViewerPane
+ */
+
+/**
  * @typedef {Object} SectionMark
  * @property {string} title
  * @property {number} position - Normalized position (0-1) in document
@@ -79,7 +80,7 @@ export class ProgressBar {
   /** @type {ViewerPane|null} */
   #previousPane = null;
 
-  /** @type {Function} */
+  /** @type {(() => void)|null} */
   #resizeHandler = null;
 
   get activePane() {
@@ -183,7 +184,7 @@ export class ProgressBar {
       const mark = document.createElement("div");
       mark.className = "section-mark";
       mark.style.top = `${normalizedPosition * 100}%`;
-      mark.dataset.index = index;
+      mark.dataset.index = String(index);
       mark.title = section.title;
 
       const tick = document.createElement("div");

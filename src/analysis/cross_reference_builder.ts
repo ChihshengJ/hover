@@ -10,23 +10,6 @@
  * 5. Matches cross-references to their target definitions
  *
  * Output is organized by page for efficient lazy rendering.
- *
- * @typedef {Object} CrossRefTarget
- * @property {string} type - 'figure' | 'table' | 'section' | 'equation' | etc.
- * @property {string} targetId - The identifier (e.g., "1", "1a", "A.2")
- * @property {number} pageNumber - 1-based page number
- * @property {number} x - X coordinate of the target
- * @property {number} y - Y coordinate of the target
- * @property {string} text - The caption/header text
- *
- * @typedef {Object} CrossReference
- * @property {string} type - 'figure' | 'table' | 'section' | 'equation' | etc.
- * @property {string} text - The matched text
- * @property {string} targetId - The identifier
- * @property {number} pageNumber - 1-based page number
- * @property {Array<{x: number, y: number, width: number, height: number}>} rects
- * @property {{pageIndex: number, x: number, y: number}|null} targetLocation
- * @property {number} flags - CitationFlags bitmask
  */
 
 import {
@@ -36,41 +19,78 @@ import {
   CrossRefType,
 } from "./lexicon.js";
 import { FontStyle } from "./text_index.js";
+import { rectFromPdfium } from "./geometry.js";
 import {
   SECTION_NUMBER_EXTRACT,
   parseRomanNumeral,
 } from "./outline_builder.js";
+import type { OutlineItem } from "./outline_builder.js";
+import type { DocumentTextIndex, TextLine } from "./text_index.js";
+import type { ReferenceIndex } from "./reference_builder.js";
+import type { RawCrossRef } from "./inline_extractor.js";
+
+/** Where a "Figure 1"-style reference points: the caption that defines it. */
+export interface CrossRefTarget {
+  /** 'figure' | 'table' | 'section' | 'equation' | 'appendix' | … */
+  type: string;
+  /** The identifier (e.g. "1", "1a", "A.2"). */
+  targetId: string;
+  /** 1-based. */
+  pageNumber: number;
+  x: number;
+  y: number;
+  /** The caption/header text. */
+  text: string;
+}
+
+export interface CrossReference {
+  /** 'figure' | 'table' | 'section' | 'equation' | … */
+  type: string;
+  /** The matched text. */
+  text: string;
+  targetId: string;
+  /** 1-based. */
+  pageNumber: number;
+  rects: Rect[];
+  targetLocation: PageLocation | null;
+  /** CitationFlags bitmask. */
+  flags: number;
+  /**
+   * True for the caption that defines the target ("Figure 1: …"), which must
+   * not be rendered as a link to itself.
+   */
+  isDefinition?: boolean;
+}
+
+/** What `build()` hands back. */
+export interface CrossRefBuildResult {
+  byPage: Map<number, CrossReference[]>;
+  targets: Map<string, CrossRefTarget>;
+}
 
 /**
  * Main cross-reference builder class
  */
 export class CrossReferenceBuilder {
-  #textIndex = null;
-  #nativeAnnotationsByPage = null;
-  #referenceIndex = null;
-  #outline = null;
+  #textIndex: DocumentTextIndex = null;
+  #nativeAnnotationsByPage: Map<number, any[]> = null;
+  #referenceIndex: ReferenceIndex | null = null;
+  #outline: OutlineItem[] = null;
   #numPages = 0;
 
-  // Extracted targets (definitions)
-  #targets = new Map();
+  /** Extracted targets (definitions), keyed `${type}-${targetId}`. */
+  #targets = new Map<string, CrossRefTarget>();
 
   // Reference section bounds (to identify non-reference links)
   #refSectionStartPage = Infinity;
   #refSectionEndPage = -1;
 
-  /**
-   * @param {Object} textIndex - DocumentTextIndex instance
-   * @param {Map<number, Array>} nativeAnnotationsByPage - Native annotations by page
-   * @param {Object} referenceIndex - Reference index
-   * @param {number} numPages - Total page count
-   * @param {import('./outline_builder.js').OutlineItem[]} outline - Document outline tree
-   */
   constructor(
-    textIndex,
-    nativeAnnotationsByPage,
-    referenceIndex,
-    numPages,
-    outline,
+    textIndex: DocumentTextIndex,
+    nativeAnnotationsByPage: Map<number, any[]>,
+    referenceIndex: ReferenceIndex,
+    numPages: number,
+    outline: OutlineItem[],
   ) {
     this.#textIndex = textIndex;
     this.#nativeAnnotationsByPage = nativeAnnotationsByPage || new Map();
@@ -85,13 +105,9 @@ export class CrossReferenceBuilder {
   /**
    * Build merged cross-references from extracted and native sources
    *
-   * @param {Array} extractedCrossRefs - Raw cross-refs from InlineExtractor
-   * @returns {{
-   *   byPage: Map<number, CrossReference[]>,
-   *   targets: Map<string, CrossRefTarget>
-   * }}
+   * @param extractedCrossRefs Raw cross-refs from InlineExtractor
    */
-  build(extractedCrossRefs) {
+  build(extractedCrossRefs: RawCrossRef[]): CrossRefBuildResult {
     console.log("[CrossRefBuilder] Starting cross-reference build...");
 
     // Phase 1: Map outline sections to targets
@@ -148,7 +164,7 @@ export class CrossReferenceBuilder {
   #mapSections() {
     if (!this.#outline?.length) return;
 
-    const walk = (items) => {
+    const walk = (items: OutlineItem[]) => {
       for (const item of items) {
         this.#registerOutlineItem(item);
         if (item.children?.length) walk(item.children);
@@ -160,7 +176,7 @@ export class CrossReferenceBuilder {
   /**
    * Register a single outline item as section/appendix target(s).
    */
-  #registerOutlineItem(item) {
+  #registerOutlineItem(item: OutlineItem) {
     const prefix = this.#extractPrefix(item.title);
 
     if (prefix) {
@@ -215,7 +231,7 @@ export class CrossReferenceBuilder {
    * Converts Roman numerals to Arabic, preserves letters for appendices.
    * @returns {string|null}
    */
-  #extractPrefix(title) {
+  #extractPrefix(title: string): string | null {
     const match = title.match(SECTION_NUMBER_EXTRACT);
     if (!match) return null;
 
@@ -262,14 +278,14 @@ export class CrossReferenceBuilder {
    * (e.g., "Figure 1:" at start of a caption line with bold font).
    * Uses targeted line lookups instead of scanning all pages.
    */
-  #findDefinitions(crossRefs) {
+  #findDefinitions(crossRefs: RawCrossRef[]) {
     const bodyFontSize = this.#textIndex?.getBodyFontSize() || 10;
     const bodyFontStyle =
       this.#textIndex?.getBodyFontStyle() || FontStyle.REGULAR;
 
     // Cache page data lookups
-    const pageCache = new Map();
-    const getPage = (pageNum) => {
+    const pageCache = new Map<number, ReturnType<DocumentTextIndex["getPageData"]>>();
+    const getPage = (pageNum: number) => {
       if (!pageCache.has(pageNum)) {
         pageCache.set(pageNum, this.#textIndex?.getPageData(pageNum));
       }
@@ -305,7 +321,10 @@ export class CrossReferenceBuilder {
         continue;
       }
 
-      const defPattern = CROSSREF_DEFINITION_PATTERNS[ref.type];
+      const defPattern =
+        CROSSREF_DEFINITION_PATTERNS[
+          ref.type as keyof typeof CROSSREF_DEFINITION_PATTERNS
+        ];
       if (!defPattern) continue;
 
       const match = line.text.match(defPattern);
@@ -346,8 +365,8 @@ export class CrossReferenceBuilder {
   /**
    * Find the closest line to a given y-coordinate.
    */
-  #findLineByY(lines, y) {
-    let best = null;
+  #findLineByY(lines: TextLine[], y: number): TextLine | null {
+    let best: TextLine | null = null;
     let bestDist = Infinity;
     for (const line of lines) {
       const dist = Math.abs(line.originalY - y);
@@ -362,7 +381,14 @@ export class CrossReferenceBuilder {
   /**
    * Validate that a line is a definition (caption/header)
    */
-  #isDefinition(line, type, bodyFontSize, bodyFontStyle, pageWidth, match) {
+  #isDefinition(
+    line: TextLine,
+    type: string,
+    bodyFontSize: number,
+    bodyFontStyle: number,
+    pageWidth: number,
+    match: RegExpMatchArray,
+  ): boolean {
     const firstItem = line.items?.[0];
     if (!firstItem) return false;
 
@@ -424,20 +450,12 @@ export class CrossReferenceBuilder {
         // Skip links with invalid destinations
         if (destX === 0 && destY === 0) continue;
 
-        const key = this.#posKey(
-          pageNum,
-          rect.origin?.x || 0,
-          rect.origin?.y || 0,
-        );
+        const flatRect = rectFromPdfium(rect);
+        const key = this.#posKey(pageNum, flatRect.x, flatRect.y);
 
         index.set(key, {
           pageNumber: pageNum,
-          rect: {
-            x: rect.origin?.x || 0,
-            y: rect.origin?.y || 0,
-            width: rect.size?.width || 0,
-            height: rect.size?.height || 0,
-          },
+          rect: flatRect,
           destPageIndex,
           destX,
           destY,
@@ -456,8 +474,11 @@ export class CrossReferenceBuilder {
    * Merge extracted cross-references with native links.
    * Native destination wins on overlap (more reliable).
    */
-  #merge(extractedCrossRefs, nativeIndex) {
-    const merged = new Map();
+  #merge(
+    extractedCrossRefs: RawCrossRef[],
+    nativeIndex: Map<string, any>,
+  ): Map<string, CrossReference> {
+    const merged = new Map<string, CrossReference>();
 
     // Add all extracted cross-references
     for (const crossRef of extractedCrossRefs) {
@@ -466,7 +487,7 @@ export class CrossReferenceBuilder {
       const rect = crossRef.rects[0];
       const key = this.#posKey(crossRef.pageNumber, rect.x, rect.y);
 
-      const ref = {
+      const ref: CrossReference = {
         type: crossRef.type,
         text: crossRef.text,
         targetId: crossRef.targetId,
@@ -509,7 +530,7 @@ export class CrossReferenceBuilder {
   /**
    * Check if cross-ref rects overlap with a native link rect
    */
-  #overlaps(refRects, nativeRect) {
+  #overlaps(refRects: Rect[], nativeRect: Rect): boolean {
     const tolerance = 5;
 
     for (const rect of refRects) {
@@ -535,7 +556,7 @@ export class CrossReferenceBuilder {
   /**
    * Match cross-references to their target definitions
    */
-  #matchTargets(mergedMap) {
+  #matchTargets(mergedMap: Map<string, CrossReference>) {
     for (const crossRef of mergedMap.values()) {
       // Skip if already has target from native link
       if (crossRef.targetLocation) continue;
@@ -561,8 +582,10 @@ export class CrossReferenceBuilder {
   /**
    * Organize cross-references by page number
    */
-  #groupByPage(mergedMap) {
-    const byPage = new Map();
+  #groupByPage(
+    mergedMap: Map<string, CrossReference>,
+  ): Map<number, CrossReference[]> {
+    const byPage = new Map<number, CrossReference[]>();
 
     for (const crossRef of mergedMap.values()) {
       const pageNum = crossRef.pageNumber;
@@ -591,23 +614,30 @@ export class CrossReferenceBuilder {
   /**
    * Create position key for deduplication
    */
-  #posKey(pageNumber, x, y) {
+  #posKey(pageNumber: number, x: number, y: number): string {
     return `${pageNumber}:${Math.round(x)}:${Math.round(y)}`;
   }
 }
 
-/**
- * Factory function to create CrossReferenceBuilder
- *
- * @param {import('../model/doc.js').PDFDocumentModel} doc
- * @returns {CrossReferenceBuilder}
- */
-export function createCrossReferenceBuilder(doc) {
+/** Factory function to create CrossReferenceBuilder. */
+export function createCrossReferenceBuilder({
+  textIndex,
+  nativeAnnotationsByPage,
+  referenceIndex,
+  numPages,
+  outline,
+}: {
+  textIndex: DocumentTextIndex;
+  nativeAnnotationsByPage: Map<number, any[]>;
+  referenceIndex: ReferenceIndex;
+  numPages: number;
+  outline: OutlineItem[];
+}): CrossReferenceBuilder {
   return new CrossReferenceBuilder(
-    doc.textIndex,
-    doc.nativeAnnotationsByPage,
-    doc.referenceIndex,
-    doc.numPages,
-    doc.outline,
+    textIndex,
+    nativeAnnotationsByPage,
+    referenceIndex,
+    numPages,
+    outline,
   );
 }

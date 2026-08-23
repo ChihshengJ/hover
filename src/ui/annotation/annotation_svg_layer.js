@@ -2,7 +2,11 @@ import { renderDrawingAnnotation } from "./drawing/drawing_svg_renderer.js";
 
 export class AnnotationSVGLayer {
   /** @type {import('../../viewer/viewpane.js').ViewerPane} */
-  #pane = null;
+  /** @type {import('./host.js').AnnotationHost} */
+  #host = null;
+
+  /** @type {{onHover: Function, onClick: Function}} */
+  #handlers = null;
 
   /** @type {SVGSVGElement} */
   #svg = null;
@@ -19,8 +23,17 @@ export class AnnotationSVGLayer {
   /** @type {ResizeObserver} */
   #resizeObserver = null;
 
-  constructor(pane) {
-    this.#pane = pane;
+  /**
+   * @param {import('./host.js').AnnotationHost} host
+   * @param {{
+   *   onHover: (annotationId: string, isEntering: boolean) => void,
+   *   onClick: (annotationId: string) => void,
+   * }} handlers - supplied by the manager that owns this layer, rather than
+   *   fetched back off the pane it happens to share with that manager
+   */
+  constructor(host, handlers) {
+    this.#host = host;
+    this.#handlers = handlers;
     this.#createSVG();
     this.#setupResizeObserver();
   }
@@ -41,7 +54,7 @@ export class AnnotationSVGLayer {
       overflow: visible;
     `;
 
-    this.#pane.stage.insertBefore(this.#svg, this.#pane.stage.firstChild);
+    this.#host.getStage().insertBefore(this.#svg, this.#host.getStage().firstChild);
 
     this.#updateSVGSize();
   }
@@ -50,12 +63,12 @@ export class AnnotationSVGLayer {
     this.#resizeObserver = new ResizeObserver(() => {
       this.refresh();
     });
-    this.#resizeObserver.observe(this.#pane.stage);
+    this.#resizeObserver.observe(this.#host.getStage());
   }
 
   #updateSVGSize() {
     // Match SVG size to stage scroll dimensions
-    const stageRect = this.#pane.stage.getBoundingClientRect();
+    const stageRect = this.#host.getStage().getBoundingClientRect();
     this.#svg.setAttribute("width", String(stageRect.width));
     this.#svg.setAttribute("height", String(stageRect.height));
     this.#svg.setAttribute(
@@ -86,7 +99,7 @@ export class AnnotationSVGLayer {
     const ns = "http://www.w3.org/2000/svg";
 
     if (annotation.type === "drawing") {
-      const group = renderDrawingAnnotation(annotation, this.#pane);
+      const group = renderDrawingAnnotation(annotation, this.#host.getPages());
       if (group) {
         this.#attachEvents(group, annotation.id);
         this.#svg.appendChild(group);
@@ -104,7 +117,7 @@ export class AnnotationSVGLayer {
     const rectsPerPage = new Map();
 
     for (const pageRange of annotation.pageRanges) {
-      const pageView = this.#pane.pages[pageRange.pageNumber - 1];
+      const pageView = this.#host.getPages()[pageRange.pageNumber - 1];
       if (!pageView) continue;
 
       const pageTop = pageView.wrapper.offsetTop;
@@ -325,23 +338,23 @@ export class AnnotationSVGLayer {
       // Clear previous hover
       if (this.#hoveredId) {
         this.#setGroupState(this.#hoveredId, "hovered", false);
-        this.#pane.onAnnotationHover?.(this.#hoveredId, false);
+        this.#handlers.onHover(this.#hoveredId, false);
       }
 
       this.#hoveredId = annotationId;
       this.#setGroupState(annotationId, "hovered", true);
-      this.#pane.onAnnotationHover?.(annotationId, true);
+      this.#handlers.onHover(annotationId, true);
     } else {
       if (this.#hoveredId !== annotationId) return;
 
       this.#hoveredId = null;
       this.#setGroupState(annotationId, "hovered", false);
-      this.#pane.onAnnotationHover?.(annotationId, false);
+      this.#handlers.onHover(annotationId, false);
     }
   }
 
   #onClick(annotationId) {
-    this.#pane.onAnnotationClick?.(annotationId);
+    this.#handlers.onClick(annotationId);
   }
 
   #setGroupState(annotationId, state, value) {
@@ -416,7 +429,7 @@ export class AnnotationSVGLayer {
 
   refresh() {
     this.#updateSVGSize();
-    const annotations = this.#pane.document.getAllAnnotations();
+    const annotations = this.#host.doc.getAllAnnotations();
     this.render(annotations);
 
     if (this.#selectedId) {
@@ -433,7 +446,7 @@ export class AnnotationSVGLayer {
 
   destroy() {
     if (this.#resizeObserver) {
-      this.#resizeObserver.unobserve(this.#pane.stage);
+      this.#resizeObserver.unobserve(this.#host.getStage());
       this.#resizeObserver.disconnect();
       this.#resizeObserver = null;
     }

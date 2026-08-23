@@ -1,13 +1,19 @@
 import { PAGEOBJ, PdfiumFFI } from "./pdfium_ffi.js";
+import type { WrappedPdfiumModule } from "@embedpdf/pdfium";
+import type { ObjectBounds } from "./pdfium_reader.js";
 
-/**
- * @typedef {Object} ImageObjectInfo
- * @property {number} index - Sequential index among all images on the page (stable across calls)
- * @property {{left: number, bottom: number, right: number, top: number}} pdfRect - Bounds in PDF coordinates (bottom-left origin)
- * @property {{x: number, y: number, width: number, height: number}} screenRect - Bounds in screen coordinates (top-left origin)
- * @property {{width: number, height: number}} pixelDimensions - Native image pixel dimensions
- * @property {() => ImageData|null} getPixelData - Lazily extract the image pixels as RGBA ImageData
- */
+export interface ImageObjectInfo {
+  /** Sequential index among all images on the page (stable across calls). */
+  index: number;
+  /** Bounds in PDF coordinates (bottom-left origin). */
+  pdfRect: ObjectBounds;
+  /** Bounds in screen coordinates (top-left origin). */
+  screenRect: Rect;
+  /** Native image pixel dimensions. */
+  pixelDimensions: { width: number; height: number };
+  /** Lazily extract the image pixels as RGBA ImageData. */
+  getPixelData: () => ImageData | null;
+}
 
 const BITMAP_FORMAT_GRAY = 1;
 const BITMAP_FORMAT_BGR = 2;
@@ -15,16 +21,10 @@ const BITMAP_FORMAT_BGRX = 3;
 const BITMAP_FORMAT_BGRA = 4;
 
 export class PdfiumImageExtractor {
-  /** @type {import('@embedpdf/pdfium').WrappedPdfiumModule} */
-  #pdfium;
+  #pdfium: WrappedPdfiumModule;
+  #ffi: PdfiumFFI;
 
-  /** @type {PdfiumFFI} */
-  #ffi;
-
-  /**
-   * @param {import('@embedpdf/pdfium').WrappedPdfiumModule} pdfiumModule
-   */
-  constructor(pdfiumModule) {
+  constructor(pdfiumModule: WrappedPdfiumModule) {
     this.#pdfium = pdfiumModule;
     this.#ffi = new PdfiumFFI(pdfiumModule);
   }
@@ -36,53 +36,65 @@ export class PdfiumImageExtractor {
     this.#ffi.dispose();
   }
 
-  /**
-   * @param {number} docPtr
-   * @param {number} pageIndex - 0-based
-   * @param {(ctx: {pagePtr: number, pageWidth: number, pageHeight: number}) => T} fn
-   * @returns {T|null}
-   * @template T
-   */
-  withPage(docPtr, pageIndex, fn) {
+  /** @param pageIndex 0-based */
+  withPage<T>(
+    docPtr: number,
+    pageIndex: number,
+    fn: (ctx: {
+      pagePtr: number;
+      pageWidth: number;
+      pageHeight: number;
+    }) => T,
+  ): T | null {
     return this.#ffi.withPage(docPtr, pageIndex, fn);
   }
 
   /**
    * Collect metadata for all images on a page without decoding pixel data.
    *
-   * @param {number} docPtr
-   * @param {number} pageIndex - 0-based
-   * @returns {{pageIndex: number, images: ImageObjectInfo[], pageWidth: number, pageHeight: number}}
+   * @param pageIndex 0-based
    */
-  getPageImageInfos(docPtr, pageIndex) {
-    const result = this.withPage(docPtr, pageIndex, ({ pagePtr, pageWidth, pageHeight }) => {
-      const imageObjPtrs = this.#collectImageObjects(pagePtr, false);
-      const images = [];
+  getPageImageInfos(
+    docPtr: number,
+    pageIndex: number,
+  ): {
+    pageIndex: number;
+    images: ImageObjectInfo[];
+    pageWidth: number;
+    pageHeight: number;
+  } {
+    const result = this.withPage(
+      docPtr,
+      pageIndex,
+      ({ pagePtr, pageWidth, pageHeight }) => {
+        const imageObjPtrs = this.#collectImageObjects(pagePtr, false);
+        const images: ImageObjectInfo[] = [];
 
-      for (let i = 0; i < imageObjPtrs.length; i++) {
-        const objPtr = imageObjPtrs[i];
-        const bounds = this.#getObjectBounds(objPtr);
-        if (!bounds) continue;
+        for (let i = 0; i < imageObjPtrs.length; i++) {
+          const objPtr = imageObjPtrs[i];
+          const bounds = this.#getObjectBounds(objPtr);
+          if (!bounds) continue;
 
-        const dims = this.#getPixelSize(objPtr);
-        const idx = images.length;
+          const dims = this.#getPixelSize(objPtr);
+          const idx = images.length;
 
-        images.push({
-          index: idx,
-          pdfRect: bounds,
-          screenRect: {
-            x: bounds.left,
-            y: pageHeight - bounds.top,
-            width: bounds.right - bounds.left,
-            height: bounds.top - bounds.bottom,
-          },
-          pixelDimensions: dims || { width: 0, height: 0 },
-          getPixelData: () => this.getImageData(docPtr, pageIndex, idx),
-        });
-      }
+          images.push({
+            index: idx,
+            pdfRect: bounds,
+            screenRect: {
+              x: bounds.left,
+              y: pageHeight - bounds.top,
+              width: bounds.right - bounds.left,
+              height: bounds.top - bounds.bottom,
+            },
+            pixelDimensions: dims || { width: 0, height: 0 },
+            getPixelData: () => this.getImageData(docPtr, pageIndex, idx),
+          });
+        }
 
-      return { pageIndex, images, pageWidth, pageHeight };
-    });
+        return { pageIndex, images, pageWidth, pageHeight };
+      },
+    );
 
     return result || { pageIndex, images: [], pageWidth: 0, pageHeight: 0 };
   }
@@ -91,12 +103,14 @@ export class PdfiumImageExtractor {
    * Extract pixel data for a specific image as RGBA ImageData.
    * Re-loads the page and re-traverses objects to find the image by index.
    *
-   * @param {number} docPtr
-   * @param {number} pageIndex - 0-based
-   * @param {number} imageIndex - from ImageObjectInfo.index
-   * @returns {ImageData|null}
+   * @param pageIndex 0-based
+   * @param imageIndex from ImageObjectInfo.index
    */
-  getImageData(docPtr, pageIndex, imageIndex) {
+  getImageData(
+    docPtr: number,
+    pageIndex: number,
+    imageIndex: number,
+  ): ImageData | null {
     return this.withPage(docPtr, pageIndex, ({ pagePtr }) => {
       const imageObjPtrs = this.#collectImageObjects(pagePtr, false);
       if (imageIndex < 0 || imageIndex >= imageObjPtrs.length) return null;
@@ -108,17 +122,14 @@ export class PdfiumImageExtractor {
    * Recursively collect all image object pointers from a page or form object.
    * Traversal order is deterministic: depth-first, preserving object order.
    *
-   * @param {number} containerPtr
-   * @param {boolean} isForm
-   * @returns {number[]}
    */
-  #collectImageObjects(containerPtr, isForm) {
+  #collectImageObjects(containerPtr: number, isForm: boolean): number[] {
     const pdfium = this.#pdfium;
     const count = isForm
       ? pdfium.FPDFFormObj_CountObjects(containerPtr)
       : pdfium.FPDFPage_CountObjects(containerPtr);
 
-    const results = [];
+    const results: number[] = [];
     for (let i = 0; i < count; i++) {
       const objPtr = isForm
         ? pdfium.FPDFFormObj_GetObject(containerPtr, i)
@@ -136,11 +147,7 @@ export class PdfiumImageExtractor {
     return results;
   }
 
-  /**
-   * @param {number} objPtr
-   * @returns {{left: number, bottom: number, right: number, top: number}|null}
-   */
-  #getObjectBounds(objPtr) {
+  #getObjectBounds(objPtr: number): ObjectBounds | null {
     const pdfium = this.#pdfium;
 
     const bounds = this.#ffi.readF32Out(4, (l, b, r, t) =>
@@ -155,10 +162,10 @@ export class PdfiumImageExtractor {
   /**
    * Get native pixel dimensions without creating a full bitmap.
    *
-   * @param {number} imageObjPtr
-   * @returns {{width: number, height: number}|null}
    */
-  #getPixelSize(imageObjPtr) {
+  #getPixelSize(
+    imageObjPtr: number,
+  ): { width: number; height: number } | null {
     const pdfium = this.#pdfium;
 
     const dims = this.#ffi.readU32Out(2, (w, h) =>
@@ -169,11 +176,7 @@ export class PdfiumImageExtractor {
     return { width: dims[0], height: dims[1] };
   }
 
-  /**
-   * @param {number} imageObjPtr
-   * @returns {ImageData|null}
-   */
-  #extractBitmapAsRGBA(imageObjPtr) {
+  #extractBitmapAsRGBA(imageObjPtr: number): ImageData | null {
     const pdfium = this.#pdfium;
     const bitmapPtr = pdfium.FPDFImageObj_GetBitmap(imageObjPtr);
     if (!bitmapPtr) return null;

@@ -36,7 +36,14 @@ export class FloatingToolbar {
 
     this.#createToolbar();
     /** @type {NavigationTree} */
-    this.navigationTree = new NavigationTree(this);
+    this.navigationTree = new NavigationTree({
+      doc: this.wm.document,
+      getPane: () => this.pane,
+      getBallCenterY: () => {
+        const rect = this.ball.getBoundingClientRect();
+        return rect.top + rect.height / 2;
+      },
+    });
     this.expandController = new ExpandController({
       wrapper: this.wrapper,
       toolbarTop: this.toolbarTop,
@@ -148,7 +155,7 @@ export class FloatingToolbar {
     return this.dragController ? this.dragController.dragMode : null;
   }
 
-  /** @type {Function} */
+  /** @type {(() => void)|null} */
   #scrollCallback = null;
 
   /** @returns {ViewerPane} */

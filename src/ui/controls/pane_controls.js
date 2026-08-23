@@ -1,13 +1,35 @@
+/**
+ * The per-pane control strip: page counter, zoom, fit, hand-tool toggle.
+ *
+ * Takes the slice of the pane it actually drives rather than the pane itself.
+ * Everything read at click time (scale, hand mode, current page) arrives as a
+ * getter, because this is constructed in the ViewerPane constructor — before
+ * the scroller element even exists.
+ *
+ * @typedef {Object} PaneControlsOptions
+ * @property {HTMLElement} paneEl - control strip is appended here
+ * @property {() => HTMLElement} getScroller - the scrolling element, once it exists
+ * @property {() => number} getPageCount
+ * @property {() => number} getCurrentPage
+ * @property {() => number} getScale
+ * @property {() => boolean} getHandMode
+ * @property {(delta: number) => void} zoom
+ * @property {(mode: number, target: number) => void} fit
+ * @property {() => void} toggleHandMode
+ * @property {(delta: number) => void} scrollToRelative
+ */
+
 export class PaneControls {
-  constructor(pane) {
-    this.pane = pane;
+  /** @param {PaneControlsOptions} options */
+  constructor(options) {
+    this.options = options;
     this.element = null;
     this.isHidden = true;
     this.currentProgress = 0;
     this._scrollBound = false;
     this._scrollRAF = null;
 
-    /** @type {Set<Function>} */
+    /** @type {Set<() => void>} */
     this.scrollCallbacks = new Set();
   }
 
@@ -21,7 +43,7 @@ export class PaneControls {
           <button class="pane-btn small" data-action="prev">‹</button>
           <span class="pane-current-page">1</span>
           <span class="pane-page-sep">/</span>
-          <span class="pane-total-pages">${this.pane.document.numPages}</span>
+          <span class="pane-total-pages">${this.options.getPageCount()}</span>
           <button class="pane-btn small" data-action="next">›</button>
         </span>
         <span class="pane-zoom-controls">
@@ -44,14 +66,14 @@ export class PaneControls {
       if (btn) this.#handleAction(btn.dataset.action);
     });
 
-    this.pane.paneEl.appendChild(this.element);
+    this.options.paneEl.appendChild(this.element);
     this.isHidden = true;
   }
 
   bindScrollEvents() {
     if (this._scrollBound) return;
     // Coalesce bursts of scroll events into one update per animation frame.
-    this.pane.scroller.addEventListener(
+    this.options.getScroller().addEventListener(
       "scroll",
       () => {
         if (this._scrollRAF !== null) return;
@@ -67,7 +89,7 @@ export class PaneControls {
 
   /**
    * Register a callback to be called on scroll
-   * @param {Function} callback
+   * @param {() => void} callback
    */
   onScroll(callback) {
     this.scrollCallbacks.add(callback);
@@ -75,7 +97,7 @@ export class PaneControls {
 
   /**
    * Unregister a scroll callback
-   * @param {Function} callback
+   * @param {() => void} callback
    */
   offScroll(callback) {
     this.scrollCallbacks.delete(callback);
@@ -92,14 +114,14 @@ export class PaneControls {
 
     // Notify all subscribers
     for (const callback of this.scrollCallbacks) {
-      callback(this.pane);
+      callback();
     }
   }
 
   #updateProgressFill() {
     if (!this.element) return;
 
-    const scroller = this.pane.scroller;
+    const scroller = this.options.getScroller();
     const scrollTop = scroller.scrollTop;
     const scrollHeight = scroller.scrollHeight - scroller.clientHeight;
     const progress =
@@ -116,33 +138,33 @@ export class PaneControls {
   #handleAction(action) {
     switch (action) {
       case "prev":
-        this.pane.scrollToRelative(-1);
+        this.options.scrollToRelative(-1);
         break;
       case "next":
-        this.pane.scrollToRelative(1);
+        this.options.scrollToRelative(1);
         break;
       case "zoom-in":
-        this.pane.zoom(0.25);
+        this.options.zoom(0.25);
         this.updateZoomDisplay();
         break;
       case "zoom-out":
-        this.pane.zoom(-0.25);
+        this.options.zoom(-0.25);
         this.updateZoomDisplay();
         break;
       case "fit-width":
         //Only fit width
-        this.pane.fit(1, 1);
+        this.options.fit(1, 1);
         this.updateZoomDisplay();
         break;
       case "hand-tool":
-        if (!this.pane.handMode) {
-          this.pane.toggleHandMode();
+        if (!this.options.getHandMode()) {
+          this.options.toggleHandMode();
           this.#updateModeToggle(true);
         }
         break;
       case "cursor":
-        if (this.pane.handMode) {
-          this.pane.toggleHandMode();
+        if (this.options.getHandMode()) {
+          this.options.toggleHandMode();
           this.#updateModeToggle(false);
         }
         break;
@@ -163,9 +185,9 @@ export class PaneControls {
   }
 
   #updatePageDisplay() {
-    const current = this.pane.getCurrentPage();
+    const current = this.options.getCurrentPage();
     const el = this.element.querySelector(".pane-current-page");
-    if (el) el.textContent = current;
+    if (el) el.textContent = String(current);
   }
 
   /**
@@ -176,12 +198,12 @@ export class PaneControls {
       this.#updatePageDisplay();
     }
     for (const callback of this.scrollCallbacks) {
-      callback(this.pane);
+      callback();
     }
   }
 
   updateZoomDisplay() {
-    const pct = Math.round(this.pane.scale * 100);
+    const pct = Math.round(this.options.getScale() * 100);
     const el = this.element.querySelector(".pane-zoom-level");
     if (el) el.textContent = `${pct}%`;
   }

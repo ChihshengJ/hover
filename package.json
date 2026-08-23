@@ -4,7 +4,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.node.json",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.strict.json && tsc --noEmit -p tsconfig.node.json",
     "check:layers": "bun scripts/check_layering.mjs",
     "check": "bun run typecheck && bun run check:layers",
     "build": "vite build",

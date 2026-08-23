@@ -2,33 +2,76 @@
  * DocumentTextIndex - Text extraction and indexing for outline/reference building
  * Optimized for PDFium which provides column-ordered, line-break-aware text slices
  *
- * @typedef {Object} TextItem
- * @property {string} str
- * @property {number} x
- * @property {number} y
- * @property {number} width
- * @property {number} height
- * @property {number} fontStyle - FontStyle enum value
- *
- * @typedef {Object} TextLine
- * @property {string} text
- * @property {number} x
- * @property {number} y
- * @property {number} originalY
- * @property {number} lineHeight
- * @property {number} lineWidth
- * @property {number} fontSize
- * @property {number} fontStyle - FontStyle enum value
- * @property {TextItem[]} items
- *
- * @typedef {Object} PageTextData
- * @property {number} pageNumber
- * @property {number} pageWidth
- * @property {number} pageHeight
- * @property {number} marginLeft
- * @property {TextLine[]} lines
- * @property {string} fullText
  */
+
+/** A glyph run inside a line. */
+export interface TextItem {
+  str: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  /** FontStyle enum value. */
+  fontStyle: number;
+  fontSize: number;
+}
+
+/** A glyph run as it comes off the source, before lines are formed. */
+interface RawItem {
+  str: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  fontName: string | null;
+  fontSize: number;
+  originalY: number;
+}
+
+export interface TextLine {
+  text: string;
+  x: number;
+  y: number;
+  originalY: number;
+  lineHeight: number;
+  lineWidth: number;
+  fontSize: number;
+  /** FontStyle enum value. */
+  fontStyle: number;
+  items: TextItem[];
+}
+
+export interface PageTextData {
+  pageNumber: number;
+  pageWidth: number;
+  pageHeight: number;
+  marginLeft: number;
+  marginBottom: number;
+  lines: TextLine[];
+  headerLines: TextLine[];
+  footerLines: TextLine[];
+  /** PDF-native y of the header separator rule, if the page has one. */
+  headerSepY: number | null;
+  footerSepY: number | null;
+  multiColumn: boolean;
+  /** Column left edges, ascending, when `multiColumn`. */
+  columnXs: number[] | null;
+}
+
+/**
+ * Everything this index needs from whatever produced the document. PDFium
+ * implements it in `src/pdf/page_source.js`; a serialized fixture can implement
+ * it just as well, which is the point — nothing below this interface knows what
+ * a PDF is.
+ */
+export interface PageSource {
+  numPages: number;
+  getPageSize(pageNumber: number): { width: number; height: number } | null;
+  /** Raw glyph runs, 1-based page. */
+  getPageTextSlices(pageNumber: number): Promise<any[]>;
+  /** Path objects used for header/footer rules. */
+  getPagePaths(pageNumber: number): PathObjectInfo[];
+}
 
 export const FontStyle = Object.freeze({
   REGULAR: 0,
@@ -38,37 +81,32 @@ export const FontStyle = Object.freeze({
 });
 
 export class DocumentTextIndex {
-  #doc = null;
-  #pageData = new Map();
-  #indexedPages = new Set();
-  #lowLevelHandle = null;
-  #bodyFontSize = null;
-  #bodyLineHeight = null;
-  #bodyLineWidth = null;
-  #bodyMarginBottom = null;
-  #bodyFontStyle = null;
+  #source: PageSource = null;
+  #pageData = new Map<number, PageTextData>();
+  #indexedPages = new Set<number>();
+  #bodyFontSize: number | null = null;
+  #bodyLineHeight: number | null = null;
+  #bodyLineWidth: number | null = null;
+  #bodyMarginBottom: number | null = null;
+  #bodyFontStyle: number | null = null;
   #bodyFontAnalyzed = false;
-  #headerHeight = null;
-  #footerHeight = null;
+  #headerHeight: number | null = null;
+  #footerHeight: number | null = null;
   #headerFooterAnalyzed = false;
 
-  constructor(doc) {
-    this.#doc = doc;
-  }
-
-  setLowLevelHandle(handle) {
-    this.#lowLevelHandle = handle;
+  constructor(source: PageSource) {
+    this.#source = source;
   }
 
   getPageCount() {
-    return this.#doc.numPages;
+    return this.#source.numPages;
   }
 
-  hasPage(pageNumber) {
+  hasPage(pageNumber: number): boolean {
     return this.#indexedPages.has(pageNumber);
   }
 
-  getPageData(pageNumber) {
+  getPageData(pageNumber: number): PageTextData | null {
     return this.#pageData.get(pageNumber) || null;
   }
 
@@ -99,11 +137,11 @@ export class DocumentTextIndex {
     return info;
   }
 
-  getPageLines(pageNumber) {
+  getPageLines(pageNumber: number): TextLine[] | null {
     return this.#pageData.get(pageNumber)?.lines || null;
   }
 
-  getPageDimensions(pageNumber) {
+  getPageDimensions(pageNumber: number) {
     const data = this.#pageData.get(pageNumber);
     if (data) {
       return {
@@ -113,11 +151,11 @@ export class DocumentTextIndex {
         columnXs: data.columnXs ?? null,
       };
     }
-    const page = this.#doc.pdfDoc?.pages?.[pageNumber - 1];
-    if (page) {
+    const size = this.#source.getPageSize(pageNumber);
+    if (size) {
       return {
-        width: page.size.width,
-        height: page.size.height,
+        width: size.width,
+        height: size.height,
         multiColumn: false,
         columnXs: null,
       };
@@ -138,7 +176,7 @@ export class DocumentTextIndex {
    * @param {number} x - X position in PDF units
    * @returns {number} Column index, or -1 for full-width/unknown
    */
-  getColumnIndexForX(pageNumber, x) {
+  getColumnIndexForX(pageNumber: number, x: number): number {
     const data = this.#pageData.get(pageNumber);
     const xs = data?.columnXs;
     if (!data?.multiColumn || !xs || xs.length < 2) return -1;
@@ -187,7 +225,7 @@ export class DocumentTextIndex {
     return this.#footerHeight ?? 0;
   }
 
-  async ensurePageIndexed(pageNumber) {
+  async ensurePageIndexed(pageNumber: number) {
     if (this.#indexedPages.has(pageNumber)) {
       return this.#pageData.get(pageNumber);
     }
@@ -195,7 +233,7 @@ export class DocumentTextIndex {
     return this.#pageData.get(pageNumber);
   }
 
-  async ensurePagesIndexed(fromPage, toPage) {
+  async ensurePagesIndexed(fromPage: number, toPage: number) {
     const promises = [];
     for (let p = fromPage; p <= toPage; p++) {
       if (!this.#indexedPages.has(p)) {
@@ -205,8 +243,10 @@ export class DocumentTextIndex {
     await Promise.all(promises);
   }
 
-  async build(onProgress = null) {
-    const numPages = this.#doc.numPages;
+  async build(
+    onProgress: ((page: number, total: number, percent: number) => void) | null = null,
+  ) {
+    const numPages = this.#source.numPages;
     for (let p = 1; p <= numPages; p++) {
       if (!this.#indexedPages.has(p)) {
         await this.#indexPage(p);
@@ -217,28 +257,19 @@ export class DocumentTextIndex {
     }
   }
 
-  async #indexPage(pageNumber) {
-    const page = this.#doc.pdfDoc?.pages?.[pageNumber - 1];
-    if (!page) {
+  async #indexPage(pageNumber: number) {
+    const size = this.#source.getPageSize(pageNumber);
+    if (!size) {
       this.#storeEmpty(pageNumber);
       return;
     }
 
-    const pageWidth = page.size.width;
-    const pageHeight = page.size.height;
+    const pageWidth = size.width;
+    const pageHeight = size.height;
 
     try {
-      let textSlices = [];
-
-      if (this.#lowLevelHandle) {
-        const result = this.#lowLevelHandle.extractPageText(pageNumber - 1);
-        textSlices = result.textSlices || [];
-      } else {
-        const { native, pdfDoc } = this.#doc;
-        if (native && pdfDoc) {
-          textSlices = await native.getPageTextRects(pdfDoc, page).toPromise();
-        }
-      }
+      const textSlices =
+        (await this.#source.getPageTextSlices(pageNumber)) || [];
 
       const items = this.#convertSlices(textSlices, pageHeight);
       const lines = this.#groupIntoLines(items, pageHeight);
@@ -246,17 +277,7 @@ export class DocumentTextIndex {
       const marginBottom =
         lines.length > 0 ? Math.min(...lines.map((l) => l.y)) : 0;
 
-      let paths = [];
-      if (this.#lowLevelHandle) {
-        try {
-          const pathResult = this.#lowLevelHandle.extractPagePaths(
-            pageNumber - 1,
-          );
-          paths = pathResult.paths || [];
-        } catch (_) {
-          // Path extraction is best-effort
-        }
-      }
+      const paths = this.#source.getPagePaths(pageNumber) || [];
       const { headerLines, footerLines, headerSepY, footerSepY } =
         this.#detectHeaderFooter(lines, paths, pageWidth, pageHeight);
 
@@ -287,16 +308,16 @@ export class DocumentTextIndex {
     } catch (error) {
       console.warn(
         `[TextIndex] Error indexing page ${pageNumber}:`,
-        error.message,
+        error instanceof Error ? error.message : error,
       );
       this.#storeEmpty(pageNumber, pageWidth, pageHeight);
     }
   }
 
-  #convertSlices(slices, pageHeight) {
+  #convertSlices(slices: any[], pageHeight: number): RawItem[] {
     if (!slices?.length) return [];
 
-    const items = [];
+    const items: RawItem[] = [];
     for (const slice of slices) {
       const content = slice.content || "";
       if (!content || !content.trim()) continue;
@@ -315,10 +336,10 @@ export class DocumentTextIndex {
     return items;
   }
 
-  #groupIntoLines(items, pageHeight) {
+  #groupIntoLines(items: RawItem[], pageHeight: number): TextLine[] {
     if (items.length === 0) return [];
 
-    const lines = [];
+    const lines: TextLine[] = [];
     let currentLine = [items[0]];
     let currentY = items[0].y;
 
@@ -339,7 +360,7 @@ export class DocumentTextIndex {
     return lines;
   }
 
-  #createLine(items) {
+  #createLine(items: RawItem[]): TextLine {
     const first = items[0];
     const text = items.map((it) => it.str).join("");
     const fontStyle = this.#extractFontStyle(items);
@@ -374,7 +395,7 @@ export class DocumentTextIndex {
     };
   }
 
-  #extractItemFontStyle(fontName) {
+  #extractItemFontStyle(fontName: string | null): number {
     if (!fontName) return FontStyle.REGULAR;
     const lower = fontName.toLowerCase();
 
@@ -401,7 +422,7 @@ export class DocumentTextIndex {
     return FontStyle.REGULAR;
   }
 
-  #extractFontStyle(items) {
+  #extractFontStyle(items: RawItem[]): number {
     let hasBold = false;
     let hasItalic = false;
 
@@ -424,15 +445,22 @@ export class DocumentTextIndex {
    * Detect header/footer lines and separator positions for a single page.
    * All Y coordinates use PDF native bottom-left origin (higher Y = top of page).
    *
-   * @param {TextLine[]} lines
-   * @param {import('../pdf/text_extractor.js').PathObjectInfo[]} paths - from extractPagePaths
-   * @param {number} pageWidth
-   * @param {number} pageHeight
-   * @returns {{headerLines: TextLine[], footerLines: TextLine[], headerSepY: number|null, footerSepY: number|null}}
+   * @param paths from extractPagePaths
    */
-  #detectHeaderFooter(lines, paths, pageWidth, pageHeight) {
-    const headerCandidates = [];
-    const footerCandidates = [];
+  #detectHeaderFooter(
+    lines: TextLine[],
+    paths: PathObjectInfo[],
+    pageWidth: number,
+    pageHeight: number,
+  ): {
+    headerLines: TextLine[];
+    footerLines: TextLine[];
+    headerSepY: number | null;
+    footerSepY: number | null;
+  } {
+    // Separator-rule y positions, not lines — the lines are collected below.
+    const headerCandidates: number[] = [];
+    const footerCandidates: number[] = [];
 
     for (const path of paths) {
       const { pdfRect } = path;
@@ -461,8 +489,8 @@ export class DocumentTextIndex {
     const headerThreshold = headerSepY ?? pageHeight * 0.9;
     const footerThreshold = footerSepY ?? pageHeight * 0.1;
 
-    const headerLines = [];
-    const footerLines = [];
+    const headerLines: TextLine[] = [];
+    const footerLines: TextLine[] = [];
 
     for (const line of lines) {
       if (line.y > headerThreshold) {
@@ -482,7 +510,7 @@ export class DocumentTextIndex {
   /**
    * Check if a line looks like a header/footer (short, not spanning full width).
    */
-  #isHeaderFooterCandidate(line, pageWidth) {
+  #isHeaderFooterCandidate(line: TextLine, pageWidth: number): boolean {
     if (line.text.trim().length > 120) return false;
     if (line.lineWidth > pageWidth * 0.7) return false;
     return true;
@@ -496,14 +524,14 @@ export class DocumentTextIndex {
    * x-positions (sorted ascending, in PDF units). Callers can map any x to a
    * column index via {@link getColumnIndexForX}.
    *
-   * @param {TextLine[]} lines
-   * @param {TextLine[]} headerLines
-   * @param {TextLine[]} footerLines
-   * @param {number} pageWidth
-   * @returns {{multiColumn: boolean, columnXs: number[]|null}}
    */
-  #detectMultiColumn(lines, headerLines, footerLines, pageWidth) {
-    const excludeSet = new Set();
+  #detectMultiColumn(
+    lines: TextLine[],
+    headerLines: TextLine[],
+    footerLines: TextLine[],
+    pageWidth: number,
+  ): { multiColumn: boolean; columnXs: number[] | null } {
+    const excludeSet = new Set<TextLine>();
     for (const hl of headerLines) excludeSet.add(hl);
     for (const fl of footerLines) excludeSet.add(fl);
 
@@ -516,8 +544,8 @@ export class DocumentTextIndex {
 
     if (bodyLines.length < 6) return { multiColumn: false, columnXs: null };
 
-    const quantize = (v) => Math.round(v / 2) * 2;
-    const xCounts = new Map();
+    const quantize = (v: number) => Math.round(v / 2) * 2;
+    const xCounts = new Map<number, number>();
     for (const line of bodyLines) {
       const qx = quantize(line.x);
       xCounts.set(qx, (xCounts.get(qx) || 0) + 1);
@@ -543,11 +571,11 @@ export class DocumentTextIndex {
    * Estimate the true body-text left margin using mode of x positions,
    * filtering out outlier lines (short page numbers, wide banners, etc.).
    */
-  #estimateMarginLeft(lines, pageWidth) {
+  #estimateMarginLeft(lines: TextLine[], pageWidth: number): number {
     if (lines.length === 0) return 0;
 
-    const quantize = (v) => Math.round(v * 2) / 2;
-    const xCounts = new Map();
+    const quantize = (v: number) => Math.round(v * 2) / 2;
+    const xCounts = new Map<number, number>();
     const filteredLines = lines.filter((l) => l.text.length > 10).slice(0, 10);
 
     for (const line of filteredLines) {
@@ -579,12 +607,12 @@ export class DocumentTextIndex {
     return bestX;
   }
 
-  #storeEmpty(pageNumber, pageWidth = 0, pageHeight = 0) {
+  #storeEmpty(pageNumber: number, pageWidth = 0, pageHeight = 0) {
     if (!pageWidth || !pageHeight) {
-      const page = this.#doc.pdfDoc?.pages?.[pageNumber - 1];
-      if (page) {
-        pageWidth = page.size.width;
-        pageHeight = page.size.height;
+      const size = this.#source.getPageSize(pageNumber);
+      if (size) {
+        pageWidth = size.width;
+        pageHeight = size.height;
       }
     }
     this.#pageData.set(pageNumber, {
@@ -608,18 +636,18 @@ export class DocumentTextIndex {
     if (this.#bodyFontAnalyzed) return;
     this.#bodyFontAnalyzed = true;
 
-    const fontSizes = [];
-    const fontStyles = [];
-    const lineHeights = [];
-    const lineWidths = [];
-    const marginBottoms = [];
+    const fontSizes: number[] = [];
+    const fontStyles: number[] = [];
+    const lineHeights: number[] = [];
+    const lineWidths: number[] = [];
+    const marginBottoms: number[] = [];
     let count = 0;
 
     for (const [, data] of this.#pageData) {
       if (count > 5) break;
       if (data.marginBottom > 0) marginBottoms.push(data.marginBottom);
 
-      const excludeSet = new Set();
+      const excludeSet = new Set<TextLine>();
       if (data.headerLines) {
         for (const hl of data.headerLines) excludeSet.add(hl);
       }
@@ -656,8 +684,8 @@ export class DocumentTextIndex {
     if (this.#headerFooterAnalyzed) return;
     this.#headerFooterAnalyzed = true;
 
-    const headerExtents = [];
-    const footerExtents = [];
+    const headerExtents: number[] = [];
+    const footerExtents: number[] = [];
     let count = 0;
 
     for (const [pageNum, data] of this.#pageData) {
@@ -686,14 +714,14 @@ export class DocumentTextIndex {
     }
   }
 
-  #findMedian(arr) {
+  #findMedian(arr: number[]): number {
     const sortedArr = [...arr].sort((a, b) => a - b);
     const mid = Math.floor(sortedArr.length / 2);
     return sortedArr[mid];
   }
 
-  #findMostCommon(arr) {
-    const counts = new Map();
+  #findMostCommon(arr: number[]): number {
+    const counts = new Map<number, number>();
     for (const val of arr) {
       counts.set(val, (counts.get(val) || 0) + 1);
     }
@@ -711,7 +739,6 @@ export class DocumentTextIndex {
   destroy() {
     this.#pageData.clear();
     this.#indexedPages.clear();
-    this.#lowLevelHandle = null;
     this.#bodyFontSize = null;
     this.#bodyLineHeight = null;
     this.#bodyFontStyle = null;

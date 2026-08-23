@@ -12,6 +12,7 @@
  */
 
 import { Config } from "../settings/config.js";
+import { DocEvent } from "../../model/doc_events.js";
 
 export class ProgressBar {
   /**
@@ -20,6 +21,7 @@ export class ProgressBar {
   constructor(wm) {
     this.wm = wm;
     this.doc = wm.document;
+    this.doc.subscribe(this);
 
     /** @type {HTMLElement} */
     this.container = null;
@@ -74,7 +76,7 @@ export class ProgressBar {
   /** @type {boolean} */
   #initialized = false;
 
-  /** @type {Function} */
+  /** @type {(() => void)|null} */
   #scrollCallback = null;
 
   /** @type {ViewerPane|null} */
@@ -359,6 +361,16 @@ export class ProgressBar {
     this.#updateProgress();
   }
 
+  /**
+   * Section marks come from the navigation tree, which comes from the outline,
+   * which does not exist until background indexing finishes.
+   *
+   * @param {import('../../model/doc_events.js').DocEventName} event
+   */
+  onDocumentChange(event) {
+    if (event === DocEvent.INDEX_READY) this.buildSectionMarks();
+  }
+
   async buildSectionMarks() {
     if (this.sectionMarks.length > 0) return;
     await this.#waitForSections();
@@ -393,6 +405,7 @@ export class ProgressBar {
    * Cleanup
    */
   destroy() {
+    this.doc.unsubscribe(this);
     this.activePane?.controls.offScroll(this.#scrollCallback);
 
     if (this.#resizeHandler) {

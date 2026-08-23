@@ -12,37 +12,90 @@
  * - citation_builder.js for merging with native citation links
  * - cross_reference_builder.js for merging with native cross-ref links
  *
- * @typedef {Object} RawCitation
- * @property {string} type - 'numeric' | 'abbreviated' | 'author-year' | 'superscript'
- * @property {string} text - The matched text
- * @property {number} pageNumber - 1-based page number
- * @property {number} charIndex - Character index in full page text
- * @property {number} charCount - Number of characters
- * @property {Array<{x: number, y: number, width: number, height: number}>} rects
- * @property {number[]} refIndices - Expanded reference indices
- * @property {Array<{start: number, end: number}>} refRanges - Original range notation
- * @property {Array<{author: string, year: string, secondAuthor?: string}>|null} refKeys - For author-year
- * @property {number} confidence - 0-1 confidence score
- *
- * @typedef {Object} RawCrossRef
- * @property {string} type - 'figure' | 'table' | 'section' | 'equation' | etc.
- * @property {string} text - The matched text
- * @property {string} targetId - The identifier (e.g., "1", "1a", "A.2")
- * @property {number} pageNumber - 1-based page number
- * @property {number} charIndex - Character index in full page text
- * @property {number} charCount - Number of characters
- * @property {Array<{x: number, y: number, width: number, height: number}>} rects
- *
- * @typedef {Object} DetectedCitationFormat
- * @property {string} type - Entry-pattern name, or 'unknown'
- * @property {number} confidence - 0-1, share of section lines matching `type`
- * @property {boolean} isAuthorYear
- *
- * @typedef {Object} ExtractionResult
- * @property {RawCitation[]} citations
- * @property {RawCrossRef[]} crossRefs
- * @property {DetectedCitationFormat} detectedFormat
  */
+
+import type { DocumentTextIndex, TextItem } from "./text_index.js";
+import type { ReferenceAnchor, ReferenceIndex } from "./reference_builder.js";
+import type { RefKey } from "./citation_builder.js";
+
+/** One citation as the scanner found it, before merging with native links. */
+export interface RawCitation {
+  /** 'numeric' | 'abbreviated' | 'author-year' | 'superscript' */
+  type: string;
+  /** The matched text. */
+  text: string;
+  /** 1-based. */
+  pageNumber: number;
+  /** Character index in full page text. */
+  charIndex: number;
+  charCount: number;
+  rects: Rect[];
+  /** Expanded reference indices. */
+  refIndices: RefIndex[];
+  /** Original range notation. */
+  refRanges: Array<{ start: number; end: number }>;
+  /** For author-year citations. */
+  refKeys: RefKey[] | null;
+  /** 0-1 confidence score. */
+  confidence: number;
+  /** CitationFlags bitmask. */
+  flags?: number;
+  /** Per-number rects, for a citation naming several references. */
+  subCitations?: Array<{ refIndex: RefIndex; rects: Rect[] }> | null;
+}
+
+/** One "Figure 1"-style reference as the scanner found it. */
+export interface RawCrossRef {
+  /** 'figure' | 'table' | 'section' | 'equation' | … */
+  type: string;
+  /** The matched text. */
+  text: string;
+  /** The identifier (e.g. "1", "1a", "A.2"). */
+  targetId: string;
+  /** 1-based. */
+  pageNumber: number;
+  /** Character index in full page text. */
+  charIndex: number;
+  charCount: number;
+  rects: Rect[];
+  isDefinition?: boolean;
+}
+
+export interface DetectedCitationFormat {
+  /** Entry-pattern name, or 'unknown'. */
+  type: string;
+  /** 0-1, share of section lines matching `type`. */
+  confidence: number;
+  isAuthorYear: boolean;
+}
+
+export interface ExtractionResult {
+  citations: RawCitation[];
+  crossRefs: RawCrossRef[];
+  detectedFormat: DetectedCitationFormat;
+}
+
+/**
+ * Untouched page text, indexed exactly as the producer reports it: index i of
+ * `fullText` is char i, so a match offset feeds straight back into
+ * `getRectsForCharRange`. `InlineTextAdapter` layers marker-stripping on top
+ * and maps indices back before calling through.
+ *
+ * PDFium implements this in `src/pdf/page_source.js`. Nothing here knows that.
+ */
+export interface RawPageTextSource {
+  getPageFullText(pageIndex: number): {
+    fullText: string;
+    charCount: number;
+    pageWidth: number;
+    pageHeight: number;
+  };
+  getRectsForCharRange(
+    pageIndex: number,
+    startCharIndex: number,
+    charCount: number,
+  ): Rect[];
+}
 
 import {
   INLINE_CITATION_PATTERNS,
@@ -58,7 +111,7 @@ import {
   AUTHOR_YEAR_BLOCKS,
 } from "./lexicon.js";
 
-function escapeForRegex(str) {
+function escapeForRegex(str: string): string {
   return str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
@@ -80,40 +133,29 @@ const TEXT_MARKERS = new Set([
   0xffff, // non-character
 ]);
 
-class InlineTextAdapter {
-  /** @type {import('../pdf/text_extractor.js').PdfiumTextExtractor} */
-  #extractor = null;
-  #docPtr = null;
+export class InlineTextAdapter implements RawPageTextSource {
+  #source: RawPageTextSource = null;
 
   /**
    * Sparse removal maps per page — stores original indices of stripped chars.
    * Only populated for pages that actually contain a TEXT_MARKERS codepoint.
-   * @type {Map<number, number[]>}
    */
-  #pageRemovals = new Map();
+  #pageRemovals = new Map<number, number[]>();
 
-  /**
-   * @param {import('../pdf/text_extractor.js').PdfiumTextExtractor} extractor
-   * @param {number} docPtr
-   */
-  constructor(extractor, docPtr) {
-    this.#extractor = extractor;
-    this.#docPtr = docPtr;
+  constructor(source: RawPageTextSource) {
+    this.#source = source;
   }
 
-  /**
-   * @param {number} pageIndex - 0-based
-   * @returns {{fullText: string, charCount: number, pageWidth: number, pageHeight: number}}
-   */
-  getPageFullText(pageIndex) {
-    const result = this.#extractor.getPageFullText(this.#docPtr, pageIndex);
+  /** @param pageIndex 0-based */
+  getPageFullText(pageIndex: number) {
+    const result = this.#source.getPageFullText(pageIndex);
     const text = result.fullText;
 
     if (!text) return result;
 
     // Scan for zero-width markers (and any line-break a continuation hyphen
     // carries with it)
-    const removals = [];
+    const removals: number[] = [];
     for (let i = 0; i < text.length; i++) {
       if (TEXT_MARKERS.has(text.charCodeAt(i))) {
         removals.push(i);
@@ -128,7 +170,7 @@ class InlineTextAdapter {
 
     // Build clean text by slicing around removed positions
     this.#pageRemovals.set(pageIndex, removals);
-    const parts = [];
+    const parts: string[] = [];
     let prev = 0;
     for (const r of removals) {
       if (r > prev) parts.push(text.slice(prev, r));
@@ -145,13 +187,11 @@ class InlineTextAdapter {
     };
   }
 
-  /**
-   * @param {number} pageIndex
-   * @param {number} startCharIndex
-   * @param {number} charCount
-   * @returns {Array<{x: number, y: number, width: number, height: number}>}
-   */
-  getRectsForCharRange(pageIndex, startCharIndex, charCount) {
+  getRectsForCharRange(
+    pageIndex: number,
+    startCharIndex: number,
+    charCount: number,
+  ): Rect[] {
     const removals = this.#pageRemovals.get(pageIndex);
     if (removals) {
       const origStart = this.#toOriginal(startCharIndex, removals);
@@ -159,15 +199,13 @@ class InlineTextAdapter {
         startCharIndex + charCount - 1,
         removals,
       );
-      return this.#extractor.getRectsForCharRangeOnPage(
-        this.#docPtr,
+      return this.#source.getRectsForCharRange(
         pageIndex,
         origStart,
         origEnd - origStart + 1,
       );
     }
-    return this.#extractor.getRectsForCharRangeOnPage(
-      this.#docPtr,
+    return this.#source.getRectsForCharRange(
       pageIndex,
       startCharIndex,
       charCount,
@@ -181,11 +219,9 @@ class InlineTextAdapter {
    * the target. Fine while removals are sparse; a heavily hyphenated page makes
    * the list long enough that a binary search would be worth it.
    *
-   * @param {number} cleanIdx
-   * @param {number[]} removals - sorted original indices of stripped chars
-   * @returns {number}
+   * @param removals sorted original indices of stripped chars
    */
-  #toOriginal(cleanIdx, removals) {
+  #toOriginal(cleanIdx: number, removals: number[]): number {
     let offset = 0;
     for (const r of removals) {
       if (r <= cleanIdx + offset) offset++;
@@ -204,30 +240,29 @@ class InlineTextAdapter {
  * Main inline element extractor
  */
 export class InlineExtractor {
-  #textExtractor = null;
-  #textIndex = null;
-  #referenceIndex = null;
+  #textExtractor: InlineTextAdapter = null;
+  #textIndex: DocumentTextIndex = null;
+  #referenceIndex: ReferenceIndex | null = null;
   #numPages = 0;
 
-  // Reference signatures for validation
-  #signatures = [];
+  /** Reference anchors, used to validate that a match points at something. */
+  #signatures: ReferenceAnchor[] = [];
 
-  // Detected citation format from reference section
-  #detectedFormat = null;
+  /** Detected citation format from the reference section. */
+  #detectedFormat: DetectedCitationFormat = null;
 
-  // Track matched positions to avoid duplicates
-  #matchedRanges = new Map(); // pageNumber -> Set of "start:end" strings
+  /** pageNumber -> set of "start:end" strings, to avoid double-matching. */
+  #matchedRanges = new Map<number, Set<string>>();
 
-  // Abbreviated key -> anchor index lookup (built lazily from signatures)
-  #abbrKeyIndex = null;
+  /** Abbreviated key -> anchor index lookup, built lazily from signatures. */
+  #abbrKeyIndex: Map<string, RefIndex> | null = null;
 
-  /**
-   * @param {InlineTextAdapter} textExtractor
-   * @param {Object} textIndex - DocumentTextIndex instance
-   * @param {Object} referenceIndex - Reference index from buildReferenceIndex
-   * @param {number} numPages - Total page count
-   */
-  constructor(textExtractor, textIndex, referenceIndex, numPages) {
+  constructor(
+    textExtractor: InlineTextAdapter,
+    textIndex: DocumentTextIndex,
+    referenceIndex: ReferenceIndex,
+    numPages: number,
+  ) {
     this.#textExtractor = textExtractor;
     this.#textIndex = textIndex;
     this.#referenceIndex = referenceIndex;
@@ -298,12 +333,8 @@ export class InlineExtractor {
 
   /**
    * Check if a character range overlaps with already matched ranges
-   * @param {number} pageNumber
-   * @param {number} start
-   * @param {number} end
-   * @returns {boolean}
    */
-  #isRangeMatched(pageNumber, start, end) {
+  #isRangeMatched(pageNumber: number, start: number, end: number): boolean {
     const pageRanges = this.#matchedRanges.get(pageNumber);
     if (!pageRanges) return false;
 
@@ -319,11 +350,8 @@ export class InlineExtractor {
 
   /**
    * Mark a character range as matched
-   * @param {number} pageNumber
-   * @param {number} start
-   * @param {number} end
    */
-  #markRangeMatched(pageNumber, start, end) {
+  #markRangeMatched(pageNumber: number, start: number, end: number) {
     const pageRanges = this.#matchedRanges.get(pageNumber);
     if (pageRanges) {
       pageRanges.add(`${start}:${end}`);
@@ -333,7 +361,7 @@ export class InlineExtractor {
   /**
    * Detect citation format from reference section
    */
-  #detectCitationFormat() {
+  #detectCitationFormat(): DetectedCitationFormat {
     const anchors = this.#referenceIndex?.anchors || [];
     if (anchors.length === 0) {
       return { type: "unknown", confidence: 0, isAuthorYear: false };
@@ -384,13 +412,17 @@ export class InlineExtractor {
   /**
    * Scan a single page for citations and cross-references
    */
-  #scanPage(pageNumber, bodyLineHeight, isInRefSection) {
+  #scanPage(
+    pageNumber: number,
+    bodyLineHeight: number,
+    isInRefSection: boolean,
+  ): { citations: RawCitation[]; crossRefs: RawCrossRef[] } {
     const pageIndex = pageNumber - 1;
-    const { fullText, charCount, pageWidth, pageHeight } =
+    const { fullText, charCount } =
       this.#textExtractor.getPageFullText(pageIndex);
 
-    const citations = [];
-    const crossRefs = [];
+    const citations: RawCitation[] = [];
+    const crossRefs: RawCrossRef[] = [];
 
     if (!fullText || charCount === 0) {
       return { citations, crossRefs };
@@ -429,11 +461,15 @@ export class InlineExtractor {
   /**
    * Scan a single page for citations and cross-references
    */
-  #scanPageForSuperscripts(pageNumber, bodyLineHeight, isInRefSection) {
+  #scanPageForSuperscripts(
+    pageNumber: number,
+    bodyLineHeight: number,
+    isInRefSection: boolean,
+  ): RawCitation[] {
     const pageIndex = pageNumber - 1;
-    const { fullText, charCount, pageWidth, pageHeight } =
+    const { fullText, charCount, pageHeight } =
       this.#textExtractor.getPageFullText(pageIndex);
-    const citations = [];
+    const citations: RawCitation[] = [];
     if (!fullText || charCount === 0) {
       return citations;
     }
@@ -454,8 +490,12 @@ export class InlineExtractor {
   /**
    * Find numeric bracket citations: [1], [1,2,3], [1-8], [17]-[19]
    */
-  #findNumericCitations(fullText, pageNumber, pageIndex) {
-    const citations = [];
+  #findNumericCitations(
+    fullText: string,
+    pageNumber: number,
+    pageIndex: number,
+  ): RawCitation[] {
+    const citations: RawCitation[] = [];
 
     // First, find inter-bracket ranges like [17]-[19]
     // These must be processed first to avoid partial matches with single brackets
@@ -616,8 +656,8 @@ export class InlineExtractor {
    *
    * @returns {Map<string, number>} key (lowercase) -> anchor index
    */
-  #buildAbbrKeyIndex() {
-    const index = new Map();
+  #buildAbbrKeyIndex(): Map<string, RefIndex> {
+    const index = new Map<string, RefIndex>();
     const abbrPattern = REFERENCE_FORMAT_PATTERNS["numbered-abbr"];
 
     for (const anchor of this.#signatures) {
@@ -634,8 +674,12 @@ export class InlineExtractor {
   /**
    * Find abbreviated bracket citations: [YYZS+23], [Min+15, Dua+16b, SL06]
    */
-  #findAbbreviatedCitations(fullText, pageNumber, pageIndex) {
-    const citations = [];
+  #findAbbreviatedCitations(
+    fullText: string,
+    pageNumber: number,
+    pageIndex: number,
+  ): RawCitation[] {
+    const citations: RawCitation[] = [];
 
     if (!this.#abbrKeyIndex || this.#abbrKeyIndex.size === 0) {
       return citations;
@@ -724,20 +768,19 @@ export class InlineExtractor {
    // * and fetches character-level rects so each key can be an independent overlay.
    *
    * @param {string} innerText - Inner bracket content (e.g. "Min+15, Dua+16b, SL06")
-   * @param {number} innerStart - Character index where innerText starts in page text
-   * @param {number} pageIndex - 0-based page index
-   * @param {string[]} validKeys - Validated abbreviated keys
-   * @param {number[]} validIndices - Corresponding anchor indices
-   * @returns {Array<{refIndex: number, rects: Array}>}
+   * @param innerStart Character index where innerText starts in page text
+   * @param pageIndex 0-based page index
+   * @param validKeys Validated abbreviated keys
+   * @param validIndices Corresponding anchor indices
    */
   #computeAbbrSubRects(
-    innerText,
-    innerStart,
-    pageIndex,
-    validKeys,
-    validIndices,
-  ) {
-    const subCitations = [];
+    innerText: string,
+    innerStart: number,
+    pageIndex: number,
+    validKeys: string[],
+    validIndices: RefIndex[],
+  ): Array<{ refIndex: RefIndex; rects: Rect[] }> {
+    const subCitations: Array<{ refIndex: RefIndex; rects: Rect[] }> = [];
 
     for (let i = 0; i < validKeys.length; i++) {
       const key = validKeys[i];
@@ -761,8 +804,12 @@ export class InlineExtractor {
     return subCitations;
   }
 
-  #findSuperscriptCitations(pageNumber, pageHeight, bodyLineHeight) {
-    const citations = [];
+  #findSuperscriptCitations(
+    pageNumber: number,
+    pageHeight: number,
+    bodyLineHeight: number,
+  ): RawCitation[] {
+    const citations: RawCitation[] = [];
     const lines = this.#textIndex?.getPageLines(pageNumber);
 
     if (!lines?.length) return citations;
@@ -770,7 +817,7 @@ export class InlineExtractor {
     const heightThreshold = bodyLineHeight * 0.7;
 
     for (const line of lines) {
-      const groups = []; // Array of Array<item>
+      const groups: TextItem[][] = [];
 
       for (const item of line.items) {
         if (item.height >= heightThreshold) continue;
@@ -861,7 +908,11 @@ export class InlineExtractor {
    * Examples: (Abutalebi et al., 2008, 2013; de Bruin et al., 2014; ...)
    * This would produce separate citations for each semicolon-separated chunk.
    */
-  #findParentheticalBlocks(fullText, pageNumber, pageIndex) {
+  #findParentheticalBlocks(
+    fullText: string,
+    pageNumber: number,
+    pageIndex: number,
+  ): RawCitation[] {
     const citations = [];
     const pattern = cloneRegex(PARENTHETICAL_CITATION_BLOCK);
 
@@ -898,14 +949,18 @@ export class InlineExtractor {
    * Parse a parenthetical block into individual citation chunks.
    * Each chunk (separated by semicolon) becomes its own citation object.
    *
-   * @param {string} blockText - The full block text including parentheses
-   * @param {number} blockStartIndex - Character index where block starts in page text
-   * @param {number} pageNumber - 1-based page number
-   * @param {number} pageIndex - 0-based page index
-   * @returns {Array} Array of citation objects
+   * @param blockText The full block text including parentheses
+   * @param blockStartIndex Character index where block starts in page text
+   * @param pageNumber 1-based page number
+   * @param pageIndex 0-based page index
    */
-  #parseBlockIntoChunks(blockText, blockStartIndex, pageNumber, pageIndex) {
-    const citations = [];
+  #parseBlockIntoChunks(
+    blockText: string,
+    blockStartIndex: number,
+    pageNumber: number,
+    pageIndex: number,
+  ): RawCitation[] {
+    const citations: RawCitation[] = [];
 
     // Remove outer parentheses for inner parsing
     let inner = blockText.trim();
@@ -1024,7 +1079,11 @@ export class InlineExtractor {
    * Find individual author-year citations
    * Handles patterns not caught by parenthetical block detection
    */
-  #findAuthorYearCitations(fullText, pageNumber, pageIndex) {
+  #findAuthorYearCitations(
+    fullText: string,
+    pageNumber: number,
+    pageIndex: number,
+  ): RawCitation[] {
     const citations = [];
 
     for (const [patternName, patternDef] of Object.entries(
@@ -1115,12 +1174,15 @@ export class InlineExtractor {
   /**
    * Match author-year citation to reference signature
    *
-   * @param {string} author - First author surname
-   * @param {string} year - Year string (may include letter suffix)
-   * @param {string|null} secondAuthor - Second author surname (for two-author citations)
-   * @returns {{index: number, confidence: number}|null}
+   * @param author First author surname
+   * @param year Year string (may include letter suffix)
+   * @param secondAuthor Second author surname, for two-author citations
    */
-  #matchAuthorYearToSignature(author, year, secondAuthor = null) {
+  #matchAuthorYearToSignature(
+    author: string,
+    year: string,
+    secondAuthor: string | null = null,
+  ): { index: RefIndex; confidence: number } | null {
     if (!author || !year) return null;
 
     let yearToMatch = year;
@@ -1176,14 +1238,18 @@ export class InlineExtractor {
    * Scans the matched text for digit tokens, maps each to its refIndex,
    * and fetches character-level rects so each number can be an independent overlay.
    *
-   * @param {string} matchText - Full matched text (e.g. "[12, 15, 16, 24, 48]")
-   * @param {number} matchStart - Character index where matchText starts in page text
-   * @param {number} pageIndex - 0-based page index
-   * @param {number[]} validIndices - Validated reference indices
-   * @returns {Array<{refIndex: number, rects: Array}>}
+   * @param matchText Full matched text (e.g. "[12, 15, 16, 24, 48]")
+   * @param matchStart Character index where matchText starts in page text
+   * @param pageIndex 0-based page index
+   * @param validIndices Validated reference indices
    */
-  #computeNumericSubRects(matchText, matchStart, pageIndex, validIndices) {
-    const subCitations = [];
+  #computeNumericSubRects(
+    matchText: string,
+    matchStart: number,
+    pageIndex: number,
+    validIndices: number[],
+  ): Array<{ refIndex: number; rects: Rect[] }> {
+    const subCitations: Array<{ refIndex: number; rects: Rect[] }> = [];
     const numberPattern = /\d+/g;
     let numMatch;
 
@@ -1212,7 +1278,11 @@ export class InlineExtractor {
   /**
    * Find cross-references (Figure, Table, Section, etc.)
    */
-  #findCrossRefs(fullText, pageNumber, pageIndex) {
+  #findCrossRefs(
+    fullText: string,
+    pageNumber: number,
+    pageIndex: number,
+  ): RawCrossRef[] {
     const crossRefs = [];
 
     for (const [type, pattern] of Object.entries(CROSS_REFERENCE_PATTERNS)) {
@@ -1253,7 +1323,7 @@ export class InlineExtractor {
   /**
    * Adjust citation confidence based on dominant format
    */
-  #adjustConfidenceByFormat(citations) {
+  #adjustConfidenceByFormat(citations: RawCitation[]) {
     const isAbbr = this.#detectedFormat.type === "numbered-abbr";
     for (const cit of citations) {
       if (this.#detectedFormat.isAuthorYear && cit.type === "numeric") {
@@ -1278,26 +1348,24 @@ export class InlineExtractor {
 }
 
 /**
- * Factory function to create InlineExtractor
+ * Build an extractor over a raw page-text source.
  *
- * @param {import('../model/doc.js').PDFDocumentModel} doc
- * @returns {InlineExtractor|null}
  */
-export function createInlineExtractor(doc) {
-  if (!doc.lowLevelHandle) {
-    console.warn("[InlineExtractor] Missing lowLevelHandle");
-    return null;
-  }
-
-  const adapter = new InlineTextAdapter(
-    doc.lowLevelHandle.extractor,
-    doc.lowLevelHandle.docPtr,
-  );
-
+export function createInlineExtractor({
+  pageTextSource,
+  textIndex,
+  referenceIndex,
+  numPages,
+}: {
+  pageTextSource: RawPageTextSource;
+  textIndex: DocumentTextIndex;
+  referenceIndex: ReferenceIndex;
+  numPages: number;
+}): InlineExtractor {
   return new InlineExtractor(
-    adapter,
-    doc.textIndex,
-    doc.referenceIndex,
-    doc.numPages,
+    new InlineTextAdapter(pageTextSource),
+    textIndex,
+    referenceIndex,
+    numPages,
   );
 }

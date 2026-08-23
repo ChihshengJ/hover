@@ -43,12 +43,9 @@ export class TextSelectionManager {
     ? true
     : null;
 
-  /**
-   * @param {import('./viewpane.js').ViewerPane} pane - The pane this manager belongs to
-   */
-  constructor(pane) {
-    this.pane = pane;
-  }
+  // No constructor: selection state is entirely per-registered-text-layer, so
+  // this manager needs nothing from the pane that owns it. It took the whole
+  // pane and never touched it.
 
   /**
    * Register a text layer for selection management

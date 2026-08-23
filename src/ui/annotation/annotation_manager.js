@@ -16,7 +16,8 @@ import { DrawingSelectionManager } from "./drawing/drawing_selection.js";
  */
 export class AnnotationManager {
   /** @type {import('../../viewer/viewpane.js').ViewerPane} */
-  #pane = null;
+  /** @type {import('./host.js').AnnotationHost} */
+  #host = null;
 
   /** @type {AnnotationToolbar} */
   #toolbar = null;
@@ -46,15 +47,22 @@ export class AnnotationManager {
   #isCreatingAnnotation = false;
 
   /**
-   * @param {import('../../viewer/viewpane.js').ViewerPane} pane
+   * @param {import('./host.js').AnnotationHost} host
    */
-  constructor(pane) {
-    this.#pane = pane;
+  constructor(host) {
+    this.#host = host;
     this.#toolbar = AnnotationToolbar.getInstance();
     this.#commentInput = CommentInput.getInstance();
-    this.#commentDisplay = new CommentDisplay(pane);
-    this.#svgLayer = new AnnotationSVGLayer(pane);
-    this.#drawingSelection = new DrawingSelectionManager(pane);
+    this.#commentDisplay = new CommentDisplay(host, {
+      onEditComment: (id) => this.#editAnnotationComment(id),
+      onDeleteComment: (id) => this.#deleteAnnotationComment(id),
+      onSelect: (id) => this.selectAnnotation(id),
+    });
+    this.#svgLayer = new AnnotationSVGLayer(host, {
+      onHover: (id, isEntering) => this.#onAnnotationHover(id, isEntering),
+      onClick: (id) => this.#onAnnotationClick(id),
+    });
+    this.#drawingSelection = new DrawingSelectionManager(host);
 
     this.#setupEventListeners();
     this.#setupPaneCallbacks();
@@ -98,7 +106,7 @@ export class AnnotationManager {
     );
 
     // Handle mouseup to show toolbar for new selection
-    this.#pane.scroller.addEventListener(
+    this.#host.getScroller().addEventListener(
       "pointerup",
       (e) => {
         // Delay to let selection finalize
@@ -110,28 +118,23 @@ export class AnnotationManager {
     );
   }
 
+  /**
+   * Publish the annotation entry points on the pane, for the code that only
+   * has a pane to reach: the drawing controller's click hand-off and the
+   * navigation tree's "reveal this annotation".
+   *
+   * This layer's own children no longer read them back off the pane — they get
+   * the same handlers passed to their constructors.
+   */
   #setupPaneCallbacks() {
-    // These callbacks are called by AnnotationRenderer
-    this.#pane.onAnnotationHover = (annotationId, isEntering) => {
-      this.#onAnnotationHover(annotationId, isEntering);
-    };
-
-    this.#pane.onAnnotationClick = (annotationId) => {
-      this.#onAnnotationClick(annotationId);
-    };
-
-    // These callbacks are called by CommentDisplay
-    this.#pane.editAnnotationComment = (annotationId) => {
-      this.#editAnnotationComment(annotationId);
-    };
-
-    this.#pane.deleteAnnotationComment = (annotationId) => {
-      this.#deleteAnnotationComment(annotationId);
-    };
-
-    this.#pane.selectAnnotation = (annotationId) => {
-      this.selectAnnotation(annotationId);
-    };
+    this.#host.publishCallbacks({
+      onAnnotationHover: (id, isEntering) =>
+        this.#onAnnotationHover(id, isEntering),
+      onAnnotationClick: (id) => this.#onAnnotationClick(id),
+      editAnnotationComment: (id) => this.#editAnnotationComment(id),
+      deleteAnnotationComment: (id) => this.#deleteAnnotationComment(id),
+      selectAnnotation: (id) => this.selectAnnotation(id),
+    });
   }
 
   #hasActiveSelection() {
@@ -140,11 +143,12 @@ export class AnnotationManager {
   }
 
   #checkForNewSelection() {
-    if (this.#pane.handMode) return;
-    if (this.#pane.scroller?.classList.contains("drawing-mode-active")) return;
+    if (this.#host.getHandMode()) return;
+    if (this.#host.getScroller()?.classList.contains("drawing-mode-active"))
+      return;
     if (!this.#hasActiveSelection()) return;
 
-    const selectionData = this.#pane.textSelectionManager.getSelection();
+    const selectionData = this.#host.getSelection();
     if (selectionData.length === 0) return;
 
     // Store the selection data
@@ -220,7 +224,7 @@ export class AnnotationManager {
       const { color, type } = options;
 
       const pageRanges = this.#pendingSelection.map((sel) => {
-        const pageView = this.#pane.pages[sel.pageNumber - 1];
+        const pageView = this.#host.getPages()[sel.pageNumber - 1];
         const layerWidth =
           parseFloat(pageView.textLayer.style.width) ||
           pageView.wrapper.clientWidth;
@@ -242,7 +246,7 @@ export class AnnotationManager {
         };
       });
 
-      const annotation = await this.#pane.document.addAnnotation({
+      const annotation = await this.#host.doc.addAnnotation({
         type,
         color,
         pageRanges,
@@ -269,7 +273,7 @@ export class AnnotationManager {
 
     this.#commentInput.show(rect, annotation.color, "", {
       onSave: async (text) => {
-        await this.#pane.document.updateAnnotation(annotation.id, {
+        await this.#host.doc.updateAnnotation(annotation.id, {
           comment: text,
         });
       },
@@ -289,7 +293,7 @@ export class AnnotationManager {
   }
 
   async #copyAnnotationText(annotationId) {
-    const annotation = this.#pane.document.getAnnotation(annotationId);
+    const annotation = this.#host.doc.getAnnotation(annotationId);
     if (!annotation) return;
     const text = (annotation.pageRanges || [])
       .map((r) => r.text)
@@ -324,7 +328,7 @@ export class AnnotationManager {
 
   #onAnnotationClick(annotationId) {
     // Show toolbar for editing
-    const annotation = this.#pane.document.getAnnotation(annotationId);
+    const annotation = this.#host.doc.getAnnotation(annotationId);
     if (!annotation) return;
 
     // Drawings use their own selection manager (skip SVG outline selection)
@@ -340,7 +344,7 @@ export class AnnotationManager {
 
     this.#toolbar.showForAnnotation(rect, annotation, {
       onAnnotate: async (options) => {
-        await this.#pane.document.updateAnnotation(annotationId, options);
+        await this.#host.doc.updateAnnotation(annotationId, options);
         this.#toolbar.hide();
         this.selectAnnotation(null);
       },
@@ -351,7 +355,7 @@ export class AnnotationManager {
           annotation.comment || "",
           {
             onSave: async (text) => {
-              await this.#pane.document.updateAnnotation(annotationId, {
+              await this.#host.doc.updateAnnotation(annotationId, {
                 comment: text,
               });
             },
@@ -361,7 +365,7 @@ export class AnnotationManager {
         this.#toolbar.hide();
       },
       onDelete: async () => {
-        await this.#pane.document.deleteAnnotation(annotationId);
+        await this.#host.doc.deleteAnnotation(annotationId);
         this.selectAnnotation(null);
       },
       onCopy: () => this.#copyAnnotationText(annotationId),
@@ -394,7 +398,7 @@ export class AnnotationManager {
   }
 
   #editAnnotationComment(annotationId) {
-    const annotation = this.#pane.document.getAnnotation(annotationId);
+    const annotation = this.#host.doc.getAnnotation(annotationId);
     if (!annotation) return;
 
     const rect = this.#getAnnotationRect(annotationId);
@@ -402,7 +406,7 @@ export class AnnotationManager {
 
     this.#commentInput.show(rect, annotation.color, annotation.comment || "", {
       onSave: async (text) => {
-        await this.#pane.document.updateAnnotation(annotationId, {
+        await this.#host.doc.updateAnnotation(annotationId, {
           comment: text,
         });
       },
@@ -411,7 +415,7 @@ export class AnnotationManager {
   }
 
   async #deleteAnnotationComment(annotationId) {
-    await this.#pane.document.deleteAnnotationComment(annotationId);
+    await this.#host.doc.deleteAnnotationComment(annotationId);
   }
 
   onDocumentChange(event, data) {

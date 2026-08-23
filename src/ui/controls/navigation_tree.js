@@ -18,6 +18,19 @@
  * @property {number} [originalTopRatio] - annotation's top as a fraction of page height
  */
 
+import { DocEvent } from "../../model/doc_events.js";
+
+/**
+ * What the tree needs from the toolbar that hosts it. `getPane` is a getter
+ * because the active pane changes with every split and focus change, and
+ * `getBallCenterY` because the toolbar ball moves as the user drags it.
+ *
+ * @typedef {Object} NavigationTreeOptions
+ * @property {import('../../model/doc.js').PDFDocumentModel} doc
+ * @property {() => import('../../viewer/viewpane.js').ViewerPane} getPane
+ * @property {() => number} getBallCenterY - viewport y of the toolbar ball's centre
+ */
+
 const rightSvg = `
   <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-chevron-right" viewBox="0 0 16 16">
     <path fill-rule="evenodd" d="M4.646 1.646a.5.5 0 0 1 .708 0l6 6a.5.5 0 0 1 0 .708l-6 6a.5.5 0 0 1-.708-.708L10.293 8 4.646 2.354a.5.5 0 0 1 0-.708"/>
@@ -29,11 +42,11 @@ const downSvg = `
 
 export class NavigationTree {
   /**
-   * @param {import('./floating_toolbar/index.js').FloatingToolbar} toolbar
+   * @param {NavigationTreeOptions} options
    */
-  constructor(toolbar) {
-    this.toolbar = toolbar;
-    this.wm = toolbar.wm;
+  constructor(options) {
+    this.options = options;
+    this.doc.subscribe(this);
 
     /** @type {TreeNode[]} */
     this.tree = [];
@@ -81,11 +94,11 @@ export class NavigationTree {
 
   /** @returns {import('../../viewer/viewpane.js').ViewerPane} */
   get pane() {
-    return this.wm.activePane;
+    return this.options.getPane();
   }
 
   get doc() {
-    return this.wm.document;
+    return this.options.doc;
   }
 
   async initialize() {
@@ -1242,9 +1255,7 @@ export class NavigationTree {
 
     // Store ball position for centering
     this.ballRightX = ballRightX;
-    this.ballCenterY =
-      this.toolbar.ball.getBoundingClientRect().top +
-      this.toolbar.ball.getBoundingClientRect().height / 2;
+    this.ballCenterY = this.options.getBallCenterY();
 
     // Position container - right half of window, starting from ball
     const viewportWidth = window.innerWidth;
@@ -1288,6 +1299,17 @@ export class NavigationTree {
       </div>
     `;
     this.container.appendChild(wrapper);
+  }
+
+  /**
+   * The tree is built from `doc.outline`, which does not exist until background
+   * indexing finishes — so listen for that rather than have the caller who
+   * started indexing remember to poke us.
+   *
+   * @param {import('../../model/doc_events.js').DocEventName} event
+   */
+  onDocumentChange(event) {
+    if (event === DocEvent.INDEX_READY) this.reinitialize();
   }
 
   /**
@@ -1373,6 +1395,8 @@ export class NavigationTree {
   }
 
   destroy() {
+    this.doc.unsubscribe(this);
+
     // Clear timeouts
     if (this.hideTimeout) clearTimeout(this.hideTimeout);
     if (this.hoverTimeout) clearTimeout(this.hoverTimeout);

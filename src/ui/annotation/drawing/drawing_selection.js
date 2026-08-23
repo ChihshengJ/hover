@@ -33,7 +33,8 @@ const MIN_SIZE = 20;
 
 export class DrawingSelectionManager {
   /** @type {import('../../../viewer/viewpane.js').ViewerPane} */
-  #pane;
+  /** @type {import('../host.js').AnnotationHost} */
+  #host;
 
   /** @type {string|null} */
   #selectedId = null;
@@ -60,11 +61,9 @@ export class DrawingSelectionManager {
   #onDragMove = (e) => this.#handleDragMove(e);
   #onDragEnd = (e) => this.#handleDragEnd(e);
 
-  /**
-   * @param {import('../../../viewer/viewpane.js').ViewerPane} pane
-   */
-  constructor(pane) {
-    this.#pane = pane;
+  /** @param {import('../host.js').AnnotationHost} host */
+  constructor(host) {
+    this.#host = host;
   }
 
   get selectedId() {
@@ -106,7 +105,7 @@ export class DrawingSelectionManager {
   refresh() {
     if (!this.#selectedId || this.#dragMode !== "none") return;
 
-    const annotation = this.#pane.document.getAnnotation(this.#selectedId);
+    const annotation = this.#host.doc.getAnnotation(this.#selectedId);
     if (!annotation) {
       this.deselect();
       return;
@@ -140,7 +139,7 @@ export class DrawingSelectionManager {
     const pr = annotation.pageRanges?.[0];
     if (!pr) return null;
 
-    const pageView = this.#pane.pages[pr.pageNumber - 1];
+    const pageView = this.#host.getPages()[pr.pageNumber - 1];
     if (!pageView) return null;
 
     const bounds = computeBoundsRaw(annotation.strokes);
@@ -232,7 +231,7 @@ export class DrawingSelectionManager {
       this.#startDrag(e, "move");
     });
 
-    this.#pane.stage.appendChild(this.#bbox);
+    this.#host.getStage().appendChild(this.#bbox);
   }
 
   #removeBoundingBox() {
@@ -272,7 +271,7 @@ export class DrawingSelectionManager {
     const cy = this.#origBounds.y + this.#origBounds.h / 2;
 
     // Stage pixels -> client coords
-    const stageRect = this.#pane.stage.getBoundingClientRect();
+    const stageRect = this.#host.getStage().getBoundingClientRect();
     const clientCx = stageRect.left + cx;
     const clientCy = stageRect.top + cy;
 
@@ -358,7 +357,7 @@ export class DrawingSelectionManager {
   #commitTransform({ dx, dy, scaleX, scaleY }) {
     const annotation = this.#selectedAnnotation;
     const pr = annotation.pageRanges[0];
-    const sourcePage = this.#pane.pages[pr.pageNumber - 1];
+    const sourcePage = this.#host.getPages()[pr.pageNumber - 1];
     if (!sourcePage) return;
 
     const source = getPageMetrics(sourcePage);
@@ -381,7 +380,7 @@ export class DrawingSelectionManager {
     const moved = computeBoundsRaw(stageStrokes);
     const targetPage =
       findPageAtStagePoint(
-        this.#pane,
+        this.#host.getPages(),
         (moved.minX + moved.maxX) / 2,
         (moved.minY + moved.maxY) / 2,
       ) || sourcePage;
@@ -415,9 +414,9 @@ export class DrawingSelectionManager {
    */
   #commit(changes) {
     const id = this.#selectedId;
-    this.#pane.document.updateAnnotation(id, changes);
+    this.#host.doc.updateAnnotation(id, changes);
 
-    const refreshed = this.#pane.document.getAnnotation(id);
+    const refreshed = this.#host.doc.getAnnotation(id);
     if (!refreshed) return;
 
     this.deselect();
@@ -434,7 +433,7 @@ export class DrawingSelectionManager {
     if (!this.#selectedId) return;
     const id = this.#selectedId;
     this.deselect();
-    this.#pane.document.deleteAnnotation(id);
+    this.#host.doc.deleteAnnotation(id);
   }
 
   destroy() {

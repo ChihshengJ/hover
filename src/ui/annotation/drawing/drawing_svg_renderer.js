@@ -13,17 +13,17 @@ import {
 /**
  * Render a drawing annotation into an SVG group element.
  * @param {Object} annotation - The drawing annotation object
- * @param {import('../../../viewer/viewpane.js').ViewerPane} pane - The viewer pane
+ * @param {import('../../../viewer/page.js').PageView[]} pages
  * @returns {SVGGElement|null} The SVG group element, or null if rendering fails
  */
-export function renderDrawingAnnotation(annotation, pane) {
+export function renderDrawingAnnotation(annotation, pages) {
   if (!annotation.strokes || annotation.strokes.length === 0) return null;
 
   const ns = "http://www.w3.org/2000/svg";
   const pr = annotation.pageRanges[0];
   if (!pr) return null;
 
-  const pageView = pane.pages[pr.pageNumber - 1];
+  const pageView = pages[pr.pageNumber - 1];
   if (!pageView) return null;
 
   const metrics = getPageMetrics(pageView);

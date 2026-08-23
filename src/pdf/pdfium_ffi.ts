@@ -7,6 +7,8 @@
  * once per character — tens of thousands of allocator round-trips per page.
  */
 
+import type { WrappedPdfiumModule } from "@embedpdf/pdfium";
+
 /**
  * PDFium page-object types, as returned by FPDFPageObj_GetType. Same values as
  * @embedpdf/models' PdfPageObjectType.
@@ -27,14 +29,14 @@ export const PAGEOBJ = Object.freeze({
  * `PdfiumModule & PdfiumRuntimeMethods`, and `PdfiumRuntimeMethods` only
  * declares the handful of runtime helpers the wrapper re-exports — the HEAP*
  * views are always present at runtime but absent from that type.
- *
- * @typedef {Object} PdfiumHeaps
- * @property {Float64Array} HEAPF64
- * @property {Float32Array} HEAPF32
- * @property {Int32Array} HEAP32
- * @property {Uint32Array} HEAPU32
- * @property {Uint8Array} HEAPU8
  */
+export interface PdfiumHeaps {
+  HEAPF64: Float64Array;
+  HEAPF32: Float32Array;
+  HEAP32: Int32Array;
+  HEAPU32: Uint32Array;
+  HEAPU8: Uint8Array;
+}
 
 /**
  * Size of the persistent out-parameter scratch block. The widest single use is
@@ -44,27 +46,22 @@ export const PAGEOBJ = Object.freeze({
 const SCRATCH_BYTES = 128;
 
 export class PdfiumFFI {
-  /** @type {import('@embedpdf/pdfium').WrappedPdfiumModule} */
-  #pdfium;
+  #pdfium: WrappedPdfiumModule;
 
-  /** @type {number} Lazily allocated scratch block for out-parameters. */
+  /** Lazily allocated scratch block for out-parameters. */
   #scratchPtr = 0;
 
-  /** @type {number} Bump offset into the scratch block. */
+  /** Bump offset into the scratch block. */
   #scratchTop = 0;
 
-  /** @type {number} Nesting depth of active frames; slots() requires > 0. */
+  /** Nesting depth of active frames; slots() requires > 0. */
   #frameDepth = 0;
 
-  /**
-   * @param {import('@embedpdf/pdfium').WrappedPdfiumModule} pdfiumModule
-   */
-  constructor(pdfiumModule) {
+  constructor(pdfiumModule: WrappedPdfiumModule) {
     this.#pdfium = pdfiumModule;
   }
 
-  /** @returns {import('@embedpdf/pdfium').WrappedPdfiumModule} */
-  get module() {
+  get module(): WrappedPdfiumModule {
     return this.#pdfium;
   }
 
@@ -75,13 +72,18 @@ export class PdfiumFFI {
   /**
    * Open a page for object-level work, closing it on the way out.
    *
-   * @param {number} docPtr
-   * @param {number} pageIndex - 0-based
-   * @param {(ctx: {pagePtr: number, pageWidth: number, pageHeight: number}) => T} fn
-   * @returns {T|null} null when the page cannot be loaded
-   * @template T
+   * @param pageIndex 0-based
+   * @returns null when the page cannot be loaded
    */
-  withPage(docPtr, pageIndex, fn) {
+  withPage<T>(
+    docPtr: number,
+    pageIndex: number,
+    fn: (ctx: {
+      pagePtr: number;
+      pageWidth: number;
+      pageHeight: number;
+    }) => T,
+  ): T | null {
     const pdfium = this.#pdfium;
     const pagePtr = pdfium.FPDF_LoadPage(docPtr, pageIndex);
     if (!pagePtr) return null;
@@ -100,30 +102,41 @@ export class PdfiumFFI {
   /**
    * Open a page and its text page, closing both on the way out.
    *
-   * @param {number} docPtr
-   * @param {number} pageIndex - 0-based
-   * @param {(ctx: {pagePtr: number, textPagePtr: number, pageWidth: number, pageHeight: number, charCount: number}) => T} fn
-   * @returns {T|null} null when either the page or its text page cannot be loaded
-   * @template T
+   * @param pageIndex 0-based
+   * @returns null when either the page or its text page cannot be loaded
    */
-  withTextPage(docPtr, pageIndex, fn) {
+  withTextPage<T>(
+    docPtr: number,
+    pageIndex: number,
+    fn: (ctx: {
+      pagePtr: number;
+      textPagePtr: number;
+      pageWidth: number;
+      pageHeight: number;
+      charCount: number;
+    }) => T,
+  ): T | null {
     const pdfium = this.#pdfium;
-    return this.withPage(docPtr, pageIndex, ({ pagePtr, pageWidth, pageHeight }) => {
-      const textPagePtr = pdfium.FPDFText_LoadPage(pagePtr);
-      if (!textPagePtr) return null;
+    return this.withPage(
+      docPtr,
+      pageIndex,
+      ({ pagePtr, pageWidth, pageHeight }) => {
+        const textPagePtr = pdfium.FPDFText_LoadPage(pagePtr);
+        if (!textPagePtr) return null;
 
-      try {
-        return fn({
-          pagePtr,
-          textPagePtr,
-          pageWidth,
-          pageHeight,
-          charCount: pdfium.FPDFText_CountChars(textPagePtr),
-        });
-      } finally {
-        pdfium.FPDFText_ClosePage(textPagePtr);
-      }
-    });
+        try {
+          return fn({
+            pagePtr,
+            textPagePtr,
+            pageWidth,
+            pageHeight,
+            charCount: pdfium.FPDFText_CountChars(textPagePtr),
+          });
+        } finally {
+          pdfium.FPDFText_ClosePage(textPagePtr);
+        }
+      },
+    );
   }
 
   // ==========================================================================
@@ -136,12 +149,8 @@ export class PdfiumFFI {
    * For variable-length data (text buffers). Fixed-size out-parameters should
    * use the scratch helpers below instead.
    *
-   * @param {number} bytes
-   * @param {(ptr: number) => T} fn
-   * @returns {T}
-   * @template T
    */
-  withBuffer(bytes, fn) {
+  withBuffer<T>(bytes: number, fn: (ptr: number) => T): T {
     const ptr = this.#pdfium.pdfium.wasmExports.malloc(bytes);
     if (!ptr) throw new Error(`PDFium malloc(${bytes}) failed`);
 
@@ -161,11 +170,8 @@ export class PdfiumFFI {
    * released when it returns, so frames may nest and may sit inside loops
    * without allocating.
    *
-   * @param {() => T} fn
-   * @returns {T}
-   * @template T
    */
-  frame(fn) {
+  frame<T>(fn: () => T): T {
     const savedTop = this.#scratchTop;
     this.#frameDepth++;
     try {
@@ -179,11 +185,10 @@ export class PdfiumFFI {
   /**
    * Reserve `count` scalar slots of `size` bytes inside the current frame.
    *
-   * @param {number} count
-   * @param {number} size - 4 or 8
-   * @returns {number[]} pointers, in order
+   * @param size 4 or 8
+   * @returns pointers, in order
    */
-  slots(count, size) {
+  slots(count: number, size: number): number[] {
     if (this.#frameDepth === 0) {
       throw new Error("PdfiumFFI.slots() must be called inside frame()");
     }
@@ -201,7 +206,7 @@ export class PdfiumFFI {
     }
     this.#scratchTop = end;
 
-    const ptrs = new Array(count);
+    const ptrs: number[] = new Array(count);
     for (let i = 0; i < count; i++) ptrs[i] = this.#scratchPtr + start + i * size;
     return ptrs;
   }
@@ -209,11 +214,12 @@ export class PdfiumFFI {
   /**
    * Call `invoke` with `count` f64 out-parameter pointers and read them back.
    *
-   * @param {number} count
-   * @param {(...ptrs: number[]) => boolean|number} invoke
-   * @returns {number[]|null} null when `invoke` reports failure
+   * @returns null when `invoke` reports failure
    */
-  readF64Out(count, invoke) {
+  readF64Out(
+    count: number,
+    invoke: (...ptrs: number[]) => boolean | number,
+  ): number[] | null {
     return this.frame(() => {
       const ptrs = this.slots(count, 8);
       if (!invoke(...ptrs)) return null;
@@ -224,11 +230,12 @@ export class PdfiumFFI {
   /**
    * Call `invoke` with `count` f32 out-parameter pointers and read them back.
    *
-   * @param {number} count
-   * @param {(...ptrs: number[]) => boolean|number} invoke
-   * @returns {number[]|null} null when `invoke` reports failure
+   * @returns null when `invoke` reports failure
    */
-  readF32Out(count, invoke) {
+  readF32Out(
+    count: number,
+    invoke: (...ptrs: number[]) => boolean | number,
+  ): number[] | null {
     return this.frame(() => {
       const ptrs = this.slots(count, 4);
       if (!invoke(...ptrs)) return null;
@@ -239,11 +246,12 @@ export class PdfiumFFI {
   /**
    * Call `invoke` with `count` u32 out-parameter pointers and read them back.
    *
-   * @param {number} count
-   * @param {(...ptrs: number[]) => boolean|number} invoke
-   * @returns {number[]|null} null when `invoke` reports failure
+   * @returns null when `invoke` reports failure
    */
-  readU32Out(count, invoke) {
+  readU32Out(
+    count: number,
+    invoke: (...ptrs: number[]) => boolean | number,
+  ): number[] | null {
     return this.frame(() => {
       const ptrs = this.slots(count, 4);
       if (!invoke(...ptrs)) return null;
@@ -255,76 +263,59 @@ export class PdfiumFFI {
   // Heap readers
   // ==========================================================================
 
-  /** @returns {PdfiumHeaps} */
-  get #heap() {
-    return /** @type {any} */ (this.#pdfium.pdfium);
+  get #heap(): PdfiumHeaps {
+    return this.#pdfium.pdfium as unknown as PdfiumHeaps;
   }
 
-  /** @param {number} ptr @returns {number} */
-  f64(ptr) {
+  f64(ptr: number): number {
     return this.#heap.HEAPF64[ptr >> 3];
   }
 
-  /** @param {number} ptr @returns {number} */
-  f32(ptr) {
+  f32(ptr: number): number {
     return this.#heap.HEAPF32[ptr >> 2];
   }
 
-  /** @param {number} ptr @returns {number} */
-  i32(ptr) {
+  i32(ptr: number): number {
     return this.#heap.HEAP32[ptr >> 2];
   }
 
-  /** @param {number} ptr @returns {number} */
-  u32(ptr) {
+  u32(ptr: number): number {
     return this.#heap.HEAPU32[ptr >> 2];
   }
 
   /**
    * Decode a NUL-terminated UTF-16 string. Only safe when the producing PDFium
    * call actually writes a terminator; see PdfiumPageReader#readText.
-   *
-   * @param {number} ptr
-   * @returns {string}
    */
-  utf16(ptr) {
+  utf16(ptr: number): string {
     return this.#pdfium.pdfium.UTF16ToString(ptr);
   }
 
-  /** @param {number} ptr @returns {string} */
-  utf8(ptr) {
+  utf8(ptr: number): string {
     return this.#pdfium.pdfium.UTF8ToString(ptr);
   }
 
   /**
    * Copy bytes into the WASM heap at `ptr`.
    *
-   * @param {Uint8Array} bytes
-   * @param {number} ptr
    */
-  writeBytes(bytes, ptr) {
+  writeBytes(bytes: Uint8Array, ptr: number) {
     this.#heap.HEAPU8.set(bytes, ptr);
   }
 
   /**
    * A view over `length` heap bytes starting at `ptr`. The view aliases WASM
    * memory, so copy out of it before anything can grow or free the heap.
-   *
-   * @param {number} ptr
-   * @param {number} length
-   * @returns {Uint8Array}
    */
-  bytes(ptr, length) {
+  bytes(ptr: number, length: number): Uint8Array {
     return this.#heap.HEAPU8.subarray(ptr, ptr + length);
   }
 
   /**
    * Allocate a heap copy of `bytes`. The caller owns the pointer.
    *
-   * @param {Uint8Array} bytes
-   * @returns {number}
    */
-  allocBytes(bytes) {
+  allocBytes(bytes: Uint8Array): number {
     const ptr = this.#pdfium.pdfium.wasmExports.malloc(bytes.length);
     if (!ptr) throw new Error(`PDFium malloc(${bytes.length}) failed`);
     this.writeBytes(bytes, ptr);
@@ -334,9 +325,8 @@ export class PdfiumFFI {
   /**
    * Free a pointer obtained from allocBytes. No-op for 0.
    *
-   * @param {number} ptr
    */
-  free(ptr) {
+  free(ptr: number) {
     if (ptr) this.#pdfium.pdfium.wasmExports.free(ptr);
   }
 

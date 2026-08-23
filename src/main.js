@@ -8,6 +8,12 @@ import { Config } from "./ui/settings/config.js";
 import { TrailStore } from "./ui/trail/trail_store.js";
 import { TrailLinker } from "./ui/trail/trail_linker.js";
 import { TrailOverlay } from "./ui/trail/trail_overlay.js";
+import {
+  fetchPdfFromUrl,
+  getIntendedUrl,
+  isExtensionContext,
+  resolvePdfSource,
+} from "./platform/ingest.js";
 
 import "../styles/index.css";
 
@@ -16,128 +22,41 @@ const el = {
   pageNum: document.getElementById("current-page"),
 };
 
-// ============================================
-// Pending PDF Storage (IndexedDB)
-// ============================================
-
-const PENDING_DB_NAME = "hover-pending-pdf";
-const PENDING_DB_STORE = "data";
-
 /**
- * @returns {Promise<{ data: ArrayBuffer, name: string, url: string|null } | null>}
+ * Loading phases, as the user reads them. Keys are the `phase` strings the
+ * model and the ingest layer report.
  */
-async function consumePendingPdf() {
-  return new Promise((resolve, reject) => {
-    const req = indexedDB.open(PENDING_DB_NAME, 1);
-    req.onupgradeneeded = () =>
-      req.result.createObjectStore(PENDING_DB_STORE);
-    req.onerror = () => reject(req.error);
-    req.onsuccess = () => {
-      const db = req.result;
-      const tx = db.transaction(PENDING_DB_STORE, "readwrite");
-      const store = tx.objectStore(PENDING_DB_STORE);
-      const getReq = store.get("pending");
-      store.delete("pending");
-      tx.oncomplete = () => {
-        db.close();
-        resolve(getReq.result || null);
-      };
-      tx.onerror = () => {
-        db.close();
-        reject(tx.error);
-      };
-    };
-  });
-}
-
-// ============================================
-// Utilities
-// ============================================
-
-function isExtensionContext() {
-  return (
-    typeof chrome !== "undefined" &&
-    chrome.runtime?.id &&
-    ["chrome-extension:", "moz-extension:", "safari-web-extension:"].includes(
-      window.location.protocol,
-    )
-  );
-}
-
-function getDevUrl() {
-  const urlParams = new URLSearchParams(window.location.search);
-  return urlParams.get("file") || urlParams.get("url");
-}
+const STATUS_MESSAGES = {
+  "loading-wasm": "Loading PDF engine...",
+  "downloading-wasm": "Downloading PDF engine...",
+  "parsing-wasm": "PDF engine warming up...",
+  "initializing-pdfium": "Initializing PDFium...",
+  "creating-engine": "Creating engine...",
+  ready: "Engine ready",
+  "initializing engine": "Initializing PDF engine...",
+  "setting up text extraction engine": "Setting up text extraction...",
+  downloading: "Downloading document...",
+  parsing: "Parsing PDF...",
+  processing: "Processing document...",
+  caching: "Caching pages...",
+  "loading bookmarks": "Loading bookmarks...",
+  "loading annotations": "Loading annotations...",
+  "building outline": "Building outline...",
+  "initializing search": "Initializing search...",
+  "indexing text": "Indexing text...",
+  "indexing references": "Indexing references...",
+  complete: "Complete",
+};
 
 function getStatusMessage(phase) {
-  const messages = {
-    "loading-wasm": "Loading PDF engine...",
-    "downloading-wasm": "Downloading PDF engine...",
-    "parsing-wasm": "PDF engine warming up...",
-    "initializing-pdfium": "Initializing PDFium...",
-    "creating-engine": "Creating engine...",
-    ready: "Engine ready",
-    "initializing engine": "Initializing PDF engine...",
-    "setting up text extraction engine": "Setting up text extraction...",
-    downloading: "Downloading document...",
-    parsing: "Parsing PDF...",
-    processing: "Processing document...",
-    caching: "Caching pages...",
-    "loading bookmarks": "Loading bookmarks...",
-    "loading annotations": "Loading annotations...",
-    "building outline": "Building outline...",
-    "initializing search": "Initializing search...",
-    "indexing text": "Indexing text...",
-    "indexing references": "Indexing references...",
-    complete: "Complete",
-  };
-  return messages[phase] || "Loading...";
+  return STATUS_MESSAGES[phase] || "Loading...";
 }
 
 /**
- * @param {string} url
- * @param {(p: {loaded: number, total: number, percent: number, phase: string}) => void} [onProgress]
- * @returns {Promise<ArrayBuffer>}
+ * The content script paints its own overlay over the original PDF tab so the
+ * hand-off doesn't flash white. Remove it — and the style tag it injected —
+ * once we have our own.
  */
-async function fetchPdfFromUrl(url, onProgress) {
-  const response = await fetch(url);
-  if (!response.ok) {
-    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-  }
-
-  const contentLength = response.headers.get("content-length");
-  const total = contentLength ? parseInt(contentLength, 10) : -1;
-
-  if (total > 0 && response.body) {
-    const reader = response.body.getReader();
-    const chunks = [];
-    let loaded = 0;
-
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-
-      chunks.push(value);
-      loaded += value.length;
-
-      if (onProgress) {
-        const percent = Math.round((loaded / total) * 100);
-        onProgress({ loaded, total, percent, phase: "downloading" });
-      }
-    }
-
-    const combined = new Uint8Array(loaded);
-    let offset = 0;
-    for (const chunk of chunks) {
-      combined.set(chunk, offset);
-      offset += chunk.length;
-    }
-    return combined.buffer;
-  } else {
-    return await response.arrayBuffer();
-  }
-}
-
 function adoptContentScriptOverlay() {
   const existing = document.getElementById("hover-loading-overlay");
   if (!existing) return false;
@@ -151,9 +70,75 @@ function adoptContentScriptOverlay() {
   return true;
 }
 
-// ============================================
-// Main Loading
-// ============================================
+/**
+ * Build the viewer around a loaded model: window manager, file menu, title.
+ *
+ * @param {PDFDocumentModel} pdfmodel
+ * @param {string} pdfName
+ * @returns {Promise<{wm: SplitWindowManager, fileMenu: FileMenu}>}
+ */
+async function constructViewer(pdfmodel, pdfName) {
+  const wm = new SplitWindowManager(el.wd, pdfmodel);
+  await wm.initialize();
+  const fileMenu = new FileMenu(wm);
+  document.title = pdfName.replace(/\.pdf$/i, "");
+  return { wm, fileMenu };
+}
+
+/**
+ * The trail system layers on top of an already-rendered document, so every
+ * failure in here is a warning rather than a load error.
+ *
+ * @param {PDFDocumentModel} pdfmodel
+ * @param {string|null} detectedTitle
+ * @param {string|null} originalUrl
+ */
+async function initializeTrail(pdfmodel, detectedTitle, originalUrl) {
+  try {
+    const trailStore = new TrailStore();
+    await trailStore.initialize();
+    const trailLinker = new TrailLinker(pdfmodel, trailStore, originalUrl);
+    trailLinker.initialize();
+    await trailLinker.matchOnOpen(detectedTitle);
+    new TrailOverlay(trailStore, detectedTitle, originalUrl).initialize();
+  } catch (err) {
+    console.warn("[Trail] Failed to initialize:", err);
+  }
+}
+
+/**
+ * First launch with a URL-based open: park the URL the user actually wanted,
+ * then show the tutorial paper and walk them through it. Onboarding does not
+ * start otherwise — there would be nothing to return to afterwards.
+ *
+ * @param {LoadingOverlay} loadingOverlay
+ * @param {(p: {loaded: number, total: number, percent: number, phase: string}) => void} onProgress
+ * @param {string} intendedUrl
+ */
+async function runOnboarding(loadingOverlay, onProgress, intendedUrl) {
+  OnboardingWalkthrough.saveIntendedUrl(intendedUrl);
+
+  loadingOverlay.setProgress(0.1, "Fetching tutorial document...");
+  const tutorialData = await fetchPdfFromUrl(
+    OnboardingWalkthrough.getDefaultPaperUrl(),
+    onProgress,
+  );
+
+  const pdfmodel = new PDFDocumentModel();
+  await pdfmodel.load(tutorialData, onProgress);
+  loadingOverlay.setProgress(0.95, "Initializing viewer...");
+
+  const { wm, fileMenu } = await constructViewer(pdfmodel, "Tutorial");
+  document.title = "Welcome to Hover - Tutorial";
+  await loadingOverlay.hide();
+
+  await pdfmodel.buildIndex();
+
+  setTimeout(async () => {
+    const onboarding = new OnboardingWalkthrough(wm, fileMenu);
+    await onboarding.start();
+  }, 500);
+}
 
 async function loadPdf(isFirstLaunch = false) {
   adoptContentScriptOverlay();
@@ -161,198 +146,64 @@ async function loadPdf(isFirstLaunch = false) {
   const loadingOverlay = new LoadingOverlay();
   loadingOverlay.show();
 
+  const onProgress = ({ total, percent, phase }) => {
+    if (total === -1) {
+      loadingOverlay.setIndeterminate(getStatusMessage(phase));
+    } else {
+      loadingOverlay.setProgress(percent / 100, getStatusMessage(phase));
+    }
+  };
+
+  const onStatus = (message, fraction) => {
+    if (fraction === undefined) loadingOverlay.setIndeterminate(message);
+    else loadingOverlay.setProgress(fraction, message);
+  };
+
   try {
-    const pdfmodel = new PDFDocumentModel();
-    const inExtension = isExtensionContext();
+    const intendedUrl = getIntendedUrl();
 
-    const onProgress = ({ loaded, total, percent, phase }) => {
-      if (total === -1) {
-        loadingOverlay.setIndeterminate(getStatusMessage(phase));
-      } else {
-        loadingOverlay.setProgress(percent / 100, getStatusMessage(phase));
-      }
-    };
-
-    const urlParams = new URLSearchParams(window.location.search);
-    const intendedUrl = inExtension ? urlParams.get("url") : getDevUrl();
-
-    // Onboarding (first launch with a URL-based open, otherwise onboarding will not initiate)
     if (isFirstLaunch && intendedUrl) {
-      OnboardingWalkthrough.saveIntendedUrl(intendedUrl);
-
-      loadingOverlay.setProgress(0.1, "Fetching tutorial document...");
-      const defaultPdfData = await fetchPdfFromUrl(
-        OnboardingWalkthrough.getDefaultPaperUrl(),
-        onProgress,
-      );
-
-      await pdfmodel.load(defaultPdfData, onProgress);
-      loadingOverlay.setProgress(0.95, "Initializing viewer...");
-
-      const wm = new SplitWindowManager(el.wd, pdfmodel);
-      await wm.initialize();
-      const fileMenu = new FileMenu(wm);
-
-      document.title = "Welcome to Hover - Tutorial";
-      await loadingOverlay.hide();
-
-      await pdfmodel.buildIndex();
-      wm.toolbar?.navigationTree?.reinitialize();
-      wm.progressBar?.buildSectionMarks();
-
-      setTimeout(async () => {
-        const onboarding = new OnboardingWalkthrough(wm, fileMenu);
-        await onboarding.start();
-      }, 500);
-
+      await runOnboarding(loadingOverlay, onProgress, intendedUrl);
       return;
     }
-
     if (isFirstLaunch) {
       await OnboardingWalkthrough.markCompleted();
     }
 
-    // Resolve PDF source
-    let pdfSource = null;
-    let pdfName = "document.pdf";
-    let originalUrl = null;
+    const source = await resolvePdfSource({ onStatus, onProgress });
 
-    if (inExtension) {
-      // Chrome/Safari park bytes via the content-script capture before the
-      // viewer opens, so drain that first.
-      let pending = await consumePendingPdf();
-
-      // Firefox: the webRequest redirect lands with ?url= and nothing parked.
-      // Ask the background to fetch the URL into the pending store, then drain
-      // it the same way — one viewer code path across browsers, and bytes
-      // always reach the low-level (UTF-8-safe) parser via the buffer.
-      if (!pending && intendedUrl) {
-        loadingOverlay.setIndeterminate("Downloading document...");
-        const onPdfProgress = (msg) => {
-          if (msg?.type === "PDF_PROGRESS") {
-            loadingOverlay.setProgress(
-              msg.percent / 100,
-              "Downloading document...",
-            );
-          }
-        };
-        chrome.runtime.onMessage.addListener(onPdfProgress);
-        try {
-          await chrome.runtime.sendMessage({
-            type: "FETCH_URL_TO_PENDING",
-            url: intendedUrl,
-          });
-          pending = await consumePendingPdf();
-        } catch (e) {
-          console.warn("[Main] Background URL park failed:", e);
-        } finally {
-          chrome.runtime.onMessage.removeListener(onPdfProgress);
-        }
-      }
-
-      if (pending) {
-        pdfSource = pending.data;
-        pdfName = pending.name;
-        originalUrl = pending.url || null;
-        console.log("[Main] Loading PDF from IDB:", pdfName);
-      } else if (intendedUrl) {
-        // Fallback: background park didn't yield bytes (messaging hiccup or an
-        // event-page restart) — fetch directly so we still render something.
-        console.log("[Main] Falling back to viewer-side fetch:", intendedUrl);
-        loadingOverlay.setIndeterminate("Downloading document...");
-        pdfSource = await fetchPdfFromUrl(intendedUrl, onProgress);
-        pdfName =
-          intendedUrl.split("/").pop()?.split("?")[0] || "document.pdf";
-        originalUrl = intendedUrl;
-      }
-    } else {
-      const devUrl = getDevUrl();
-      if (devUrl) {
-        console.log("[Main] DEV MODE - Loading from URL:", devUrl);
-        loadingOverlay.setIndeterminate("Downloading document...");
-        pdfSource = await fetchPdfFromUrl(devUrl, onProgress);
-        pdfName = devUrl.split("/").pop()?.split("?")[0] || "document.pdf";
-        originalUrl = devUrl;
-      }
-
-      if (!pdfSource) {
-        const pending = await consumePendingPdf();
-        if (pending) {
-          pdfSource = pending.data;
-          pdfName = pending.name;
-          originalUrl = pending.url || null;
-          console.log("[Main] DEV MODE - Loading from IDB:", pdfName);
-        }
-      }
+    if (!source) {
+      // Nothing to render. In the extension this is the normal landing when the
+      // viewer is opened with nothing queued (e.g. the popup's "Open Local
+      // PDF"); show the empty state so the user can pick a file from this
+      // persistent tab — the popup can't host the picker on Firefox.
+      loadingOverlay.destroy();
+      new EmptyState(el.wd);
+      return;
     }
 
-    if (!pdfSource && !inExtension) {
-      console.log("[Main] DEV MODE - No URL specified, loading default paper");
-      const defaultUrl = "https://arxiv.org/pdf/2501.19393";
-      pdfSource = await fetchPdfFromUrl(defaultUrl, onProgress);
-      pdfName = "default.pdf";
-      originalUrl = defaultUrl;
-    }
-
-    if (!pdfSource) {
-      // No document to render. In the extension this is the normal landing
-      // when the user opens the viewer with nothing queued (e.g. the popup's
-      // "Open Local PDF"); show the empty state so they can pick a file from
-      // this persistent tab (the popup can't host the picker on Firefox).
-      if (inExtension) {
-        loadingOverlay.destroy();
-        new EmptyState(el.wd);
-        return;
-      }
-      throw new Error(
-        "No PDF document to display. Please open a PDF file or navigate to a PDF URL.",
-      );
-    }
-
-    // Load and initialize
     loadingOverlay.setProgress(0.1, "Loading document...");
-    await pdfmodel.load(pdfSource, onProgress);
+    const pdfmodel = new PDFDocumentModel();
+    await pdfmodel.load(source.data, onProgress);
     loadingOverlay.setProgress(0.95, "Initializing viewer...");
 
-    // Initializing components
-    const wm = new SplitWindowManager(el.wd, pdfmodel);
-    await wm.initialize();
-    const fileMenu = new FileMenu(wm); // Initializing settings
-
-    const fileName = pdfName.replace(/\.pdf$/i, "");
-    document.title = fileName;
+    await constructViewer(pdfmodel, source.name);
 
     await loadingOverlay.hide();
     await new Promise((resolve) =>
       requestAnimationFrame(() => requestAnimationFrame(resolve)),
     );
 
-    // Start parsing and update components
+    // Indexing runs after the first paint. The UI subtrees that depend on its
+    // results subscribe to `index-ready` themselves.
     await pdfmodel.buildIndex();
-    wm.toolbar?.navigationTree?.reinitialize();
-    wm.progressBar?.buildSectionMarks();
 
     const detectedTitle = await pdfmodel.getDocumentTitle();
     if (detectedTitle) {
       document.title = detectedTitle;
     }
 
-    // Trail system initialization
-    try {
-      const trailStore = new TrailStore();
-      await trailStore.initialize();
-      const trailLinker = new TrailLinker(pdfmodel, trailStore, originalUrl);
-      trailLinker.initialize();
-      const matchResult = await trailLinker.matchOnOpen(detectedTitle);
-      const trailOverlay = new TrailOverlay(
-        trailStore,
-        detectedTitle,
-        originalUrl,
-      );
-      trailOverlay.initialize();
-    } catch (err) {
-      console.warn("[Trail] Failed to initialize:", err);
-    }
+    await initializeTrail(pdfmodel, detectedTitle, source.url);
   } catch (error) {
     console.error("[Main] Error loading PDF:", error);
     loadingOverlay.destroy();
@@ -361,10 +212,11 @@ async function loadPdf(isFirstLaunch = false) {
         <h2>Failed to load PDF</h2>
         <p>${error.message}</p>
         <p style="font-size: 12px; color: #666; margin-top: 20px;">
-          ${isExtensionContext()
-        ? "Try uploading a PDF file directly using the extension popup."
-        : "DEV MODE: Pass a URL with ?file=https://... or upload a file."
-      }
+          ${
+            isExtensionContext()
+              ? "Try uploading a PDF file directly using the extension popup."
+              : "DEV MODE: Pass a URL with ?file=https://... or upload a file."
+          }
         </p>
       </div>
     `;
@@ -373,17 +225,17 @@ async function loadPdf(isFirstLaunch = false) {
 
 async function main() {
   console.log(`
-                                  
- _____                 _         
-|  |  |___ _ _ ___ ___|_|___ ___ 
+
+ _____                 _
+|  |  |___ _ _ ___ ___|_|___ ___
 |     | . | | | -_|  _| |   | . |
 |__|__|___|\\_/|___|_| |_|_|_|_  |
                             |___|
-                                 
-                                 
- ___ ___ ___ ___ ___ ___ ___     
-|___|___|___|___|___|___|___|    
-                                 
+
+
+ ___ ___ ___ ___ ___ ___ ___
+|___|___|___|___|___|___|___|
+
   `);
   try {
     await Config.load();

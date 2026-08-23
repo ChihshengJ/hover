@@ -2,29 +2,32 @@
  * @typedef {import('@embedpdf/engines/pdfium').PdfEngine} PdfEngine
  * @typedef {import('@embedpdf/engines/pdfium').PdfiumNative} PdfiumNative
  * @typedef {import('@embedpdf/models').PdfDocumentObject} PdfDocumentObject
+ * @typedef {import('./doc_events.js').DocEventName} DocEventName
+ *
+ * @typedef {Object} DocumentSubscriber
+ * @property {(event: DocEventName, data?: Object) => void} [onDocumentChange]
  */
 
 import { initPdfiumEngine } from "../pdf/pdfium_init.js";
 import { DocumentTextIndex } from "../analysis/text_index.js";
 import {
-  buildOutline,
-  detectDocumentMetadata,
-} from "../analysis/outline_builder.js";
-import {
-  buildReferenceIndex,
   findBoundingAnchors,
   findReferenceByIndex,
   matchCitationToReference,
 } from "../analysis/reference_builder.js";
 import { PdfiumDocumentFactory } from "../pdf/text_extractor.js";
 import { PdfiumImageExtractor } from "../pdf/image_extractor.js";
-import { createInlineExtractor } from "../analysis/inline_extractor.js";
-import { createCitationBuilder } from "../analysis/citation_builder.js";
-import { createCrossReferenceBuilder } from "../analysis/cross_reference_builder.js";
-import { CitationFlags } from "../analysis/lexicon.js";
+import {
+  createPdfPageSource,
+  createRawPageTextSource,
+} from "../pdf/page_source.js";
+import {
+  analyzeDocument,
+  indexUrls,
+  DocumentAnalysis,
+} from "../analysis/pipeline.js";
 import { AnnotationStore } from "./annotation_data.js";
-
-const MIN_USABLE_REFERENCES = 5;
+import { DocEvent } from "./doc_events.js";
 
 export class PDFDocumentModel {
   constructor() {
@@ -36,31 +39,32 @@ export class PDFDocumentModel {
     this.pdfDoc = null;
     /** @type {Map<string, any>} */
     this.allNamedDests = new Map();
+    /**
+     * The document's own bookmark tree, fetched once at load. Both the named
+     * destination map and the outline builder read it.
+     * @type {Array}
+     */
+    this.bookmarks = [];
     /** @type {Array<{width: number, height: number}>} */
     this.pageDimensions = [];
 
-    this.highlights = new Map();
     this.subscribers = new Set();
 
     /** @type {AnnotationStore} */
     this.annotationStore = new AnnotationStore(this);
 
-    this.citationsByPage = new Map();
-    this.citationDetails = new Map();
-    this.crossRefsByPage = new Map();
-    this.crossRefTargets = new Map();
-    this.urlsByPage = new Map();
     // /** @type {Map<number, import('../pdf/image_extractor.js').ImageObjectInfo[]>} */
     // this.imagesByPage = new Map();
 
-    /** @type {Array<{id: string, title: string, pageIndex: number, left: number, top: number, children: Array}>} */
-    this.outline = [];
+    /**
+     * Everything the analysis pipeline produced. Replaced wholesale by
+     * `buildIndex()`; the query methods below read from it and nothing writes
+     * into it piecemeal.
+     * @type {DocumentAnalysis}
+     */
+    this.analysis = new DocumentAnalysis();
     /** @type {DocumentTextIndex|null} */
     this.textIndex = null;
-    /** @type {import('../analysis/reference_builder.js').ReferenceIndex|null} */
-    this.referenceIndex = null;
-    /** @type {{title: string|null, lines: Object[]|null, abstractInfo: Object|null}} */
-    this.detectedMetadata = { title: null, lines: null, abstractInfo: null };
 
     /** @type {Uint8Array|null} */
     this.pdfData = null;
@@ -77,6 +81,45 @@ export class PDFDocumentModel {
   /** @returns {Map<number, Array>} */
   get nativeAnnotationsByPage() {
     return this.annotationStore.nativeAnnotationsByPage;
+  }
+
+  // ============================================================================
+  // Analysis results — read-only views onto `this.analysis`
+  // ============================================================================
+
+  /** @type {Array<{id: string, title: string, pageIndex: number, left: number, top: number, children: Array}>} */
+  get outline() {
+    return this.analysis.outline;
+  }
+
+  /** @type {import('../analysis/reference_builder.js').ReferenceIndex|null} */
+  get referenceIndex() {
+    return this.analysis.references;
+  }
+
+  /** @type {{title: string|null, lines: Object[]|null, abstractInfo: Object|null}} */
+  get detectedMetadata() {
+    return this.analysis.metadata;
+  }
+
+  get citationsByPage() {
+    return this.analysis.citationsByPage;
+  }
+
+  get citationDetails() {
+    return this.analysis.citationDetails;
+  }
+
+  get crossRefsByPage() {
+    return this.analysis.crossRefsByPage;
+  }
+
+  get crossRefTargets() {
+    return this.analysis.crossRefTargets;
+  }
+
+  get urlsByPage() {
+    return this.analysis.urlsByPage;
   }
 
   /**
@@ -130,7 +173,9 @@ export class PDFDocumentModel {
       await this.#loadBookmarksAndDestinations();
       reportProgress(80, "loading annotations");
       await this.annotationStore.loadFromDocument();
-      this.#indexUrls();
+      // URLs are the one analysis product that needs no text index, and pages
+      // start rendering long before `buildIndex()` runs.
+      this.analysis.urlsByPage = indexUrls(this.nativeAnnotationsByPage);
       reportProgress(95, "complete");
       return this.pdfDoc;
     } catch (error) {
@@ -154,50 +199,38 @@ export class PDFDocumentModel {
 
     try {
       reportProgress(10, "indexing text");
-      this.textIndex = new DocumentTextIndex(this);
-      if (this.lowLevelHandle) {
-        this.textIndex.setLowLevelHandle(this.lowLevelHandle);
-      }
+      this.textIndex = new DocumentTextIndex(
+        createPdfPageSource({
+          pdfDoc: this.pdfDoc,
+          native: this.native,
+          lowLevelHandle: this.lowLevelHandle,
+        }),
+      );
       await this.textIndex.build();
-
-      this.detectedMetadata = detectDocumentMetadata(this.textIndex);
 
       // if (this.imageExtractor && this.lowLevelHandle) {
       //   this.#scanImages();
       // }
 
-      reportProgress(50, "building outline");
-      await this.#buildOutline();
-
-      reportProgress(65, "indexing references");
-      this.referenceIndex = await buildReferenceIndex(
-        this.textIndex,
-        this.outline,
-      );
-
-      // console.log(this.referenceIndex);
-
-      const hasUsableIndex =
-        (this.referenceIndex?.anchors?.length || 0) >= MIN_USABLE_REFERENCES;
-
-      reportProgress(80, "processing");
-      if (hasUsableIndex) {
-        console.log("[Doc] Parsing full text for inline links...");
-        await this.#buildInlineElements();
-      } else {
-        console.warn(
-          `[Doc] Reference index insufficient (${this.referenceIndex?.anchors?.length || 0} anchors), using native-only fallback`,
-        );
-        this.#buildNativeFallback();
-      }
+      this.analysis = analyzeDocument({
+        textIndex: this.textIndex,
+        numPages: this.numPages,
+        nativeAnnotationsByPage: this.nativeAnnotationsByPage,
+        bookmarks: this.bookmarks,
+        allNamedDests: this.allNamedDests,
+        pageTextSource: this.lowLevelHandle
+          ? createRawPageTextSource(this.lowLevelHandle)
+          : null,
+        onProgress: reportProgress,
+      });
 
       this.indexingState = "complete";
       reportProgress(100, "complete");
-      this.notify("index-ready");
+      this.notify(DocEvent.INDEX_READY);
     } catch (error) {
       console.error("[Doc] Error during background indexing:", error);
       this.indexingState = "complete";
-      this.notify("index-ready");
+      this.notify(DocEvent.INDEX_READY);
     }
   }
 
@@ -228,10 +261,12 @@ export class PDFDocumentModel {
 
   async #loadBookmarksAndDestinations() {
     this.allNamedDests = new Map();
+    this.bookmarks = [];
     if (!this.pdfDoc || !this.native) return;
 
     try {
       const bookmarks = await this.native.getBookmarks(this.pdfDoc).toPromise();
+      this.bookmarks = bookmarks.bookmarks || [];
 
       const processBookmarks = async (items, prefix = "") => {
         if (!items || !Array.isArray(items)) return;
@@ -255,7 +290,7 @@ export class PDFDocumentModel {
         }
       };
 
-      await processBookmarks(bookmarks.bookmarks);
+      await processBookmarks(this.bookmarks);
     } catch (error) {
       console.warn("[Doc] Error loading bookmarks:", error);
     }
@@ -316,14 +351,26 @@ export class PDFDocumentModel {
   // Subscribers
   // ============================================================================
 
-  subscribe(pane) {
-    this.subscribers.add(pane);
+  /**
+   * Anything with an `onDocumentChange` may subscribe — not just panes. A
+   * component that needs to react to `index-ready` should say so itself rather
+   * than have `main.js` poke it after the fact.
+   *
+   * @param {DocumentSubscriber} subscriber
+   */
+  subscribe(subscriber) {
+    this.subscribers.add(subscriber);
   }
 
-  unsubscribe(pane) {
-    this.subscribers.delete(pane);
+  /** @param {DocumentSubscriber} subscriber */
+  unsubscribe(subscriber) {
+    this.subscribers.delete(subscriber);
   }
 
+  /**
+   * @param {DocEventName} event
+   * @param {Object} [data]
+   */
   notify(event, data) {
     for (const subscriber of this.subscribers) {
       subscriber.onDocumentChange?.(event, data);
@@ -379,110 +426,8 @@ export class PDFDocumentModel {
   }
 
   // ============================================================================
-  // Inline Element Building
+  // Analysis queries
   // ============================================================================
-
-  async #buildInlineElements() {
-    const extractor = createInlineExtractor(this);
-    if (!extractor) return;
-
-    const { citations, crossRefs, detectedFormat } = extractor.extract();
-
-    const citationBuilder = createCitationBuilder(this);
-    const { byPage: byPageCitations, details } =
-      citationBuilder.build(citations);
-    this.citationsByPage = byPageCitations;
-    this.citationDetails = details;
-
-    const crossRefBuilder = createCrossReferenceBuilder(this);
-    const { byPage: byPageCrossRefs, targets } =
-      crossRefBuilder.build(crossRefs);
-    this.crossRefsByPage = byPageCrossRefs;
-    this.crossRefTargets = targets;
-
-    this.#indexUrls();
-  }
-
-  #buildNativeFallback() {
-    this.#indexUrls();
-
-    this.citationsByPage = new Map();
-    this.citationDetails = new Map();
-    this.crossRefsByPage = new Map();
-    this.crossRefTargets = new Map();
-
-    let nextId = 0;
-
-    for (const [pageNum, annotations] of this.nativeAnnotationsByPage) {
-      const citRefs = [];
-
-      for (const annot of annotations) {
-        if (annot.target?.type !== "destination") continue;
-
-        const dest = annot.target.destination;
-        if (!dest || !annot.rect) continue;
-
-        const destPageIndex = dest.pageIndex ?? -1;
-        const destX = dest.view?.[0] ?? 0;
-        const destY = dest.view?.[1] ?? 0;
-
-        if (destPageIndex < 0 || (destX === 0 && destY === 0)) continue;
-
-        const citationId = nextId++;
-        const rect = {
-          x: annot.rect.origin?.x || 0,
-          y: annot.rect.origin?.y || 0,
-          width: annot.rect.size?.width || 0,
-          height: annot.rect.size?.height || 0,
-        };
-        const targetLocation = { pageIndex: destPageIndex, x: destX, y: destY };
-        const flags =
-          CitationFlags.NATIVE_CONFIRMED | CitationFlags.DEST_CONFIRMED;
-
-        citRefs.push({ citationId, rects: [rect], flags });
-
-        this.citationDetails.set(citationId, {
-          type: "native-fallback",
-          text: "",
-          pageNumber: pageNum,
-          rects: [rect],
-          refIndices: [],
-          refRanges: [],
-          refKeys: null,
-          confidence: 1.0,
-          flags,
-          targetLocation,
-          allTargets: [
-            { refIndex: null, refKey: null, location: targetLocation },
-          ],
-        });
-      }
-
-      if (citRefs.length > 0) {
-        this.citationsByPage.set(pageNum, citRefs);
-      }
-    }
-
-    const total = Array.from(this.citationsByPage.values()).reduce(
-      (sum, arr) => sum + arr.length,
-      0,
-    );
-    console.log(`[Doc] Native fallback: ${total} navigable links`);
-  }
-
-  #indexUrls() {
-    for (const [pageNum, annotations] of this.nativeAnnotationsByPage) {
-      const urls = [];
-      for (const annot of annotations) {
-        if (annot.target?.type === "action" && annot.target.action?.uri) {
-          urls.push({ url: annot.target.action.uri, rect: annot.rect });
-        }
-      }
-      if (urls.length > 0) {
-        this.urlsByPage.set(pageNum, urls);
-      }
-    }
-  }
 
   getCitationAnchorsForPage(pageNumber) {
     return this.citationsByPage?.get(pageNumber) || [];
@@ -507,70 +452,6 @@ export class PDFDocumentModel {
       console.error("Error saving document:", error);
       throw error;
     }
-  }
-
-  // ============================================================================
-  // Outline Building
-  // ============================================================================
-
-  async #buildOutline() {
-    this.outline = await buildOutline(
-      this.pdfDoc,
-      this.native,
-      this.textIndex,
-      this.allNamedDests,
-      this.detectedMetadata,
-    );
-
-    this.#injectAbstractIntoOutline();
-  }
-
-  #injectAbstractIntoOutline() {
-    const abstractInfo = this.detectedMetadata?.abstractInfo;
-    if (!abstractInfo) return;
-    if (this.#outlineContainsAbstract(this.outline)) return;
-
-    const abstractItem = {
-      id: crypto.randomUUID(),
-      title: "Abstract",
-      pageIndex: abstractInfo.pageIndex,
-      left: abstractInfo.left,
-      top: abstractInfo.top,
-      children: [],
-    };
-
-    let insertIndex = 0;
-    for (let i = 0; i < this.outline.length; i++) {
-      const item = this.outline[i];
-      if (item.pageIndex > abstractInfo.pageIndex) break;
-      if (
-        item.pageIndex === abstractInfo.pageIndex &&
-        item.top <= abstractInfo.top
-      )
-        break;
-      insertIndex = i + 1;
-    }
-
-    this.outline.splice(insertIndex, 0, abstractItem);
-  }
-
-  #outlineContainsAbstract(items) {
-    for (const item of items) {
-      const title = item.title?.toLowerCase().trim() || "";
-      if (
-        title === "abstract" ||
-        /^\d+\.?\s*abstract$/i.test(item.title?.trim() || "")
-      ) {
-        return true;
-      }
-      if (
-        item.children?.length > 0 &&
-        this.#outlineContainsAbstract(item.children)
-      ) {
-        return true;
-      }
-    }
-    return false;
   }
 
   // ============================================================================
@@ -604,7 +485,7 @@ export class PDFDocumentModel {
   }
 
   hasReferenceIndex() {
-    return this.referenceIndex?.anchors?.length > 0;
+    return this.analysis.hasReferenceIndex;
   }
 
   getReferenceSectionBounds() {
@@ -656,17 +537,9 @@ export class PDFDocumentModel {
     }
 
     this.pdfDoc = null;
+    this.bookmarks = [];
     this.annotationStore.clear();
-    this.citationsByPage?.clear();
-    this.citationsByPage = null;
-    this.citationDetails?.clear();
-    this.citationDetails = null;
-    this.crossRefsByPage?.clear();
-    this.crossRefsByPage = null;
-    this.crossRefTargets?.clear();
-    this.crossRefTargets = null;
-    this.urlsByPage?.clear();
-    this.urlsByPage = null;
+    this.analysis.destroy();
     // this.imagesByPage?.clear();
     // this.imagesByPage = null;
     this.textIndex?.destroy();

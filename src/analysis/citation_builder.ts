@@ -8,68 +8,105 @@
  * 4. Preserving range notation and confirmation flags
  *
  * Output is organized by page for efficient lazy rendering.
- *
- * @typedef {Object} RefKey
- * @property {string} author - First author surname
- * @property {string|null} secondAuthor - Second author surname (for two-author citations)
- * @property {string} year - Year string
- * @property {boolean} isRange - Whether this is a year range (e.g., 1996-2004)
  */
 
+import { CitationFlags } from "./lexicon.js";
+import { rectFromPdfium } from "./geometry.js";
+import type { ReferenceAnchor, ReferenceIndex } from "./reference_builder.js";
+import type { DocumentTextIndex } from "./text_index.js";
+import type { RawCitation } from "./inline_extractor.js";
+
+export interface RefKey {
+  /** First author surname. */
+  author: string;
+  /** Second author surname, for two-author citations. */
+  secondAuthor: string | null;
+  year: string;
+  /** Whether this is a year range (e.g. 1996-2004). */
+  isRange: boolean;
+}
+
 /**
- * @typedef {Object} Citation
- * @property {string} type - 'numeric' | 'abbreviated' | 'author-year' | 'superscript'
- * @property {string} text - The matched text
- * @property {number} pageNumber - 1-based page number
- * @property {Array<{x: number, y: number, width: number, height: number}>} rects
- * @property {number[]} refIndices - Expanded reference indices
- * @property {Array<{start: number, end: number}>} refRanges - Original range notation
- * @property {RefKey[]|null} refKeys - For author-year citations
- * @property {number} confidence - 0-1 confidence score
- * @property {number} flags - CitationFlags bitmask
- * @property {{pageIndex: number, x: number, y: number}|null} targetLocation - Primary navigation target
- * @property {Array<{refIndex: number, refKey: RefKey|null, location: {pageIndex: number, x: number, y: number}}>} allTargets - All reference targets
+ * One reference a citation points at. `rects` is the sub-span of the citation
+ * that names this particular reference — present only for multi-reference
+ * citations like `[3,5]`, where each number is separately clickable.
  */
+export interface CitationTarget {
+  refIndex: RefIndex | null;
+  refKey: RefKey | null;
+  location: PageLocation | null;
+  rects?: Rect[] | null;
+}
+
+export interface Citation {
+  /** 'numeric' | 'abbreviated' | 'author-year' | 'superscript' | 'imported' */
+  type: string;
+  /** The matched text. */
+  text: string;
+  /** 1-based. */
+  pageNumber: number;
+  rects: Rect[];
+  /** Expanded reference indices. */
+  refIndices: RefIndex[];
+  /** Original range notation. */
+  refRanges: Array<{ start: number; end: number }>;
+  /** For author-year citations. */
+  refKeys: RefKey[] | null;
+  /** 0-1 confidence score. */
+  confidence: number;
+  /** CitationFlags bitmask. */
+  flags: number;
+  /** Primary navigation target. */
+  targetLocation: PageLocation | null;
+  allTargets: CitationTarget[];
+}
 
 /**
  * A native PDF link annotation that points into the reference section, keyed
  * by its position on the page.
- *
- * @typedef {Object} NativeCitationLink
- * @property {number} pageNumber - 1-based page the link sits on
- * @property {{x: number, y: number, width: number, height: number}} rect
- * @property {boolean} hasValidDest - False for the x=0/y=0 degenerate targets
- * @property {number} destPageIndex - 0-based destination page
- * @property {number} destX
- * @property {number} destY
- * @property {number|null} matchedRefIndex
- * @property {import('./reference_builder.js').ReferenceAnchor|null} matchedRefAnchor
  */
+export interface NativeCitationLink {
+  /** 1-based page the link sits on. */
+  pageNumber: number;
+  rect: Rect;
+  /** False for the x=0/y=0 degenerate targets. */
+  hasValidDest: boolean;
+  /** 0-based destination page. */
+  destPageIndex: number;
+  destX: number;
+  destY: number;
+  matchedRefIndex: RefIndex | null;
+  matchedRefAnchor: ReferenceAnchor | null;
+}
 
-import { CitationFlags } from "./lexicon.js";
+/** What `build()` hands back. */
+export interface CitationBuildResult {
+  byPage: Map<number, { citationId: number; rects: Rect[]; flags: number }[]>;
+  details: Map<number, Citation>;
+}
 
 /**
  * Main citation builder class
  */
 export class CitationBuilder {
-  #referenceIndex = null;
-  #textIndex = null;
-  #nativeAnnotationsByPage = null;
+  #referenceIndex: ReferenceIndex | null = null;
+  #textIndex: DocumentTextIndex = null;
+  #nativeAnnotationsByPage: Map<number, any[]> = null;
   #numPages = 0;
 
-  // Reference signatures for matching
-  #signatures = [];
+  /** Reference anchors, used to match a citation to what it points at. */
+  #signatures: ReferenceAnchor[] = [];
 
   // Reference section bounds
   #refSectionStartPage = Infinity;
   #refSectionEndPage = -1;
 
-  /**
-   * @param {Object} referenceIndex - Reference index from buildReferenceIndex
-   * @param {Map<number, Array>} nativeAnnotationsByPage - Native annotations by page
-   * @param {number} numPages - Total page count
-   */
-  constructor(referenceIndex, nativeAnnotationsByPage, textIndex, numPages) {
+  constructor(
+    referenceIndex: ReferenceIndex,
+    nativeAnnotationsByPage: Map<number, any[]>,
+    textIndex: DocumentTextIndex,
+    numPages: number,
+  ) {
     this.#referenceIndex = referenceIndex;
     this.#nativeAnnotationsByPage = nativeAnnotationsByPage || new Map();
     this.#textIndex = textIndex;
@@ -80,15 +117,15 @@ export class CitationBuilder {
     this.#refSectionEndPage = referenceIndex?.sectionEnd?.pageNumber || -1;
   }
 
-  build(extractedCitations) {
+  build(extractedCitations: RawCitation[]): CitationBuildResult {
     console.log("[CitationBuilder] Starting citation merge...");
     const nativeIndex = this.#indexNativeCitationLinks();
     console.log(`[CitationBuilder] Indexed ${nativeIndex.size} native links`);
     const mergedMap = this.#mergeCitations(extractedCitations, nativeIndex);
     console.log(`[CitationBuilder] Merged into ${mergedMap.size} citations`);
 
-    const byPage = new Map();
-    const details = new Map();
+    const byPage: CitationBuildResult["byPage"] = new Map();
+    const details: CitationBuildResult["details"] = new Map();
     let nextId = 0;
 
     for (const [key, citation] of mergedMap) {
@@ -173,20 +210,12 @@ export class CitationBuilder {
           );
         }
 
-        const key = this.#makePositionKey(
-          pageNum,
-          rect.origin?.x || 0,
-          rect.origin?.y || 0,
-        );
+        const flatRect = rectFromPdfium(rect);
+        const key = this.#makePositionKey(pageNum, flatRect.x, flatRect.y);
 
         index.set(key, {
           pageNumber: pageNum,
-          rect: {
-            x: rect.origin?.x || 0,
-            y: rect.origin?.y || 0,
-            width: rect.size?.width || 0,
-            height: rect.size?.height || 0,
-          },
+          rect: flatRect,
           hasValidDest,
           destPageIndex,
           destX,
@@ -203,8 +232,12 @@ export class CitationBuilder {
   /**
    * Find reference anchor at a specific location
    */
-  #findReferenceAtLocation(pageNumber, x, y) {
-    let best = null;
+  #findReferenceAtLocation(
+    pageNumber: number,
+    x: number,
+    y: number,
+  ): ReferenceAnchor | null {
+    let best: ReferenceAnchor | null = null;
     let bestDist = Infinity;
 
     for (const anchor of this.#signatures) {
@@ -224,18 +257,10 @@ export class CitationBuilder {
     return bestDist < 50 ? best : null;
   }
 
-  /**
-   * Build target location for a reference index
-   * @param {number} refIndex - Reference index
-   * @returns {{pageIndex: number, x: number, y: number}|null}
-   */
-  #buildTargetLocation(refIndex) {
+  /** Where in the document reference `refIndex` lives. */
+  #buildTargetLocation(refIndex: RefIndex): PageLocation | null {
     const refAnchor = this.#signatures.find((a) => a.index === refIndex);
     if (!refAnchor) return null;
-
-    const { height: pageHeight } = this.#textIndex.getPageDimensions(
-      refAnchor.pageNumber,
-    );
 
     return {
       pageIndex: refAnchor.pageNumber - 1,
@@ -248,13 +273,17 @@ export class CitationBuilder {
    * Build all target locations for a citation
    * Maps refIndices to their corresponding refKeys, locations, and per-number rects
    *
-   * @param {number[]} refIndices - Array of reference indices
-   * @param {RefKey[]|null} refKeys - Array of ref keys (for author-year)
-   * @param {Array<{refIndex: number, rects: Array}>|null} subCitations - Per-number rects from extraction
-   * @returns {Array<{refIndex: number, refKey: RefKey|null, location: Object|null, rects: Array|null}>}
+   * @param subCitations Per-number rects from extraction
    */
-  #buildAllTargets(refIndices, refKeys, subCitations) {
-    const targets = [];
+  #buildAllTargets(
+    refIndices: RefIndex[],
+    refKeys: RefKey[] | null,
+    subCitations:
+      | Array<{ refIndex: RefIndex; rects: Rect[] }>
+      | null
+      | undefined,
+  ): CitationTarget[] {
+    const targets: CitationTarget[] = [];
 
     for (let i = 0; i < refIndices.length; i++) {
       const refIndex = refIndices[i];
@@ -279,8 +308,11 @@ export class CitationBuilder {
    * Merge extracted citations with native links
    * Extracted citations win on overlap, native fills gaps
    */
-  #mergeCitations(extractedCitations, nativeIndex) {
-    const merged = new Map();
+  #mergeCitations(
+    extractedCitations: RawCitation[],
+    nativeIndex: Map<string, NativeCitationLink>,
+  ): Map<string, Citation> {
+    const merged = new Map<string, Citation>();
 
     // Phase 1: Add all extracted citations, keyed by position
     for (const cit of extractedCitations) {
@@ -297,7 +329,7 @@ export class CitationBuilder {
       );
 
       // Primary target is the first one with a valid location
-      let targetLocation = null;
+      let targetLocation: PageLocation | null = null;
       for (const target of allTargets) {
         if (target.location) {
           targetLocation = target.location;
@@ -305,7 +337,7 @@ export class CitationBuilder {
         }
       }
 
-      const citation = {
+      const citation: Citation = {
         type: cit.type,
         text: cit.text,
         pageNumber: cit.pageNumber,
@@ -405,13 +437,13 @@ export class CitationBuilder {
           y: nativeLink.destY,
         };
 
-        const citation = {
+        const citation: Citation = {
           type: "imported",
           text: `[${nativeLink.matchedRefIndex}]`,
           pageNumber: nativeLink.pageNumber,
           rects: [nativeLink.rect],
           refIndices: [nativeLink.matchedRefIndex],
-          refRanges: [],
+          refRanges: [] as Array<{ start: number; end: number }>,
           refKeys: null,
           confidence: 0.85,
           flags: CitationFlags.NATIVE_CONFIRMED | CitationFlags.DEST_CONFIRMED,
@@ -435,7 +467,7 @@ export class CitationBuilder {
   /**
    * Check if citation rects overlap with a native link rect
    */
-  #rectsOverlap(citRects, nativeRect) {
+  #rectsOverlap(citRects: Rect[], nativeRect: Rect): boolean {
     // Smaller tolerance for more precise overlap, works for some papers with dense citations
     const tolerance = -5;
 
@@ -456,54 +488,29 @@ export class CitationBuilder {
   }
 
   /**
-   * Organize citations by page number
-   */
-  #organizeByPage(mergedMap) {
-    const byPage = new Map();
-
-    for (const citation of mergedMap.values()) {
-      const pageNum = citation.pageNumber;
-
-      if (!byPage.has(pageNum)) {
-        byPage.set(pageNum, []);
-      }
-
-      byPage.get(pageNum).push(citation);
-    }
-
-    // Sort citations on each page by position (top to bottom, left to right)
-    for (const [pageNum, citations] of byPage) {
-      citations.sort((a, b) => {
-        const rectA = a.rects[0];
-        const rectB = b.rects[0];
-        const yDiff = rectA.y - rectB.y;
-        if (Math.abs(yDiff) > 5) return yDiff;
-        return rectA.x - rectB.x;
-      });
-    }
-
-    return byPage;
-  }
-
-  /**
    * Create position key for deduplication
    */
-  #makePositionKey(pageNumber, x, y) {
+  #makePositionKey(pageNumber: number, x: number, y: number): string {
     return `${pageNumber}:${Math.round(x)}:${Math.round(y)}`;
   }
 }
 
-/**
- * Factory function to create CitationBuilder
- *
- * @param {import('../model/doc.js').PDFDocumentModel} doc
- * @returns {CitationBuilder}
- */
-export function createCitationBuilder(doc) {
+/** Factory function to create CitationBuilder. */
+export function createCitationBuilder({
+  referenceIndex,
+  nativeAnnotationsByPage,
+  textIndex,
+  numPages,
+}: {
+  referenceIndex: ReferenceIndex;
+  nativeAnnotationsByPage: Map<number, any[]>;
+  textIndex: DocumentTextIndex;
+  numPages: number;
+}): CitationBuilder {
   return new CitationBuilder(
-    doc.referenceIndex,
-    doc.nativeAnnotationsByPage,
-    doc.textIndex,
-    doc.numPages,
+    referenceIndex,
+    nativeAnnotationsByPage,
+    textIndex,
+    numPages,
   );
 }

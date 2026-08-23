@@ -10,39 +10,56 @@
 
 import { PdfiumFFI } from "./pdfium_ffi.js";
 import { PdfiumPageReader } from "./pdfium_reader.js";
-import { groupCharsIntoRuns, isRuleLikeBounds } from "../analysis/layout_heuristics.js";
+import {
+  groupCharsIntoRuns,
+  isRuleLikeBounds,
+} from "../analysis/layout_heuristics.js";
+import type { WrappedPdfiumModule } from "@embedpdf/pdfium";
 
-/**
- * @typedef {Object} TextSlice
- * @property {string} content - The text content (properly decoded from UTF-16LE)
- * @property {Object} rect - Bounding rectangle
- * @property {Object} rect.origin - Origin point {x, y} (top-left coordinate system)
- * @property {Object} rect.size - Size {width, height}
- * @property {Object} [font] - Font information
- * @property {number} [font.size] - Font size
- * @property {string} [font.family] - Font family name
- *
- * @typedef {Object} PageTextResult
- * @property {number} pageIndex - 0-based page index
- * @property {string} fullText - Complete page text
- * @property {TextSlice[]} textSlices - Text slices with position information (matches getPageTextRects format)
- * @property {number} pageWidth - Page width in PDF units
- * @property {number} pageHeight - Page height in PDF units
- */
+/** One text run with its geometry and font, as DocumentTextIndex consumes it. */
+export interface TextSlice {
+  /** The text content, properly decoded from UTF-16LE. */
+  content: string;
+  /** Bounding rectangle, in a top-left coordinate system. */
+  rect: {
+    origin: Point;
+    size: { width: number; height: number };
+  };
+  font?: {
+    size: number;
+    family: string | null;
+  };
+}
+
+export interface PageTextResult {
+  /** 0-based. */
+  pageIndex: number;
+  /** Complete page text. */
+  fullText: string;
+  /** Text slices with position information (matches getPageTextRects format). */
+  textSlices: TextSlice[];
+  /** Page width in PDF units. */
+  pageWidth: number;
+  /** Page height in PDF units. */
+  pageHeight: number;
+}
+
+/** What `extractPagePaths()` reports for one page. */
+export interface PagePathsResult {
+  pageIndex: number;
+  paths: PathObjectInfo[];
+  pageWidth: number;
+  pageHeight: number;
+}
 
 export class PdfiumTextExtractor {
-  /** @type {PdfiumPageReader} */
-  #reader = null;
+  #reader: PdfiumPageReader = null;
 
-  /**
-   * @param {import('@embedpdf/pdfium').WrappedPdfiumModule} pdfiumModule
-   */
-  constructor(pdfiumModule) {
+  constructor(pdfiumModule: WrappedPdfiumModule) {
     this.#reader = new PdfiumPageReader(pdfiumModule);
   }
 
-  /** @returns {PdfiumPageReader} */
-  get reader() {
+  get reader(): PdfiumPageReader {
     return this.#reader;
   }
 
@@ -60,36 +77,44 @@ export class PdfiumTextExtractor {
   /**
    * Open a page without creating a text page (for object-level operations).
    *
-   * @param {number} docPtr
-   * @param {number} pageIndex - 0-based
-   * @param {(ctx: {pagePtr: number, pageWidth: number, pageHeight: number}) => T} fn
-   * @returns {T|null}
-   * @template T
+   * @param pageIndex 0-based
    */
-  withPage(docPtr, pageIndex, fn) {
+  withPage<T>(
+    docPtr: number,
+    pageIndex: number,
+    fn: (ctx: {
+      pagePtr: number;
+      pageWidth: number;
+      pageHeight: number;
+    }) => T,
+  ): T | null {
     return this.#reader.withPage(docPtr, pageIndex, fn);
   }
 
-  /**
-   * @param {number} docPtr
-   * @param {number} pageIndex - 0-based
-   * @param {(ctx: {pagePtr: number, textPagePtr: number, pageWidth: number, pageHeight: number, charCount: number}) => T} fn
-   * @returns {T|null}
-   * @template T
-   */
-  withTextPage(docPtr, pageIndex, fn) {
+  /** @param pageIndex 0-based */
+  withTextPage<T>(
+    docPtr: number,
+    pageIndex: number,
+    fn: (ctx: {
+      pagePtr: number;
+      textPagePtr: number;
+      pageWidth: number;
+      pageHeight: number;
+      charCount: number;
+    }) => T,
+  ): T | null {
     return this.#reader.withTextPage(docPtr, pageIndex, fn);
   }
 
   /**
    * Extract a UTF-16 text range from an already-opened text page.
    *
-   * @param {number} textPagePtr
-   * @param {number} startIndex
-   * @param {number} count
-   * @returns {string}
    */
-  extractTextRange(textPagePtr, startIndex, count) {
+  extractTextRange(
+    textPagePtr: number,
+    startIndex: number,
+    count: number,
+  ): string {
     return this.#reader.readText(textPagePtr, startIndex, count);
   }
 
@@ -97,13 +122,14 @@ export class PdfiumTextExtractor {
    * Get bounding rects for a character range on an already-opened text page.
    * Returns rects in top-left origin coordinate system.
    *
-   * @param {number} textPagePtr
-   * @param {number} startCharIndex
-   * @param {number} charCount
-   * @param {number} pageHeight - needed for Y-flip
-   * @returns {Array<{x: number, y: number, width: number, height: number}>}
+   * @param pageHeight needed for Y-flip
    */
-  getRectsForCharRange(textPagePtr, startCharIndex, charCount, pageHeight) {
+  getRectsForCharRange(
+    textPagePtr: number,
+    startCharIndex: number,
+    charCount: number,
+    pageHeight: number,
+  ): Rect[] {
     return this.#reader.readTextRects(
       textPagePtr,
       startCharIndex,
@@ -125,11 +151,17 @@ export class PdfiumTextExtractor {
    * composing a base + combining mark shifts every index after it. Callers
    * doing index-free work (clipboard) normalise themselves.
    *
-   * @param {number} docPtr
-   * @param {number} pageIndex - 0-based
-   * @returns {{fullText: string, charCount: number, pageWidth: number, pageHeight: number}}
+   * @param pageIndex 0-based
    */
-  getPageFullText(docPtr, pageIndex) {
+  getPageFullText(
+    docPtr: number,
+    pageIndex: number,
+  ): {
+    fullText: string;
+    charCount: number;
+    pageWidth: number;
+    pageHeight: number;
+  } {
     const result = this.withTextPage(docPtr, pageIndex, (ctx) => {
       if (ctx.charCount <= 0) {
         return {
@@ -156,13 +188,14 @@ export class PdfiumTextExtractor {
    * Get bounding rectangles for a character range.
    * Opens and closes the page automatically.
    *
-   * @param {number} docPtr
-   * @param {number} pageIndex - 0-based
-   * @param {number} startCharIndex
-   * @param {number} charCount
-   * @returns {Array<{x: number, y: number, width: number, height: number}>}
+   * @param pageIndex 0-based
    */
-  getRectsForCharRangeOnPage(docPtr, pageIndex, startCharIndex, charCount) {
+  getRectsForCharRangeOnPage(
+    docPtr: number,
+    pageIndex: number,
+    startCharIndex: number,
+    charCount: number,
+  ): Rect[] {
     const result = this.withTextPage(docPtr, pageIndex, (ctx) =>
       this.#reader.readTextRects(
         ctx.textPagePtr,
@@ -182,11 +215,9 @@ export class PdfiumTextExtractor {
    * Extract text from a page with proper UTF-16LE handling
    * Returns data in a format compatible with getPageTextRects
    *
-   * @param {number} docPtr - Document pointer
-   * @param {number} pageIndex - 0-based page index
-   * @returns {PageTextResult}
+   * @param pageIndex 0-based page index
    */
-  extractPageText(docPtr, pageIndex) {
+  extractPageText(docPtr: number, pageIndex: number): PageTextResult {
     const result = this.withTextPage(docPtr, pageIndex, (ctx) => {
       if (ctx.charCount <= 0) {
         return {
@@ -221,27 +252,18 @@ export class PdfiumTextExtractor {
   // ============================================================================
 
   /**
-   * @typedef {Object} PathObjectInfo
-   * @property {number} index - Sequential index among path objects on the page
-   * @property {{left: number, bottom: number, right: number, top: number}} pdfRect - PDF native coords (bottom-left origin)
-   * @property {{x: number, y: number, width: number, height: number}} screenRect - Top-left origin coords
-   */
-
-  /**
    * Extract the bounds of rule-like path objects on a page — the sole consumer
    * treats them as candidate header/footer separators, so the thickness test
    * lives here and callers only decide how much of the page a rule must span.
    *
-   * @param {number} docPtr
-   * @param {number} pageIndex - 0-based
-   * @returns {{pageIndex: number, paths: PathObjectInfo[], pageWidth: number, pageHeight: number}}
+   * @param pageIndex 0-based
    */
-  extractPagePaths(docPtr, pageIndex) {
+  extractPagePaths(docPtr: number, pageIndex: number): PagePathsResult {
     const result = this.withPage(
       docPtr,
       pageIndex,
       ({ pagePtr, pageWidth, pageHeight }) => {
-        const paths = [];
+        const paths: PathObjectInfo[] = [];
         for (const bounds of this.#reader.readPathBounds(pagePtr)) {
           const width = bounds.right - bounds.left;
           const height = bounds.top - bounds.bottom;
@@ -272,11 +294,8 @@ export class PdfiumTextExtractor {
    * Read a page's characters, group them into runs, and resolve each run's
    * font. Font lookup stays here so the heuristics layer needs no reader.
    *
-   * @param {number} textPagePtr
-   * @param {number} charCount
-   * @returns {TextSlice[]}
    */
-  #buildTextSlices(textPagePtr, charCount) {
+  #buildTextSlices(textPagePtr: number, charCount: number): TextSlice[] {
     const chars = this.#reader.readChars(textPagePtr, charCount);
     const runs = groupCharsIntoRuns(chars);
 
@@ -298,17 +317,20 @@ export class PdfiumTextExtractor {
 }
 
 export class PdfiumDocumentHandle {
-  #pdfium = null;
-  #docPtr = null;
-  #filePtr = null;
-  #extractor = null;
+  #pdfium: WrappedPdfiumModule = null;
+  #docPtr: number = null;
+  #filePtr: number = null;
+  #extractor: PdfiumTextExtractor = null;
 
   /**
-   * @param {import('@embedpdf/pdfium').WrappedPdfiumModule} pdfiumModule
-   * @param {number} docPtr - Document pointer
-   * @param {number} filePtr - File buffer pointer (for cleanup)
+   * @param docPtr Document pointer
+   * @param filePtr File buffer pointer, freed in close()
    */
-  constructor(pdfiumModule, docPtr, filePtr) {
+  constructor(
+    pdfiumModule: WrappedPdfiumModule,
+    docPtr: number,
+    filePtr: number,
+  ) {
     this.#pdfium = pdfiumModule;
     this.#docPtr = docPtr;
     this.#filePtr = filePtr;
@@ -328,28 +350,23 @@ export class PdfiumDocumentHandle {
   }
 
   /**
-   * Extract text from a page
-   * @param {number} pageIndex - 0-based page index
-   * @returns {PageTextResult}
+   * Extract text from a page.
+   * @param pageIndex 0-based page index
    */
-  extractPageText(pageIndex) {
+  extractPageText(pageIndex: number): PageTextResult {
     return this.#extractor.extractPageText(this.#docPtr, pageIndex);
   }
 
   /**
-   * Extract path objects from a page
-   * @param {number} pageIndex - 0-based page index
-   * @returns {{pageIndex: number, paths: PathObjectInfo[], pageWidth: number, pageHeight: number}}
+   * Extract path objects from a page.
+   * @param pageIndex 0-based page index
    */
-  extractPagePaths(pageIndex) {
+  extractPagePaths(pageIndex: number): PagePathsResult {
     return this.#extractor.extractPagePaths(this.#docPtr, pageIndex);
   }
 
-  /**
-   * Get page count
-   * @returns {number}
-   */
-  getPageCount() {
+  /** Get page count. */
+  getPageCount(): number {
     return this.#pdfium.FPDF_GetPageCount(this.#docPtr);
   }
 
@@ -379,36 +396,33 @@ export class PdfiumDocumentHandle {
  *   handle.close();
  */
 export class PdfiumDocumentFactory {
-  #pdfium = null;
+  #pdfium: WrappedPdfiumModule = null;
 
   /** Owns the file buffer allocation, which happens before a handle exists. */
-  #ffi = null;
+  #ffi: PdfiumFFI = null;
 
-  /**
-   * @param {import('@embedpdf/pdfium').WrappedPdfiumModule} pdfiumModule
-   */
-  constructor(pdfiumModule) {
+  constructor(pdfiumModule: WrappedPdfiumModule) {
     this.#pdfium = pdfiumModule;
     this.#ffi = new PdfiumFFI(pdfiumModule);
   }
 
-  /**
-   * Load document from a Uint8Array buffer
-   * @param {Uint8Array} pdfData
-   * @param {string} [password]
-   * @returns {PdfiumDocumentHandle}
-   */
-  loadFromBuffer(pdfData, password = null) {
+  /** Load document from a Uint8Array buffer. */
+  loadFromBuffer(
+    pdfData: Uint8Array,
+    password: string | null = null,
+  ): PdfiumDocumentHandle {
     const pdfium = this.#pdfium;
 
     // PDFium keeps referencing this buffer for the life of the document, so it
     // is owned by the handle and freed in close() rather than here.
     const filePtr = this.#ffi.allocBytes(pdfData);
 
+    // PDFium takes a NUL pointer for "no password"; the binding types the
+    // parameter as string, so the 0 has to be cast rather than passed through.
     const docPtr = pdfium.FPDF_LoadMemDocument(
       filePtr,
       pdfData.length,
-      password ? password : 0,
+      password ? password : (0 as unknown as string),
     );
 
     if (!docPtr) {

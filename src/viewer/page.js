@@ -10,10 +10,25 @@ function getSharedPopup() {
   return sharedPopup;
 }
 
+/**
+ * The slice of the owning pane a page needs. Passing the pane itself made a
+ * page impossible to construct without one.
+ *
+ * @typedef {Object} PageViewHost
+ * @property {import('../model/doc.js').PDFDocumentModel} doc
+ * @property {() => import('./text_manager.js').TextSelectionManager} getTextSelectionManager
+ * @property {(pageIndex: number, x: number, y: number, center?: boolean) => Promise<void>} scrollToPoint
+ */
+
 export class PageView {
-  constructor(pane, pageNumber, canvas) {
-    this.pane = pane;
-    this.doc = this.pane.document;
+  /**
+   * @param {PageViewHost} host
+   * @param {number} pageNumber - 1-based
+   * @param {HTMLCanvasElement} canvas
+   */
+  constructor(host, pageNumber, canvas) {
+    this.host = host;
+    this.doc = host.doc;
     this.pageNumber = pageNumber;
 
     this.wrapper = canvas.parentElement;
@@ -54,8 +69,8 @@ export class PageView {
     const endOfContent = document.createElement("div");
     endOfContent.className = "endOfContent";
     this.textLayer.appendChild(endOfContent);
-    if (this.pane.textSelectionManager) {
-      this.pane.textSelectionManager.register(
+    if (this.host.getTextSelectionManager()) {
+      this.host.getTextSelectionManager().register(
         this,
         this.textLayer,
         endOfContent,
@@ -128,8 +143,8 @@ export class PageView {
         if (this._cachedSpans) {
           this.#rescaleTextLayer(textScale);
         } else {
-          if (this.pane.textSelectionManager) {
-            this.pane.textSelectionManager.unregister(this.textLayer);
+          if (this.host.getTextSelectionManager()) {
+            this.host.getTextSelectionManager().unregister(this.textLayer);
           }
           this.textLayer.innerHTML = "";
           this.#buildTextLayer(page, textScale, pageHeight);
@@ -189,9 +204,14 @@ export class PageView {
         continue;
       }
 
-      const fontFamily = line.font?.family || line.font?.famliy || "sans-serif";
-      const cleanFontFamily =
-        fontFamily.replace(/['"]/g, "").trim() || "sans-serif";
+      // FIXME(text-layer-font): a `TextLine` has no `font` — DocumentTextIndex
+      // reads the family off the raw PDFium slice as `fontName`, then drops it
+      // when it builds lines. So this has always resolved to the fallback, and
+      // the invisible text layer is laid out in sans-serif whatever the PDF
+      // uses. Carrying `fontName` through `#createLine` would fix it, but that
+      // moves selection geometry on every page, so it wants the Phase 3
+      // snapshots first.
+      const cleanFontFamily = "sans-serif";
 
       const span = document.createElement("span");
       span.textContent = content;
@@ -312,32 +332,36 @@ export class PageView {
   // Image Overlays
   // ============================================
 
-  #renderImageOverlays(scale) {
-    const images = this.doc.getPageImages(this.pageNumber);
-    if (!images || images.length === 0) return;
-
-    const fragment = document.createDocumentFragment();
-
-    for (const img of images) {
-      const r = img.screenRect;
-      if (r.width < 1 || r.height < 1) continue;
-      const el = document.createElement("div");
-      el.className = "image-overlay-rect";
-      el.style.cssText = `
-        position: absolute;
-        left: ${(r.x * scale).toFixed(2)}px;
-        top: ${(r.y * scale).toFixed(2)}px;
-        width: ${(r.width * scale).toFixed(2)}px;
-        height: ${(r.height * scale).toFixed(2)}px;
-        pointer-events: auto;
-        cursor: pointer;
-      `;
-      el._imageInfo = img;
-      fragment.appendChild(el);
-    }
-
-    this.annotationLayer.appendChild(fragment);
-  }
+  // Parked along with model/doc.js's `imageExtractor` / `imagesByPage` /
+  // `getPageImages()`. Both call sites here are already commented out, and the
+  // model half it reads from no longer exists — so it only compiled because
+  // `this.pane` was untyped. Restore it together with that half.
+  // #renderImageOverlays(scale) {
+  //   const images = this.doc.getPageImages(this.pageNumber);
+  //   if (!images || images.length === 0) return;
+  //
+  //   const fragment = document.createDocumentFragment();
+  //
+  //   for (const img of images) {
+  //     const r = img.screenRect;
+  //     if (r.width < 1 || r.height < 1) continue;
+  //     const el = document.createElement("div");
+  //     el.className = "image-overlay-rect";
+  //     el.style.cssText = `
+  //       position: absolute;
+  //       left: ${(r.x * scale).toFixed(2)}px;
+  //       top: ${(r.y * scale).toFixed(2)}px;
+  //       width: ${(r.width * scale).toFixed(2)}px;
+  //       height: ${(r.height * scale).toFixed(2)}px;
+  //       pointer-events: auto;
+  //       cursor: pointer;
+  //     `;
+  //     el._imageInfo = img;
+  //     fragment.appendChild(el);
+  //   }
+  //
+  //   this.annotationLayer.appendChild(fragment);
+  // }
 
   // ============================================
   // Citation Overlays
@@ -377,7 +401,7 @@ export class PageView {
               pointer-events: auto;
               cursor: pointer;
             `;
-            el.dataset.citationId = citRef.citationId;
+            el.dataset.citationId = String(citRef.citationId);
             el.dataset.targetIndex = String(ti);
             fragment.appendChild(el);
           }
@@ -396,7 +420,7 @@ export class PageView {
             pointer-events: auto;
             cursor: pointer;
           `;
-          el.dataset.citationId = citRef.citationId;
+          el.dataset.citationId = String(citRef.citationId);
           fragment.appendChild(el);
         }
       }
@@ -449,8 +473,8 @@ export class PageView {
 
   release() {
     this.cancel();
-    if (this.pane.textSelectionManager) {
-      this.pane.textSelectionManager.unregister(this.textLayer);
+    if (this.host.getTextSelectionManager()) {
+      this.host.getTextSelectionManager().unregister(this.textLayer);
     }
 
     this.textLayer.innerHTML = "";
@@ -505,8 +529,8 @@ export class PageView {
       this.textSlices = this.doc.textIndex.getPageLines(this.pageNumber);
       if (this.textSlices) {
         const pageHeight = page.size.height;
-        if (this.pane.textSelectionManager) {
-          this.pane.textSelectionManager.unregister(this.textLayer);
+        if (this.host.getTextSelectionManager()) {
+          this.host.getTextSelectionManager().unregister(this.textLayer);
         }
         this.textLayer.innerHTML = "";
         this.#buildTextLayer(page, textScale, pageHeight);
@@ -647,7 +671,7 @@ export class PageView {
         findTextForTarget,
         targetIndex,
         () => {
-          this.pane.scrollToPoint(
+          this.host.scrollToPoint(
             citation.targetLocation.pageIndex,
             citation.targetLocation.x,
             citation.targetLocation.y,
@@ -669,12 +693,12 @@ export class PageView {
 
     if (targetIndex !== null && citation.allTargets?.[targetIndex]?.location) {
       const loc = citation.allTargets[targetIndex].location;
-      await this.pane.scrollToPoint(loc.pageIndex, loc.x, loc.y);
+      await this.host.scrollToPoint(loc.pageIndex, loc.x, loc.y);
       return;
     }
 
     if (citation.targetLocation) {
-      await this.pane.scrollToPoint(
+      await this.host.scrollToPoint(
         citation.targetLocation.pageIndex,
         citation.targetLocation.x,
         citation.targetLocation.y,
@@ -685,7 +709,7 @@ export class PageView {
     if (citation.refIndices?.length) {
       const refAnchor = this.doc.getReferenceByIndex(citation.refIndices[0]);
       if (refAnchor) {
-        await this.pane.scrollToPoint(
+        await this.host.scrollToPoint(
           refAnchor.pageNumber - 1,
           refAnchor.startCoord.x,
           refAnchor.startCoord.y,
@@ -728,7 +752,7 @@ export class PageView {
     if (!crossRef?.targetLocation) return;
     const scrollFlag = crossRef.flags === 3 ? false : true;
 
-    await this.pane.scrollToPoint(
+    await this.host.scrollToPoint(
       crossRef.targetLocation.pageIndex,
       crossRef.targetLocation.x,
       crossRef.targetLocation.y,

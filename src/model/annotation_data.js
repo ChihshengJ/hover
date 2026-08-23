@@ -1,3 +1,5 @@
+import { DocEvent } from "./doc_events.js";
+
 const COLOR_NAME_TO_HEX = {
   black: "#000000",
   yellow: "#FFB300",
@@ -166,7 +168,7 @@ export class AnnotationStore {
     this.#linkTextAnnotationsToMarkup(textAnnotations);
 
     if (this.annotations.size > 0) {
-      this.#doc.notify("annotations-imported", {
+      this.#doc.notify(DocEvent.ANNOTATIONS_IMPORTED, {
         count: this.annotations.size,
       });
     }
@@ -198,7 +200,7 @@ export class AnnotationStore {
     }
     await this.#createInEngine(annotation);
 
-    this.#doc.notify("annotation-added", { annotation });
+    this.#doc.notify(DocEvent.ANNOTATION_ADDED, { annotation });
     return annotation;
   }
 
@@ -237,7 +239,7 @@ export class AnnotationStore {
       typeChanged,
       movedPages ? oldPages : null,
     );
-    this.#doc.notify("annotation-updated", { annotation });
+    this.#doc.notify(DocEvent.ANNOTATION_UPDATED, { annotation });
     return annotation;
   }
 
@@ -253,7 +255,7 @@ export class AnnotationStore {
     this.annotations.delete(id);
     this.#annotationIdToPdfId.delete(id);
 
-    this.#doc.notify("annotation-deleted", { annotationId: id });
+    this.#doc.notify(DocEvent.ANNOTATION_DELETED, { annotationId: id });
     return true;
   }
 
@@ -267,7 +269,7 @@ export class AnnotationStore {
     await this.#removeCommentAnnotation(id);
     await this.#updateInEngine(annotation, annotation.comment);
 
-    this.#doc.notify("annotation-updated", { annotation });
+    this.#doc.notify(DocEvent.ANNOTATION_UPDATED, { annotation });
     return true;
   }
 

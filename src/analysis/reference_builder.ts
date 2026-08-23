@@ -1,34 +1,86 @@
-/**
- * @typedef {Object} ReferenceAnchor
- * @property {string} id
- * @property {number|null} index
- * @property {number} pageNumber
- * @property {{x: number, y: number}} startCoord
- * @property {{x: number, y: number}} endCoord
- * @property {string} formatHint
- * @property {string} cachedText
- * @property {string|null} authors
- * @property {string|null} year
- * @property {Array<{pageNumber: number, rects: Array}>} pageRanges
- */
+import type {
+  DocumentTextIndex,
+  PageTextData,
+  TextLine,
+} from "./text_index.js";
+import type { OutlineItem } from "./outline_builder.js";
 
-/**
- * @typedef {Object} ReferenceSectionEdge
- * @property {number} pageNumber
- * @property {number} lineIndex
- * @property {number} y
- */
+/** One entry in the reference list, and where it sits on the page. */
+export interface ReferenceAnchor {
+  id: string;
+  /**
+   * Entry label: a number for the numbered formats, the key string for
+   * `numbered-abbr` ("Min+15"), null when the format has no label at all.
+   */
+  index: RefIndex | null;
+  /** 1-based. */
+  pageNumber: number;
+  startCoord: Point;
+  endCoord: Point;
+  formatHint: string;
+  cachedText: string;
+  /** Lowercased author text, for substring matching against a citation. */
+  authorSearchText: string | null;
+  hasMultipleAuthors: boolean;
+  year: string | null;
+  pageRanges: Array<{ pageNumber: number; rects: Rect[] }>;
+}
+
+export interface ReferenceSectionEdge {
+  /** 1-based. */
+  pageNumber: number;
+  lineIndex: number;
+  y: number;
+}
 
 /**
  * What `buildReferenceIndex()` returns. One flat section for the whole
  * document; see docs/architecture_plan.md Phase 4 for the multi-section shape.
- *
- * @typedef {Object} ReferenceIndex
- * @property {ReferenceAnchor[]} anchors
- * @property {string} format
- * @property {ReferenceSectionEdge|null} sectionStart
- * @property {ReferenceSectionEdge|null} sectionEnd
  */
+export interface ReferenceIndex {
+  anchors: ReferenceAnchor[];
+  format: string;
+  sectionStart: ReferenceSectionEdge | null;
+  sectionEnd: ReferenceSectionEdge | null;
+}
+
+/**
+ * A line inside the reference section, carrying the page it came from — the
+ * section spans pages, so a bare `TextLine` is not enough to place it.
+ */
+export interface SectionLine extends TextLine {
+  /** 1-based. */
+  pageNumber: number;
+  lineIndex: number;
+  /** Only set by `collectSectionLines`; the probe tier does not carry them. */
+  pageWidth?: number;
+  pageHeight?: number;
+}
+
+/**
+ * A section edge while it is still being located, before it is narrowed to the
+ * three fields that reach `ReferenceIndex`.
+ */
+interface EdgeCandidate extends ReferenceSectionEdge {
+  originalY?: number;
+  line?: TextLine;
+}
+
+/** A detected reference section, before its anchors are extracted. */
+interface DetectedSection {
+  startPage: number;
+  endPage: number;
+  startLineIndex: number;
+  endLineIndex: number;
+  startY: number;
+  endY: number;
+  lines: SectionLine[];
+  /** Which detection tier found it — logged, not branched on. */
+  method: string;
+}
+
+/** Body-text metrics, as `DocumentTextIndex.getDocumentMetrics()` reports them. */
+type DocumentMetrics = ReturnType<DocumentTextIndex["getDocumentMetrics"]>;
 
 import { FontStyle } from "./text_index.js";
 import {
@@ -41,7 +93,7 @@ import {
   AUTHOR_YEAR_BLOCKS,
 } from "./lexicon.js";
 
-const EMPTY_RESULT = {
+const EMPTY_RESULT: ReferenceIndex = {
   anchors: [],
   format: "unknown",
   sectionStart: null,
@@ -61,6 +113,14 @@ const NUMERIC_ENTRY_PATTERNS = [
   },
 ];
 
+/** What the backward numeric probe reports when it finds a numbered run. */
+interface ProbeResult {
+  format: string;
+  lastConfirmedIdx: number;
+  /** Average lines between consecutive entries, for adaptive tolerance. */
+  entryGap: number;
+}
+
 const MIN_PROBE_CONFIRMATIONS = 3;
 const BACKWARD_SCAN_RATIO = 0.4;
 
@@ -69,11 +129,11 @@ const BACKWARD_SCAN_RATIO = 0.4;
 // ============================================
 
 /**
- * @param {import('./text_index.js').DocumentTextIndex} textIndex
- * @param {Array<{title: string, pageIndex: number, left: number, top: number, children: Array}>} [outline]
- * @returns {Promise<ReferenceIndex>}
  */
-export async function buildReferenceIndex(textIndex, outline) {
+export function buildReferenceIndex(
+  textIndex: DocumentTextIndex,
+  outline?: OutlineItem[],
+): ReferenceIndex {
   if (!textIndex) return EMPTY_RESULT;
 
   try {
@@ -122,7 +182,10 @@ export async function buildReferenceIndex(textIndex, outline) {
 // Tier 1: Outline-Based Detection
 // ============================================
 
-function findReferenceSectionFromOutline(textIndex, outline) {
+function findReferenceSectionFromOutline(
+  textIndex: DocumentTextIndex,
+  outline: OutlineItem[] | undefined,
+): DetectedSection | null {
   if (!outline?.length) return null;
 
   const match = findOutlineReferenceEntry(outline);
@@ -187,7 +250,7 @@ function findReferenceSectionFromOutline(textIndex, outline) {
   };
 }
 
-function findOutlineReferenceEntry(items) {
+function findOutlineReferenceEntry(items: OutlineItem[]): OutlineItem | null {
   for (const item of items) {
     if (item.top === 0) continue;
     const stripped = (item.title || "")
@@ -204,7 +267,11 @@ function findOutlineReferenceEntry(items) {
   return null;
 }
 
-function findClosestLineIndex(lines, targetY, targetX) {
+function findClosestLineIndex(
+  lines: TextLine[],
+  targetY: number,
+  targetX: number,
+): number {
   let best = -1;
   let bestDist = Infinity;
 
@@ -223,7 +290,9 @@ function findClosestLineIndex(lines, targetY, targetX) {
 // Tier 2: Heading-Based Detection
 // ============================================
 
-function findReferenceSectionByHeading(textIndex) {
+function findReferenceSectionByHeading(
+  textIndex: DocumentTextIndex,
+): DetectedSection | null {
   const docInfo = textIndex.getDocumentData();
   if (!docInfo?.pageData) return null;
 
@@ -301,12 +370,16 @@ function findReferenceSectionByHeading(textIndex) {
 // Tier 3: Backward Numeric Probe
 // ============================================
 
-function findReferenceSectionByBackwardProbe(textIndex) {
+function findReferenceSectionByBackwardProbe(
+  textIndex: DocumentTextIndex,
+): DetectedSection | null {
   const docInfo = textIndex.getDocumentData();
   if (!docInfo?.pageData) return null;
 
   const { pageData } = docInfo;
-  const pageNumbers = Array.from(pageData.keys()).sort((a, b) => a - b);
+  const pageNumbers = Array.from(pageData.keys()).sort(
+    (a: number, b: number) => a - b,
+  );
   if (pageNumbers.length === 0) return null;
 
   const totalPages = pageNumbers[pageNumbers.length - 1];
@@ -316,10 +389,10 @@ function findReferenceSectionByBackwardProbe(textIndex) {
   );
 
   const scanPages = pageNumbers
-    .filter((p) => p >= scanStartPage)
-    .sort((a, b) => b - a);
+    .filter((p: number) => p >= scanStartPage)
+    .sort((a: number, b: number) => b - a);
 
-  const allLines = [];
+  const allLines: SectionLine[] = [];
   for (const pageNum of scanPages) {
     const { lines, pageHeight, pageWidth, marginLeft, marginBottom } =
       pageData.get(pageNum);
@@ -403,7 +476,7 @@ function findReferenceSectionByBackwardProbe(textIndex) {
  * Returns the detected format, the index of the last confirmed line,
  * and the estimated gap between entries (for adaptive tolerance).
  */
-function probeForNumericSequence(lines) {
+function probeForNumericSequence(lines: SectionLine[]): ProbeResult | null {
   for (const { name, pattern } of NUMERIC_ENTRY_PATTERNS) {
     const result = probeFormat(lines, name, pattern);
     if (result) return result;
@@ -411,9 +484,13 @@ function probeForNumericSequence(lines) {
   return null;
 }
 
-function probeFormat(lines, formatName, pattern) {
+function probeFormat(
+  lines: SectionLine[],
+  formatName: string,
+  pattern: RegExp,
+): ProbeResult | null {
   let confirmations = 0;
-  let lastNumber = null;
+  let lastNumber: number | null = null;
   let lastMatchIdx = -1;
   let firstMatchIdx = -1;
   let gapSum = 0;
@@ -479,16 +556,16 @@ function probeFormat(lines, formatName, pattern) {
   return null;
 }
 
-function hasYearLikeContent(text) {
+function hasYearLikeContent(text: string): boolean {
   return YEAR_PATTERN.test(text);
 }
 
 function findSectionStartByProbe(
-  lines,
-  lastConfirmedIdx,
-  formatName,
-  entryGap,
-) {
+  lines: SectionLine[],
+  lastConfirmedIdx: number,
+  formatName: string,
+  entryGap: number,
+): number {
   const patternDef = NUMERIC_ENTRY_PATTERNS.find((p) => p.name === formatName);
   if (!patternDef) return lastConfirmedIdx;
 
@@ -517,14 +594,14 @@ function findSectionStartByProbe(
 // ============================================
 
 function findReferenceSectionEnd(
-  pageData,
-  start,
-  bodyFontSize,
-  bodyMarginBottom,
-  headerHeight,
-  footerHeight,
-) {
-  let lastValidLine = null;
+  pageData: Map<number, PageTextData>,
+  start: EdgeCandidate,
+  bodyFontSize: number,
+  bodyMarginBottom: number,
+  headerHeight: number,
+  footerHeight: number,
+): ReferenceSectionEdge {
+  let lastValidLine: EdgeCandidate | null = null;
   const pageNumbers = Array.from(pageData.keys()).sort((a, b) => a - b);
 
   for (const pageNum of pageNumbers) {
@@ -561,7 +638,14 @@ function findReferenceSectionEnd(
       const isBoldAndLarge =
         line.fontSize > bodyFontSize * 1.5 && line.fontStyle === FontStyle.BOLD;
       const isAllCapital =
-        text === text.toUpperCase() && /\d+/.test(line) && line.text.length > 3;
+        text === text.toUpperCase() &&
+        // FIXME(reference-detection): this should be `line.text`. As written the
+        // regex stringifies the line object to "[object Object]", so the
+        // conjunct is always false and `isAllCapital` never contributes to the
+        // section-end decision. Fixing it moves where sections end, so it waits
+        // for the Phase 3 snapshots.
+        /\d+/.test(line as unknown as string) &&
+        line.text.length > 3;
       const isDirectIndicator =
         POST_REFERENCE_SECTION_PATTERN.test(strippedText);
       const isBigJump =
@@ -596,8 +680,13 @@ function findReferenceSectionEnd(
 // Section Line Collection (shared)
 // ============================================
 
-function collectSectionLines(pageData, start, end, metrics) {
-  const lines = [];
+function collectSectionLines(
+  pageData: Map<number, PageTextData>,
+  start: EdgeCandidate,
+  end: EdgeCandidate,
+  metrics: DocumentMetrics,
+): SectionLine[] {
+  const lines: SectionLine[] = [];
   const pageNumbers = Array.from(pageData.keys()).sort((a, b) => a - b);
 
   for (const pageNum of pageNumbers) {
@@ -656,7 +745,7 @@ function collectSectionLines(pageData, start, end, metrics) {
 // Format Detection
 // ============================================
 
-function detectReferenceFormat(lines) {
+function detectReferenceFormat(lines: SectionLine[]): string {
   if (lines.length === 0) return "unknown";
 
   const sampleLines = lines
@@ -664,7 +753,7 @@ function detectReferenceFormat(lines) {
     .slice(0, 50);
   if (sampleLines.length === 0) return "unknown";
 
-  const formatCounts = {};
+  const formatCounts: Record<string, number> = {};
   for (const [name, pattern] of Object.entries(REFERENCE_FORMAT_PATTERNS)) {
     formatCounts[name] = sampleLines.filter((l) => pattern.test(l.text)).length;
   }
@@ -688,11 +777,11 @@ function detectReferenceFormat(lines) {
   return "unknown";
 }
 
-function detectHangingIndent(lines) {
+function detectHangingIndent(lines: SectionLine[]): boolean {
   if (lines.length < 6) return false;
 
   let hangingPatterns = 0;
-  let prevLineX = null;
+  let prevLineX: number | null = null;
 
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
@@ -709,7 +798,11 @@ function detectHangingIndent(lines) {
 // Structural Reference Extraction
 // ============================================
 
-function extractReferenceAnchors(lines, format, textIndex) {
+function extractReferenceAnchors(
+  lines: SectionLine[],
+  format: string,
+  textIndex: DocumentTextIndex,
+): ReferenceAnchor[] {
   if (lines.length === 0) return [];
   if (format.startsWith("numbered-")) {
     return extractNumberedReferences(lines, format);
@@ -718,13 +811,17 @@ function extractReferenceAnchors(lines, format, textIndex) {
   return extractStructuralReferences(lines, format, metrics);
 }
 
-function extractNumberedReferences(lines, format) {
-  const pattern = REFERENCE_FORMAT_PATTERNS[format];
+function extractNumberedReferences(
+  lines: SectionLine[],
+  format: string,
+): ReferenceAnchor[] {
+  const pattern =
+    REFERENCE_FORMAT_PATTERNS[format as keyof typeof REFERENCE_FORMAT_PATTERNS];
   if (!pattern) return [];
 
-  const anchors = [];
-  let currentLines = [];
-  let currentIndex = null;
+  const anchors: ReferenceAnchor[] = [];
+  let currentLines: SectionLine[] = [];
+  let currentIndex: RefIndex | null = null;
   let refCount = 0;
 
   for (const line of lines) {
@@ -753,17 +850,24 @@ function extractNumberedReferences(lines, format) {
   return anchors;
 }
 
-function extractStructuralReferences(lines, format, metrics) {
+function extractStructuralReferences(
+  lines: SectionLine[],
+  format: string,
+  metrics: DocumentMetrics,
+): ReferenceAnchor[] {
   if (lines.length === 0) return [];
 
   const baselineLineGap = computeSectionLineGap(lines);
   const typicalLineWidth = metrics.lineWidth;
   const layout = analyzeLayout(lines, typicalLineWidth);
 
-  const anchors = [];
-  let currentRef = { firstLineX: null, lines: [] };
-  let prevLine = null;
-  let prevYDirection = null;
+  const anchors: ReferenceAnchor[] = [];
+  let currentRef: { firstLineX: number | null; lines: SectionLine[] } = {
+    firstLineX: null,
+    lines: [],
+  };
+  let prevLine: SectionLine | null = null;
+  let prevYDirection: number | null = null;
   let refIndex = 0;
 
   for (let i = 0; i < lines.length; i++) {
@@ -822,16 +926,16 @@ function extractStructuralReferences(lines, format, metrics) {
 }
 
 function detectBoundary(
-  line,
-  prevLine,
-  nextLineX,
-  currentRef,
-  prevYDirection,
-  baselineLineGap,
-  typicalLineWidth,
-  format,
-  layout,
-) {
+  line: SectionLine,
+  prevLine: SectionLine,
+  nextLineX: number | null,
+  currentRef: { firstLineX: number | null; lines: SectionLine[] },
+  prevYDirection: number | null,
+  baselineLineGap: number,
+  typicalLineWidth: number,
+  format: string,
+  layout: { isJustified: boolean; usesIndentation: boolean },
+): { isNewReference: boolean; yDirection: number; isBoundaryJump: boolean } {
   const { isJustified } = layout;
   const yDelta = line.y - prevLine.y;
   const yDirection = Math.sign(yDelta);
@@ -904,7 +1008,7 @@ function detectBoundary(
   return { isNewReference, yDirection, isBoundaryJump };
 }
 
-function looksLikeReferenceStart(text) {
+function looksLikeReferenceStart(text: string): boolean {
   const trimmed = text.trim();
   if (/^\s*[\[\(]?\d+[\]\)\.]/.test(trimmed)) return true;
   if (/^\s*[\[\(]?[A-Z]*\+?\d+[\]\)\.]/.test(trimmed)) return true;
@@ -914,8 +1018,8 @@ function looksLikeReferenceStart(text) {
   return false;
 }
 
-function computeSectionLineGap(lines) {
-  const gaps = [];
+function computeSectionLineGap(lines: SectionLine[]): number {
+  const gaps: number[] = [];
   for (let i = 1; i < lines.length; i++) {
     if (lines[i].pageNumber === lines[i - 1].pageNumber) {
       const gap = Math.abs(lines[i].y - lines[i - 1].y);
@@ -930,7 +1034,10 @@ function computeSectionLineGap(lines) {
   return baselineLineGap;
 }
 
-function analyzeLayout(lines, typicalLineWidth) {
+function analyzeLayout(
+  lines: SectionLine[],
+  typicalLineWidth: number,
+): { isJustified: boolean; usesIndentation: boolean } {
   if (lines.length < 5) {
     return { isJustified: false, usesIndentation: false };
   }
@@ -959,7 +1066,7 @@ function analyzeLayout(lines, typicalLineWidth) {
 
   // Indentation detection
   const xPositions = substantialLines.map((l) => Math.round(l.x / 2) * 2);
-  const xCounts = {};
+  const xCounts: Record<number, number> = {};
   for (const x of xPositions) {
     xCounts[x] = (xCounts[x] || 0) + 1;
   }
@@ -975,7 +1082,7 @@ function analyzeLayout(lines, typicalLineWidth) {
   return { isJustified, usesIndentation };
 }
 
-function calculateLineWidth(line) {
+function calculateLineWidth(line: TextLine): number {
   if (line.items?.length > 0) {
     const minX = Math.min(...line.items.map((i) => i.x));
     const maxX = Math.max(...line.items.map((i) => i.x + i.width));
@@ -984,14 +1091,14 @@ function calculateLineWidth(line) {
   return line.text.length * (line.fontSize || 10) * 0.5;
 }
 
-function median(arr) {
+function median(arr: number[]): number {
   if (arr.length === 0) return 0;
   const sorted = [...arr].sort((a, b) => a - b);
   const mid = Math.floor(sorted.length / 2);
   return sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
 }
 
-function percentile(arr, p) {
+function percentile(arr: number[], p: number): number {
   if (arr.length === 0) return 0;
   const sorted = [...arr].sort((a, b) => a - b);
   const idx = Math.ceil((p / 100) * sorted.length) - 1;
@@ -1002,7 +1109,11 @@ function percentile(arr, p) {
 // Anchor Creation
 // ============================================
 
-function createAnchor(lines, index, format) {
+function createAnchor(
+  lines: SectionLine[],
+  index: ReferenceAnchor["index"],
+  format: string,
+): ReferenceAnchor {
   const firstLine = lines[0];
   const firstLineHeight = firstLine.lineHeight / 2;
   const lastLine = lines[lines.length - 1];
@@ -1032,8 +1143,13 @@ function createAnchor(lines, index, format) {
   };
 }
 
-function buildPageRanges(lines) {
-  const pageRanges = new Map();
+function buildPageRanges(
+  lines: SectionLine[],
+): ReferenceAnchor["pageRanges"] {
+  const pageRanges = new Map<
+    number,
+    { pageNumber: number; rects: Rect[] }
+  >();
 
   for (const line of lines) {
     if (!pageRanges.has(line.pageNumber)) {
@@ -1072,7 +1188,11 @@ function buildPageRanges(lines) {
 // Author/Year Parsing
 // ============================================
 
-function parseAuthorYear(text) {
+function parseAuthorYear(text: string): {
+  year: string | null;
+  authorSearchText: string | null;
+  hasMultipleAuthors: boolean;
+} {
   if (!text) {
     return {
       year: null,
@@ -1104,9 +1224,14 @@ function parseAuthorYear(text) {
 // Anchor Lookup
 // ============================================
 
-export function findBoundingAnchors(anchors, pageNumber, x, y) {
+export function findBoundingAnchors(
+  anchors: ReferenceAnchor[],
+  pageNumber: number,
+  x: number,
+  y: number,
+): { current: ReferenceAnchor | null; next: ReferenceAnchor | null } {
   if (anchors.length === 0) return { current: null, next: null };
-  let closest = null;
+  let closest: ReferenceAnchor | null = null;
   let closestDist = Infinity;
   let closestIdx = -1;
   for (let i = 0; i < anchors.length; i++) {
@@ -1143,7 +1268,10 @@ export function findBoundingAnchors(anchors, pageNumber, x, y) {
   };
 }
 
-export function findReferenceByIndex(anchors, index) {
+export function findReferenceByIndex(
+  anchors: ReferenceAnchor[],
+  index: RefIndex,
+): ReferenceAnchor | null {
   return anchors.find((a) => a.index === index) || null;
 }
 
@@ -1152,10 +1280,10 @@ export function findReferenceByIndex(anchors, index) {
 // ============================================
 
 export function matchCitationToReference(
-  citationAuthor,
-  citationYear,
-  anchors,
-) {
+  citationAuthor: string | null,
+  citationYear: string | null,
+  anchors: ReferenceAnchor[],
+): ReferenceAnchor | null {
   if (!citationYear) return null;
 
   const yearMatches = anchors.filter((a) => a.year === citationYear);

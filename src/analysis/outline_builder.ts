@@ -1,15 +1,56 @@
-/**
- * @typedef {Object} OutlineItem
- * @property {string} id
- * @property {string} title
- * @property {number} pageIndex - 0-based
- * @property {number} left
- * @property {number} top
- * @property {OutlineItem[]} children
- */
-
 import { COMMON_SECTION_NAMES, SECTION_NUMBER_STRIP } from "./lexicon.js";
 import { FontStyle } from "./text_index.js";
+import type { DocumentTextIndex, TextLine } from "./text_index.js";
+
+/** A node in the document outline tree. */
+export interface OutlineItem {
+  id: string;
+  title: string;
+  /** 0-based. */
+  pageIndex: number;
+  left: number;
+  top: number;
+  children: OutlineItem[];
+}
+
+/** What the metadata detector finds on the opening pages. */
+export interface DocumentMetadata {
+  title: string | null;
+  lines: MetadataLine[] | null;
+  abstractInfo: { pageIndex: number; top: number; left: number } | null;
+}
+
+/** A text line carrying the page it came from, as the metadata scan collects it. */
+export interface MetadataLine extends TextLine {
+  pageNum: number;
+  pageHeight: number;
+}
+
+/** A line that might be a heading, plus everything needed to rank it. */
+export interface HeadingCandidate {
+  text: string;
+  title: string;
+  /** 1-based. */
+  pageNumber: number;
+  /** 0-based. */
+  pageIndex: number;
+  x: number;
+  y: number;
+  top: number;
+  fontSize: number;
+  lineHeight: number;
+  fontStyle: number;
+  numberPrefix: string | null;
+  numberDepth: number;
+  isNumbered: boolean;
+}
+
+/** A bookmark destination, once resolved to a page and a position. */
+interface ResolvedDest {
+  pageIndex: number;
+  left: number;
+  top: number;
+}
 
 const NUMBERED_SECTION_PATTERN =
   /^(\d+(?:\.\d+)*\.?|[A-Z](\.\d)?\.?|[IVXLCDM]+\.?)\s+\S/;
@@ -17,19 +58,29 @@ export const SECTION_NUMBER_EXTRACT =
   /^(\d+(?:\.\d+)*\.?|[A-Z](\.\d)?\.?|[IVXLCDM]+\.?)\s+/;
 
 /**
- * Build document outline from PDF metadata or heuristic analysis
+ * Build document outline from the document's own bookmarks, falling back to
+ * heuristic analysis of the text index.
+ *
+ * Bookmarks arrive already fetched: pulling them is the one PDFium call this
+ * module used to make, and the model needs the same tree for its named
+ * destinations, so it fetches once and hands the result down.
+ *
  */
-export async function buildOutline(
-  pdfDoc,
-  native,
+export function buildOutline({
+  bookmarks,
   textIndex,
   allNamedDests,
   metadata,
-) {
-  const nativeOutline = await extractPdfOutline(pdfDoc, native, allNamedDests);
+}: {
+  bookmarks: any[];
+  textIndex: DocumentTextIndex;
+  allNamedDests: Map<string, any>;
+  metadata: DocumentMetadata;
+}): OutlineItem[] {
+  const nativeOutline = outlineFromBookmarks(bookmarks, allNamedDests);
 
   if (nativeOutline && nativeOutline.length > 0) {
-    let result;
+    let result: OutlineItem[];
     if (nativeOutline.length === 1 && nativeOutline[0].children.length > 1) {
       console.log("[Outline]Use Embeded Outline's root");
       result = nativeOutline[0].children;
@@ -50,27 +101,29 @@ export async function buildOutline(
   return buildHeuristicOutline(textIndex, metadata);
 }
 
-async function extractPdfOutline(pdfDoc, native, allNamedDests) {
-  if (!native || !pdfDoc) return [];
+function outlineFromBookmarks(
+  bookmarks: any[],
+  allNamedDests: Map<string, any>,
+): OutlineItem[] {
+  if (!bookmarks?.length) return [];
 
   try {
-    const bookmarkTask = await native.getBookmarks(pdfDoc).toPromise();
-    const bookmarks = bookmarkTask.bookmarks;
-    if (!bookmarks?.length) return [];
-
     if (bookmarks.length === 1 && bookmarks[0].children) {
       return processBookmarks(bookmarks[0].children, allNamedDests);
     }
 
     return processBookmarks(bookmarks, allNamedDests);
   } catch (error) {
-    console.warn("[Outline] Error extracting PDF bookmarks:", error);
+    console.warn("[Outline] Error processing PDF bookmarks:", error);
     return [];
   }
 }
 
-function processBookmarks(bookmarks, allNamedDests) {
-  const result = [];
+function processBookmarks(
+  bookmarks: any[],
+  allNamedDests: Map<string, any>,
+): OutlineItem[] {
+  const result: OutlineItem[] = [];
 
   for (const bookmark of bookmarks) {
     const dest = resolveBookmarkDestination(bookmark, allNamedDests);
@@ -90,7 +143,10 @@ function processBookmarks(bookmarks, allNamedDests) {
   return result;
 }
 
-function resolveBookmarkDestination(bookmark, allNamedDests) {
+function resolveBookmarkDestination(
+  bookmark: any,
+  allNamedDests: Map<string, any>,
+): ResolvedDest | null {
   let dest = null;
   if (bookmark.target?.type === "action") {
     dest = bookmark.target.action.destination;
@@ -125,17 +181,13 @@ function resolveBookmarkDestination(bookmark, allNamedDests) {
 // Bookmark Coordinate Resolution
 // ============================================
 
-/**
- * @param {OutlineItem[]} outline
- * @param {import('./text_index.js').DocumentTextIndex} textIndex
- */
-function resolveCoords(outline, textIndex) {
+function resolveCoords(outline: OutlineItem[], textIndex: DocumentTextIndex) {
   if (!textIndex) return;
 
   const { lineHeight: bodyLineHeight } = textIndex.getDocumentData();
 
-  const unresolved = [];
-  const walk = (items) => {
+  const unresolved: OutlineItem[] = [];
+  const walk = (items: OutlineItem[]) => {
     for (const item of items) {
       if (item.left === 0 && item.top === 0) {
         unresolved.push(item);
@@ -158,7 +210,7 @@ function resolveCoords(outline, textIndex) {
     resolved: false,
   }));
 
-  const allLines = [];
+  const allLines: Array<{ line: TextLine; pageNum: number }> = [];
   const numPages = textIndex.getPageCount();
   for (let p = 1; p <= numPages; p++) {
     const pageData = textIndex.getPageData(p);
@@ -212,10 +264,20 @@ function resolveCoords(outline, textIndex) {
   }
 }
 
-/**
- * @returns {{ matched: boolean, fuzzy: boolean, headingLike: boolean }}
- */
-function matchEntry(entry, lineText, lineKey, lineWords, line, bodyLineHeight) {
+function matchEntry(
+  entry: {
+    item: OutlineItem;
+    textKey: string;
+    words: string[];
+    appLetter: string | null;
+    resolved: boolean;
+  },
+  lineText: string,
+  lineKey: string,
+  lineWords: string[],
+  line: TextLine,
+  bodyLineHeight: number,
+): { matched: boolean; fuzzy: boolean; headingLike: boolean } {
   const result = { matched: false, fuzzy: false, headingLike: false };
   const lineHeight = line.lineHeight || 0;
   const fontStyle = line.items?.[0]?.fontStyle ?? FontStyle.REGULAR;
@@ -269,7 +331,7 @@ function matchEntry(entry, lineText, lineKey, lineWords, line, bodyLineHeight) {
  * Count the number of shared words between two word arrays.
  * Uses a Set for O(n+m) comparison.
  */
-function countWordOverlap(wordsA, wordsB) {
+function countWordOverlap(wordsA: string[], wordsB: string[]): number {
   const setB = new Set(wordsB);
   let count = 0;
   for (const word of wordsA) {
@@ -282,7 +344,7 @@ function countWordOverlap(wordsA, wordsB) {
  * Normalize title text for matching: strip section numbers,
  * "appendix" prefix, punctuation, and lowercase.
  */
-function normalizeForMatch(text) {
+function normalizeForMatch(text: string): string {
   return text
     .replace(SECTION_NUMBER_STRIP, "")
     .replace(/^appendix\s*/i, "")
@@ -296,7 +358,7 @@ function normalizeForMatch(text) {
  * Extract appendix letter from a title if it is an appendix heading.
  * Returns uppercase letter or null.
  */
-function extractAppendixLetter(title) {
+function extractAppendixLetter(title: string): string | null {
   // Explicit: "Appendix A", "Appendix A: Proofs"
   const explicit = title.match(/appendix\s+([A-Z])/i);
   if (explicit) return explicit[1].toUpperCase();
@@ -315,7 +377,10 @@ function extractAppendixLetter(title) {
 // Heuristic Outline Building
 // ============================================
 
-function buildHeuristicOutline(textIndex, titleInfo) {
+function buildHeuristicOutline(
+  textIndex: DocumentTextIndex,
+  titleInfo: DocumentMetadata,
+): OutlineItem[] {
   if (!textIndex) return [];
 
   const candidates = collectHeadingCandidates(textIndex, titleInfo);
@@ -328,24 +393,11 @@ function buildHeuristicOutline(textIndex, titleInfo) {
   return purgeReferenceChildren(outline);
 }
 
-/**
- * @typedef {Object} HeadingCandidate
- * @property {string} text
- * @property {string} title
- * @property {number} pageNumber
- * @property {number} pageIndex
- * @property {number} x
- * @property {number} y
- * @property {number} top
- * @property {number} fontSize
- * @property {number} fontStyle
- * @property {string|null} numberPrefix
- * @property {number} numberDepth
- * @property {boolean} isNumbered
- */
-
-function collectHeadingCandidates(textIndex, titleInfo) {
-  const candidates = [];
+function collectHeadingCandidates(
+  textIndex: DocumentTextIndex,
+  titleInfo: DocumentMetadata,
+): HeadingCandidate[] {
+  const candidates: HeadingCandidate[] = [];
   const {
     fontSize: bodyFontSize,
     fontStyle: bodyFontStyle,
@@ -403,7 +455,7 @@ function collectHeadingCandidates(textIndex, titleInfo) {
   return candidates;
 }
 
-function isCommonSectionName(text) {
+function isCommonSectionName(text: string): boolean {
   if (!text || text.length < 2 || !/^[A-Z]/.test(text)) return false;
 
   const stripped = text.replace(SECTION_NUMBER_STRIP, "").trim().toLowerCase();
@@ -414,20 +466,20 @@ function isCommonSectionName(text) {
 }
 
 function analyzeLineAsHeading(
-  line,
-  pageNum,
-  bodyFontSize,
-  bodyLineHeight,
-  bodyLineWidth,
-  headerHeight,
-  footerHeight,
-) {
+  line: TextLine,
+  pageNum: number,
+  bodyFontSize: number,
+  bodyLineHeight: number,
+  bodyLineWidth: number,
+  headerHeight: number,
+  footerHeight: number,
+): HeadingCandidate | null {
   const text = line.text?.trim();
   if (!text || text.length < 5 || text.length > 100) return null;
   if (line.lineHeight > 40) return null;
 
   const isNumbered = NUMBERED_SECTION_PATTERN.test(text);
-  let numberPrefix = null;
+  let numberPrefix: string | null = null;
   let numberDepth = 0;
 
   const weirdPosition = line.y < footerHeight || line.y > headerHeight;
@@ -513,14 +565,14 @@ function analyzeLineAsHeading(
   };
 }
 
-function calculateNumberDepth(prefix) {
+function calculateNumberDepth(prefix: string | null): number {
   if (!prefix) return 0;
   const dotCount = (prefix.match(/\./g) || []).length;
   if (dotCount === 0) return 1;
   return prefix.replace(/\.$/, "").split(".").length;
 }
 
-function isTitleCase(text) {
+function isTitleCase(text: string): boolean {
   if (!text || text.length < 5) return false;
   const words = text.split(/[\s .]+/);
   if (words.length < 2) return false;
@@ -528,7 +580,9 @@ function isTitleCase(text) {
   return upperWords.length >= words.length * 0.6;
 }
 
-function assignHeadingLevels(candidates) {
+function assignHeadingLevels(
+  candidates: HeadingCandidate[],
+): Array<HeadingCandidate & { level: number }> {
   if (candidates.length === 0) return [];
 
   // Phase 1: Collect all line heights and cluster into tiers
@@ -537,7 +591,8 @@ function assignHeadingLevels(candidates) {
   const tiers = clusterSizes(uniqueHeights);
 
   // Phase 2: For each tier, compute depth offsets for numbered candidates
-  const tierMinDepths = new Map(); // tierIndex -> minimum numberDepth in that tier
+  /** tierIndex -> minimum numberDepth in that tier. */
+  const tierMinDepths = new Map<number, number>();
   for (const c of candidates) {
     if (!c.isNumbered || !c.numberDepth) continue;
     const h = Math.round(c.fontSize * 10) / 10;
@@ -591,14 +646,14 @@ function assignHeadingLevels(candidates) {
 /**
  * Cluster nearby font sizes into tiers.
  *
- * @param {number[]} sortedSizes - unique sizes sorted descending
- * @returns {Map<number, number>} map from rounded size to tier index (1-based)
+ * @param sortedSizes unique sizes sorted descending
+ * @returns map from rounded size to tier index (1-based)
  */
-function clusterSizes(sortedSizes) {
+function clusterSizes(sortedSizes: number[]): Map<number, number> {
   if (sortedSizes.length === 0) return new Map();
 
   const RELATIVE_THRESHOLD = 0.1;
-  const sizeToTier = new Map();
+  const sizeToTier = new Map<number, number>();
   let tierIndex = 1;
   let clusterAnchor = sortedSizes[0];
 
@@ -648,29 +703,29 @@ export const ROMAN_NUMERAL_MAP = {
   XXV: 25,
 };
 
-export function parseRomanNumeral(str) {
-  const upper = str.toUpperCase();
+export function parseRomanNumeral(str: string): number | null {
+  const upper = str.toUpperCase() as keyof typeof ROMAN_NUMERAL_MAP;
   if (ROMAN_NUMERAL_MAP[upper] !== undefined) {
     return ROMAN_NUMERAL_MAP[upper];
   }
   return null;
 }
 
-function parseLetter(str) {
+function parseLetter(str: string): number | null {
   if (/^[A-Z]$/i.test(str)) {
     return str.toUpperCase().charCodeAt(0) - 64;
   }
   return null;
 }
 
-function parsePrefix(prefix) {
+function parsePrefix(prefix: string | null): number[] {
   if (!prefix) return [];
 
   const cleaned = prefix.replace(/\.$/, "").trim();
   if (!cleaned) return [];
 
   const parts = cleaned.split(".");
-  const components = [];
+  const components: number[] = [];
 
   for (const part of parts) {
     const trimmed = part.trim();
@@ -700,7 +755,10 @@ function parsePrefix(prefix) {
   return components;
 }
 
-function isPrefixCompatible(parentComponents, childComponents) {
+function isPrefixCompatible(
+  parentComponents: number[],
+  childComponents: number[],
+): boolean {
   if (childComponents.length <= parentComponents.length) {
     return false;
   }
@@ -714,23 +772,18 @@ function isPrefixCompatible(parentComponents, childComponents) {
   return true;
 }
 
-/**
- * Build tree structure from flat leveled candidates
- * @param {Array<HeadingCandidate & {level: number}>} candidates
- * @returns {OutlineItem[]}
- */
-function buildOutlineTree(candidates) {
+/** Build tree structure from flat leveled candidates. */
+function buildOutlineTree(
+  candidates: Array<HeadingCandidate & { level: number }>,
+): OutlineItem[] {
   if (candidates.length === 0) return [];
 
   const filtered = candidates.filter((c) => {
     if (!c.numberPrefix) return true;
     const components = parsePrefix(c.numberPrefix);
-    if (
-      components.length > 0 &&
-      /\d+/.test(components[0]) &&
-      components[0] >= 500
-    )
-      return false;
+    // A leading component this large is a year or an equation number that got
+    // mistaken for a section prefix, not a real section.
+    if (components.length > 0 && components[0] >= 500) return false;
     return true;
   });
 
@@ -741,14 +794,18 @@ function buildOutlineTree(candidates) {
     a.pageIndex !== b.pageIndex ? a.pageIndex - b.pageIndex : 0,
   );
 
-  const root = { children: [] };
-  const stack = [{ node: root, level: 0, components: [] }];
-  const seenTopLevel = new Set();
+  const root: { children: OutlineItem[] } = { children: [] };
+  const stack: Array<{
+    node: { children: OutlineItem[] };
+    level: number;
+    components: number[];
+  }> = [{ node: root, level: 0, components: [] }];
+  const seenTopLevel = new Set<number>();
 
   for (const candidate of sorted) {
     const childComponents = parsePrefix(candidate.numberPrefix);
 
-    const item = {
+    const item: OutlineItem = {
       id: crypto.randomUUID(),
       title: candidate.title,
       pageIndex: candidate.pageIndex,
@@ -801,11 +858,11 @@ function buildOutlineTree(candidates) {
   return root.children;
 }
 
-function purgeReferenceChildren(outline) {
+function purgeReferenceChildren(outline: OutlineItem[]): OutlineItem[] {
   const REFERENCE_PATTERN =
     /^(?:\d+\.?\s+)?(?:references?|bibliography|works cited|citations?)$/i;
 
-  function processNode(node) {
+  function processNode(node: OutlineItem) {
     const titleToCheck = node.title.replace(SECTION_NUMBER_STRIP, "").trim();
     if (REFERENCE_PATTERN.test(titleToCheck)) {
       node.children = [];
@@ -826,16 +883,20 @@ function purgeReferenceChildren(outline) {
 /**
  * Detect document title and abstract from first pages
  *
- * @param {import('./text_index.js').DocumentTextIndex} textIndex
- * @returns {{title: string|null, lines: Object[]|null, abstractInfo: Object|null}}
  */
-export function detectDocumentMetadata(textIndex) {
+export function detectDocumentMetadata(
+  textIndex: DocumentTextIndex,
+): DocumentMetadata {
   if (!textIndex) return { title: null, lines: null, abstractInfo: null };
 
-  const result = { title: null, lines: null, abstractInfo: null };
+  const result: DocumentMetadata = {
+    title: null,
+    lines: null,
+    abstractInfo: null,
+  };
   const pagesToScan = Math.min(3, textIndex.getPageCount?.() || 2);
-  const allLines = [];
-  const allFontSizes = [];
+  const allLines: MetadataLine[] = [];
+  const allFontSizes: number[] = [];
 
   for (let pageNum = 1; pageNum <= pagesToScan; pageNum++) {
     const data = textIndex.getPageData?.(pageNum);
@@ -859,9 +920,9 @@ export function detectDocumentMetadata(textIndex) {
   return result;
 }
 
-function findMostCommonFontSize(fontSizes) {
+function findMostCommonFontSize(fontSizes: number[]): number {
   const rounded = fontSizes.map((s) => Math.round(s * 10) / 10);
-  const counts = new Map();
+  const counts = new Map<number, number>();
   for (const size of rounded) {
     counts.set(size, (counts.get(size) || 0) + 1);
   }
@@ -876,7 +937,10 @@ function findMostCommonFontSize(fontSizes) {
   return mostCommon;
 }
 
-function detectTitle(allLines, bodyFontSize) {
+function detectTitle(
+  allLines: MetadataLine[],
+  bodyFontSize: number,
+): { title: string | null; lines: MetadataLine[] } | null {
   const page1Lines = allLines.filter((line) => line.pageNum === 1);
   if (page1Lines.length === 0) return null;
 
@@ -897,7 +961,13 @@ function detectTitle(allLines, bodyFontSize) {
       (a, b) => (b.fontSize || 0) - (a.fontSize || 0),
     );
     if (sortedBySize.length > 0 && sortedBySize[0].fontSize > bodyFontSize) {
-      return cleanTitleText(sortedBySize[0].text);
+      // Must be the same shape as every other return: `detectDocumentMetadata`
+      // Object.assign()s this, and a bare string would spread as character
+      // indices and leave `title` null.
+      return {
+        title: cleanTitleText(sortedBySize[0].text),
+        lines: [sortedBySize[0]],
+      };
     }
     return null;
   }
@@ -909,7 +979,7 @@ function detectTitle(allLines, bodyFontSize) {
   });
 
   const maxFontSize = Math.max(...largeFontLines.map((l) => l.lineHeight || 0));
-  const titleLines = [];
+  const titleLines: MetadataLine[] = [];
   let foundTitleBlock = false;
 
   for (const line of largeFontLines) {
@@ -949,7 +1019,7 @@ function detectTitle(allLines, bodyFontSize) {
   return { title: cleanTitleText(title), lines: titleLines };
 }
 
-function cleanTitleText(text) {
+function cleanTitleText(text: string): string | null {
   if (!text) return null;
   let cleaned = text
     .trim()
@@ -961,7 +1031,10 @@ function cleanTitleText(text) {
   return cleaned;
 }
 
-function detectAbstract(allLines, bodyFontSize) {
+function detectAbstract(
+  allLines: MetadataLine[],
+  bodyFontSize: number,
+): DocumentMetadata["abstractInfo"] {
   for (const line of allLines) {
     const text = line.text?.trim() || "";
     const stripped = text.replace(SECTION_NUMBER_STRIP, "").trim();

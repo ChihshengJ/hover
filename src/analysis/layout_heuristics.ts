@@ -4,28 +4,50 @@
  * Nothing here touches PDFium or WASM: the input is a plain array of character
  * records, so this module can be exercised against a recorded page without a
  * WASM instance.
- *
- * @typedef {Object} CharBox
- * @property {number} left
- * @property {number} right
- * @property {number} bottom
- * @property {number} top
- * @property {number} width
- * @property {number} height
- *
- * @typedef {Object} CharRecord
- * @property {number} charCode - Unicode code point
- * @property {CharBox|null} box - null when PDFium reports no box
- *
- * @typedef {Object} TextRun
- * @property {number} startIndex - Index of the run's first character
- * @property {number} endIndex - Index of the run's last character, trailing included
- * @property {string} content - Visible text plus any trailing whitespace/control chars
- * @property {number} left
- * @property {number} top
- * @property {number} width
- * @property {number} height
  */
+
+export interface CharBox {
+  left: number;
+  right: number;
+  bottom: number;
+  top: number;
+  width: number;
+  height: number;
+}
+
+export interface CharRecord {
+  /** Unicode code point. */
+  charCode: number;
+  /** null when PDFium reports no box. */
+  box: CharBox | null;
+}
+
+export interface TextRun {
+  /** Index of the run's first character. */
+  startIndex: number;
+  /** Index of the run's last character, trailing included. */
+  endIndex: number;
+  /** Visible text plus any trailing whitespace/control chars. */
+  content: string;
+  left: number;
+  top: number;
+  width: number;
+  height: number;
+}
+
+/** A run under construction, before `finish()` turns it into a `TextRun`. */
+interface PartialRun {
+  startIndex: number;
+  endIndex: number;
+  chars: string[];
+  trailingChars: string[];
+  left: number;
+  top: number;
+  right: number;
+  bottom: number;
+  maxHeight: number;
+  lastVisibleCharCode: number;
+}
 
 /**
  * Tunables for grouping characters into runs.
@@ -61,11 +83,8 @@ export const RULE_HEURISTICS = Object.freeze({
  * 2.6.1 — it now reports the document's real NBSP/EN/EM/THIN spaces instead of
  * normalising them. They must count as whitespace: treated as visible glyphs
  * they pull a run's right edge out to the following word.
- *
- * @param {number} code
- * @returns {boolean}
  */
-export const isUnicodeSpace = (code) =>
+export const isUnicodeSpace = (code: number): boolean =>
   code === 0x20 || // SPACE
   code === 0xa0 || // NO-BREAK SPACE
   code === 0x1680 || // OGHAM SPACE MARK
@@ -74,11 +93,7 @@ export const isUnicodeSpace = (code) =>
   code === 0x205f || // MEDIUM MATHEMATICAL SPACE
   code === 0x3000; // IDEOGRAPHIC SPACE
 
-/**
- * @param {number} code
- * @returns {boolean}
- */
-export const isCJK = (code) =>
+export const isCJK = (code: number): boolean =>
   (code >= 0x4e00 && code <= 0x9fff) || // CJK Unified Ideographs
   (code >= 0x3400 && code <= 0x4dbf) || // CJK Extension A
   (code >= 0x20000 && code <= 0x2a6df) || // CJK Extension B
@@ -89,15 +104,15 @@ export const isCJK = (code) =>
   (code >= 0xff00 && code <= 0xffef) || // Fullwidth Forms
   (code >= 0xac00 && code <= 0xd7af); // Hangul Syllables
 
-const isNewlineCode = (code) => code === 10 || code === 13;
-const isDigitCode = (code) => code >= 48 && code <= 57;
+const isNewlineCode = (code: number) => code === 10 || code === 13;
+const isDigitCode = (code: number) => code >= 48 && code <= 57;
 
 /** Letters, plus everything above ASCII, which is alphabetic for our purposes. */
-const isAlphaCode = (code) =>
+const isAlphaCode = (code: number) =>
   (code >= 65 && code <= 90) || (code >= 97 && code <= 122) || code > 127;
 
 /** Sentence punctuation that can neighbour a superscript digit: , . ; : */
-const isPunctCode = (code) =>
+const isPunctCode = (code: number) =>
   code === 44 || code === 46 || code === 59 || code === 58;
 
 /**
@@ -106,13 +121,12 @@ const isPunctCode = (code) =>
  * Used to pick out header/footer separators from among a page's path objects.
  * The test is on bounds rather than segment structure because rules are drawn
  * both as two-segment strokes and as very thin filled rectangles.
- *
- * @param {number} width
- * @param {number} height
- * @param {typeof RULE_HEURISTICS} [tunables]
- * @returns {boolean}
  */
-export function isRuleLikeBounds(width, height, tunables = RULE_HEURISTICS) {
+export function isRuleLikeBounds(
+  width: number,
+  height: number,
+  tunables: typeof RULE_HEURISTICS = RULE_HEURISTICS,
+): boolean {
   const { MAX_THICKNESS, MIN_LENGTH } = tunables;
   return (
     (height < MAX_THICKNESS && width > MIN_LENGTH) ||
@@ -128,12 +142,13 @@ export function isRuleLikeBounds(width, height, tunables = RULE_HEURISTICS) {
  * control characters never extend a run's box; they are appended to the
  * preceding run's content so the text still reconstructs by concatenation.
  *
- * @param {CharRecord[]} chars - Page characters in PDFium's reading order
- * @param {typeof RUN_HEURISTICS} [tunables]
- * @returns {TextRun[]}
+ * @param chars Page characters in PDFium's reading order
  */
-export function groupCharsIntoRuns(chars, tunables = RUN_HEURISTICS) {
-  const runs = [];
+export function groupCharsIntoRuns(
+  chars: CharRecord[],
+  tunables: typeof RUN_HEURISTICS = RUN_HEURISTICS,
+): TextRun[] {
+  const runs: TextRun[] = [];
   if (!chars || chars.length === 0) return runs;
 
   const {
@@ -145,9 +160,13 @@ export function groupCharsIntoRuns(chars, tunables = RUN_HEURISTICS) {
     MAX_RUN_HEIGHT,
   } = tunables;
 
-  let current = null;
+  let current: PartialRun | null = null;
 
-  const startRun = (index, charCode, box) => ({
+  const startRun = (
+    index: number,
+    charCode: number,
+    box: CharBox,
+  ): PartialRun => ({
     startIndex: index,
     endIndex: index,
     chars: [String.fromCodePoint(charCode)],

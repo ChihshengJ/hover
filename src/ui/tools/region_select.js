@@ -358,9 +358,12 @@ export class RegionSelectController {
       const bufferPtr = pdfium.FPDFBitmap_GetBuffer(bitmapPtr);
       if (!bufferPtr) return null;
 
-      const src = pdfium.pdfium.HEAPU8.subarray(
+      // Go through the FFI's heap accessor rather than reaching for HEAPU8
+      // directly: @embedpdf/pdfium omits the Emscripten heap views from its
+      // module type, and PdfiumFFI is where that gap is papered over once.
+      const src = handle.extractor.reader.ffi.bytes(
         bufferPtr,
-        bufferPtr + bitmapH * stride,
+        bitmapH * stride,
       );
       const rgba = new Uint8ClampedArray(bitmapW * bitmapH * 4);
 

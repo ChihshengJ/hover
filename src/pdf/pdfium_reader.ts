@@ -7,30 +7,36 @@
  */
 
 import { PAGEOBJ, PdfiumFFI } from "./pdfium_ffi.js";
+import type { WrappedPdfiumModule } from "@embedpdf/pdfium";
+import type {
+  CharBox,
+  CharRecord,
+} from "../analysis/layout_heuristics.js";
 
-/**
- * @typedef {import('../analysis/layout_heuristics.js').CharBox} CharBox
- * @typedef {import('../analysis/layout_heuristics.js').CharRecord} CharRecord
- */
+/** A page-object bounding box in PDF coordinates (bottom-left origin). */
+export interface ObjectBounds {
+  left: number;
+  bottom: number;
+  right: number;
+  top: number;
+}
 
 export class PdfiumPageReader {
-  /** @type {import('@embedpdf/pdfium').WrappedPdfiumModule} */
-  #pdfium;
-
-  /** @type {PdfiumFFI} */
-  #ffi;
+  #pdfium: WrappedPdfiumModule;
+  #ffi: PdfiumFFI;
 
   /**
-   * @param {import('@embedpdf/pdfium').WrappedPdfiumModule} pdfiumModule
-   * @param {PdfiumFFI} [ffi] - share one when several readers use a module
+   * @param ffi share one when several readers use a module
    */
-  constructor(pdfiumModule, ffi = new PdfiumFFI(pdfiumModule)) {
+  constructor(
+    pdfiumModule: WrappedPdfiumModule,
+    ffi: PdfiumFFI = new PdfiumFFI(pdfiumModule),
+  ) {
     this.#pdfium = pdfiumModule;
     this.#ffi = ffi;
   }
 
-  /** @returns {PdfiumFFI} */
-  get ffi() {
+  get ffi(): PdfiumFFI {
     return this.#ffi;
   }
 
@@ -43,25 +49,31 @@ export class PdfiumPageReader {
   // Page lifecycle
   // ==========================================================================
 
-  /**
-   * @param {number} docPtr
-   * @param {number} pageIndex - 0-based
-   * @param {(ctx: {pagePtr: number, pageWidth: number, pageHeight: number}) => T} fn
-   * @returns {T|null}
-   * @template T
-   */
-  withPage(docPtr, pageIndex, fn) {
+  /** @param pageIndex 0-based */
+  withPage<T>(
+    docPtr: number,
+    pageIndex: number,
+    fn: (ctx: {
+      pagePtr: number;
+      pageWidth: number;
+      pageHeight: number;
+    }) => T,
+  ): T | null {
     return this.#ffi.withPage(docPtr, pageIndex, fn);
   }
 
-  /**
-   * @param {number} docPtr
-   * @param {number} pageIndex - 0-based
-   * @param {(ctx: {pagePtr: number, textPagePtr: number, pageWidth: number, pageHeight: number, charCount: number}) => T} fn
-   * @returns {T|null}
-   * @template T
-   */
-  withTextPage(docPtr, pageIndex, fn) {
+  /** @param pageIndex 0-based */
+  withTextPage<T>(
+    docPtr: number,
+    pageIndex: number,
+    fn: (ctx: {
+      pagePtr: number;
+      textPagePtr: number;
+      pageWidth: number;
+      pageHeight: number;
+      charCount: number;
+    }) => T,
+  ): T | null {
     return this.#ffi.withTextPage(docPtr, pageIndex, fn);
   }
 
@@ -80,12 +92,12 @@ export class PdfiumPageReader {
    * no terminator, so UTF16ToString reads past the buffer. Don't "simplify"
    * this back.
    *
-   * @param {number} textPagePtr
-   * @param {number} startIndex
-   * @param {number} count
-   * @returns {string}
    */
-  readText(textPagePtr, startIndex, count) {
+  readText(
+    textPagePtr: number,
+    startIndex: number,
+    count: number,
+  ): string {
     if (count <= 0) return "";
     const pdfium = this.#pdfium;
 
@@ -103,11 +115,8 @@ export class PdfiumPageReader {
   /**
    * Bounding box of one character, in PDF coordinates (bottom-left origin).
    *
-   * @param {number} textPagePtr
-   * @param {number} charIndex
-   * @returns {CharBox|null}
    */
-  readCharBox(textPagePtr, charIndex) {
+  readCharBox(textPagePtr: number, charIndex: number): CharBox | null {
     const pdfium = this.#pdfium;
 
     const box = this.#ffi.readF64Out(4, (l, r, b, t) =>
@@ -129,15 +138,12 @@ export class PdfiumPageReader {
   /**
    * Read every character on a text page as {charCode, box} records.
    *
-   * @param {number} textPagePtr
-   * @param {number} charCount
-   * @returns {CharRecord[]}
    */
-  readChars(textPagePtr, charCount) {
+  readChars(textPagePtr: number, charCount: number): CharRecord[] {
     const pdfium = this.#pdfium;
     if (charCount <= 0) return [];
 
-    const chars = new Array(charCount);
+    const chars: CharRecord[] = new Array(charCount);
     for (let i = 0; i < charCount; i++) {
       chars[i] = {
         charCode: pdfium.FPDFText_GetUnicode(textPagePtr, i),
@@ -150,15 +156,16 @@ export class PdfiumPageReader {
   /**
    * Bounding rectangles for a character range, converted to a top-left origin.
    *
-   * @param {number} textPagePtr
-   * @param {number} startCharIndex
-   * @param {number} charCount
-   * @param {number} pageHeight - for the Y flip
-   * @returns {Array<{x: number, y: number, width: number, height: number}>}
+   * @param pageHeight for the Y flip
    */
-  readTextRects(textPagePtr, startCharIndex, charCount, pageHeight) {
+  readTextRects(
+    textPagePtr: number,
+    startCharIndex: number,
+    charCount: number,
+    pageHeight: number,
+  ): Rect[] {
     const pdfium = this.#pdfium;
-    const rects = [];
+    const rects: Rect[] = [];
 
     const rectCount = pdfium.FPDFText_CountRects(
       textPagePtr,
@@ -187,11 +194,11 @@ export class PdfiumPageReader {
   /**
    * Font size and family for the character at `charIndex`.
    *
-   * @param {number} textPagePtr
-   * @param {number} charIndex
-   * @returns {{size: number, family: string|null}}
    */
-  readFontInfo(textPagePtr, charIndex) {
+  readFontInfo(
+    textPagePtr: number,
+    charIndex: number,
+  ): { size: number; family: string | null } {
     const pdfium = this.#pdfium;
     const size = pdfium.FPDFText_GetFontSize(textPagePtr, charIndex);
 
@@ -229,10 +236,8 @@ export class PdfiumPageReader {
   /**
    * Bounding box of a page object via FPDFPageObj_GetBounds.
    *
-   * @param {number} objPtr
-   * @returns {{left: number, bottom: number, right: number, top: number}|null}
    */
-  readObjectBounds(objPtr) {
+  readObjectBounds(objPtr: number): ObjectBounds | null {
     const pdfium = this.#pdfium;
 
     const bounds = this.#ffi.readF32Out(4, (l, b, r, t) =>
@@ -249,13 +254,12 @@ export class PdfiumPageReader {
    * objects. Unfiltered and in document order; deciding which ones read as
    * rules is a layout question.
    *
-   * @param {number} containerPtr - Page or form object pointer
-   * @param {boolean} [isForm] - Whether containerPtr is a form object
-   * @returns {Array<{left: number, bottom: number, right: number, top: number}>}
+   * @param containerPtr Page or form object pointer
+   * @param isForm Whether containerPtr is a form object
    */
-  readPathBounds(containerPtr, isForm = false) {
+  readPathBounds(containerPtr: number, isForm = false): ObjectBounds[] {
     const pdfium = this.#pdfium;
-    const bounds = [];
+    const bounds: ObjectBounds[] = [];
 
     const count = isForm
       ? pdfium.FPDFFormObj_CountObjects(containerPtr)

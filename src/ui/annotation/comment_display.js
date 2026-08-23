@@ -1,6 +1,10 @@
 export class CommentDisplay {
   /** @type {import('../../viewer/viewpane.js').ViewerPane} */
-  #pane = null;
+  /** @type {import('./host.js').AnnotationHost} */
+  #host = null;
+
+  /** @type {{onEditComment: Function, onDeleteComment: Function, onSelect: Function}} */
+  #handlers = null;
 
   /** @type {HTMLElement} */
   #container = null;
@@ -15,23 +19,29 @@ export class CommentDisplay {
   #expandedCommentId = null;
 
   /**
-   * @param {import('../../viewer/viewpane.js').ViewerPane} pane
+   * @param {import('./host.js').AnnotationHost} host
+   * @param {{
+   *   onEditComment: (annotationId: string) => void,
+   *   onDeleteComment: (annotationId: string) => void,
+   *   onSelect: (annotationId: string) => void,
+   * }} handlers
    */
-  constructor(pane) {
-    this.#pane = pane;
+  constructor(host, handlers) {
+    this.#host = host;
+    this.#handlers = handlers;
     this.#createContainer();
   }
 
   #createContainer() {
     this.#container = document.createElement("div");
     this.#container.className = "comments-container";
-    this.#pane.stage.appendChild(this.#container);
+    this.#host.getStage().appendChild(this.#container);
   }
 
   #checkCollapsedMode() {
-    const scrollerWidth = this.#pane.scroller.clientWidth;
+    const scrollerWidth = this.#host.getScroller().clientWidth;
 
-    const firstPage = this.#pane.pages[0];
+    const firstPage = this.#host.getPages()[0];
     if (!firstPage) return;
     const pageWidth = firstPage.wrapper.offsetWidth;
     const shouldCollapse = pageWidth >= scrollerWidth - 150;
@@ -126,7 +136,7 @@ export class CommentDisplay {
       .querySelector(".comment-edit-btn")
       .addEventListener("click", (e) => {
         e.stopPropagation();
-        this.#pane.editAnnotationComment?.(annotation.id);
+        this.#handlers.onEditComment(annotation.id);
       });
 
     // Delete comment button (only deletes comment, not annotation)
@@ -134,12 +144,12 @@ export class CommentDisplay {
       .querySelector(".comment-delete-btn")
       .addEventListener("click", (e) => {
         e.stopPropagation();
-        this.#pane.deleteAnnotationComment?.(annotation.id);
+        this.#handlers.onDeleteComment(annotation.id);
       });
 
     // Click on card to select annotation
     element.addEventListener("click", () => {
-      this.#pane.selectAnnotation?.(annotation.id);
+      this.#handlers.onSelect(annotation.id);
     });
   }
 
@@ -171,14 +181,14 @@ export class CommentDisplay {
     const element = this.#commentElements.get(annotationId);
     if (!element) return;
 
-    const annotation = this.#pane.document.getAnnotation(annotationId);
+    const annotation = this.#host.doc.getAnnotation(annotationId);
     if (!annotation) return;
 
     // Find the top of the annotation
     const firstPageRange = annotation.pageRanges[0];
     if (!firstPageRange) return;
 
-    const pageView = this.#pane.pages[firstPageRange.pageNumber - 1];
+    const pageView = this.#host.getPages()[firstPageRange.pageNumber - 1];
     if (!pageView) return;
 
     const layerHeight =
@@ -244,7 +254,7 @@ export class CommentDisplay {
   refresh() {
     this.#checkCollapsedMode();
     this.clear();
-    const annotations = this.#pane.document.getAllAnnotations();
+    const annotations = this.#host.doc.getAllAnnotations();
     for (const annotation of annotations) {
       if (annotation.comment) {
         this.addComment(annotation);

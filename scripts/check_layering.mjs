@@ -22,14 +22,13 @@ import { join, relative } from "node:path";
 
 /**
  * JSDoc-only references from analysis/ into pdf/ that are known and accepted.
- * Phase 5 removes the inline_extractor ones when the builders stop taking a
- * PDFium handle; PathObjectInfo is a plain geometry record that just happens
- * to be declared next to its producer.
+ *
+ * Empty, and worth keeping that way. Phase 5 retired the inline_extractor
+ * entries when the builders stopped taking a PDFium handle, and PathObjectInfo
+ * moved to src/types/index.d.ts, where a geometry record belongs. A new entry
+ * here should be an argued exception, not a convenience.
  */
-const ALLOWED_TYPE_REFS = new Set([
-  "src/analysis/inline_extractor.js -> ../pdf/text_extractor.js",
-  "src/analysis/text_index.js -> ../pdf/text_extractor.js",
-]);
+const ALLOWED_TYPE_REFS = new Set([]);
 
 const FROM_DIR = "src/analysis";
 const TO_DIR = "src/pdf";

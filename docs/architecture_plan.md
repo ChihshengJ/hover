@@ -3,6 +3,15 @@
 Written 2026-08-23 against `feat/engine-update` (efd138b). Two goals drive this
 plan, and they turn out to want the same refactor:
 
+> **Status.** Phases 1, 2, 5 and 6 have landed on `refactor-TS`, and Phase 7 has
+> landed for the engine half of the tree (`types/`, `platform/util/`,
+> `analysis/`, `pdf/`, `model/doc_events`). Every file path and line number
+> below describes the tree as of Phase 2 unless a phase section says otherwise.
+>
+> **3 and 4 were deliberately skipped**, at the cost recorded under "Skipping 3
+> and 4" below. They remain the next open items, and Phase 7 stops where it does
+> because of them.
+
 1. **Multiple reference sections per document** (roadmap item) — books with
    per-chapter bibliographies, proceedings, theses.
 2. **TypeScript**, for LSP tooling and to stop the JSDoc from silently rotting.
@@ -18,36 +27,41 @@ of work for (2).
 ## Current shape
 
 ```
-src/data/pdfium_*.js, text_extractor, image_extractor   PDFium FFI, raw glyphs
-src/data/text_index.js                                  ← the boundary object
-src/data/{reference,inline,citation,cross_reference,outline}_*.js
-src/data/{lexicon,layout_heuristics}.js                 pure analysis
-src/doc.js                                              model: handles + results + query API
-src/{viewpane,page,text_manager,window_manager}.js      render stack
-src/{controls,settings,annotation,trail}/               UI
+src/pdf/pdfium_{ffi,reader,init}.js, text_extractor,
+        image_extractor                                 PDFium FFI, raw glyphs
+src/analysis/text_index.js                              ← the boundary object
+src/analysis/{reference,inline,citation,cross_reference,outline}_*.js
+src/analysis/{lexicon,layout_heuristics}.js             pure analysis
+src/model/doc.js                                        model: handles + results + query API
+src/model/annotation_data.js                            annotation store
+src/viewer/{viewpane,page,text_manager,window_manager,
+        pointer_gesture}.js                             render stack
+src/ui/{controls,settings,annotation,trail,tools}/      UI
+src/platform/{ingest,util/base64}.js                    extension boundary (in-page half)
+src/main.js                                             entry point (index.html)
 background.js, content.js, popup.js  (repo root)        extension boundary
 ```
 
 Worth preserving as-is:
 
 - DOM access is confined to component constructors. Only `onboarding.js` (11
-  sites) and `file_menu.js` (5) reach out via `querySelector`. Everything else
-  owns its own elements.
+  sites), `file_menu.js` (3), `settings.js` (1) and `main.js` (1) reach out via
+  `document.querySelector`. Everything else owns its own elements.
 - No `window.*` globals anywhere.
 - `lexicon.js` as the single home for every regex and parse helper.
-- `controls/floating_toolbar/index.js` — option objects plus getter callbacks
+- `ui/controls/floating_toolbar/index.js` — option objects plus getter callbacks
   (`getPane: () => this.pane`). This is the pattern the rest of the render stack
   should converge on; see Phase 5.
 
 ---
 
-## Phase 1 — `checkJs`, and fix what it finds
+## Phase 1 — `checkJs`, and fix what it finds — **DONE**
 
 **Cost: ~1 day. No file renames. Do this first regardless of everything else.**
 
 74 of 77 source files already carry `@param`/`@typedef` JSDoc. Those annotations
 have never been verified by a compiler, and they have decayed. Confirmed broken
-today:
+at the time of writing — all six now fixed:
 
 | Location | Problem |
 |---|---|
@@ -57,6 +71,24 @@ today:
 | `src/data/citation_builder.js:480` | `@param {import('./doc.js')...}` — needs `../doc.js` |
 | `src/data/inline_extractor.js:1275` | same |
 | `src/data/cross_reference_builder.js:602` | same |
+
+`checkJs` turned up 480 errors in total. Beyond the annotation repairs, it
+surfaced live bugs the JSDoc had been hiding — a missing `assert` that made
+every pinch gesture throw, a `stopPropagation400` typo, a private
+`#selectAnnotation` that made the nav tree's call a silent no-op, an
+unreachable shift+minus zoom branch, an inconsistent sort comparator in
+`outline_builder`, a botched template-literal edit in `lexicon.js`, and a
+PDF.js-era save fallback that could never fire. See the Phase 1 commit for the
+full list.
+
+Two things were deliberately left standing rather than fixed:
+
+- **`navigation_tree.js` still calls PDF.js APIs** (`getPage`, `getViewport`,
+  `getAnnotations`, `getTextContent`, `getDestination`, `getPageIndex`) on a
+  PDFium `PdfDocumentObject`, which silently kills figure/table extraction.
+  Marked `FIXME(pdfium-migration)`; porting it is a feature decision.
+- **The two DOM expandos** are declared in `src/types/globals.d.ts` rather than
+  converted — see Phase 7.
 
 Steps:
 
@@ -73,22 +105,33 @@ Steps:
        "noEmit": true,
        "strict": false,
        "skipLibCheck": true,
-       "baseUrl": ".",
-       "paths": { "@/*": ["src/*"] }   // mirrors the Vite alias
+       "types": ["chrome"],
+       "paths": { "@/*": ["./src/*"] }   // mirrors the Vite alias
      },
-     "include": ["src/**/*", "background.js", "content.js", "popup.js", "vite.config.js"]
+     "include": ["src/**/*", "background.js", "content.js", "popup.js"]
    }
    ```
 
-2. `npm i -D typescript` and add `"typecheck": "tsc --noEmit"` to scripts.
+   Two departures from the sketch above, both forced. TypeScript resolved to
+   **7.x**, the native port, which has removed `baseUrl` — so `paths` targets
+   are written relative to the config file. And `vite.config.js` moved out to
+   its own `tsconfig.node.json`: it is the only file that runs under Node, and
+   pulling `@types/node` into the main program redeclares browser globals
+   (`setTimeout` returning a `Timeout` rather than a `number`).
+
+2. `bun add -d typescript @types/chrome` and add `"typecheck"` to scripts.
 3. Fix the table above, plus whatever else surfaces.
+4. `src/types/globals.d.ts` for the ambient declarations that have no JS
+   declaration site: Vite's `define` constants (`__APP_VERSION__`, `__TARGET__`,
+   `__LOCAL_WASM_ONLY__`), `*.css` side-effect imports, `navigator.userAgentData`,
+   and the two DOM expandos.
 
 Nothing about the build changes — `noEmit` means `tsc` is a linter here. Vite
 keeps doing exactly what it does now.
 
 ---
 
-## Phase 2 — split `src/data/` into `src/pdf/` and `src/analysis/`
+## Phase 2 — split `src/data/` into `src/pdf/` and `src/analysis/` — **DONE**
 
 **Mechanical. This is the step that unlocks testing.**
 
@@ -100,18 +143,92 @@ nearly clean already — `reference_builder.js` imports only `text_index` and
 src/pdf/          pdfium_ffi, pdfium_reader, text_extractor, image_extractor, pdfium_init
 src/analysis/     text_index, reference_builder, inline_extractor, citation_builder,
                   cross_reference_builder, outline_builder, lexicon, layout_heuristics
-src/model/        doc.js, annotation/annotation_data.js
+src/model/        doc.js, annotation_data.js
 src/viewer/       viewpane, page, text_manager, window_manager, pointer_gesture
 src/platform/     ingest, util/base64  (+ background.js, content.js, popup.js)
-src/ui/           controls/, settings/, annotation/ (view parts), trail/
+src/ui/           controls/, settings/, annotation/ (view parts), trail/, tools/
 ```
 
+`src/main.js` stays at the top level — `index.html` points at it — as does
+`src/types/`. Two calls the sketch left open: `annotation_data.js` sits flat in
+`src/model/` rather than in a one-file `model/annotation/`, and `src/tools/`
+went to `src/ui/tools/`.
+
 **The rule that makes this worth doing: `src/analysis/` may not import from
-`src/pdf/`.** `DocumentTextIndex` is the interface between them. Enforce it with
-an ESLint `no-restricted-imports` rule, or just a grep in CI.
+`src/pdf/`.** `DocumentTextIndex` is the interface between them. Enforced by
+`scripts/check_layering.mjs` (`bun run check:layers`, also folded into `bun run
+check` alongside typecheck) rather than ESLint, since the repo has no ESLint.
+
+It turned out the boundary was already clean: `src/analysis/` has **no**
+runtime import leaving the directory, so the whole reference/citation engine
+loads in plain Node with no wasm — verified by importing all eight modules.
+That is exactly what Phase 3 needs.
+
+Three JSDoc type-only references into `src/pdf/` survive. They are erased
+before runtime, so they cost nothing to execute, but they are still design
+dependencies — the check pins them to an allowlist so a new one has to be a
+deliberate decision:
+
+- `inline_extractor.js` → `PdfiumTextExtractor` (twice). Removed by Phase 5,
+  when the builders stop taking a PDFium handle.
+- `text_index.js` → `PathObjectInfo`. A plain geometry record that happens to
+  be declared next to its producer; Phase 7's `types.d.ts` is its real home.
 
 Also rename `pdfium-init.js` → `pdfium_init.js`; it's the only kebab-case file
 in a snake_case tree.
+
+The move was verified behaviour-neutral: a from-scratch chrome build produced
+the same main-chunk content hash as before it.
+
+---
+
+## Skipping 3 and 4 — what it cost
+
+Phases 5, 6 and 7 were executed ahead of 3 and 4, on the reasoning that 5 and 6
+are plumbing rather than parser work and the plan itself allows 4 and 5 to
+swap. That held, with three consequences worth writing down.
+
+**Phase 5 and 6 landed without the snapshots that exist to prove them neutral.**
+The translations were kept mechanical and the whole-program typecheck plus a
+three-target build stand in for them, but "the reference output did not move" is
+not something anyone has actually checked. That is the debt.
+
+**Phase 7 stopped at the model boundary.** Renaming a `.js` file to `.ts` makes
+TypeScript *stop reading its JSDoc* — annotations are honoured in `.js` files
+and ignored in `.ts` ones — so a rename without a real conversion silently
+deletes every parameter type in the file, and with `strict: false` nothing
+reports it. Every file renamed here had its JSDoc converted to TS syntax and is
+held to `noImplicitAny` by `tsconfig.strict.json`, which is what makes the
+rename a gain rather than a quiet loss. The remaining ~26k lines of `viewer/`
+and `ui/` are the same job at five times the size, and they are where the
+snapshots would be doing the most work.
+
+**The types were written for the single-section shape.** Phase 7's first step
+was meant to happen alongside 4b so that writing the types would surface the
+remaining single-section assumptions. Written against today's shape instead,
+`ReferenceIndex` in `src/analysis/reference_builder.ts` is a flat
+`{anchors, format, sectionStart, sectionEnd}` and Phase 4 will have to revise
+it. One thing did surface anyway: `RefIndex` (`src/types/index.d.ts`) is
+`number | string`, because the abbreviated format stores its key string where
+the JSDoc had always claimed a number. That is the same question `RefRef`
+answers in 4b, and it is now named.
+
+### Bugs the conversion surfaced
+
+Typing found four live defects the JSDoc had been hiding. Two were fixed; two
+are flagged in place because fixing them moves output that nothing yet pins.
+
+| Where | What | Status |
+|---|---|---|
+| `analysis/outline_builder.ts` `detectTitle()` | One branch returned a bare string where every other returns `{title, lines}`. `Object.assign` then spread it as character indices, so a detected title was silently dropped and the metadata object was polluted with numeric keys. | **fixed** |
+| `analysis/*` `refIndices` | Declared `number[]`; the abbreviated-citation path has always stored key strings. Now `RefIndex[]`. | **fixed** |
+| `analysis/reference_builder.ts` `findReferenceSectionEnd()` | `/\d+/.test(line)` tests the line *object*, so `isAllCapital` is always false and never contributes to where a section ends. | `FIXME(reference-detection)` — fixing it moves section boundaries |
+| `viewer/page.js` text layer | `line.font?.family` — a `TextLine` has no `font`; the index reads the family off the raw slice and drops it when building lines. The invisible text layer has always been laid out in sans-serif. | `FIXME(text-layer-font)` — fixing it moves selection geometry |
+
+Two dead paths also came out: `CitationBuilder#organizeByPage` (no callers) and
+`PageView#renderImageOverlays` (both call sites already commented out, and the
+model half it read from no longer exists) — the latter parked alongside the rest
+of the image feature rather than deleted.
 
 ---
 
@@ -123,7 +240,7 @@ There are currently no tests. The reference/citation engine is parser code with
 three detection tiers, format heuristics and ~40 regexes in `lexicon.js`.
 Changing its scoping model blind is the main risk in this whole plan.
 
-After Phase 2, `src/analysis/` runs in Node with no wasm. So:
+After Phase 2, `src/analysis/` runs in Node with no wasm (confirmed). So:
 
 1. One-time: for each fixture PDF, run the PDFium half and serialize the
    resulting `DocumentTextIndex` to JSON in `test/fixtures/`.
@@ -152,27 +269,29 @@ database" — this is the cheap first version of it, and it runs in milliseconds
 
 Five places, traced:
 
-1. **`src/data/reference_builder.js:243`** — literally
+1. **`src/analysis/reference_builder.js:262`** — literally
    `// Currently only supports one reference section` before `break outerLoop`.
    All three detection tiers (outline / heading / backward-probe) return the
    first hit and stop.
 2. **`buildReferenceIndex()` returns one flat `{anchors, format, sectionStart,
-   sectionEnd}`** (`reference_builder.js:82-95`). One `format` for the whole
+   sectionEnd}`** (`reference_builder.js:101-114`). One `format` for the whole
    document — a book with per-chapter bibliographies can legitimately mix them.
+   Phase 1 gave that return value a `ReferenceIndex` typedef
+   (`reference_builder.js:22-31`), which is the thing 4b replaces.
 3. **`anchor.index` is a document-global number**, and
-   `findReferenceByIndex(anchors, index)` (`reference_builder.js:1127`) is
+   `findReferenceByIndex(anchors, index)` (`reference_builder.js:1146`) is
    `anchors.find(a => a.index === index)`. Two bibliographies both starting at
    `[1]` collide on the first lookup.
 4. **Three builders cache the section as two scalars** and test containment with
    `pageNum > start && pageNum <= end`:
-   - `citation_builder.js:59-61` and `:115-119`
-   - `cross_reference_builder.js:81-82`
-   - `inline_extractor.js:253-254`
+   - `citation_builder.js:64-65`, cached at `:78-80`, tested at `:135-136`
+   - `cross_reference_builder.js:58-59`, cached at `:80-82`
+   - `inline_extractor.js:260-262`, tested at `:268`
 5. **`citation.refIndices: number[]`** — a bare number can no longer identify a
    reference.
 
 Plus the model-level surface: `doc.getReferenceSectionBounds()`
-(`doc.js:606-612`) returns a single `{startPage, endPage}`.
+(`model/doc.js:610-616`) returns a single `{startPage, endPage}`.
 
 ### 4b. Target shape
 
@@ -197,7 +316,7 @@ interface ReferenceIndex {
 
   resolve(ref: RefRef): ReferenceAnchor | null;
   isInAnyReferenceSection(page: number): boolean;
-  get isUsable(): boolean;      // replaces the MIN_USABLE_REFERENCES check in doc.js:176
+  get isUsable(): boolean;      // replaces the MIN_USABLE_REFERENCES check in model/doc.js:181
 }
 ```
 
@@ -229,24 +348,24 @@ already shaped to receive it, with snapshots proving the shaping was neutral.
 
 ---
 
-## Phase 5 — the `doc` ↔ builder cycle
+## Phase 5 — the `doc` ↔ builder cycle — **DONE**
 
 Every analysis builder currently takes the whole model:
 
 ```js
-createInlineExtractor(doc)        // src/data/inline_extractor.js:1278
-createCitationBuilder(doc)        // src/data/citation_builder.js:483
-createCrossReferenceBuilder(doc)  // src/data/cross_reference_builder.js:605
+createInlineExtractor(doc)        // src/analysis/inline_extractor.js:1286
+createCitationBuilder(doc)        // src/analysis/citation_builder.js:502
+createCrossReferenceBuilder(doc)  // src/analysis/cross_reference_builder.js:605
 ```
 
-`doc.js` imports the builders; the builders import `doc.js` back. Each factory
-then pulls exactly 4 fields off it.
+`doc.js` imports the builders; the builders name `doc.js` back in JSDoc. Each
+factory then pulls exactly 4 fields off it.
 
 Meanwhile `doc.js` scatters results across eight mutable fields —
 `citationsByPage`, `citationDetails`, `crossRefsByPage`, `crossRefTargets`,
 `urlsByPage`, `outline`, `referenceIndex`, `detectedMetadata` — populated by two
-divergent code paths, `#buildInlineElements()` (`doc.js:381`) and
-`#buildNativeFallback()` (`doc.js:402`), which produce slightly different
+divergent code paths, `#buildInlineElements()` (`model/doc.js:385`) and
+`#buildNativeFallback()` (`model/doc.js:406`), which produce slightly different
 citation shapes.
 
 Replace with a pure pipeline producing one value object:
@@ -270,7 +389,36 @@ callable from the Phase 3 tests.
 
 ---
 
-## Phase 6 — interface cleanups
+### What landed
+
+`src/analysis/pipeline.js` → `.ts` owns both paths and returns one
+`DocumentAnalysis`. `PDFDocumentModel` holds `this.analysis` and exposes the old
+eight fields as getters, so no call site outside the model changed.
+
+Three things the sketch did not anticipate:
+
+- **`buildOutline()` was making a PDFium call.** It fetched bookmarks itself,
+  duplicating the fetch the model already did for its named destinations. It now
+  takes `bookmarks` and is synchronous and pure; the model fetches once. That,
+  plus `buildReferenceIndex()` having been `async` with nothing to await, makes
+  `analyzeDocument()` fully synchronous.
+- **The builders were not the only thing holding the model.** `DocumentTextIndex`
+  took `doc` too, for `numPages`, page sizes and the engine text fallback. It now
+  takes a `PageSource` (`src/analysis/text_index.ts`), and `InlineExtractor` a
+  `RawPageTextSource` (`src/analysis/inline_extractor.ts`). `src/pdf/page_source.ts`
+  is the only place either becomes a PDFium call. This is what makes the engine
+  constructible from a fixture — the whole pipeline now runs in Bun against a
+  synthetic `PageSource`, with no wasm and no model, which is what Phase 3 needs.
+- **One behaviour change.** Previously, a usable reference index with a missing
+  `lowLevelHandle` produced no citations at all and no warning; it now takes the
+  native fallback, like the insufficient-index case already did.
+
+`scripts/check_layering.mjs`'s allowlist is empty: `src/analysis/` has no
+reference into `src/pdf/`, runtime or type.
+
+---
+
+## Phase 6 — interface cleanups — **DONE**
 
 Independent of the above; do them opportunistically.
 
@@ -281,11 +429,11 @@ Independent of the above; do them opportunistically.
 more file unit-testable.
 
 **Type the event bus.** `doc.notify(event, data)` is stringly-typed;
-`viewpane.js:861` does `event.startsWith("annotation-")`. Make the event set an
-exported frozen const, the way `CitationFlags` already is.
+`viewer/viewpane.js:861` does `event.startsWith("annotation-")`. Make the event
+set an exported frozen const, the way `CitationFlags` already is.
 
 **Let non-pane components subscribe.** Only `ViewerPane` subscribes today, so
-`main.js:332-333` reaches in imperatively:
+`main.js:200-201` and `:332-333` reach in imperatively:
 
 ```js
 wm.toolbar?.navigationTree?.reinitialize();
@@ -295,34 +443,69 @@ wm.progressBar?.buildSectionMarks();
 That's `main.js` knowing the internals of two UI subtrees. If both subscribe to
 `index-ready`, those lines disappear.
 
-**Consolidate the pending-PDF contract.** `main.js` and `ingest.js` both declare
-`PENDING_DB_NAME`/`PENDING_DB_STORE`; `ingest.js` owns the write (`parkInPage`),
-`main.js` owns the read (`consumePendingPdf`, `main.js:29`). `ingest.js`'s own
-header comment says it exists to keep that contract in one place — so move
-`consumePendingPdf` and the whole source-resolution branch there as
-`resolvePdfSource()` (extension vs dev, pending vs URL vs background-park).
-`main.js` drops to roughly 150 lines: resolve → construct → wire.
+**Consolidate the pending-PDF contract.** `main.js:23-24` and
+`platform/ingest.js:14-15` both declare `PENDING_DB_NAME`/`PENDING_DB_STORE`;
+`ingest.js` owns the write (`parkInPage`, `:28`), `main.js` owns the read
+(`consumePendingPdf`, `main.js:29`). `ingest.js`'s own header comment says it
+exists to keep that contract in one place — so move `consumePendingPdf` and the
+whole source-resolution branch there as `resolvePdfSource()` (extension vs dev,
+pending vs URL vs background-park). `main.js` drops from 410 lines to roughly
+150: resolve → construct → wire.
 
-**One `Rect` type.** `{x, y, width, height}` is re-declared inline in 10 JSDoc
-sites across `text_extractor`, `pdfium_reader`, `image_extractor`,
-`inline_extractor`, `citation_builder` and `cross_reference_builder`. PDFium's
-`{origin, size}` shape is converted by hand in `citation_builder.js:165-170` and
-`doc.js:428-433`. One named `Rect` plus a `rectFromPdfium()` converter removes a
-whole class of bug.
+**One `Rect` type.** `{x, y, width, height}` is re-declared inline in 12 JSDoc
+sites across `pdf/text_extractor`, `pdf/pdfium_reader`, `pdf/image_extractor`,
+`analysis/inline_extractor`, `analysis/citation_builder`,
+`analysis/cross_reference_builder` and `ui/controls/search/search_controller`.
+PDFium's `{origin, size}` shape is converted by hand in
+`analysis/citation_builder.js:184-189` and `model/doc.js:432-437`. One named
+`Rect` plus a `rectFromPdfium()` converter removes a whole class of bug.
 
 ---
 
-## Phase 7 — the `.ts` renames
+### What landed
+
+All five bullets, plus what each surfaced:
+
+- **Option objects.** `PaneControls`, `PageView`, `AnnotationManager` and
+  `NavigationTree` take the slice of their parent they use, with getters for
+  anything read later (`getScroller` — `PaneControls` is built before the
+  scroller exists). `TextSelectionManager` turned out to take the whole pane and
+  never touch it, so it now takes nothing. The annotation layer went further: the
+  pane had been serving as an event bus between `AnnotationManager` and children
+  it constructs itself (`AnnotationSVGLayer` read back `pane.onAnnotationHover`
+  that the manager had assigned). Handlers now travel parent-to-child, and
+  `src/ui/annotation/host.js` names the pane surface the layer needs. The pane's
+  five callback fields survive only for the outside callers that use them
+  (the drawing controller, the navigation tree).
+- **Typed event bus.** `src/model/doc_events.ts`, `DocEvent` frozen const plus
+  `ANNOTATION_EVENTS`. Closing the set found `highlight-added`: nothing emitted
+  it, `doc.highlights` was never written, and its handler called a
+  `renderHightlights` that does not exist — dead, removed with the field.
+- **Non-pane subscribers.** `NavigationTree` and `ProgressBar` subscribe to
+  `index-ready`; `main.js` no longer reaches into two UI subtrees.
+- **Pending-PDF contract.** `resolvePdfSource()` in `src/platform/ingest.js` owns
+  every source (pending store → background park → direct fetch → dev default).
+  `main.js` is 410 → 262 lines: resolve → construct → wire, plus the status-message
+  table and the onboarding/trail composition, which are viewer concerns.
+- **One `Rect`.** `Rect`, `Point`, `PdfiumRect`, `PathObjectInfo`, `PageLocation`
+  and `RefIndex` are global in `src/types/index.d.ts`; `rectFromPdfium()` lives in
+  `src/analysis/geometry.ts` and replaced four hand-written conversions.
+
+---
+
+## Phase 7 — the `.ts` renames — **engine half done**
 
 Only after Phases 1–5. By then the types that matter already exist as JSDoc that
 compiles.
 
-1. **Write `src/types.d.ts` first** — `Rect`, `TextLine`, `PageData`,
+1. **Write `src/types/index.d.ts` first** — `Rect`, `TextLine`, `PageData`,
    `OutlineItem`, `ReferenceAnchor`, `ReferenceSection`, `RefRef`, `Citation`,
-   `CrossRef`. Do this alongside Phase 4b; writing the types is how the
-   remaining single-section assumptions surface.
-2. **Rename leaves-first:** `util/` → `lexicon` → `layout_heuristics` →
-   `pdfium_ffi` → `text_index` → builders → `doc.js` → UI last. Under
+   `CrossRef`, alongside the `globals.d.ts` Phase 1 added. Do this alongside
+   Phase 4b; writing the types is how the remaining single-section assumptions
+   surface. It is also where `PathObjectInfo` belongs, which retires the last
+   allowlisted `analysis/` → `pdf/` type reference.
+2. **Rename leaves-first:** `platform/util/` → `lexicon` → `layout_heuristics` →
+   `pdfium_ffi` → `text_index` → builders → `model/doc.js` → `ui/` last. Under
    `moduleResolution: "bundler"` the existing `./foo.js` imports resolve to
    `foo.ts` unchanged, so imports need no edits.
 3. **Enable `strict` per-directory** as each one lands. Leave `strictNullChecks`
@@ -331,15 +514,53 @@ compiles.
 
 ### Friction to expect
 
-- **DOM expando properties**, ~120 sites: `el._crossRefData` (`page.js:707`),
-  `imgRect._imageInfo`, plus `dataset` string round-trips. TS flags all of them.
-  Fix pattern is `WeakMap<Element, CrossRef>`, which is better code anyway — but
-  it is real work, so batch it.
+- **DOM expando properties**: `el._crossRefData` (`viewer/page.js:434` sets it,
+  `:707` and `:727` read it) and `imgRect._imageInfo` (`:335`). Phase 1 declared
+  both on `HTMLElement` in `src/types/globals.d.ts` to get to zero errors; the
+  real fix is `WeakMap<Element, CrossRef>`, which is better code anyway. The
+  `dataset` string round-trips are already handled — Phase 1 put `String()` on
+  every numeric write.
 - **`PdfiumFFI` pointer arithmetic** — type pointers as plain `number`. Branded
-  types are not worth it there.
+  types are not worth it there. Phase 1 added a `PdfiumHeaps` typedef and a
+  `#heap` getter for the HEAP views `@embedpdf/pdfium` omits from its own types.
 - **`Config.get(key)` is the best free win.** Typing it from `SCHEMA` via
   `keyof typeof SCHEMA` yields literal-typed config values and catches typo'd
-  keys across the 7 files that import it. Roughly 20 lines of type code.
+  keys across the 10 files that import it. Roughly 20 lines of type code.
+
+---
+
+### What landed
+
+`tsconfig.strict.json` is the mechanism: it extends the base config with
+`strict: true` (minus `strictNullChecks`) and `include`s only the subtrees that
+have been converted. `bun run typecheck` runs the permissive whole-program check,
+then the strict tier, then the Node tier — so a converted file is held to both
+and an unconverted one cannot quietly regress the tier.
+
+Converted and strict-clean, leaves first as planned:
+
+    src/types/          Rect, Point, PdfiumRect, PathObjectInfo, PageLocation, RefIndex
+    src/platform/util/  base64
+    src/analysis/       all ten modules, ~7.2k lines
+    src/pdf/            all six modules, ~1.6k lines
+    src/model/          doc_events
+
+Left as `.js`: `model/doc`, `model/annotation_data`, `platform/ingest`,
+`viewer/`, `ui/`, `main.js`, and the three root extension entry points. The
+order to continue in is unchanged — `model/` next, `ui/` last — and the reason
+to stop here is under "Skipping 3 and 4" above.
+
+Friction, against what was expected:
+
+- **`Config.get(key)` typed from `SCHEMA`** is still the best free win, and is
+  still unclaimed — `ui/settings/config.js` has not been converted.
+- **The DOM expandos** are still declared on `HTMLElement` in `globals.d.ts`.
+  `_imageInfo`'s only writer went with the parked image overlay renderer;
+  `_crossRefData` waits for `viewer/page.js`.
+- **`PdfiumFFI` pointer arithmetic** as plain `number` was the right call.
+  `PdfiumHeaps` is now a real exported interface, and `ui/tools/region_select.js`
+  stopped reaching for `HEAPU8` directly — it goes through `ffi.bytes()`, the one
+  place the gap in `@embedpdf/pdfium`'s module type is papered over.
 
 ---
 
@@ -349,13 +570,15 @@ Execution order, which is not the same as the phase numbering above:
 
 | Order | Work | Phase | Why here |
 |---|---|---|---|
-| 1 | `checkJs` + fix broken JSDoc | 1 | ~1 day, no renames, immediate LSP payoff |
-| 2 | Split `data/` → `pdf/` + `analysis/` | 2 | mechanical; unlocks the tests |
-| 3 | Snapshot tests on fixture PDFs | 3 | must exist before the parser changes |
-| 4 | Section-scoped types, `sections: [one]` | 4, step 1 | behavior-neutral; snapshots prove it |
-| 5 | `analyzeDocument()` pipeline, kill the cycle | 5 | can swap with 4; both precede 6 |
-| 6 | Multi-section detection + per-section format | 4, steps 2–3 | the actual feature |
-| 7 | Interface cleanups, `.ts` renames | 6, 7 | continuous, alongside everything |
+| ~~1~~ | ~~`checkJs` + fix broken JSDoc~~ **done** | 1 | ~1 day, no renames, immediate LSP payoff |
+| ~~2~~ | ~~Split `data/` → `pdf/` + `analysis/`~~ **done** | 2 | mechanical; unlocks the tests |
+| ~~3~~ | ~~`analyzeDocument()` pipeline, kill the cycle~~ **done** | 5 | taken early; the plan allows 4↔5 |
+| ~~4~~ | ~~Interface cleanups~~ **done** | 6 | explicitly independent of everything else |
+| ~~5~~ | ~~`.ts` renames, engine half~~ **done** | 7 | needed 1–5; `ui/` deferred, see above |
+| 6 | Snapshot tests on fixture PDFs ← **next** | 3 | must exist before the parser changes — and now before `ui/` is renamed |
+| 7 | Section-scoped types, `sections: [one]` | 4, step 1 | behavior-neutral; snapshots prove it |
+| 8 | Multi-section detection + per-section format | 4, steps 2–3 | the actual feature |
+| 9 | `.ts` renames, `viewer/` + `ui/` | 7 | the remaining ~26k lines |
 
 Orders 1–3 are worth doing even if multi-reference support is deferred; they pay
 for themselves in tooling and regression safety. The 4-before-6 split is the

@@ -68,16 +68,16 @@ export function stageToPage(point, metrics) {
  * re-home a drawing after it has been dragged, so editing never depends on the
  * page the drawing was originally created on.
  *
- * @param {import('../../../viewer/viewpane.js').ViewerPane} pane
+ * @param {PageView[]} pages
  * @param {number} x - Stage pixel X
  * @param {number} y - Stage pixel Y
  * @returns {PageView|null}
  */
-export function findPageAtStagePoint(pane, x, y) {
+export function findPageAtStagePoint(pages, x, y) {
   let best = null;
   let bestDistance = Infinity;
 
-  for (const pageView of pane.pages) {
+  for (const pageView of pages) {
     if (!pageView) continue;
     const { left, top, width, height } = getPageMetrics(pageView);
     const dx = Math.max(left - x, 0, x - (left + width));

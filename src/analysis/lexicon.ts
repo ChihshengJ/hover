@@ -592,7 +592,42 @@ export const AUTHOR_YEAR_BLOCKS = {
  * Composed patterns for author-year citations.
  * Built from AUTHOR_YEAR_BLOCKS for maintainability.
  */
-export const AUTHOR_YEAR_PATTERNS = {
+/** A year as written in a citation: "2020", or "2009a", or a range. */
+export interface ParsedYear {
+  year: string;
+  isRange: boolean;
+}
+
+/** One `Author, year` citation, parsed out of a chunk of text. */
+export interface ParsedCitationChunk {
+  firstAuthor: string;
+  secondAuthor: string | null;
+  thirdAuthor: string | null;
+  hasEtAl: boolean;
+  isThreeAuthor: boolean;
+  isTwoAuthor: boolean;
+  years: ParsedYear[];
+  rawText: string;
+}
+
+/**
+ * One entry in the author-year pattern table: a regex plus the extractors that
+ * turn its capture groups into a citation. Written out as a type so every entry
+ * is held to the same shape — `extractSecondAuthor` is genuinely absent on the
+ * single-author forms, which is why it is optional rather than missing.
+ */
+export interface AuthorYearPattern {
+  pattern: RegExp;
+  extractAuthor: (match: RegExpMatchArray) => string;
+  extractSecondAuthor?: (match: RegExpMatchArray) => string;
+  extractThirdAuthor?: (match: RegExpMatchArray) => string;
+  extractYears: (match: RegExpMatchArray) => ParsedYear[];
+  /** Absent on the single- and three-author forms. */
+  isTwoAuthor?: boolean;
+  isThreeAuthor?: boolean;
+}
+
+export const AUTHOR_YEAR_PATTERNS: Record<string, AuthorYearPattern> = {
   /**
    * Two authors with year(s) OUTSIDE parentheses
    * Examples: Garza and Williamson (2001), Smith & Jones (2020, 2021)
@@ -606,9 +641,9 @@ export const AUTHOR_YEAR_PATTERNS = {
       `${AUTHOR_YEAR_BLOCKS.pages}\\)`,
       "gu",
     ),
-    extractAuthor: (match) => match[1].trim(),
-    extractSecondAuthor: (match) => match[2].trim(),
-    extractYears: (match) => parseYearsFromString(match[3]),
+    extractAuthor: (match: RegExpMatchArray) => match[1].trim(),
+    extractSecondAuthor: (match: RegExpMatchArray) => match[2].trim(),
+    extractYears: (match: RegExpMatchArray) => parseYearsFromString(match[3]),
     isTwoAuthor: true,
   },
 
@@ -628,10 +663,10 @@ export const AUTHOR_YEAR_PATTERNS = {
       `${AUTHOR_YEAR_BLOCKS.pages}\\)`,
       "gu",
     ),
-    extractAuthor: (match) => match[1].trim(),
-    extractSecondAuthor: (match) => match[2].trim(),
-    extractThirdAuthor: (match) => match[3].trim(),
-    extractYears: (match) => parseYearsFromString(match[4]),
+    extractAuthor: (match: RegExpMatchArray) => match[1].trim(),
+    extractSecondAuthor: (match: RegExpMatchArray) => match[2].trim(),
+    extractThirdAuthor: (match: RegExpMatchArray) => match[3].trim(),
+    extractYears: (match: RegExpMatchArray) => parseYearsFromString(match[4]),
     isThreeAuthor: true,
   },
 
@@ -651,10 +686,10 @@ export const AUTHOR_YEAR_PATTERNS = {
       `${AUTHOR_YEAR_BLOCKS.pages}\\)`,
       "gu",
     ),
-    extractAuthor: (match) => match[1].trim(),
-    extractSecondAuthor: (match) => match[2].trim(),
-    extractThirdAuthor: (match) => match[3].trim(),
-    extractYears: (match) => parseYearsFromString(match[4]),
+    extractAuthor: (match: RegExpMatchArray) => match[1].trim(),
+    extractSecondAuthor: (match: RegExpMatchArray) => match[2].trim(),
+    extractThirdAuthor: (match: RegExpMatchArray) => match[3].trim(),
+    extractYears: (match: RegExpMatchArray) => parseYearsFromString(match[4]),
     isThreeAuthor: true,
   },
 
@@ -672,9 +707,9 @@ export const AUTHOR_YEAR_PATTERNS = {
       `${AUTHOR_YEAR_BLOCKS.pages}\\)`,
       "gu",
     ),
-    extractAuthor: (match) => match[1].trim(),
-    extractSecondAuthor: (match) => match[2].trim(),
-    extractYears: (match) => parseYearsFromString(match[3]),
+    extractAuthor: (match: RegExpMatchArray) => match[1].trim(),
+    extractSecondAuthor: (match: RegExpMatchArray) => match[2].trim(),
+    extractYears: (match: RegExpMatchArray) => parseYearsFromString(match[3]),
     isTwoAuthor: true,
   },
 
@@ -689,12 +724,12 @@ export const AUTHOR_YEAR_PATTERNS = {
       `${AUTHOR_YEAR_BLOCKS.pages}\\)`,
       "gu",
     ),
-    extractAuthor: (match) =>
+    extractAuthor: (match: RegExpMatchArray) =>
       match[1]
         .replace(/\s+et\s+al\.?/i, "")
         .replace(/['’]s$/, "")
         .trim(),
-    extractYears: (match) => parseYearsFromString(match[2]),
+    extractYears: (match: RegExpMatchArray) => parseYearsFromString(match[2]),
     isTwoAuthor: false,
   },
 
@@ -710,8 +745,8 @@ export const AUTHOR_YEAR_PATTERNS = {
       `${AUTHOR_YEAR_BLOCKS.pages}\\)`,
       "gu",
     ),
-    extractAuthor: (match) => match[1].replace(/\s+et\s+al\.?/i, "").trim(),
-    extractYears: (match) => parseYearsFromString(match[2]),
+    extractAuthor: (match: RegExpMatchArray) => match[1].replace(/\s+et\s+al\.?/i, "").trim(),
+    extractYears: (match: RegExpMatchArray) => parseYearsFromString(match[2]),
     isTwoAuthor: false,
   },
 
@@ -729,9 +764,9 @@ export const AUTHOR_YEAR_PATTERNS = {
       `${AUTHOR_YEAR_BLOCKS.pages}\\)`,
       "gu",
     ),
-    extractAuthor: (match) => match[1].trim(),
-    extractSecondAuthor: (match) => match[2].trim(),
-    extractYears: (match) => parseYearsFromString(match[3]),
+    extractAuthor: (match: RegExpMatchArray) => match[1].trim(),
+    extractSecondAuthor: (match: RegExpMatchArray) => match[2].trim(),
+    extractYears: (match: RegExpMatchArray) => parseYearsFromString(match[3]),
     isTwoAuthor: true,
   },
 };
@@ -824,17 +859,19 @@ export const CITATION_CHUNK_PARSER = new RegExp(
  * Note: Year ranges like "1996-2004" are treated as single unusual year patterns,
  * not as ranges. This is intentional as such patterns are rare edge cases.
  *
- * @param {string} yearStr - String like "2020", "2020, 2021", "2009a,b"
- * @returns {Array<{year: string, isRange: boolean}>}
+ * @param yearStr String like "2020", "2020, 2021", "2009a,b"
  */
-export function parseYearsFromString(yearStr) {
-  const results = [];
+export function parseYearsFromString(yearStr: string): ParsedYear[] {
+  const results: ParsedYear[] = [];
 
   // First, expand compact notation like "2009a,b" to "2009a, 2009b"
   const expanded = yearStr.replace(
     /(\d{4})([a-z])((?:,[a-z])+)/g,
-    (match, year, firstLetter, rest) => {
-      const letters = [firstLetter, ...rest.split(",").filter((l) => l)];
+    (_match: string, year: string, firstLetter: string, rest: string) => {
+      const letters = [
+        firstLetter,
+        ...rest.split(",").filter((l: string) => l),
+      ];
       return letters.map((l) => `${year}${l}`).join(", ");
     },
   );
@@ -862,10 +899,9 @@ export function parseYearsFromString(yearStr) {
 /**
  * Parse a citation chunk into structured data.
  *
- * @param {string} chunk - A single citation chunk like "Smith et al., 2020, 2021"
- * @returns {Object|null} Parsed citation or null if invalid
+ * @param chunk A single citation chunk like "Smith et al., 2020, 2021"
  */
-export function parseCitationChunk(chunk) {
+export function parseCitationChunk(chunk: string): ParsedCitationChunk | null {
   const match = chunk.match(CITATION_CHUNK_PARSER);
   if (!match) return null;
 
@@ -895,10 +931,9 @@ export function parseCitationChunk(chunk) {
 /**
  * Parse an entire parenthetical citation block into structured data.
  *
- * @param {string} block - Full parenthetical block like "(Smith, 2020; Jones et al., 2021)"
- * @returns {Array<Object>} Array of parsed citations
+ * @param block Full parenthetical block like "(Smith, 2020; Jones et al., 2021)"
  */
-export function parseParentheticalBlock(block) {
+export function parseParentheticalBlock(block: string): ParsedCitationChunk[] {
   // Remove outer parentheses
   let inner = block.trim();
   if (inner.startsWith("(")) inner = inner.slice(1);
@@ -1095,12 +1130,14 @@ export const REFERENCE_ENDING_PATTERNS = {
  * Parse numeric indices from citation bracket content
  * Handles: "1", "1,2,3", "1-5", "1-3, 5, 7-9"
  *
- * @param {string} content - Inner bracket content (e.g., "1-3, 5, 7-9")
- * @returns {{indices: number[], ranges: Array<{start: number, end: number}>}}
+ * @param content Inner bracket content (e.g. "1-3, 5, 7-9")
  */
-export function parseNumericCitationContent(content) {
-  const indices = [];
-  const ranges = [];
+export function parseNumericCitationContent(content: string): {
+  indices: number[];
+  ranges: Array<{ start: number; end: number }>;
+} {
+  const indices: number[] = [];
+  const ranges: Array<{ start: number; end: number }> = [];
   const parts = content.split(/[,;]/);
 
   for (const part of parts) {
@@ -1139,11 +1176,10 @@ export const ABBREVIATED_SINGLE_KEY = /[A-Z][a-zA-Z]+(?:\+)?\d{2}[a-z]?/;
  * Parse abbreviated bracket citation content into individual keys.
  * Handles: "YYZS+23", "Min+15, Dua+16b, SL06", "CHAN+21; ZZYD+24"
  *
- * @param {string} content - Inner bracket content (e.g., "Min+15, Dua+16b")
- * @returns {string[]} Array of individual abbreviated keys
+ * @param content Inner bracket content (e.g. "Min+15, Dua+16b")
  */
-export function parseAbbreviatedCitationContent(content) {
-  const keys = [];
+export function parseAbbreviatedCitationContent(content: string): string[] {
+  const keys: string[] = [];
   const parts = content.split(/\s*[,;]\s*/);
 
   for (const part of parts) {
@@ -1158,36 +1194,28 @@ export function parseAbbreviatedCitationContent(content) {
 
 /**
  * Check if citation has range notation flag
- * @param {number} flags - Citation flags
- * @returns {boolean}
  */
-export function hasRangeNotation(flags) {
+export function hasRangeNotation(flags: number): boolean {
   return (flags & CitationFlags.RANGE_NOTATION) !== 0;
 }
 
 /**
  * Check if citation was confirmed by native annotation
- * @param {number} flags - Citation flags
- * @returns {boolean}
  */
-export function isNativeConfirmed(flags) {
+export function isNativeConfirmed(flags: number): boolean {
   return (flags & CitationFlags.NATIVE_CONFIRMED) !== 0;
 }
 
 /**
  * Check if citation has multiple years for same author
- * @param {number} flags - Citation flags
- * @returns {boolean}
  */
-export function hasMultipleYears(flags) {
+export function hasMultipleYears(flags: number): boolean {
   return (flags & CitationFlags.MULTI_YEAR) !== 0;
 }
 
 /**
  * Create a fresh regex instance (avoids lastIndex issues with global patterns)
- * @param {RegExp} pattern - Pattern to clone
- * @returns {RegExp}
  */
-export function cloneRegex(pattern) {
+export function cloneRegex(pattern: RegExp): RegExp {
   return new RegExp(pattern.source, pattern.flags);
 }

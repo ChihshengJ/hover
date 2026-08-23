@@ -8,32 +8,25 @@
 import { init } from "@embedpdf/pdfium";
 import { PdfiumNative, PdfEngine } from "@embedpdf/engines/pdfium";
 import { browserImageDataToBlobConverter } from "@embedpdf/engines/converters";
+import type { WrappedPdfiumModule } from "@embedpdf/pdfium";
+
+export interface EngineInstances {
+  engine: PdfEngine;
+  native: PdfiumNative;
+  pdfiumModule: WrappedPdfiumModule;
+}
+
+let engineInstance: PdfEngine | null = null;
+let nativeInstance: PdfiumNative | null = null;
+let pdfiumModule: WrappedPdfiumModule | null = null;
+let initPromise: Promise<void> | null = null;
 
 /**
- * @typedef {Object} EngineInstances
- * @property {PdfEngine} engine
- * @property {PdfiumNative} native
- * @property {import('@embedpdf/pdfium').WrappedPdfiumModule} pdfiumModule
+ * Initialize the PDFium engine.
  */
-
-/** @type {PdfEngine|null} */
-let engineInstance = null;
-
-/** @type {PdfiumNative|null} */
-let nativeInstance = null;
-
-/** @type {import('@embedpdf/pdfium').WrappedPdfiumModule|null} */
-let pdfiumModule = null;
-
-/** @type {Promise<void>|null} */
-let initPromise = null;
-
-/**
- * Initialize the PDFium engine
- * @param {(progress: {percent: number, phase: string}) => void} [onProgress]
- * @returns {Promise<EngineInstances>}
- */
-export async function initPdfiumEngine(onProgress) {
+export async function initPdfiumEngine(
+  onProgress?: (progress: { percent: number; phase: string }) => void,
+): Promise<EngineInstances> {
   if (engineInstance && nativeInstance && pdfiumModule) {
     return {
       engine: engineInstance,
@@ -54,11 +47,13 @@ export async function initPdfiumEngine(onProgress) {
   initPromise = (async () => {
     try {
       onProgress?.({ percent: 5, phase: "loading-wasm" });
-      let wasmUrl;
+      let wasmUrl: string | undefined;
       if (typeof chrome !== "undefined" && chrome.runtime?.getURL) {
         try {
           wasmUrl = chrome.runtime.getURL("pdfium.wasm");
-        } catch (e) { }
+        } catch {
+          // Not a packaged extension context — fall through to the CDN URL.
+        }
       }
       if (!wasmUrl) {
         if (__LOCAL_WASM_ONLY__) {
@@ -112,10 +107,8 @@ export async function initPdfiumEngine(onProgress) {
 /**
  * Get the initialized engine instances, or null before initPdfiumEngine()
  * has resolved.
- *
- * @returns {EngineInstances|null}
  */
-export function getEngineInstances() {
+export function getEngineInstances(): EngineInstances | null {
   if (!engineInstance || !nativeInstance || !pdfiumModule) {
     return null;
   }
@@ -127,11 +120,8 @@ export function getEngineInstances() {
   };
 }
 
-/**
- * Check if the engine is initialized
- * @returns {boolean}
- */
-export function isEngineInitialized() {
+/** Check if the engine is initialized. */
+export function isEngineInitialized(): boolean {
   return (
     engineInstance !== null && nativeInstance !== null && pdfiumModule !== null
   );

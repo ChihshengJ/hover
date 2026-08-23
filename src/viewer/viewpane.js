@@ -3,6 +3,7 @@ import { PaneControls } from "../ui/controls/pane_controls.js";
 import { TextSelectionManager } from "./text_manager.js";
 import { AnnotationManager } from "../ui/annotation/annotation_manager.js";
 import { beginCustomSelectionGesture } from "./pointer_gesture.js";
+import { DocEvent, ANNOTATION_EVENTS } from "../model/doc_events.js";
 
 /**
  * `PageView`, `TextSelectionManager` and `AnnotationManager` are imported as
@@ -33,7 +34,18 @@ export class ViewerPane {
     this.centerObserver = null;
     /** @type {Set<import('./page.js').PageView>} pages currently over the center line */
     this.centeredPages = new Set();
-    this.controls = new PaneControls(this);
+    this.controls = new PaneControls({
+      paneEl: this.paneEl,
+      getScroller: () => this.scroller,
+      getPageCount: () => this.document.numPages,
+      getCurrentPage: () => this.getCurrentPage(),
+      getScale: () => this.scale,
+      getHandMode: () => this.handMode,
+      zoom: (delta) => this.zoom(delta),
+      fit: (mode, target) => this.fit(mode, target),
+      toggleHandMode: () => this.toggleHandMode(),
+      scrollToRelative: (delta) => this.scrollToRelative(delta),
+    });
     this.currentPage = 0;
 
     // 0: no spread; 1: even spread; 2: odd spread
@@ -47,7 +59,7 @@ export class ViewerPane {
     // Page rotation (0, 90, 180, 270) — CSS-based, per-pane
     this.rotation = 0;
 
-    this.textSelectionManager = new TextSelectionManager(this);
+    this.textSelectionManager = new TextSelectionManager();
     this.annotationManager = null;
 
     this._scrollBack = { scrollTop: 0, page: 0, timer: null, el: null };
@@ -67,7 +79,18 @@ export class ViewerPane {
     this.#createStage();
     this.canvases = await this.#createCanvasPlaceholders();
     this.pages = this.canvases.map((canvas, idx) => {
-      const pageView = new PageView(this, idx + 1, canvas);
+      const pageView = new PageView(
+        {
+          doc: this.document,
+          // Assigned in this constructor but read on click, long after; and
+          // null until `initialize()` runs for the annotation layer.
+          getTextSelectionManager: () => this.textSelectionManager,
+          scrollToPoint: (pageIndex, x, y, center) =>
+            this.scrollToPoint(pageIndex, x, y, center),
+        },
+        idx + 1,
+        canvas,
+      );
       this.pageMap.set(pageView.wrapper, pageView);
       return pageView;
     });
@@ -76,7 +99,31 @@ export class ViewerPane {
     this.setupLazyRender();
     this.#setupGlobalClickToSelect();
     this.controls.bindScrollEvents();
-    this.annotationManager = new AnnotationManager(this);
+    this.annotationManager = new AnnotationManager(this.#annotationHost());
+  }
+
+  /**
+   * The slice of this pane the annotation layer works against. Built here so
+   * the shape of that dependency is written down in one place.
+   *
+   * @returns {import('../ui/annotation/host.js').AnnotationHost}
+   */
+  #annotationHost() {
+    return {
+      doc: this.document,
+      getStage: () => this.stage,
+      getScroller: () => this.scroller,
+      getPages: () => this.pages,
+      getHandMode: () => this.handMode,
+      getSelection: () => this.textSelectionManager.getSelection(),
+      publishCallbacks: (callbacks) => {
+        this.onAnnotationHover = callbacks.onAnnotationHover;
+        this.onAnnotationClick = callbacks.onAnnotationClick;
+        this.editAnnotationComment = callbacks.editAnnotationComment;
+        this.deleteAnnotationComment = callbacks.deleteAnnotationComment;
+        this.selectAnnotation = callbacks.selectAnnotation;
+      },
+    };
   }
 
   #createScroller() {
@@ -850,18 +897,15 @@ export class ViewerPane {
     return pairs;
   }
 
+  /**
+   * @param {import('../model/doc_events.js').DocEventName} event
+   * @param {Object} [data]
+   */
   onDocumentChange(event, data) {
-    if (event == "highlight-added") {
-      const { pageNum } = data;
-      const pageView = this.pages[pageNum - 1];
-      if (pageView && this.visiblePages.has(pageView)) {
-        pageView.renderHightlights(this.document.highlights.get(pageNum));
-      }
-    }
-    if (event.startsWith("annotation-")) {
+    if (ANNOTATION_EVENTS.has(event)) {
       this.annotationManager?.onDocumentChange(event, data);
     }
-    if (event === "index-ready") {
+    if (event === DocEvent.INDEX_READY) {
       for (const pageView of this.visiblePages) {
         pageView.refreshOverlays();
       }

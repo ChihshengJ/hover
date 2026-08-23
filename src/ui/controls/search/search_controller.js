@@ -26,7 +26,7 @@ export class SearchController {
   /** @type {string} */
   #currentQuery = "";
 
-  /** @type {Function|null} */
+  /** @type {(() => void)|null} */
   #scrollCallback = null;
 
   /**
@@ -182,7 +182,7 @@ export class SearchController {
    * @param {string} query - Search query
    * @param {number} fromPage - Start page (1-based, inclusive)
    * @param {number} toPage - End page (1-based, inclusive)
-   * @returns {Promise<Array<{id: string, pageNumber: number, rects: Array<{x: number, y: number, width: number, height: number}>}>>}
+   * @returns {Promise<Array<{id: string, pageNumber: number, rects: Array<Rect>}>>}
    */
   async search(query, fromPage = 1, toPage = this.#doc.numPages) {
     if (!query.trim() || query.length < 2) return [];

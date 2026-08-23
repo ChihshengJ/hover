@@ -142,20 +142,20 @@ Full vim motion support for reading, highlighting, and citation preview (under d
 
 ## Installation & Development
 
-Latest commit is always runnable so you can clone the repo and use npm to build and load it in Chrome.
+Latest commit is always runnable so you can clone the repo and use [bun](https://bun.sh) to build and load it in Chrome.
 Make sure you install the dependencies using
 
 ```bash
-npm install
+bun install
 ```
 
 And then use
 
 ```bash
-npm run build:ext
+bun run build:chrome
 ```
 
-Open Chrome, navigate to [Chrome extension management](chrome://extensions/), turn on developer mode and load the _dist_ folder to use the extension.
+Open Chrome, navigate to [Chrome extension management](chrome://extensions/), turn on developer mode and load the _dist/chrome_ folder to use the extension.
 
 Please note that we only accept PRs that do not affect the current UI.
 

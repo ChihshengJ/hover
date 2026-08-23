@@ -2,8 +2,8 @@
 # Convert dist/safari into a Safari app-extension Xcode project and build it
 # headlessly. No manual Xcode interaction needed.
 #
-#   npm run build:safari        # vite build + this script
-#   DEVELOPMENT_TEAM=XXXXXXXXXX npm run build:safari   # pin a signing team
+#   bun run build:safari        # vite build + this script
+#   DEVELOPMENT_TEAM=XXXXXXXXXX bun run build:safari   # pin a signing team
 #
 # The generated project (safari/) is disposable — it is regenerated from
 # dist/safari on every run and is gitignored.
@@ -16,7 +16,7 @@ APP_NAME="Hover PDF"
 BUNDLE_ID="${BUNDLE_ID:-com.chihshengj.hoverpdf}"
 
 if [[ ! -f "$DIST/manifest.json" ]]; then
-  echo "error: $DIST not built — run 'npm run build:safari'" >&2
+  echo "error: $DIST not built — run 'bun run build:safari'" >&2
   exit 1
 fi
 

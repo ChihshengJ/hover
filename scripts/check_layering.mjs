@@ -15,7 +15,7 @@
  *     the surviving ones are pinned to the allowlist below. Adding a new one
  *     fails here and has to be a deliberate decision.
  *
- * Run with `npm run check:layers`.
+ * Run with `bun run check:layers`.
  */
 import { readFileSync, readdirSync } from "node:fs";
 import { join, relative } from "node:path";

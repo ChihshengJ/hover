@@ -1,4 +1,4 @@
-import { ingestFile } from "./src/ingest.js";
+import { ingestFile } from "./src/platform/ingest.js";
 
 // Firefox destroys the toolbar popup the instant a native file dialog steals
 // focus, so a file <input> hosted here never fires `change`. Chrome/Safari

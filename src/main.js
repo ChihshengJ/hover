@@ -1,13 +1,13 @@
-import { PDFDocumentModel } from "./doc.js";
-import { SplitWindowManager } from "./window_manager.js";
-import { FileMenu } from "./controls/file_menu.js";
-import { EmptyState } from "./controls/empty_state.js";
-import { LoadingOverlay } from "./controls/loading_overlay.js";
-import { OnboardingWalkthrough } from "./settings/onboarding.js";
-import { Config } from "./settings/config.js";
-import { TrailStore } from "./trail/trail_store.js";
-import { TrailLinker } from "./trail/trail_linker.js";
-import { TrailOverlay } from "./trail/trail_overlay.js";
+import { PDFDocumentModel } from "./model/doc.js";
+import { SplitWindowManager } from "./viewer/window_manager.js";
+import { FileMenu } from "./ui/controls/file_menu.js";
+import { EmptyState } from "./ui/controls/empty_state.js";
+import { LoadingOverlay } from "./ui/controls/loading_overlay.js";
+import { OnboardingWalkthrough } from "./ui/settings/onboarding.js";
+import { Config } from "./ui/settings/config.js";
+import { TrailStore } from "./ui/trail/trail_store.js";
+import { TrailLinker } from "./ui/trail/trail_linker.js";
+import { TrailOverlay } from "./ui/trail/trail_overlay.js";
 
 import "../styles/index.css";
 

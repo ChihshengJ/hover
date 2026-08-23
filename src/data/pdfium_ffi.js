@@ -1,26 +1,15 @@
 /**
- * Shared low-level WASM plumbing for the PDFium extractors.
+ * Shared low-level WASM plumbing for the PDFium extractors: page lifecycle,
+ * out-parameter reads off the typed heap views, and string/byte buffers.
  *
- * Both PdfiumTextExtractor and PdfiumImageExtractor talk to PDFium through the
- * same three patterns: page/text-page lifecycle, malloc'd out-parameters read
- * back off the typed heap views, and string buffers decoded from UTF-8/UTF-16.
- * They live here so the two extractors cannot drift apart — as they did with
- * the page-object type constants, which were wrong in one file and right in the
- * other.
- *
- * Out-parameters use a persistent scratch block instead of malloc/free. That is
- * not just tidiness: #getCharBox is called once per character, so a 6,800-char
- * page was doing ~27,000 malloc/free round-trips per page purely to read four
- * doubles at a time.
+ * Fixed-size out-parameters go through a persistent scratch block rather than
+ * malloc/free, because reading one character box is four doubles and that runs
+ * once per character — tens of thousands of allocator round-trips per page.
  */
 
 /**
- * PDFium page-object types, as returned by FPDFPageObj_GetType.
- *
- * Verified empirically against the type-specific APIs rather than taken from
- * documentation: objects reporting type 2 are the ones FPDFPath_CountSegments
- * accepts, and objects reporting type 3 are the ones
- * FPDFImageObj_GetImagePixelSize accepts.
+ * PDFium page-object types, as returned by FPDFPageObj_GetType. Same values as
+ * @embedpdf/models' PdfPageObjectType.
  *
  * @readonly
  */
@@ -34,10 +23,9 @@ export const PAGEOBJ = Object.freeze({
 });
 
 /**
- * Size of the persistent out-parameter scratch block.
- *
- * The widest single use is four f64 slots (32 bytes); the rest of the budget is
- * headroom for nested frames. Frames throw rather than silently overrun.
+ * Size of the persistent out-parameter scratch block. The widest single use is
+ * four f64 slots (32 bytes); the rest is headroom for nested frames, which
+ * throw rather than silently overrun.
  */
 const SCRATCH_BYTES = 128;
 
@@ -155,7 +143,7 @@ export class PdfiumFFI {
   // ==========================================================================
 
   /**
-   * Run `fn` inside a scratch frame. Every slot reserved during the call is
+   * Run `fn` inside a scratch frame. Slots reserved during the call are
    * released when it returns, so frames may nest and may sit inside loops
    * without allocating.
    *
@@ -274,11 +262,8 @@ export class PdfiumFFI {
   }
 
   /**
-   * Decode a NUL-terminated UTF-16 string.
-   *
-   * Only safe when the producing PDFium call actually writes a terminator —
-   * FPDFText_GetText does, FPDFText_GetBoundedText does not when buflen equals
-   * the text length. See PdfiumTextExtractor#extractTextRange.
+   * Decode a NUL-terminated UTF-16 string. Only safe when the producing PDFium
+   * call actually writes a terminator; see PdfiumPageReader#readText.
    *
    * @param {number} ptr
    * @returns {string}
@@ -341,6 +326,11 @@ export class PdfiumFFI {
    * re-allocated on demand if the instance is used again.
    */
   dispose() {
+    // Freeing mid-frame would hand back memory a live PDFium call is about to
+    // write through.
+    if (this.#frameDepth > 0) {
+      throw new Error("PdfiumFFI.dispose() called inside frame()");
+    }
     if (this.#scratchPtr) {
       this.#pdfium.pdfium.wasmExports.free(this.#scratchPtr);
       this.#scratchPtr = 0;

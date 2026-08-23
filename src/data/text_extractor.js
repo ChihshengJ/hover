@@ -117,8 +117,13 @@ export class PdfiumTextExtractor {
   // ============================================================================
 
   /**
-   * Extract full NFC-normalised text from a page.
-   * Opens and closes the page automatically.
+   * Extract a page's full text. Opens and closes the page automatically.
+   *
+   * Returned exactly as PDFium reports it, so index i is PDFium char index i —
+   * callers feed match offsets straight back to getRectsForCharRange. Nothing
+   * here may insert, drop, or combine characters, NFC normalisation included:
+   * composing a base + combining mark shifts every index after it. Callers
+   * doing index-free work (clipboard) normalise themselves.
    *
    * @param {number} docPtr
    * @param {number} pageIndex - 0-based
@@ -134,9 +139,7 @@ export class PdfiumTextExtractor {
           pageHeight: ctx.pageHeight,
         };
       }
-      const fullText = this.#reader
-        .readText(ctx.textPagePtr, 0, ctx.charCount)
-        .normalize("NFC");
+      const fullText = this.#reader.readText(ctx.textPagePtr, 0, ctx.charCount);
       return {
         fullText,
         charCount: ctx.charCount,
@@ -225,10 +228,9 @@ export class PdfiumTextExtractor {
    */
 
   /**
-   * Extract the bounds of rule-like path objects on a page.
-   *
-   * Consumers use these as candidate header/footer separators, so path objects
-   * that do not read as rules are dropped here rather than by the caller.
+   * Extract the bounds of rule-like path objects on a page — the sole consumer
+   * treats them as candidate header/footer separators, so the thickness test
+   * lives here and callers only decide how much of the page a rule must span.
    *
    * @param {number} docPtr
    * @param {number} pageIndex - 0-based
@@ -268,8 +270,7 @@ export class PdfiumTextExtractor {
 
   /**
    * Read a page's characters, group them into runs, and resolve each run's
-   * font. Font lookup stays here because it is one PDFium call per run, which
-   * would otherwise force the heuristics layer to depend on the reader.
+   * font. Font lookup stays here so the heuristics layer needs no reader.
    *
    * @param {number} textPagePtr
    * @param {number} charCount
@@ -298,7 +299,6 @@ export class PdfiumTextExtractor {
 
 export class PdfiumDocumentHandle {
   #pdfium = null;
-  #ffi = null;
   #docPtr = null;
   #filePtr = null;
   #extractor = null;
@@ -310,7 +310,6 @@ export class PdfiumDocumentHandle {
    */
   constructor(pdfiumModule, docPtr, filePtr) {
     this.#pdfium = pdfiumModule;
-    this.#ffi = new PdfiumFFI(pdfiumModule);
     this.#docPtr = docPtr;
     this.#filePtr = filePtr;
     this.#extractor = new PdfiumTextExtractor(pdfiumModule);
@@ -363,7 +362,7 @@ export class PdfiumDocumentHandle {
       this.#docPtr = null;
     }
     if (this.#filePtr) {
-      this.#ffi.free(this.#filePtr);
+      this.#extractor.reader.ffi.free(this.#filePtr);
       this.#filePtr = null;
     }
     this.#extractor.dispose();
@@ -381,6 +380,8 @@ export class PdfiumDocumentHandle {
  */
 export class PdfiumDocumentFactory {
   #pdfium = null;
+
+  /** Owns the file buffer allocation, which happens before a handle exists. */
   #ffi = null;
 
   /**

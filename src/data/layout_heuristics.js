@@ -1,15 +1,9 @@
 /**
  * Layout heuristics for turning a page's character stream into text runs.
  *
- * Nothing here touches PDFium or WASM. The input is a plain array of character
+ * Nothing here touches PDFium or WASM: the input is a plain array of character
  * records, so this module can be exercised against a recorded page without a
- * WASM instance, and the tunables below can be adjusted without disturbing the
- * reader that produced them.
- *
- * The split matters because the two halves change for different reasons. The
- * reader changes when PDFium changes — as it did in pdfium 2.6.1, which began
- * reporting real Unicode spaces with zero-area boxes. These heuristics change
- * when a document renders wrong.
+ * WASM instance.
  *
  * @typedef {Object} CharBox
  * @property {number} left
@@ -63,14 +57,10 @@ export const RULE_HEURISTICS = Object.freeze({
 });
 
 /**
- * Unicode space separators, which PDFium emits alongside plain U+0020.
- *
- * PDFium's text layer changed in pdfium 2.6.1 (chromium/7689): it now reports
- * the document's real space characters — NBSP, EN/EM/THIN/HAIR spaces — where
- * it previously normalised them to U+0020 or dropped them. They carry no ink
- * and report zero-area character boxes, so they must be classified as
- * whitespace; treating them as visible glyphs pulls a run's right edge out to
- * the following word and corrupts every width derived from it.
+ * Unicode space separators, which PDFium emits alongside plain U+0020 since
+ * 2.6.1 — it now reports the document's real NBSP/EN/EM/THIN spaces instead of
+ * normalising them. They must count as whitespace: treated as visible glyphs
+ * they pull a run's right edge out to the following word.
  *
  * @param {number} code
  * @returns {boolean}
@@ -133,11 +123,10 @@ export function isRuleLikeBounds(width, height, tunables = RULE_HEURISTICS) {
 /**
  * Group a page's characters into text runs.
  *
- * Runs approximate words: they break at whitespace, at line changes, across
- * wide horizontal gaps, and at the script/character-class boundaries described
- * inline below. Whitespace and control characters never extend a run's box;
- * they are appended to the preceding run's content so the text can still be
- * reconstructed by concatenation.
+ * Runs approximate words: they break at whitespace, line changes, wide
+ * horizontal gaps, and script/character-class boundaries. Whitespace and
+ * control characters never extend a run's box; they are appended to the
+ * preceding run's content so the text still reconstructs by concatenation.
  *
  * @param {CharRecord[]} chars - Page characters in PDFium's reading order
  * @param {typeof RUN_HEURISTICS} [tunables]
@@ -212,9 +201,15 @@ export function groupCharsIntoRuns(chars, tunables = RUN_HEURISTICS) {
       continue;
     }
 
-    // Zero-area boxes are not renderable. PDFium reports them for markers like
-    // U+00AD and for the occasional collapsed glyph, and letting one into a run
-    // drags the run's bounding box to wherever it sits.
+    // Zero-area boxes are not renderable — letting one into a run drags the
+    // run's box to wherever it sits. PDFium reports them for markers like
+    // U+00AD, which is what we want gone.
+    //
+    // TODO: the character is dropped from the run's content too, so a glyph
+    // PDFium happens to report with a collapsed box (a combining mark, say)
+    // would go missing from the slice text. Nothing has hit that yet; the fix
+    // is to append these to trailingChars like whitespace and drop only the
+    // known markers (TEXT_MARKERS in inline_extractor.js).
     if (box.width <= 0 || box.height <= 0) continue;
     if (box.height > MAX_CHAR_HEIGHT || box.width > MAX_CHAR_WIDTH) continue;
 

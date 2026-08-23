@@ -435,9 +435,10 @@ export class DocumentTextIndex {
     for (const path of paths) {
       const { pdfRect } = path;
       const pathWidth = pdfRect.right - pdfRect.left;
-      const pathHeight = pdfRect.top - pdfRect.bottom;
 
-      if (pathHeight >= 3 || pathWidth <= pageWidth * 0.6) continue;
+      // extractPagePaths has already applied the thickness test; all that is
+      // left here is "spans enough of the page to be a separator".
+      if (pathWidth <= pageWidth * 0.6) continue;
 
       // Header zone (top 15%): high Y in PDF coords
       if (pdfRect.bottom > pageHeight * 0.85) {

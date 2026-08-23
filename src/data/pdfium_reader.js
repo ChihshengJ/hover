@@ -1,13 +1,9 @@
 /**
  * Faithful reader for a PDFium page: PDFium calls in, plain JS data out.
  *
- * Everything here mirrors what PDFium reports, with no layout interpretation —
- * that lives in layout_heuristics.js. Keeping the two apart means a PDFium
- * change (a new WASM build, an upgrade) is confined to this file, while a
- * tuning change to word grouping cannot break decoding.
- *
- * The text decoding here deliberately differs from @embedpdf/engines. See
- * readText() for why.
+ * No layout interpretation happens here — that lives in layout_heuristics.js.
+ * The split confines a PDFium upgrade to this file and keeps grouping changes
+ * from touching decoding.
  */
 
 import { PAGEOBJ, PdfiumFFI } from "./pdfium_ffi.js";
@@ -79,12 +75,10 @@ export class PdfiumPageReader {
    * FPDFText_GetText writes at most `count` UTF-16 units plus a NUL, so the
    * buffer is sized count + 1 and UTF16ToString has a terminator to stop at.
    *
-   * This is deliberately not upstream's approach. @embedpdf/engines decodes via
-   * FPDFText_GetBoundedText, which does NOT write a terminator when buflen
-   * equals the text length — it allocates (len + 1) * 2 bytes but passes len as
-   * buflen, so UTF16ToString runs off the end into whatever the allocator last
-   * left there. Measured on our own sample PDFs, that over-reads on 100% of
-   * text rects. Keep this path.
+   * Deliberately not upstream's approach: @embedpdf/engines decodes via
+   * FPDFText_GetBoundedText with buflen equal to the text length, which writes
+   * no terminator, so UTF16ToString reads past the buffer. Don't "simplify"
+   * this back.
    *
    * @param {number} textPagePtr
    * @param {number} startIndex
@@ -108,9 +102,6 @@ export class PdfiumPageReader {
 
   /**
    * Bounding box of one character, in PDF coordinates (bottom-left origin).
-   *
-   * Called once per character, so it goes through the FFI scratch frame rather
-   * than allocating four doubles per call.
    *
    * @param {number} textPagePtr
    * @param {number} charIndex
@@ -255,8 +246,8 @@ export class PdfiumPageReader {
 
   /**
    * Collect the bounds of every PATH object on a page, descending into form
-   * objects. Returns them unfiltered and in document order — deciding which
-   * ones read as rules is a layout question, not a reading one.
+   * objects. Unfiltered and in document order; deciding which ones read as
+   * rules is a layout question.
    *
    * @param {number} containerPtr - Page or form object pointer
    * @param {boolean} [isForm] - Whether containerPtr is a form object

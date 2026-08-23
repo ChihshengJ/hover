@@ -107,6 +107,22 @@ export default defineConfig({
       },
     },
     {
+      // @embedpdf/pdfium resolves its binary with
+      // `new URL('pdfium.wasm', import.meta.url)`, which makes Vite emit a
+      // second 4.6 MB copy into assets/ on top of the one we ship at the
+      // extension root, which is redundant.
+      name: "dedupe-pdfium-wasm",
+      enforce: "pre",
+      transform(code, id) {
+        if (!id.includes("@embedpdf/pdfium")) return null;
+        if (!code.includes("new URL('pdfium.wasm'")) return null;
+        return code.replace(
+          /new URL\('pdfium\.wasm',\s*import\.meta\.url\)\.href/g,
+          "'pdfium.wasm'",
+        );
+      },
+    },
+    {
       // Write the merged per-target manifest into the output directory.
       name: "emit-target-manifest",
       closeBundle() {

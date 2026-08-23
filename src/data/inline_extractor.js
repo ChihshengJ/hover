@@ -58,13 +58,12 @@ function escapeForRegex(str) {
 
 /**
  * Zero-width markers PDFium leaves in the text layer that must not reach
- * matching. Same set @embedpdf/models strips in stripPdfUnwantedMarkers, which
- * upstream applies to text slices but never to extracted page text.
+ * matching — the same set @embedpdf/models strips in stripPdfUnwantedMarkers,
+ * which upstream applies to text slices but never to extracted page text.
  *
- * U+FFFE is what PDFium reports for a soft hyphen at a rendered line break, so
- * removing it rejoins the split word. pdfium 2.6.1 (chromium/7689) additionally
- * began reporting genuine U+00AD soft hyphens with zero-area boxes; those are
- * unrendered and must go the same way, or a hyphenated word never matches.
+ * U+FFFE marks a soft hyphen at a rendered line break, so removing it rejoins
+ * the split word; since 2.6.1 PDFium also reports genuine unrendered U+00AD,
+ * which has to go the same way or a hyphenated word never matches.
  */
 const TEXT_MARKERS = new Set([
   0x00ad, // SOFT HYPHEN
@@ -171,7 +170,10 @@ class InlineTextAdapter {
 
   /**
    * Convert a clean-text index back to the original PDFium char index.
-   * Binary-style scan over the sparse removal list.
+   *
+   * Linear scan over the sorted removal list, stopping at the first entry past
+   * the target. Fine while removals are sparse; a heavily hyphenated page makes
+   * the list long enough that a binary search would be worth it.
    *
    * @param {number} cleanIdx
    * @param {number[]} removals - sorted original indices of stripped chars

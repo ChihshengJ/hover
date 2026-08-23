@@ -1,4 +1,18 @@
 /**
+ * Page text and path extraction, composed from two independent layers:
+ *
+ *   pdfium_reader.js      — faithful PDFium reads, no interpretation
+ *   layout_heuristics.js  — word grouping and rule detection, no PDFium
+ *
+ * This file wires them together and owns the document lifecycle. Behaviour that
+ * belongs to one of the two layers should be changed there, not here.
+ */
+
+import { PdfiumFFI } from "./pdfium_ffi.js";
+import { PdfiumPageReader } from "./pdfium_reader.js";
+import { groupCharsIntoRuns, isRuleLikeBounds } from "./layout_heuristics.js";
+
+/**
  * @typedef {Object} TextSlice
  * @property {string} content - The text content (properly decoded from UTF-16LE)
  * @property {Object} rect - Bounding rectangle
@@ -17,18 +31,30 @@
  */
 
 export class PdfiumTextExtractor {
-  /** @type {import('@embedpdf/pdfium').WrappedPdfiumModule} */
-  #pdfium = null;
+  /** @type {PdfiumPageReader} */
+  #reader = null;
 
   /**
    * @param {import('@embedpdf/pdfium').WrappedPdfiumModule} pdfiumModule
    */
   constructor(pdfiumModule) {
-    this.#pdfium = pdfiumModule;
+    this.#reader = new PdfiumPageReader(pdfiumModule);
+  }
+
+  /** @returns {PdfiumPageReader} */
+  get reader() {
+    return this.#reader;
+  }
+
+  /**
+   * Release WASM scratch memory held by this extractor.
+   */
+  dispose() {
+    this.#reader.dispose();
   }
 
   // ============================================================================
-  // Core low-level WASM helpers (shared by all consumers)
+  // Core low-level helpers (shared by all consumers)
   // ============================================================================
 
   /**
@@ -41,17 +67,7 @@ export class PdfiumTextExtractor {
    * @template T
    */
   withPage(docPtr, pageIndex, fn) {
-    const pdfium = this.#pdfium;
-    const pagePtr = pdfium.FPDF_LoadPage(docPtr, pageIndex);
-    if (!pagePtr) return null;
-
-    try {
-      const pageWidth = pdfium.FPDF_GetPageWidthF(pagePtr);
-      const pageHeight = pdfium.FPDF_GetPageHeightF(pagePtr);
-      return fn({ pagePtr, pageWidth, pageHeight });
-    } finally {
-      pdfium.FPDF_ClosePage(pagePtr);
-    }
+    return this.#reader.withPage(docPtr, pageIndex, fn);
   }
 
   /**
@@ -62,25 +78,7 @@ export class PdfiumTextExtractor {
    * @template T
    */
   withTextPage(docPtr, pageIndex, fn) {
-    const pdfium = this.#pdfium;
-    const pagePtr = pdfium.FPDF_LoadPage(docPtr, pageIndex);
-    if (!pagePtr) return null;
-
-    try {
-      const pageWidth = pdfium.FPDF_GetPageWidthF(pagePtr);
-      const pageHeight = pdfium.FPDF_GetPageHeightF(pagePtr);
-      const textPagePtr = pdfium.FPDFText_LoadPage(pagePtr);
-      if (!textPagePtr) return null;
-
-      try {
-        const charCount = pdfium.FPDFText_CountChars(textPagePtr);
-        return fn({ pagePtr, textPagePtr, pageWidth, pageHeight, charCount });
-      } finally {
-        pdfium.FPDFText_ClosePage(textPagePtr);
-      }
-    } finally {
-      pdfium.FPDF_ClosePage(pagePtr);
-    }
+    return this.#reader.withTextPage(docPtr, pageIndex, fn);
   }
 
   /**
@@ -92,7 +90,7 @@ export class PdfiumTextExtractor {
    * @returns {string}
    */
   extractTextRange(textPagePtr, startIndex, count) {
-    return this.#extractTextRange(textPagePtr, startIndex, count);
+    return this.#reader.readText(textPagePtr, startIndex, count);
   }
 
   /**
@@ -106,7 +104,7 @@ export class PdfiumTextExtractor {
    * @returns {Array<{x: number, y: number, width: number, height: number}>}
    */
   getRectsForCharRange(textPagePtr, startCharIndex, charCount, pageHeight) {
-    return this.#getRectsForRange(
+    return this.#reader.readTextRects(
       textPagePtr,
       startCharIndex,
       charCount,
@@ -119,8 +117,13 @@ export class PdfiumTextExtractor {
   // ============================================================================
 
   /**
-   * Extract full NFC-normalised text from a page.
-   * Opens and closes the page automatically.
+   * Extract a page's full text. Opens and closes the page automatically.
+   *
+   * Returned exactly as PDFium reports it, so index i is PDFium char index i —
+   * callers feed match offsets straight back to getRectsForCharRange. Nothing
+   * here may insert, drop, or combine characters, NFC normalisation included:
+   * composing a base + combining mark shifts every index after it. Callers
+   * doing index-free work (clipboard) normalise themselves.
    *
    * @param {number} docPtr
    * @param {number} pageIndex - 0-based
@@ -136,8 +139,7 @@ export class PdfiumTextExtractor {
           pageHeight: ctx.pageHeight,
         };
       }
-      let fullText = this.#extractTextRange(ctx.textPagePtr, 0, ctx.charCount);
-      fullText = fullText.normalize("NFC");
+      const fullText = this.#reader.readText(ctx.textPagePtr, 0, ctx.charCount);
       return {
         fullText,
         charCount: ctx.charCount,
@@ -161,14 +163,14 @@ export class PdfiumTextExtractor {
    * @returns {Array<{x: number, y: number, width: number, height: number}>}
    */
   getRectsForCharRangeOnPage(docPtr, pageIndex, startCharIndex, charCount) {
-    const result = this.withTextPage(docPtr, pageIndex, (ctx) => {
-      return this.#getRectsForRange(
+    const result = this.withTextPage(docPtr, pageIndex, (ctx) =>
+      this.#reader.readTextRects(
         ctx.textPagePtr,
         startCharIndex,
         charCount,
         ctx.pageHeight,
-      );
-    });
+      ),
+    );
     return result || [];
   }
 
@@ -196,17 +198,8 @@ export class PdfiumTextExtractor {
         };
       }
 
-      const fullText = this.#extractTextRange(
-        ctx.textPagePtr,
-        0,
-        ctx.charCount,
-      );
-
-      const textSlices = this.#extractWordBasedSlices(
-        ctx.textPagePtr,
-        ctx.charCount,
-        ctx.pageHeight,
-      );
+      const fullText = this.#reader.readText(ctx.textPagePtr, 0, ctx.charCount);
+      const textSlices = this.#buildTextSlices(ctx.textPagePtr, ctx.charCount);
 
       return {
         pageIndex,
@@ -235,7 +228,9 @@ export class PdfiumTextExtractor {
    */
 
   /**
-   * Extract all path object bounds from a page.
+   * Extract the bounds of rule-like path objects on a page — the sole consumer
+   * treats them as candidate header/footer separators, so the thickness test
+   * lives here and callers only decide how much of the page a rule must span.
    *
    * @param {number} docPtr
    * @param {number} pageIndex - 0-based
@@ -246,7 +241,23 @@ export class PdfiumTextExtractor {
       docPtr,
       pageIndex,
       ({ pagePtr, pageWidth, pageHeight }) => {
-        const paths = this.#collectPathObjects(pagePtr, false, pageHeight);
+        const paths = [];
+        for (const bounds of this.#reader.readPathBounds(pagePtr)) {
+          const width = bounds.right - bounds.left;
+          const height = bounds.top - bounds.bottom;
+          if (!isRuleLikeBounds(width, height)) continue;
+
+          paths.push({
+            index: paths.length,
+            pdfRect: bounds,
+            screenRect: {
+              x: bounds.left,
+              y: pageHeight - bounds.top,
+              width,
+              height,
+            },
+          });
+        }
         return { pageIndex, paths, pageWidth, pageHeight };
       },
     );
@@ -254,571 +265,35 @@ export class PdfiumTextExtractor {
   }
 
   // ============================================================================
-  // Private low-level helpers
+  // Composition
   // ============================================================================
 
   /**
-   * Get bounding rects for a character range (core implementation).
-   * Operates on an already-opened textPagePtr.
+   * Read a page's characters, group them into runs, and resolve each run's
+   * font. Font lookup stays here so the heuristics layer needs no reader.
    *
    * @param {number} textPagePtr
-   * @param {number} startCharIndex
    * @param {number} charCount
-   * @param {number} pageHeight - for Y-flip (PDF bottom-left → top-left)
-   * @returns {Array<{x: number, y: number, width: number, height: number}>}
-   */
-  #getRectsForRange(textPagePtr, startCharIndex, charCount, pageHeight) {
-    const pdfium = this.#pdfium;
-    const rects = [];
-
-    const rectCount = pdfium.FPDFText_CountRects(
-      textPagePtr,
-      startCharIndex,
-      charCount,
-    );
-    if (rectCount <= 0) return rects;
-
-    const leftPtr = pdfium.pdfium.wasmExports.malloc(8);
-    const topPtr = pdfium.pdfium.wasmExports.malloc(8);
-    const rightPtr = pdfium.pdfium.wasmExports.malloc(8);
-    const bottomPtr = pdfium.pdfium.wasmExports.malloc(8);
-
-    try {
-      for (let i = 0; i < rectCount; i++) {
-        const success = pdfium.FPDFText_GetRect(
-          textPagePtr,
-          i,
-          leftPtr,
-          topPtr,
-          rightPtr,
-          bottomPtr,
-        );
-        if (!success) continue;
-
-        const left = pdfium.pdfium.HEAPF64[leftPtr >> 3];
-        const top = pdfium.pdfium.HEAPF64[topPtr >> 3];
-        const right = pdfium.pdfium.HEAPF64[rightPtr >> 3];
-        const bottom = pdfium.pdfium.HEAPF64[bottomPtr >> 3];
-
-        rects.push({
-          x: left,
-          y: pageHeight - top,
-          width: right - left,
-          height: top - bottom,
-        });
-      }
-    } finally {
-      pdfium.pdfium.wasmExports.free(leftPtr);
-      pdfium.pdfium.wasmExports.free(topPtr);
-      pdfium.pdfium.wasmExports.free(rightPtr);
-      pdfium.pdfium.wasmExports.free(bottomPtr);
-    }
-
-    return rects;
-  }
-
-  /**
-   * @param {number} textPagePtr - Text page pointer
-   * @param {number} startIndex - Starting character index
-   * @param {number} count - Number of characters to extract
-   * @returns {string}
-   */
-  #extractTextRange(textPagePtr, startIndex, count) {
-    if (count <= 0) return "";
-
-    const pdfium = this.#pdfium;
-
-    const bufferSize = (count + 1) * 2;
-    const textBufferPtr = pdfium.pdfium.wasmExports.malloc(bufferSize);
-
-    try {
-      const extractedLength = pdfium.FPDFText_GetText(
-        textPagePtr,
-        startIndex,
-        count,
-        textBufferPtr,
-      );
-
-      if (extractedLength > 0) {
-        return pdfium.pdfium.UTF16ToString(textBufferPtr);
-      }
-      return "";
-    } finally {
-      pdfium.pdfium.wasmExports.free(textBufferPtr);
-    }
-  }
-
-  /**
-   * @param {number} textPagePtr
-   * @param {number} charIndex
-   * @param {number} pageHeight
-   * @returns {{left: number, top: number, right: number, bottom: number, width: number, height: number}|null}
-   */
-  #getCharBox(textPagePtr, charIndex, pageHeight) {
-    const pdfium = this.#pdfium;
-
-    const leftPtr = pdfium.pdfium.wasmExports.malloc(8);
-    const rightPtr = pdfium.pdfium.wasmExports.malloc(8);
-    const bottomPtr = pdfium.pdfium.wasmExports.malloc(8);
-    const topPtr = pdfium.pdfium.wasmExports.malloc(8);
-
-    try {
-      const success = pdfium.FPDFText_GetCharBox(
-        textPagePtr,
-        charIndex,
-        leftPtr,
-        rightPtr,
-        bottomPtr,
-        topPtr,
-      );
-
-      if (!success) return null;
-
-      const left = pdfium.pdfium.HEAPF64[leftPtr >> 3];
-      const right = pdfium.pdfium.HEAPF64[rightPtr >> 3];
-      const bottom = pdfium.pdfium.HEAPF64[bottomPtr >> 3];
-      const top = pdfium.pdfium.HEAPF64[topPtr >> 3];
-
-      return {
-        left,
-        right,
-        bottom,
-        top,
-        x: left,
-        y: top,
-        width: right - left,
-        height: top - bottom,
-      };
-    } finally {
-      pdfium.pdfium.wasmExports.free(leftPtr);
-      pdfium.pdfium.wasmExports.free(rightPtr);
-      pdfium.pdfium.wasmExports.free(bottomPtr);
-      pdfium.pdfium.wasmExports.free(topPtr);
-    }
-  }
-
-  /**
-   * Recursively collect all path object bounds from a page or form object.
-   *
-   * @param {number} containerPtr - Page or form object pointer
-   * @param {boolean} isForm - Whether containerPtr is a form object
-   * @param {number} pageHeight - For coordinate conversion
-   * @returns {PathObjectInfo[]}
-   */
-  #collectPathObjects(containerPtr, isForm, pageHeight) {
-    const pdfium = this.#pdfium;
-    const PAGEOBJ_PATH = 1;
-    const PAGEOBJ_IMAGE = 2;
-    const PAGEOBJ_FORM = 5;
-    const paths = [];
-
-    const count = isForm
-      ? pdfium.FPDFFormObj_CountObjects(containerPtr)
-      : pdfium.FPDFPage_CountObjects(containerPtr);
-
-    for (let i = 0; i < count; i++) {
-      const objPtr = isForm
-        ? pdfium.FPDFFormObj_GetObject(containerPtr, i)
-        : pdfium.FPDFPage_GetObject(containerPtr, i);
-      if (!objPtr) continue;
-
-      const type = pdfium.FPDFPageObj_GetType(objPtr);
-
-      if (type === PAGEOBJ_FORM) {
-        const nested = this.#collectPathObjects(objPtr, true, pageHeight);
-        for (let j = 0; j < nested.length; j++) paths.push(nested[j]);
-        continue;
-      }
-
-      let accept = false;
-      if (type === PAGEOBJ_PATH) {
-        accept = this.#isSimpleLinePath(objPtr);
-      } else if (type === PAGEOBJ_IMAGE) {
-        accept = true;
-      }
-      if (!accept) continue;
-
-      const bounds = this.#getPathBounds(objPtr);
-      if (!bounds) continue;
-
-      const h = bounds.top - bounds.bottom;
-      const w = bounds.right - bounds.left;
-      const isLinelikeBounds = (h < 3 && w > 20) || (w < 3 && h > 20);
-      if (type === PAGEOBJ_IMAGE && !isLinelikeBounds) continue;
-
-      paths.push({
-        index: paths.length,
-        pdfRect: bounds,
-        screenRect: {
-          x: bounds.left,
-          y: pageHeight - bounds.top,
-          width: w,
-          height: h,
-        },
-      });
-    }
-    return paths;
-  }
-
-  #isSimpleLinePath(objPtr) {
-    const pdfium = this.#pdfium;
-    if (pdfium.FPDFPath_CountSegments(objPtr) !== 2) return false;
-    const seg0 = pdfium.FPDFPath_GetPathSegment(objPtr, 0);
-    const seg1 = pdfium.FPDFPath_GetPathSegment(objPtr, 1);
-    if (pdfium.FPDFPathSegment_GetType(seg0) !== 0) return false;
-    if (pdfium.FPDFPathSegment_GetType(seg1) !== 1) return false;
-    return true;
-  }
-
-  /**
-   * Get bounding box of a path object via FPDFPageObj_GetBounds.
-   *
-   * @param {number} objPtr
-   * @returns {{left: number, bottom: number, right: number, top: number}|null}
-   */
-  #getPathBounds(objPtr) {
-    const pdfium = this.#pdfium;
-    const leftPtr = pdfium.pdfium.wasmExports.malloc(4);
-    const bottomPtr = pdfium.pdfium.wasmExports.malloc(4);
-    const rightPtr = pdfium.pdfium.wasmExports.malloc(4);
-    const topPtr = pdfium.pdfium.wasmExports.malloc(4);
-
-    try {
-      const ok = pdfium.FPDFPageObj_GetBounds(
-        objPtr,
-        leftPtr,
-        bottomPtr,
-        rightPtr,
-        topPtr,
-      );
-      if (!ok) return null;
-
-      return {
-        left: pdfium.pdfium.HEAPF32[leftPtr >> 2],
-        bottom: pdfium.pdfium.HEAPF32[bottomPtr >> 2],
-        right: pdfium.pdfium.HEAPF32[rightPtr >> 2],
-        top: pdfium.pdfium.HEAPF32[topPtr >> 2],
-      };
-    } finally {
-      pdfium.pdfium.wasmExports.free(leftPtr);
-      pdfium.pdfium.wasmExports.free(bottomPtr);
-      pdfium.pdfium.wasmExports.free(rightPtr);
-      pdfium.pdfium.wasmExports.free(topPtr);
-    }
-  }
-
-  /**
-   * Extract text slices grouped by words/text runs instead of individual characters.
-   *
-   * @param {number} textPagePtr - Text page pointer
-   * @param {number} totalChars - Total character count
-   * @param {number} pageHeight - Page height for Y coordinate conversion
    * @returns {TextSlice[]}
    */
-  #extractWordBasedSlices(textPagePtr, totalChars, pageHeight) {
-    const pdfium = this.#pdfium;
-    const textSlices = [];
+  #buildTextSlices(textPagePtr, charCount) {
+    const chars = this.#reader.readChars(textPagePtr, charCount);
+    const runs = groupCharsIntoRuns(chars);
 
-    if (totalChars <= 0) return textSlices;
-
-    const chars = [];
-    for (let i = 0; i < totalChars; i++) {
-      const charCode = pdfium.FPDFText_GetUnicode(textPagePtr, i);
-      const char = String.fromCodePoint(charCode);
-      const box = this.#getCharBox(textPagePtr, i, pageHeight);
-
-      const isWhitespace = charCode === 32; // space
-      const isNewline = charCode === 10 || charCode === 13; // LF or CR
-      const isControlChar = charCode < 32 && !isNewline; // other control chars
-      const isDigit = charCode >= 48 && charCode <= 57; // 0-9
-
-      chars.push({
-        index: i,
-        char,
-        charCode,
-        box,
-        isWhitespace,
-        isNewline,
-        isControlChar,
-        isDigit,
-      });
-    }
-
-    const getFontInfo = (charIndex) => {
-      const fontSize = pdfium.FPDFText_GetFontSize(textPagePtr, charIndex);
-
-      const fontNameLength = pdfium.FPDFText_GetFontInfo(
-        textPagePtr,
-        charIndex,
-        0,
-        0,
-        0,
-      );
-
-      if (fontNameLength <= 0) {
-        return { size: fontSize, family: null };
-      }
-
-      const bytesCount = fontNameLength + 1;
-      const textBufferPtr = pdfium.pdfium.wasmExports.malloc(bytesCount);
-      const flagsPtr = pdfium.pdfium.wasmExports.malloc(4);
-
-      try {
-        pdfium.FPDFText_GetFontInfo(
-          textPagePtr,
-          charIndex,
-          textBufferPtr,
-          bytesCount,
-          flagsPtr,
-        );
-
-        const fontFamily = pdfium.pdfium.UTF8ToString(textBufferPtr);
-        return {
-          size: fontSize,
-          family: fontFamily || null,
-        };
-      } finally {
-        pdfium.pdfium.wasmExports.free(textBufferPtr);
-        pdfium.pdfium.wasmExports.free(flagsPtr);
-      }
-    };
-
-    const isCJK = (code) =>
-      (code >= 0x4e00 && code <= 0x9fff) || // CJK Unified Ideographs
-      (code >= 0x3400 && code <= 0x4dbf) || // CJK Extension A
-      (code >= 0x20000 && code <= 0x2a6df) || // CJK Extension B
-      (code >= 0xf900 && code <= 0xfaff) || // CJK Compatibility Ideographs
-      (code >= 0x3000 && code <= 0x303f) || // CJK Symbols and Punctuation
-      (code >= 0x3040 && code <= 0x309f) || // Hiragana
-      (code >= 0x30a0 && code <= 0x30ff) || // Katakana
-      (code >= 0xff00 && code <= 0xffef) || // Fullwidth Forms
-      (code >= 0xac00 && code <= 0xd7af); // Hangul Syllables
-
-    let currentRun = null;
-    const LINE_TOLERANCE_FACTOR = 1.2; // Y tolerance for same line
-    const WORD_GAP_FACTOR = 2; // Gap threshold as fraction of char height
-
-    for (let i = 0; i < chars.length; i++) {
-      const { char, charCode, box, isWhitespace, isNewline, isControlChar } =
-        chars[i];
-
-      // Handle characters without visual representation (whitespace/control)
-      if (!box || isWhitespace || isNewline || isControlChar) {
-        if (currentRun) {
-          currentRun.trailingChars = currentRun.trailingChars || [];
-          currentRun.trailingChars.push(char);
-          currentRun.endIndex = i;
-
-          // Newlines force a run break after being added
-          if (isNewline) {
-            this.#finalizeRun(currentRun, textSlices, getFontInfo);
-            currentRun = null;
-          }
-        }
-        // If no current run, skip leading whitespace (will be captured by fullText)
-        continue;
-      }
-
-      if (box.width < 0 && box.height < 0) continue;
-      if (box.height > 100 || box.width > 200) continue;
-
-      const hasTrailingWhitespace =
-        currentRun &&
-        currentRun.trailingChars &&
-        currentRun.trailingChars.length > 0;
-
-      const isDigit = chars[i].isDigit;
-
-      if (!currentRun) {
-        currentRun = {
-          startIndex: i,
-          endIndex: i,
-          chars: [char],
-          trailingChars: [],
-          left: box.left,
-          top: box.top,
-          right: box.right,
-          bottom: box.bottom,
-          maxHeight: box.height,
-          lastVisibleCharCode: charCode,
-        };
-        continue;
-      }
-
-      const sameLine =
-        Math.abs(box.bottom - currentRun.bottom) <
-        currentRun.maxHeight * LINE_TOLERANCE_FACTOR;
-      const gapThreshold = currentRun.maxHeight * WORD_GAP_FACTOR;
-      const horizontalGap = box.left - currentRun.right;
-      const isAdjacent = horizontalGap < gapThreshold;
-
-      const lastCode = currentRun.lastVisibleCharCode;
-      const lastIsDigit = lastCode >= 48 && lastCode <= 57;
-      const lastIsAlpha =
-        (lastCode >= 65 && lastCode <= 90) ||
-        (lastCode >= 97 && lastCode <= 122) ||
-        lastCode > 127;
-      const currentIsAlpha =
-        (charCode >= 65 && charCode <= 90) ||
-        (charCode >= 97 && charCode <= 122) ||
-        charCode > 127;
-      const digitAlphaBoundary =
-        (isDigit && lastIsAlpha) || (currentIsAlpha && lastIsDigit);
-
-      // Break runs between punctuation and digits to prevent body-text
-      // punctuation (with full-size height) from being grouped with
-      // superscript numbers, which would inflate avgHeight and prevent
-      // superscript detection downstream.
-      const isPunct = (c) => c === 44 || c === 46 || c === 59 || c === 58; // , . ; :
-      const punctuationDigitBoundary =
-        (isDigit && isPunct(lastCode)) || (lastIsDigit && isPunct(charCode));
-
-      // CJK characters have no word separators — break at every character
-      // boundary to keep runs small (prevents width-based filtering from
-      // dropping entire lines, and enables per-character text selection).
-      const cjkBoundary = isCJK(charCode) || isCJK(lastCode);
-
-      if (
-        hasTrailingWhitespace ||
-        !sameLine ||
-        !isAdjacent ||
-        digitAlphaBoundary ||
-        punctuationDigitBoundary ||
-        cjkBoundary
-      ) {
-        this.#finalizeRun(currentRun, textSlices, getFontInfo);
-        currentRun = {
-          startIndex: i,
-          endIndex: i,
-          chars: [char],
-          trailingChars: [],
-          left: box.left,
-          top: box.top,
-          right: box.right,
-          bottom: box.bottom,
-          maxHeight: box.height,
-          lastVisibleCharCode: charCode,
-        };
-      } else {
-        currentRun.endIndex = i;
-        currentRun.chars.push(char);
-        currentRun.right = Math.max(currentRun.right, box.right);
-        currentRun.bottom = Math.min(currentRun.bottom, box.bottom);
-        currentRun.top = Math.max(currentRun.top, box.top);
-        if (box.height > 5) {
-          currentRun.maxHeight = Math.max(currentRun.maxHeight, box.height);
-        }
-        currentRun.lastVisibleCharCode = charCode;
-      }
-    }
-
-    if (currentRun) {
-      this.#finalizeRun(currentRun, textSlices, getFontInfo);
-    }
-
-    return textSlices;
-  }
-
-  /**
-   * Finalize a text run into a TextSlice
-   * Includes trailing whitespace/control characters for accurate text reconstruction
-   *
-   * @param {Object} run - The text run to finalize
-   * @param {TextSlice[]} textSlices - Array to push the slice to
-   * @param {Function} getFontInfo - Function to get font info for a char index
-   */
-  #finalizeRun(run, textSlices, getFontInfo) {
-    const visibleContent = run.chars.join("");
-    const trailingContent = (run.trailingChars || []).join("");
-    const content = visibleContent + trailingContent;
-
-    if (!visibleContent || /^\s*$/.test(visibleContent)) return;
-
-    const width = run.right - run.left;
-    const height = run.maxHeight;
-
-    if (width < 0 && height < 0) return;
-    if (height > 100) return;
-
-    const fontInfo = getFontInfo(run.startIndex);
-
-    textSlices.push({
-      content,
-      rect: {
-        origin: { x: run.left, y: run.top },
-        size: { width, height },
-      },
-      font: {
-        size: fontInfo.size || height,
-        family: fontInfo.family,
-      },
-      // Store char indices for potential future use (selection, search highlighting)
-      // _charRange: { start: run.startIndex, end: run.endIndex },
-    });
-  }
-
-  /**
-   * Extract font information for a character at a given position
-   *
-   * @param {number} textPagePtr - Text page pointer
-   * @param {number} left - Left coordinate of the text rect
-   * @param {number} top - Top coordinate of the text rect (PDF coordinates)
-   * @param {number} rectHeight - Height of the rect (fallback for font size)
-   * @returns {{size: number, family: string|null}}
-   */
-  #extractFontInfo(textPagePtr, left, top, rectHeight) {
-    const pdfium = this.#pdfium;
-
-    const charIndex = pdfium.FPDFText_GetCharIndexAtPos(
-      textPagePtr,
-      left,
-      top,
-      2,
-      2,
-    );
-
-    if (charIndex < 0) {
-      return { size: rectHeight, family: null };
-    }
-
-    const fontSize = pdfium.FPDFText_GetFontSize(textPagePtr, charIndex);
-
-    const fontNameLength = pdfium.FPDFText_GetFontInfo(
-      textPagePtr,
-      charIndex,
-      0, // null buffer
-      0, // buffer size 0
-      0, // flags pointer (not needed for length query)
-    );
-
-    if (fontNameLength <= 0) {
-      return { size: fontSize || rectHeight, family: null };
-    }
-
-    const bytesCount = fontNameLength + 1;
-    const textBufferPtr = pdfium.pdfium.wasmExports.malloc(bytesCount);
-    const flagsPtr = pdfium.pdfium.wasmExports.malloc(4); // int32 for flags
-
-    try {
-      pdfium.FPDFText_GetFontInfo(
-        textPagePtr,
-        charIndex,
-        textBufferPtr,
-        bytesCount,
-        flagsPtr,
-      );
-
-      // Font name is UTF-8 encoded
-      const fontFamily = pdfium.pdfium.UTF8ToString(textBufferPtr);
-
+    return runs.map((run) => {
+      const font = this.#reader.readFontInfo(textPagePtr, run.startIndex);
       return {
-        size: fontSize || rectHeight,
-        family: fontFamily || null,
+        content: run.content,
+        rect: {
+          origin: { x: run.left, y: run.top },
+          size: { width: run.width, height: run.height },
+        },
+        font: {
+          size: font.size || run.height,
+          family: font.family,
+        },
       };
-    } finally {
-      pdfium.pdfium.wasmExports.free(textBufferPtr);
-      pdfium.pdfium.wasmExports.free(flagsPtr);
-    }
+    });
   }
 }
 
@@ -887,9 +362,10 @@ export class PdfiumDocumentHandle {
       this.#docPtr = null;
     }
     if (this.#filePtr) {
-      this.#pdfium.pdfium.wasmExports.free(this.#filePtr);
+      this.#extractor.reader.ffi.free(this.#filePtr);
       this.#filePtr = null;
     }
+    this.#extractor.dispose();
   }
 }
 
@@ -905,11 +381,15 @@ export class PdfiumDocumentHandle {
 export class PdfiumDocumentFactory {
   #pdfium = null;
 
+  /** Owns the file buffer allocation, which happens before a handle exists. */
+  #ffi = null;
+
   /**
    * @param {import('@embedpdf/pdfium').WrappedPdfiumModule} pdfiumModule
    */
   constructor(pdfiumModule) {
     this.#pdfium = pdfiumModule;
+    this.#ffi = new PdfiumFFI(pdfiumModule);
   }
 
   /**
@@ -921,11 +401,10 @@ export class PdfiumDocumentFactory {
   loadFromBuffer(pdfData, password = null) {
     const pdfium = this.#pdfium;
 
-    // Allocate memory and copy PDF data
-    const filePtr = pdfium.pdfium.wasmExports.malloc(pdfData.length);
-    pdfium.pdfium.HEAPU8.set(pdfData, filePtr);
+    // PDFium keeps referencing this buffer for the life of the document, so it
+    // is owned by the handle and freed in close() rather than here.
+    const filePtr = this.#ffi.allocBytes(pdfData);
 
-    // Load document
     const docPtr = pdfium.FPDF_LoadMemDocument(
       filePtr,
       pdfData.length,
@@ -933,7 +412,7 @@ export class PdfiumDocumentFactory {
     );
 
     if (!docPtr) {
-      pdfium.pdfium.wasmExports.free(filePtr);
+      this.#ffi.free(filePtr);
       const error = pdfium.FPDF_GetLastError();
       throw new Error(`Failed to load PDF: error code ${error}`);
     }

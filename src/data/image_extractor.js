@@ -1,6 +1,4 @@
-// NOTE: PdfiumImageExtractor and PdfiumTextExtractor share WASM memory patterns
-// (malloc/free, HEAPF32/HEAPU8 reads, withPage lifecycle). If both grow further,
-// a shared WASM-memory utility module would reduce duplication.
+import { PAGEOBJ, PdfiumFFI } from "./pdfium_ffi.js";
 
 /**
  * @typedef {Object} ImageObjectInfo
@@ -11,9 +9,6 @@
  * @property {() => ImageData|null} getPixelData - Lazily extract the image pixels as RGBA ImageData
  */
 
-const PAGEOBJ_IMAGE = 3;
-const PAGEOBJ_FORM = 5;
-
 const BITMAP_FORMAT_GRAY = 1;
 const BITMAP_FORMAT_BGR = 2;
 const BITMAP_FORMAT_BGRX = 3;
@@ -23,11 +18,22 @@ export class PdfiumImageExtractor {
   /** @type {import('@embedpdf/pdfium').WrappedPdfiumModule} */
   #pdfium;
 
+  /** @type {PdfiumFFI} */
+  #ffi;
+
   /**
    * @param {import('@embedpdf/pdfium').WrappedPdfiumModule} pdfiumModule
    */
   constructor(pdfiumModule) {
     this.#pdfium = pdfiumModule;
+    this.#ffi = new PdfiumFFI(pdfiumModule);
+  }
+
+  /**
+   * Release WASM scratch memory held by this extractor.
+   */
+  dispose() {
+    this.#ffi.dispose();
   }
 
   /**
@@ -38,17 +44,7 @@ export class PdfiumImageExtractor {
    * @template T
    */
   withPage(docPtr, pageIndex, fn) {
-    const pdfium = this.#pdfium;
-    const pagePtr = pdfium.FPDF_LoadPage(docPtr, pageIndex);
-    if (!pagePtr) return null;
-
-    try {
-      const pageWidth = pdfium.FPDF_GetPageWidthF(pagePtr);
-      const pageHeight = pdfium.FPDF_GetPageHeightF(pagePtr);
-      return fn({ pagePtr, pageWidth, pageHeight });
-    } finally {
-      pdfium.FPDF_ClosePage(pagePtr);
-    }
+    return this.#ffi.withPage(docPtr, pageIndex, fn);
   }
 
   /**
@@ -130,9 +126,9 @@ export class PdfiumImageExtractor {
       if (!objPtr) continue;
 
       const type = pdfium.FPDFPageObj_GetType(objPtr);
-      if (type === PAGEOBJ_IMAGE) {
+      if (type === PAGEOBJ.IMAGE) {
         results.push(objPtr);
-      } else if (type === PAGEOBJ_FORM) {
+      } else if (type === PAGEOBJ.FORM) {
         const nested = this.#collectImageObjects(objPtr, true);
         for (let j = 0; j < nested.length; j++) results.push(nested[j]);
       }
@@ -146,27 +142,14 @@ export class PdfiumImageExtractor {
    */
   #getObjectBounds(objPtr) {
     const pdfium = this.#pdfium;
-    const leftPtr = pdfium.pdfium.wasmExports.malloc(4);
-    const bottomPtr = pdfium.pdfium.wasmExports.malloc(4);
-    const rightPtr = pdfium.pdfium.wasmExports.malloc(4);
-    const topPtr = pdfium.pdfium.wasmExports.malloc(4);
 
-    try {
-      const ok = pdfium.FPDFPageObj_GetBounds(objPtr, leftPtr, bottomPtr, rightPtr, topPtr);
-      if (!ok) return null;
+    const bounds = this.#ffi.readF32Out(4, (l, b, r, t) =>
+      pdfium.FPDFPageObj_GetBounds(objPtr, l, b, r, t),
+    );
+    if (!bounds) return null;
 
-      return {
-        left: pdfium.pdfium.HEAPF32[leftPtr >> 2],
-        bottom: pdfium.pdfium.HEAPF32[bottomPtr >> 2],
-        right: pdfium.pdfium.HEAPF32[rightPtr >> 2],
-        top: pdfium.pdfium.HEAPF32[topPtr >> 2],
-      };
-    } finally {
-      pdfium.pdfium.wasmExports.free(leftPtr);
-      pdfium.pdfium.wasmExports.free(bottomPtr);
-      pdfium.pdfium.wasmExports.free(rightPtr);
-      pdfium.pdfium.wasmExports.free(topPtr);
-    }
+    const [left, bottom, right, top] = bounds;
+    return { left, bottom, right, top };
   }
 
   /**
@@ -177,21 +160,13 @@ export class PdfiumImageExtractor {
    */
   #getPixelSize(imageObjPtr) {
     const pdfium = this.#pdfium;
-    const wPtr = pdfium.pdfium.wasmExports.malloc(4);
-    const hPtr = pdfium.pdfium.wasmExports.malloc(4);
 
-    try {
-      const ok = pdfium.FPDFImageObj_GetImagePixelSize(imageObjPtr, wPtr, hPtr);
-      if (!ok) return null;
+    const dims = this.#ffi.readU32Out(2, (w, h) =>
+      pdfium.FPDFImageObj_GetImagePixelSize(imageObjPtr, w, h),
+    );
+    if (!dims) return null;
 
-      return {
-        width: pdfium.pdfium.HEAPU32[wPtr >> 2],
-        height: pdfium.pdfium.HEAPU32[hPtr >> 2],
-      };
-    } finally {
-      pdfium.pdfium.wasmExports.free(wPtr);
-      pdfium.pdfium.wasmExports.free(hPtr);
-    }
+    return { width: dims[0], height: dims[1] };
   }
 
   /**
@@ -212,7 +187,7 @@ export class PdfiumImageExtractor {
 
       if (!bufferPtr || width <= 0 || height <= 0) return null;
 
-      const src = pdfium.pdfium.HEAPU8.subarray(bufferPtr, bufferPtr + height * stride);
+      const src = this.#ffi.bytes(bufferPtr, height * stride);
       const rgba = new Uint8ClampedArray(width * height * 4);
 
       for (let row = 0; row < height; row++) {

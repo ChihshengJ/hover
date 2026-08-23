@@ -56,6 +56,24 @@ function escapeForRegex(str) {
   return str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
+/**
+ * Zero-width markers PDFium leaves in the text layer that must not reach
+ * matching — the same set @embedpdf/models strips in stripPdfUnwantedMarkers,
+ * which upstream applies to text slices but never to extracted page text.
+ *
+ * U+FFFE marks a soft hyphen at a rendered line break, so removing it rejoins
+ * the split word; since 2.6.1 PDFium also reports genuine unrendered U+00AD,
+ * which has to go the same way or a hyphenated word never matches.
+ */
+const TEXT_MARKERS = new Set([
+  0x00ad, // SOFT HYPHEN
+  0x200b, // ZERO WIDTH SPACE
+  0x2060, // WORD JOINER
+  0xfeff, // ZERO WIDTH NO-BREAK SPACE / BOM
+  0xfffe, // PDFium's rendered-hyphenation marker
+  0xffff, // non-character
+]);
+
 class InlineTextAdapter {
   /** @type {import('./text_extractor.js').PdfiumTextExtractor} */
   #extractor = null;
@@ -63,7 +81,7 @@ class InlineTextAdapter {
 
   /**
    * Sparse removal maps per page — stores original indices of stripped chars.
-   * Only populated for pages that actually contain \uFFFE.
+   * Only populated for pages that actually contain a TEXT_MARKERS codepoint.
    * @type {Map<number, number[]>}
    */
   #pageRemovals = new Map();
@@ -87,10 +105,11 @@ class InlineTextAdapter {
 
     if (!text) return result;
 
-    // Scan for \uFFFE continuation hyphens (and optional trailing \n)
+    // Scan for zero-width markers (and any line-break a continuation hyphen
+    // carries with it)
     const removals = [];
     for (let i = 0; i < text.length; i++) {
-      if (text.charCodeAt(i) === 0xfffe) {
+      if (TEXT_MARKERS.has(text.charCodeAt(i))) {
         removals.push(i);
         // Also strip the line-break that follows the continuation hyphen
         if (i + 1 < text.length && text.charCodeAt(i + 1) === 0x0a) {
@@ -151,7 +170,10 @@ class InlineTextAdapter {
 
   /**
    * Convert a clean-text index back to the original PDFium char index.
-   * Binary-style scan over the sparse removal list.
+   *
+   * Linear scan over the sorted removal list, stopping at the first entry past
+   * the target. Fine while removals are sparse; a heavily hyphenated page makes
+   * the list long enough that a binary search would be worth it.
    *
    * @param {number} cleanIdx
    * @param {number[]} removals - sorted original indices of stripped chars

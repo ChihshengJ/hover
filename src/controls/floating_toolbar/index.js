@@ -96,6 +96,9 @@ export class FloatingToolbar {
           this.expandController.cancelExpandTimer();
         },
         onDragEnd: () => {
+          setTimeout(() => {
+            this.glassEffect.refreshTextColor(true);
+          }, 500);
           if (!this.isTreeOpen) {
             this.expandController.startExpandTimer();
             if (this.wm.isSplit) {

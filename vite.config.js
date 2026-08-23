@@ -1,6 +1,12 @@
 import { defineConfig } from "vite";
 import { resolve } from "path";
-import { copyFileSync, existsSync, readFileSync, writeFileSync } from "fs";
+import {
+  copyFileSync,
+  existsSync,
+  readFileSync,
+  statSync,
+  writeFileSync,
+} from "fs";
 
 const manifest = JSON.parse(
   readFileSync(resolve(__dirname, "manifest.json"), "utf8"),
@@ -101,6 +107,22 @@ export default defineConfig({
       },
     },
     {
+      // @embedpdf/pdfium resolves its binary with
+      // `new URL('pdfium.wasm', import.meta.url)`, which makes Vite emit a
+      // second 4.6 MB copy into assets/ on top of the one we ship at the
+      // extension root, which is redundant.
+      name: "dedupe-pdfium-wasm",
+      enforce: "pre",
+      transform(code, id) {
+        if (!id.includes("@embedpdf/pdfium")) return null;
+        if (!code.includes("new URL('pdfium.wasm'")) return null;
+        return code.replace(
+          /new URL\('pdfium\.wasm',\s*import\.meta\.url\)\.href/g,
+          "'pdfium.wasm'",
+        );
+      },
+    },
+    {
       // Write the merged per-target manifest into the output directory.
       name: "emit-target-manifest",
       closeBundle() {
@@ -125,13 +147,27 @@ export default defineConfig({
         );
         const wasmDest = resolve(__dirname, "public/pdfium.wasm");
 
-        if (existsSync(wasmSrc) && !existsSync(wasmDest)) {
+        if (!existsSync(wasmSrc)) return;
+
+        // public/pdfium.wasm is gitignored and must track the installed
+        // @embedpdf/pdfium exactly. Copying only when it is absent silently
+        // ships a stale binary against newer JS glue after a version bump, so
+        // compare sizes and re-copy whenever they diverge.
+        let stale = true;
+        if (existsSync(wasmDest)) {
           try {
-            copyFileSync(wasmSrc, wasmDest);
-            console.log("[vite] Copied pdfium.wasm to public/");
+            stale = statSync(wasmSrc).size !== statSync(wasmDest).size;
           } catch (err) {
-            console.warn("Could not copy pdfium.wasm:", err.message);
+            console.warn("Could not stat pdfium.wasm:", err.message);
           }
+        }
+        if (!stale) return;
+
+        try {
+          copyFileSync(wasmSrc, wasmDest);
+          console.log("[vite] Copied pdfium.wasm to public/");
+        } catch (err) {
+          console.warn("Could not copy pdfium.wasm:", err.message);
         }
       },
     },

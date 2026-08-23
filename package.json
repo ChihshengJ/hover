@@ -21,8 +21,8 @@
     "web-ext": "^10.3.0"
   },
   "dependencies": {
-    "@embedpdf/engines": "^2.3.0",
-    "@embedpdf/pdfium": "^2.3.0",
+    "@embedpdf/engines": "^2.15.0",
+    "@embedpdf/pdfium": "^2.15.0",
     "@leeoniya/ufuzzy": "^1.0.19"
   }
 }

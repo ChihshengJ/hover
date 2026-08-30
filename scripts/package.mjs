@@ -13,7 +13,7 @@ for (const target of ["chrome", "firefox"]) {
   const dir = `dist/${target}`;
   if (!existsSync(`${dir}/manifest.json`)) {
     console.error(
-      `Skipping ${target}: ${dir} not built (run npm run build:${target})`,
+      `Skipping ${target}: ${dir} not built (run bun run build:${target})`,
     );
     continue;
   }

@@ -1,0 +1,187 @@
+/**
+ * CommentInput - Popup for entering comments on annotations
+ *
+ * Replaces the annotation toolbar when comment button is clicked.
+ * Themed based on the annotation color.
+ */
+/** What the caller wants to happen when the popup closes. */
+export interface CommentInputCallbacks {
+  onSave(text: string): void | Promise<void>;
+  onCancel(): void;
+}
+
+export class CommentInput {
+  static #instance: CommentInput | null = null;
+
+  #container: HTMLElement = null;
+
+  #textarea: HTMLTextAreaElement = null;
+
+  #isVisible: boolean = false;
+
+  #onSave: Function | null = null;
+
+  #onCancel: Function | null = null;
+
+  #currentColor: string = "yellow";
+
+  constructor() {
+    if (CommentInput.#instance) {
+      return CommentInput.#instance;
+    }
+    CommentInput.#instance = this;
+    this.#createDOM();
+    this.#attachEventListeners();
+  }
+
+  static getInstance() {
+    if (!CommentInput.#instance) {
+      new CommentInput();
+    }
+    return CommentInput.#instance;
+  }
+
+  #createDOM() {
+    this.#container = document.createElement("div");
+    this.#container.className = "comment-input-container";
+    this.#container.innerHTML = `
+      <div class="comment-input-popup">
+        <div class="comment-input-header">
+          <span class="comment-input-title">Add Comment</span>
+          <button class="comment-close-btn" title="Cancel">
+            <div>x</div>
+          </button>
+        </div>
+        <textarea class="comment-textarea" placeholder="Enter your comment..." rows="3"></textarea>
+        <div class="comment-input-actions">
+          <button class="comment-save-btn">Save</button>
+        </div>
+      </div>
+    `;
+
+    this.#textarea = this.#container.querySelector(".comment-textarea");
+    document.body.appendChild(this.#container);
+  }
+
+  #attachEventListeners() {
+    // Save button
+    this.#container
+      .querySelector(".comment-save-btn")
+      .addEventListener("click", () => {
+        this.#save();
+      });
+
+    this.#container
+      .querySelector(".comment-close-btn")
+      .addEventListener("click", () => {
+        this.#cancel();
+      });
+
+    // Save on Ctrl+Enter
+    this.#textarea.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
+        e.preventDefault();
+        this.#save();
+      } else if (e.key === "Escape") {
+        e.preventDefault();
+        this.#cancel();
+      }
+    });
+
+    // Prevent clicks from bubbling
+    this.#container.addEventListener("pointerdown", (e) => {
+      e.stopPropagation();
+    });
+  }
+
+  #save() {
+    const text = this.#textarea.value.trim();
+    if (text) {
+      this.#onSave?.(text);
+    }
+    this.hide();
+  }
+
+  #cancel() {
+    this.#onCancel?.();
+    this.hide();
+  }
+
+  /**
+   * Show the comment input popup
+   * @param anchorRect Position to anchor the popup
+   * @param color Annotation color for theming
+   * @param existingComment Existing comment text (for editing)
+   */
+  show(
+    anchorRect: DOMRect,
+    color: string,
+    existingComment: string = "",
+    { onSave, onCancel }: CommentInputCallbacks,
+  ) {
+    this.#currentColor = color;
+    this.#onSave = onSave;
+    this.#onCancel = onCancel;
+
+    // Set color theme
+    this.#container.dataset.color = color;
+
+    // Set existing text
+    this.#textarea.value = existingComment;
+
+    // Update title
+    const title = this.#container.querySelector(".comment-input-title");
+    title.textContent = existingComment ? "Edit Comment" : "Add Comment";
+
+    // Position popup
+    this.#positionPopup(anchorRect);
+
+    // Show and focus
+    this.#isVisible = true;
+    this.#container.classList.add("visible");
+
+    // Focus textarea after animation
+    setTimeout(() => {
+      this.#textarea.focus();
+      this.#textarea.setSelectionRange(
+        this.#textarea.value.length,
+        this.#textarea.value.length,
+      );
+    }, 100);
+  }
+
+  #positionPopup(rect: DOMRect) {
+    const popupWidth = 280;
+    const popupHeight = 160;
+    const margin = 8;
+    const viewportWidth = window.innerWidth;
+    const viewportHeight = window.innerHeight;
+
+    // Try to position below the selection
+    let x = rect.left + rect.width / 2 - popupWidth / 2;
+    let y = rect.bottom + margin;
+
+    // Adjust if off-screen
+    if (y + popupHeight > viewportHeight - margin) {
+      y = rect.top - popupHeight - margin;
+    }
+
+    x = Math.max(margin, Math.min(x, viewportWidth - popupWidth - margin));
+    y = Math.max(margin, y);
+
+    this.#container.style.left = `${x}px`;
+    this.#container.style.top = `${y}px`;
+  }
+
+  hide() {
+    this.#isVisible = false;
+    this.#container.classList.remove("visible");
+    this.#textarea.value = "";
+    this.#onSave = null;
+    this.#onCancel = null;
+  }
+
+  get isVisible() {
+    return this.#isVisible;
+  }
+}

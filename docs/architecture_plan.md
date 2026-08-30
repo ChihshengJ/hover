@@ -3,14 +3,14 @@
 Written 2026-08-23 against `feat/engine-update` (efd138b). Two goals drive this
 plan, and they turn out to want the same refactor:
 
-> **Status.** Phases 1, 2, 5 and 6 have landed on `refactor-TS`, and Phase 7 has
-> landed for the engine half of the tree (`types/`, `platform/util/`,
+> **Status.** Phases 1, 2, 3, 5 and 6 have landed on `refactor-TS`, and Phase 7
+> has landed for the engine half of the tree (`types/`, `platform/util/`,
 > `analysis/`, `pdf/`, `model/doc_events`). Every file path and line number
 > below describes the tree as of Phase 2 unless a phase section says otherwise.
 >
-> **3 and 4 were deliberately skipped**, at the cost recorded under "Skipping 3
-> and 4" below. They remain the next open items, and Phase 7 stops where it does
-> because of them.
+> **3 and 4 were skipped** ahead of 5, 6 and 7, at the cost recorded under
+> "Skipping 3 and 4" below. 3 has since landed; **Phase 4 is the next open
+> item**, and Phase 7 stops where it does because of it.
 
 1. **Multiple reference sections per document** (roadmap item) — books with
    per-chapter bibliographies, proceedings, theses.
@@ -191,7 +191,9 @@ swap. That held, with three consequences worth writing down.
 **Phase 5 and 6 landed without the snapshots that exist to prove them neutral.**
 The translations were kept mechanical and the whole-program typecheck plus a
 three-target build stand in for them, but "the reference output did not move" is
-not something anyone has actually checked. That is the debt.
+not something anyone has actually checked. That is the debt, and Phase 3 landing
+afterwards does not retire it: the snapshots record the tree as it is *after*
+those phases, so they pin everything from here forward and nothing before.
 
 **Phase 7 stopped at the model boundary.** Renaming a `.js` file to `.ts` makes
 TypeScript *stop reading its JSDoc* — annotations are honoured in `.js` files
@@ -200,8 +202,17 @@ deletes every parameter type in the file, and with `strict: false` nothing
 reports it. Every file renamed here had its JSDoc converted to TS syntax and is
 held to `noImplicitAny` by `tsconfig.strict.json`, which is what makes the
 rename a gain rather than a quiet loss. The remaining ~26k lines of `viewer/`
-and `ui/` are the same job at five times the size, and they are where the
-snapshots would be doing the most work.
+and `ui/` are the same job at five times the size.
+
+Note what Phase 3 does and does not buy there. The snapshots pin the analysis
+pipeline's output — anchors, and the citation → reference mapping — so they
+cover `analysis/` and the model's boundary with it, which is most of what
+Phases 5 and 6 moved. They do not cover rendering, so they say nothing about
+`viewer/` or `ui/`. The conversion risk in those directories is the same in kind
+(a decayed annotation turns out to describe code that never ran — see the
+`viewer/page.js` text-layer font below) but the safety net is a different one:
+running the viewer and looking at it. Worth knowing before treating "wait for
+Phase 3" as sufficient cover for the rest of Phase 7.
 
 **The types were written for the single-section shape.** Phase 7's first step
 was meant to happen alongside 4b so that writing the types would surface the
@@ -232,7 +243,7 @@ of the image feature rather than deleted.
 
 ---
 
-## Phase 3 — snapshot tests on the existing fixture PDFs
+## Phase 3 — snapshot tests on the existing fixture PDFs — **DONE**
 
 **Do this before touching the reference parser.**
 
@@ -260,6 +271,66 @@ Phase 4 before writing any of that code.
 
 The roadmap already lists "Building a test suite from Semantic Scholar's
 database" — this is the cheap first version of it, and it runs in milliseconds.
+
+### What landed
+
+`bun test` — 21 tests over the four fixture PDFs, ~300 ms, no wasm. `bun run
+check` now runs typecheck, the layering check and the tests.
+
+    scripts/build_fixtures.ts       PDF → test/fixtures/<slug>.json.gz  (one-time)
+    test/support/fixture.ts         the fixture format, and the two sources that replay it
+    test/analysis.test.ts           the snapshots
+    test/__snapshots__/             ~2.7k lines, one anchor or citation per line
+
+Four departures from the sketch, each forced by something the sketch did not
+know:
+
+- **The fixture holds the `PageSource` inputs, not the built `DocumentTextIndex`.**
+  Serialising the index would have meant a `toJSON`/`fromJSON` pair on the class
+  and would have frozen its output; feeding it raw glyph slices instead costs
+  nothing extra and puts `text_index.ts` — line grouping, header/footer
+  detection, column detection — inside the covered surface.
+- **`RawPageTextSource` is a recording, not a serialisation.** Which character
+  ranges `InlineExtractor` probes depends on what it finds, so there is no
+  bounded set to write out in advance. The generator runs the real pipeline once
+  behind a recording proxy and stores the calls. A miss at replay time throws
+  with a pointer at `bun run fixtures` — the fixture is a recording of PDFium,
+  and only PDFium can extend it. In practice a fixture records 23–361 ranges.
+- **Snapshots are flat text, one record per line**, not serialized objects. The
+  point of a snapshot here is that a reviewer can look at the diff and say
+  whether the move was intended, and nested JSON of 312 citations does not read.
+  Anchor ids are omitted: they are fresh UUIDs per run, and nothing downstream
+  depends on the value.
+- **Fixtures are gzipped** (~1.3 MB total, from ~11 MB of JSON). Nothing reads
+  one by eye; `gunzip -c … | jq` is in the script header. Regeneration is
+  byte-stable — every float is rounded to four places, and the engine's per-run
+  annotation UUIDs are dropped — so a rebuild that changes a fixture means
+  PDFium's output actually moved.
+
+Two extractions the generator forced, both of which belong where they went:
+
+- `normalizeAnnotationRects()` → `src/pdf/annotations.ts`, out of a private
+  method on `AnnotationStore`. It is raw FFI — `FPDFAnnot_GetRect` and a heap
+  read — and the generator has to produce the same annotation shape the model
+  does. It now goes through `PdfiumFFI`'s scratch frames rather than reaching
+  into `HEAPF32`, which retires the last hand-rolled heap access outside
+  `pdfium_ffi.ts`. Its two locals were also named backwards: it read `FS_RECTF`
+  offset 4 as `bottom` and offset 12 as `top`, which is the reverse of the
+  struct. Same behaviour, honest names.
+- `collectNamedDestinations()` → `src/analysis/outline_builder.ts`, out of
+  `#loadBookmarksAndDestinations`. It is a pure walk over a bookmark tree, and
+  the only consumer of its output is `buildOutline()`. One behavioural
+  difference, deliberate: a bookmark whose action carries no `view` array is
+  skipped rather than throwing, where the old version abandoned the rest of the
+  tree on the first malformed entry.
+
+**Still open: the multi-bibliography fixture.** Phase 4 needs a thesis or
+proceedings with per-chapter bibliographies, and there isn't one in
+`marketing/List of Papers/`. Drop the PDF in there and `bun run fixtures` picks
+it up — no test code changes, the suite enumerates the directory. Do that before
+writing any of Phase 4, per the sketch above: today's four fixtures all have
+exactly one reference section, so they can prove step 1 neutral but say nothing
+about steps 2 and 3.
 
 ---
 
@@ -547,8 +618,10 @@ Converted and strict-clean, leaves first as planned:
 
 Left as `.js`: `model/doc`, `model/annotation_data`, `platform/ingest`,
 `viewer/`, `ui/`, `main.js`, and the three root extension entry points. The
-order to continue in is unchanged — `model/` next, `ui/` last — and the reason
-to stop here is under "Skipping 3 and 4" above.
+order to continue in is unchanged — `model/` next, `ui/` last. `model/doc.js`
+and `model/annotation_data.js` are the ones Phase 3's snapshots cover, and those
+now exist, so they are ready to convert; `viewer/` and `ui/` are gated on manual
+verification instead.
 
 Friction, against what was expected:
 
@@ -575,11 +648,14 @@ Execution order, which is not the same as the phase numbering above:
 | ~~3~~ | ~~`analyzeDocument()` pipeline, kill the cycle~~ **done** | 5 | taken early; the plan allows 4↔5 |
 | ~~4~~ | ~~Interface cleanups~~ **done** | 6 | explicitly independent of everything else |
 | ~~5~~ | ~~`.ts` renames, engine half~~ **done** | 7 | needed 1–5; `ui/` deferred, see above |
-| 6 | Snapshot tests on fixture PDFs ← **next** | 3 | must exist before the parser changes — and now before `ui/` is renamed |
-| 7 | Section-scoped types, `sections: [one]` | 4, step 1 | behavior-neutral; snapshots prove it |
+| ~~6~~ | ~~Snapshot tests on fixture PDFs~~ **done** | 3 | had to exist before the parser changes — and before `ui/` is renamed |
+| 7 | Section-scoped types, `sections: [one]` ← **next** | 4, step 1 | behavior-neutral; snapshots prove it |
 | 8 | Multi-section detection + per-section format | 4, steps 2–3 | the actual feature |
 | 9 | `.ts` renames, `viewer/` + `ui/` | 7 | the remaining ~26k lines |
 
 Orders 1–3 are worth doing even if multi-reference support is deferred; they pay
 for themselves in tooling and regression safety. The 4-before-6 split is the
 part not to shortcut.
+
+Order 7 needs one thing order 6 could not supply: a multi-bibliography fixture
+PDF. See the end of Phase 3.

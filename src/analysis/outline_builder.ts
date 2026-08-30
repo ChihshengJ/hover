@@ -143,6 +143,56 @@ function processBookmarks(
   return result;
 }
 
+/** A named destination, resolved to a page and a position on it. */
+export interface NamedDestination {
+  pageIndex: number;
+  left: number;
+  top: number;
+  zoom: number | null;
+}
+
+/**
+ * Index every bookmark destination in the tree by name, for the bookmarks whose
+ * own target is a string rather than an inline destination.
+ *
+ * Titles are the names — that is what PDF writers put in the name tree — with a
+ * positional fallback for the untitled ones so two of them cannot collide.
+ *
+ * A bookmark whose action carries no view array is skipped rather than throwing,
+ * which is the one behavioural difference from the model code this replaced:
+ * that version abandoned the rest of the tree on the first malformed entry.
+ */
+export function collectNamedDestinations(
+  bookmarks: any[],
+): Map<string, NamedDestination> {
+  const dests = new Map<string, NamedDestination>();
+
+  const walk = (items: any[], prefix: string) => {
+    if (!items || !Array.isArray(items)) return;
+
+    for (let i = 0; i < items.length; i++) {
+      const bookmark = items[i];
+
+      const destination = bookmark.target?.action?.destination;
+      if (bookmark.target?.type === "action" && destination?.view) {
+        dests.set(bookmark.title || `${prefix}bookmark_${i}`, {
+          pageIndex: destination.pageIndex ?? 0,
+          left: destination.view[0] ?? 0,
+          top: destination.view[1] ?? 0,
+          zoom: destination.zoom?.mode ?? null,
+        });
+      }
+
+      if (bookmark.children?.length > 0) {
+        walk(bookmark.children, `${prefix}${i}_`);
+      }
+    }
+  };
+
+  walk(bookmarks, "");
+  return dests;
+}
+
 function resolveBookmarkDestination(
   bookmark: any,
   allNamedDests: Map<string, any>,

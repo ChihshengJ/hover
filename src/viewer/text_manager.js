@@ -375,8 +375,21 @@ export class TextSelectionManager {
   }
 
   /**
-   * Get the current selection with page information and rectangles
-   * @returns {Array<{pageNumber: number, text: string, rects: Array<{left: number, top: number, width: number, height: number}>, scale: number}>}
+   * One page's worth of a selection: the text, and where it sits on that page
+   * in layer-local CSS pixels.
+   *
+   * @typedef {Object} TextSelectionRecord
+   * @property {number} pageNumber - 1-based
+   * @property {string} text
+   * @property {Array<{left: number, top: number, width: number, height: number}>} rects
+   * @property {number} scale - the pane scale the rects were measured at
+   */
+
+  /**
+   * Get the current selection with page information and rectangles.
+   * A multi-page selection yields one record per page it covers.
+   *
+   * @returns {TextSelectionRecord[]}
    */
   getSelection() {
     const selection = document.getSelection();

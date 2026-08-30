@@ -12,5 +12,7 @@
     "lib": ["ES2022"],
     "types": ["node"]
   },
-  "include": ["vite.config.js", "scripts/**/*"]
+  "include": ["vite.config.js", "scripts/**/*"],
+  // build_fixtures.ts imports src/ and is checked by tsconfig.test.json.
+  "exclude": ["scripts/build_fixtures.ts"]
 }

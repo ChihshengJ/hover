@@ -26,6 +26,7 @@ import {
   indexUrls,
   DocumentAnalysis,
 } from "../analysis/pipeline.js";
+import { collectNamedDestinations } from "../analysis/outline_builder.js";
 import { AnnotationStore } from "./annotation_data.js";
 import { DocEvent } from "./doc_events.js";
 
@@ -267,30 +268,7 @@ export class PDFDocumentModel {
     try {
       const bookmarks = await this.native.getBookmarks(this.pdfDoc).toPromise();
       this.bookmarks = bookmarks.bookmarks || [];
-
-      const processBookmarks = async (items, prefix = "") => {
-        if (!items || !Array.isArray(items)) return;
-
-        for (let i = 0; i < items.length; i++) {
-          const bookmark = items[i];
-
-          if (bookmark.target?.type === "action") {
-            const destName = bookmark.title || `${prefix}bookmark_${i}`;
-            this.allNamedDests.set(destName, {
-              pageIndex: bookmark.target.action.destination.pageIndex ?? 0,
-              left: bookmark.target.action.destination.view[0] ?? 0,
-              top: bookmark.target.action.destination.view[1] ?? 0,
-              zoom: bookmark.target.action.destination.zoom.mode ?? null,
-            });
-          }
-
-          if (bookmark.children?.length > 0) {
-            await processBookmarks(bookmark.children, `${prefix}${i}_`);
-          }
-        }
-      };
-
-      await processBookmarks(this.bookmarks);
+      this.allNamedDests = collectNamedDestinations(this.bookmarks);
     } catch (error) {
       console.warn("[Doc] Error loading bookmarks:", error);
     }

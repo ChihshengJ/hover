@@ -157,6 +157,20 @@ bun run build:chrome
 
 Open Chrome, navigate to [Chrome extension management](chrome://extensions/), turn on developer mode and load the _dist/chrome_ folder to use the extension.
 
+Before opening a PR, run
+
+```bash
+bun run check
+```
+
+which type-checks the tree, enforces the `src/analysis/` → `src/pdf/` layering
+rule, and runs the reference/citation snapshot tests (`bun test`) over the
+fixture PDFs in _marketing/List of Papers_. If a snapshot moves, read the diff
+and decide whether the move was intended before accepting it with
+`bun test --update-snapshots`. The fixtures themselves are regenerated from the
+PDFs with `bun run fixtures`, which is only needed when a PDF is added or when
+the analysis starts probing character ranges the recording does not cover.
+
 Please note that we only accept PRs that do not affect the current UI.
 
 ---

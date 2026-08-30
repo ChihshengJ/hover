@@ -4,9 +4,11 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.strict.json && tsc --noEmit -p tsconfig.node.json",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.strict.json && tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.test.json",
+    "test": "bun test",
+    "fixtures": "bun scripts/build_fixtures.ts",
     "check:layers": "bun scripts/check_layering.mjs",
-    "check": "bun run typecheck && bun run check:layers",
+    "check": "bun run typecheck && bun run check:layers && bun run test",
     "build": "vite build",
     "build:chrome": "TARGET=chrome vite build",
     "build:firefox": "TARGET=firefox vite build",
@@ -20,6 +22,7 @@
     "preview": "vite preview"
   },
   "devDependencies": {
+    "@types/bun": "^1.4.0",
     "@types/chrome": "^0.2.7",
     "typescript": "^7.0.2",
     "vite": "^7.3.1",

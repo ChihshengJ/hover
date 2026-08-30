@@ -1,0 +1,17 @@
+{
+  // The test tier: `test/` plus the one script that feeds it. Separate from
+  // tsconfig.node.json because these files import `src/` — a Node-typed program
+  // that also pulls in browser code redeclares globals (see tsconfig.json) —
+  // and separate from tsconfig.json because they need `bun:test` and
+  // `import.meta.dir`.
+  //
+  // Held to the same strictness as the converted `src/` subtrees.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "strict": true,
+    "strictNullChecks": false,
+    "noImplicitAny": true,
+    "types": ["bun"]
+  },
+  "include": ["src/types/**/*", "test/**/*", "scripts/build_fixtures.ts"]
+}

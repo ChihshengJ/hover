@@ -1,4 +1,5 @@
 import { DocEvent } from "./doc_events.js";
+import { normalizeAnnotationRects } from "../pdf/annotations.js";
 
 const COLOR_NAME_TO_HEX = {
   black: "#000000",
@@ -120,7 +121,11 @@ export class AnnotationStore {
           .toPromise();
 
         const { width: pageWidth, height: pageHeight } = page.size;
-        this.#normalizeAnnotationRects(annotations, pageNum - 1, pageHeight);
+        normalizeAnnotationRects(
+          this.#doc.lowLevelHandle,
+          pageNum - 1,
+          annotations,
+        );
         this.nativeAnnotationsByPage.set(pageNum, annotations);
 
         for (const annot of annotations) {
@@ -708,72 +713,6 @@ export class AnnotationStore {
     }
 
     await this.#removeCommentAnnotation(annotation.id);
-  }
-
-  // ============================================
-  // Annotation Rect Normalization
-  // ============================================
-
-  /**
-   * Normalize engine annotation rects using raw Pdfium data.
-   * @param {Array} annotations - Engine annotation objects (mutated in place)
-   * @param {number} pageIndex - 0-based page index
-   * @param {number} pageHeight - Page height in PDF units
-   */
-  #normalizeAnnotationRects(annotations, pageIndex, pageHeight) {
-    if (!annotations || annotations.length === 0) return;
-
-    const handle = this.#doc.lowLevelHandle;
-    if (!handle) return;
-
-    const pdfium = handle.pdfium;
-    const docPtr = handle.docPtr;
-
-    const pagePtr = pdfium.FPDF_LoadPage(docPtr, pageIndex);
-    if (!pagePtr) return;
-
-    try {
-      const rawAnnotCount = pdfium.FPDFPage_GetAnnotCount(pagePtr);
-      if (rawAnnotCount === 0) return;
-
-      const rectPtr = pdfium.pdfium.wasmExports.malloc(16);
-      let needsCorrection = false;
-
-      try {
-        const samplesToCheck = Math.min(rawAnnotCount, 5);
-        for (let i = 0; i < samplesToCheck; i++) {
-          const annotPtr = pdfium.FPDFPage_GetAnnot(pagePtr, i);
-          if (!annotPtr) continue;
-
-          const success = pdfium.FPDFAnnot_GetRect(annotPtr, rectPtr);
-          pdfium.FPDFPage_CloseAnnot(annotPtr);
-
-          if (!success) continue;
-
-          const bottom = pdfium.pdfium.HEAPF32[(rectPtr + 4) >> 2];
-          const top = pdfium.pdfium.HEAPF32[(rectPtr + 12) >> 2];
-
-          if (top > bottom) {
-            needsCorrection = true;
-            break;
-          }
-        }
-      } finally {
-        pdfium.pdfium.wasmExports.free(rectPtr);
-      }
-
-      if (!needsCorrection) return;
-
-      for (const annot of annotations) {
-        if (!annot.target) continue;
-
-        if (annot.rect?.origin && annot.rect?.size) {
-          annot.rect.origin.y -= annot.rect.size.height;
-        }
-      }
-    } finally {
-      pdfium.FPDF_ClosePage(pagePtr);
-    }
   }
 
   // ============================================

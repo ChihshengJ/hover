@@ -92,7 +92,6 @@ export class CitationBuilder {
   #referenceIndex: ReferenceIndex | null = null;
   #textIndex: DocumentTextIndex = null;
   #nativeAnnotationsByPage: Map<number, any[]> = null;
-  #numPages = 0;
 
   /** Reference anchors, used to match a citation to what it points at. */
   #signatures: ReferenceAnchor[] = [];
@@ -105,12 +104,10 @@ export class CitationBuilder {
     referenceIndex: ReferenceIndex,
     nativeAnnotationsByPage: Map<number, any[]>,
     textIndex: DocumentTextIndex,
-    numPages: number,
   ) {
     this.#referenceIndex = referenceIndex;
     this.#nativeAnnotationsByPage = nativeAnnotationsByPage || new Map();
     this.#textIndex = textIndex;
-    this.#numPages = numPages;
     this.#signatures = referenceIndex?.anchors || [];
     this.#refSectionStartPage =
       referenceIndex?.sectionStart?.pageNumber || Infinity;
@@ -157,13 +154,8 @@ export class CitationBuilder {
     return { byPage, details };
   }
 
-  /**
-   * Index native PDF annotations that are citation links
-   * (i.e., links pointing to the reference section)
-   *
-   * @returns {Map<string, NativeCitationLink>}
-   */
-  #indexNativeCitationLinks() {
+  /** Index native PDF annotations that are citation links (i.e., links pointing to the reference section) */
+  #indexNativeCitationLinks(): Map<string, NativeCitationLink> {
     const index = new Map();
 
     for (const [pageNum, annotations] of this.#nativeAnnotationsByPage) {
@@ -500,17 +492,14 @@ export function createCitationBuilder({
   referenceIndex,
   nativeAnnotationsByPage,
   textIndex,
-  numPages,
 }: {
   referenceIndex: ReferenceIndex;
   nativeAnnotationsByPage: Map<number, any[]>;
   textIndex: DocumentTextIndex;
-  numPages: number;
 }): CitationBuilder {
   return new CitationBuilder(
     referenceIndex,
     nativeAnnotationsByPage,
     textIndex,
-    numPages,
   );
 }

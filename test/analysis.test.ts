@@ -72,7 +72,6 @@ async function analyze(fixture: AnalysisFixture): Promise<DocumentAnalysis> {
 
   return analyzeDocument({
     textIndex,
-    numPages: fixture.numPages,
     nativeAnnotationsByPage: new Map(fixture.annotationsByPage),
     bookmarks: fixture.bookmarks,
     allNamedDests: new Map(fixture.namedDests),

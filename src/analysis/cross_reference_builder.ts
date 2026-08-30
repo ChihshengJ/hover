@@ -76,7 +76,6 @@ export class CrossReferenceBuilder {
   #nativeAnnotationsByPage: Map<number, any[]> = null;
   #referenceIndex: ReferenceIndex | null = null;
   #outline: OutlineItem[] = null;
-  #numPages = 0;
 
   /** Extracted targets (definitions), keyed `${type}-${targetId}`. */
   #targets = new Map<string, CrossRefTarget>();
@@ -89,13 +88,11 @@ export class CrossReferenceBuilder {
     textIndex: DocumentTextIndex,
     nativeAnnotationsByPage: Map<number, any[]>,
     referenceIndex: ReferenceIndex,
-    numPages: number,
     outline: OutlineItem[],
   ) {
     this.#textIndex = textIndex;
     this.#nativeAnnotationsByPage = nativeAnnotationsByPage || new Map();
     this.#referenceIndex = referenceIndex;
-    this.#numPages = numPages;
     this.#outline = outline || [];
     this.#refSectionStartPage =
       referenceIndex?.sectionStart?.pageNumber || Infinity;
@@ -624,20 +621,17 @@ export function createCrossReferenceBuilder({
   textIndex,
   nativeAnnotationsByPage,
   referenceIndex,
-  numPages,
   outline,
 }: {
   textIndex: DocumentTextIndex;
   nativeAnnotationsByPage: Map<number, any[]>;
   referenceIndex: ReferenceIndex;
-  numPages: number;
   outline: OutlineItem[];
 }): CrossReferenceBuilder {
   return new CrossReferenceBuilder(
     textIndex,
     nativeAnnotationsByPage,
     referenceIndex,
-    numPages,
     outline,
   );
 }

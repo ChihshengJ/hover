@@ -172,7 +172,6 @@ async function buildFixture(pdfPath: string): Promise<AnalysisFixture> {
     await textIndex.build();
     analyzeDocument({
       textIndex,
-      numPages,
       nativeAnnotationsByPage: new Map(
         annotationsByPage.map(([p, a]) => [p, a as any[]]),
       ),

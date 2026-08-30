@@ -127,7 +127,6 @@ export class DocumentAnalysis {
  */
 export function analyzeDocument({
   textIndex,
-  numPages,
   nativeAnnotationsByPage = new Map(),
   bookmarks = [],
   allNamedDests = new Map(),
@@ -135,7 +134,6 @@ export function analyzeDocument({
   onProgress = () => {},
 }: {
   textIndex: DocumentTextIndex;
-  numPages: number;
   nativeAnnotationsByPage?: Map<number, any[]>;
   bookmarks?: any[];
   allNamedDests?: Map<string, any>;
@@ -167,7 +165,6 @@ export function analyzeDocument({
     const inline = extractInlineElements({
       textIndex,
       references,
-      numPages,
       nativeAnnotationsByPage,
       outline,
       pageTextSource,
@@ -209,14 +206,12 @@ export function analyzeDocument({
 function extractInlineElements({
   textIndex,
   references,
-  numPages,
   nativeAnnotationsByPage,
   outline,
   pageTextSource,
 }: {
   textIndex: DocumentTextIndex;
   references: ReferenceIndex;
-  numPages: number;
   nativeAnnotationsByPage: Map<number, any[]>;
   outline: OutlineItem[];
   pageTextSource: RawPageTextSource;
@@ -225,7 +220,6 @@ function extractInlineElements({
     pageTextSource,
     textIndex,
     referenceIndex: references,
-    numPages,
   });
   const { citations, crossRefs } = extractor.extract();
 
@@ -233,7 +227,6 @@ function extractInlineElements({
     referenceIndex: references,
     nativeAnnotationsByPage,
     textIndex,
-    numPages,
   });
   const { byPage: citationsByPage, details: citationDetails } =
     citationBuilder.build(citations);
@@ -242,7 +235,6 @@ function extractInlineElements({
     textIndex,
     nativeAnnotationsByPage,
     referenceIndex: references,
-    numPages,
     outline,
   });
   const { byPage: crossRefsByPage, targets: crossRefTargets } =
@@ -303,7 +295,9 @@ function buildNativeFallback(nativeAnnotationsByPage: Map<number, any[]>) {
         confidence: 1.0,
         flags,
         targetLocation,
-        allTargets: [{ refIndex: null, refKey: null, location: targetLocation }],
+        allTargets: [
+          { refIndex: null, refKey: null, location: targetLocation },
+        ],
       });
     }
 
@@ -378,7 +372,10 @@ function injectAbstractIntoOutline(
   for (let i = 0; i < outline.length; i++) {
     const item = outline[i];
     if (item.pageIndex > abstractInfo.pageIndex) break;
-    if (item.pageIndex === abstractInfo.pageIndex && item.top <= abstractInfo.top)
+    if (
+      item.pageIndex === abstractInfo.pageIndex &&
+      item.top <= abstractInfo.top
+    )
       break;
     insertIndex = i + 1;
   }

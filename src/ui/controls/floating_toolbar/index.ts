@@ -20,7 +20,6 @@ import { DragController } from "./drag_controller.js";
 import { buildToolbarDom } from "./toolbar_dom.js";
 import { GlassEffect } from "./liquid_glass/glass_effect.js";
 
-import type { ViewerPane } from "../../../viewer/viewpane.js";
 import type { SplitWindowManager } from "../../../viewer/window_manager.js";
 export class FloatingToolbar {
   wm: SplitWindowManager;

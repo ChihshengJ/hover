@@ -243,7 +243,6 @@ export class InlineExtractor {
   #textExtractor: InlineTextAdapter = null;
   #textIndex: DocumentTextIndex = null;
   #referenceIndex: ReferenceIndex | null = null;
-  #numPages = 0;
 
   /** Reference anchors, used to validate that a match points at something. */
   #signatures: ReferenceAnchor[] = [];
@@ -261,12 +260,10 @@ export class InlineExtractor {
     textExtractor: InlineTextAdapter,
     textIndex: DocumentTextIndex,
     referenceIndex: ReferenceIndex,
-    numPages: number,
   ) {
     this.#textExtractor = textExtractor;
     this.#textIndex = textIndex;
     this.#referenceIndex = referenceIndex;
-    this.#numPages = numPages;
   }
 
   /**
@@ -293,10 +290,11 @@ export class InlineExtractor {
 
     const bodyLineHeight = this.#textIndex?.getBodyLineHeight() || 10;
     const refSectionStart =
-      this.#referenceIndex?.sectionStart?.pageNumber || this.#numPages + 1;
+      this.#referenceIndex?.sectionStart?.pageNumber || Infinity;
     const refSectionEnd = this.#referenceIndex?.sectionEnd?.pageNumber || -1;
 
-    for (let pageNum = 1; pageNum <= this.#numPages; pageNum++) {
+    const numPages = this.#textIndex.getPageCount();
+    for (let pageNum = 1; pageNum <= numPages; pageNum++) {
       this.#matchedRanges.set(pageNum, new Set());
 
       const isInRefSection =
@@ -1355,17 +1353,14 @@ export function createInlineExtractor({
   pageTextSource,
   textIndex,
   referenceIndex,
-  numPages,
 }: {
   pageTextSource: RawPageTextSource;
   textIndex: DocumentTextIndex;
   referenceIndex: ReferenceIndex;
-  numPages: number;
 }): InlineExtractor {
   return new InlineExtractor(
     new InlineTextAdapter(pageTextSource),
     textIndex,
     referenceIndex,
-    numPages,
   );
 }

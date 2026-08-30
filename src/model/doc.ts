@@ -231,7 +231,6 @@ export class PDFDocumentModel {
 
       this.analysis = analyzeDocument({
         textIndex: this.textIndex,
-        numPages: this.numPages,
         nativeAnnotationsByPage: this.nativeAnnotationsByPage,
         bookmarks: this.bookmarks,
         allNamedDests: this.allNamedDests,

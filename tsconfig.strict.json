@@ -1,21 +1,16 @@
 {
-  // The strict tier. Phase 7 turns strictness on one import-closed subtree at a
-  // time rather than all at once; this config names the subtrees that have
-  // landed. `bun run typecheck` runs it alongside the permissive whole-program
-  // check, so a file listed here is held to both.
+  // The strict tier. Phase 7 turned strictness on one import-closed subtree at
+  // a time; with the whole tree converted it now covers everything the base
+  // config does. `bun run typecheck` runs it alongside the permissive
+  // whole-program check, so every file is held to both.
   //
   // `strictNullChecks` is deliberately last — see docs/architecture_plan.md.
+  // It is the one remaining tier, and turning it on is its own piece of work:
+  // the codebase optional-chains against nullable model fields throughout.
   "extends": "./tsconfig.json",
   "compilerOptions": {
     "strict": true,
     "strictNullChecks": false,
     "noImplicitAny": true
-  },
-  "include": [
-    "src/types/**/*",
-    "src/analysis/**/*",
-    "src/platform/util/**/*",
-    "src/pdf/**/*",
-    "src/model/doc_events.ts"
-  ]
+  }
 }

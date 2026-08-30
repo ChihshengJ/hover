@@ -3,14 +3,15 @@
 Written 2026-08-23 against `feat/engine-update` (efd138b). Two goals drive this
 plan, and they turn out to want the same refactor:
 
-> **Status.** Phases 1, 2, 3, 5 and 6 have landed on `refactor-TS`, and Phase 7
-> has landed for the engine half of the tree (`types/`, `platform/util/`,
-> `analysis/`, `pdf/`, `model/doc_events`). Every file path and line number
-> below describes the tree as of Phase 2 unless a phase section says otherwise.
+> **Status.** Every phase except 4 has landed on `refactor-TS`. The tree is
+> fully TypeScript: `src/` and the three root extension entry points have no
+> `.js` left, and `noImplicitAny` covers all of it. Every file path and line
+> number below describes the tree as of Phase 2 unless a phase section says
+> otherwise — most of the `.js` paths named below are now `.ts`.
 >
-> **3 and 4 were skipped** ahead of 5, 6 and 7, at the cost recorded under
-> "Skipping 3 and 4" below. 3 has since landed; **Phase 4 is the next open
-> item**, and Phase 7 stops where it does because of it.
+> **Phase 4 — multiple reference sections — is the one open item.** It was
+> skipped ahead of 5, 6 and 7, at the cost recorded under "Skipping 3 and 4"
+> below; Phase 3 has since landed and covers it.
 
 1. **Multiple reference sections per document** (roadmap item) — books with
    per-chapter bibliographies, proceedings, theses.
@@ -564,7 +565,7 @@ All five bullets, plus what each surfaced:
 
 ---
 
-## Phase 7 — the `.ts` renames — **engine half done**
+## Phase 7 — the `.ts` renames — **DONE**
 
 Only after Phases 1–5. By then the types that matter already exist as JSDoc that
 compiles.
@@ -602,38 +603,85 @@ compiles.
 
 ### What landed
 
-`tsconfig.strict.json` is the mechanism: it extends the base config with
-`strict: true` (minus `strictNullChecks`) and `include`s only the subtrees that
-have been converted. `bun run typecheck` runs the permissive whole-program check,
-then the strict tier, then the Node tier — so a converted file is held to both
-and an unconverted one cannot quietly regress the tier.
+`tsconfig.strict.json` was the mechanism: it extends the base config with
+`strict: true` (minus `strictNullChecks`), and while the conversion was in
+flight it `include`d only the subtrees that had landed, so a converted file was
+held to both tiers and an unconverted one could not quietly regress it.
+`bun run typecheck` runs the permissive whole-program check, then the strict
+tier, then the Node tier, then the test tier.
 
-Converted and strict-clean, leaves first as planned:
+The whole tree is converted. `src/` has no `.js` left, and neither do the three
+root extension entry points; the only surviving JavaScript is
+`vite.config.js`, which runs under Node and has its own tier. With nothing
+excluded, `tsconfig.strict.json` dropped its `include` list — it now covers the
+same program as the base config, so **every file is held to `noImplicitAny`**.
+
+The order was as planned, leaves first, one commit per subtree:
 
     src/types/          Rect, Point, PdfiumRect, PathObjectInfo, PageLocation, RefIndex
-    src/platform/util/  base64
+    src/platform/       base64, ingest
     src/analysis/       all ten modules, ~7.2k lines
-    src/pdf/            all six modules, ~1.6k lines
-    src/model/          doc_events
+    src/pdf/            all six modules, ~1.6k lines  (+ annotations, from Phase 3)
+    src/model/          doc, annotation_data, doc_events
+    src/viewer/         pointer_gesture, text_manager, window_manager, page, viewpane
+    src/ui/             annotation/, trail/, tools/, controls/, settings/  — ~22k lines
+    src/main.ts, background.ts, content.ts, popup.ts
 
-Left as `.js`: `model/doc`, `model/annotation_data`, `platform/ingest`,
-`viewer/`, `ui/`, `main.js`, and the three root extension entry points. The
-order to continue in is unchanged — `model/` next, `ui/` last. `model/doc.js`
-and `model/annotation_data.js` are the ones Phase 3's snapshots cover, and those
-now exist, so they are ready to convert; `viewer/` and `ui/` are gated on manual
-verification instead.
+Renaming a `.js` file to `.ts` makes TypeScript stop reading its JSDoc, so a
+bare rename silently deletes every annotation in the file. Every file here had
+its JSDoc converted rather than dropped, and `noImplicitAny` is what proves it:
+the ~800 JSDoc annotations became declarations, and the ~600 parameters that
+never had one had to be given one.
+
+### What typing found
+
+Beyond the four defects the engine half surfaced, the UI half turned up eight
+more. None were caught by `checkJs`, because in every case the value involved
+was untyped on at least one side.
+
+| Where | What |
+|---|---|
+| `viewer/page` `#handleCrossRefEnter` | Dead — no listener is wired to it — and it calls `CitationPopup#show` with a five-argument shape that function has never had. Parked commented-out. |
+| `ui/controls/navigation_tree` `#getPathToNode()` | Returns a chain of node **ids**; `#createNodeElement`/`#expandNode` take a path of child **indices**. Two different things called `path`. |
+| `ui/controls/navigation_tree` `resolveDestination()` | `namedDests?.[dest]` on a `Map` — always `undefined`. Now `.get()`. (Still inside the `FIXME(pdfium-migration)` block, so still dead, but for one reason instead of two.) |
+| `ui/controls/navigation_tree` `#buildTextSpatialIndex()` | Returns an array; its consumer tested `.length` on what a JSDoc called a Map. |
+| `ui/annotation/drawing/drawing_toolbar` `onWidthChange` | Documented as `(thickness: number)`, emits `"thin" \| "medium" \| "thick"`. The `thickness` numbers belong to the preview icon, not the pen. |
+| `ui/controls/image_modal` `show()` | Declared as taking `ImageObjectInfo`, reads only `getPixelData()`; its one live caller passes a bare closure. |
+| `liquid_glass/refraction_map` `renderDisplacementMap()` | Took `Parameters<typeof computeDisplacementField>[0]` off a function with an untyped destructured parameter — `any` in a costume. Naming it caught the LUT being declared `Float32Array` where the producer returns `Float64Array`. |
+| `content.ts` `updateStatus(text, progress)` | Called with one argument in three places. Required in TS until marked optional. |
+
+Two smaller sweeps came with it: numeric writes into `setAttribute` now go
+through `String()` (as Phase 1 did for `dataset`), and the option objects Phase 6
+introduced finally have names — `DragControllerOptions`, `ExpandOptions`,
+`AutoHideOptions`, `JumpPopupOptions`, `ToolActionOptions`,
+`TreeIntegrationOptions`, `GlassEffectOptions`, `JumpIndicatorOptions`. Fields
+assigned straight out of one are declared as `Options["field"]`, so the two
+cannot drift.
 
 Friction, against what was expected:
 
-- **`Config.get(key)` typed from `SCHEMA`** is still the best free win, and is
-  still unclaimed — `ui/settings/config.js` has not been converted.
-- **The DOM expandos** are still declared on `HTMLElement` in `globals.d.ts`.
-  `_imageInfo`'s only writer went with the parked image overlay renderer;
-  `_crossRefData` waits for `viewer/page.js`.
+- **`Config.get(key)` typed from `SCHEMA`** was the best free win, as predicted.
+  `ConfigValues` names every preference and its value type; `SCHEMA` is a mapped
+  type over it; `get`/`set`/`subscribe` are generic over the key. A typo'd key
+  is now a compile error across the 10 files that read config.
+- **The DOM expandos.** `_crossRefData` is gone — `viewer/page.ts` keys its
+  cross-reference records off a module-level `WeakMap<Element, CrossReference>`,
+  which is what Phase 7 said the real fix was. `_imageInfo`'s declaration
+  survives in `globals.d.ts`; its only writer is parked with the image feature.
 - **`PdfiumFFI` pointer arithmetic** as plain `number` was the right call.
-  `PdfiumHeaps` is now a real exported interface, and `ui/tools/region_select.js`
+  `PdfiumHeaps` is a real exported interface, and `ui/tools/region_select.ts`
   stopped reaching for `HEAPU8` directly — it goes through `ffi.bytes()`, the one
   place the gap in `@embedpdf/pdfium`'s module type is papered over.
+- **`strictNullChecks` is the one tier left**, and it is its own piece of work:
+  the codebase optional-chains against nullable model fields throughout, and the
+  conversion added `!` in the places where the old code simply assumed. Those
+  assertions are where to start.
+
+**Not covered by anything automatic.** Phase 3's snapshots pin `analysis/` and
+the model's boundary with it, and they did not move across any of these commits.
+They say nothing about `viewer/` or `ui/`, which is most of what was converted
+here — the safety net there is a three-target build plus running the viewer and
+looking at it. The build was run on every commit; the looking has not been done.
 
 ---
 
@@ -649,13 +697,17 @@ Execution order, which is not the same as the phase numbering above:
 | ~~4~~ | ~~Interface cleanups~~ **done** | 6 | explicitly independent of everything else |
 | ~~5~~ | ~~`.ts` renames, engine half~~ **done** | 7 | needed 1–5; `ui/` deferred, see above |
 | ~~6~~ | ~~Snapshot tests on fixture PDFs~~ **done** | 3 | had to exist before the parser changes — and before `ui/` is renamed |
-| 7 | Section-scoped types, `sections: [one]` ← **next** | 4, step 1 | behavior-neutral; snapshots prove it |
-| 8 | Multi-section detection + per-section format | 4, steps 2–3 | the actual feature |
-| 9 | `.ts` renames, `viewer/` + `ui/` | 7 | the remaining ~26k lines |
+| ~~7~~ | ~~`.ts` renames, `viewer/` + `ui/`~~ **done** | 7 | taken ahead of 4; see below |
+| 8 | Section-scoped types, `sections: [one]` ← **next** | 4, step 1 | behavior-neutral; snapshots prove it |
+| 9 | Multi-section detection + per-section format | 4, steps 2–3 | the actual feature |
 
 Orders 1–3 are worth doing even if multi-reference support is deferred; they pay
 for themselves in tooling and regression safety. The 4-before-6 split is the
 part not to shortcut.
 
-Order 7 needs one thing order 6 could not supply: a multi-bibliography fixture
-PDF. See the end of Phase 3.
+The `ui/` conversion was taken ahead of Phase 4 rather than after it. Nothing in
+it touches the reference parser, so it does not disturb the shape Phase 4 lands
+on; the snapshots confirm the analysis output did not move.
+
+Order 8 still needs the one thing order 6 could not supply: a multi-bibliography
+fixture PDF. See the end of Phase 3.

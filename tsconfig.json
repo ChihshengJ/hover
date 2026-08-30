@@ -19,5 +19,5 @@
     // written relative to this file.
     "paths": { "@/*": ["./src/*"] }
   },
-  "include": ["src/**/*", "background.js", "content.js", "popup.js"]
+  "include": ["src/**/*", "background.ts", "content.ts", "popup.ts"]
 }

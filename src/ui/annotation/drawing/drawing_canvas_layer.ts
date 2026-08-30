@@ -1,0 +1,146 @@
+/**
+ * DrawingCanvasLayer - Temporary HTML canvas overlay for real-time stroke rendering.
+ * Uses canvas (not SVG) during active drawing for 60fps performance.
+ * Positioned over the active page's rotateInner element.
+ */
+export class DrawingCanvasLayer {
+  #canvas: HTMLCanvasElement | null = null;
+
+  #ctx: CanvasRenderingContext2D | null = null;
+
+  #parent: HTMLElement | null = null;
+
+  #lastX: number = 0;
+
+  #lastY: number = 0;
+
+  #lastMidX: number = 0;
+
+  #lastMidY: number = 0;
+
+  #hasFirstPoint: boolean = false;
+
+  /**
+   * Ensure a canvas overlay exists on the given page element.
+   * Reuses the existing canvas if the parent hasn't changed.
+   * @param pageRotateInner The page's rotateInner element
+   * @param width CSS pixel width
+   * @param height CSS pixel height
+   */
+  ensureCanvas(pageRotateInner: HTMLElement, width: number, height: number) {
+    // Reuse existing canvas if same parent and dimensions match
+    if (this.#canvas && this.#parent === pageRotateInner) {
+      const curW = Math.round(width);
+      const curH = Math.round(height);
+      const canW = Math.round(parseFloat(this.#canvas.style.width));
+      const canH = Math.round(parseFloat(this.#canvas.style.height));
+      if (curW === canW && curH === canH) return;
+    }
+
+    // Different page or dimensions changed — destroy old canvas and create new one
+    this.destroy();
+
+    this.#parent = pageRotateInner;
+    this.#canvas = document.createElement("canvas");
+    this.#canvas.className = "drawing-canvas-overlay";
+    this.#canvas.width = width * devicePixelRatio;
+    this.#canvas.height = height * devicePixelRatio;
+    this.#canvas.style.width = `${width}px`;
+    this.#canvas.style.height = `${height}px`;
+    // Inline styles to override `.page-wrapper canvas { position: relative; z-index: 0 }`
+    this.#canvas.style.position = "absolute";
+    this.#canvas.style.zIndex = "100";
+
+    this.#ctx = this.#canvas.getContext("2d");
+    this.#ctx.scale(devicePixelRatio, devicePixelRatio);
+    this.#ctx.lineCap = "round";
+    this.#ctx.lineJoin = "round";
+
+    this.#parent.appendChild(this.#canvas);
+  }
+
+  /**
+   * Begin a new stroke.
+   * @param x Page-relative pixel X
+   * @param y Page-relative pixel Y
+   * @param color CSS color string
+   * @param lineWidth Stroke width in CSS pixels
+   */
+  beginStroke(x: number, y: number, color: string, lineWidth: number) {
+    if (!this.#ctx) return;
+    this.#ctx.strokeStyle = color;
+    this.#ctx.lineWidth = lineWidth;
+    this.#lastX = x;
+    this.#lastY = y;
+    this.#lastMidX = x;
+    this.#lastMidY = y;
+    this.#hasFirstPoint = false;
+  }
+
+  /**
+   * Add a point to the current stroke with quadratic bezier smoothing.
+   * @param x Page-relative pixel X
+   * @param y Page-relative pixel Y
+   */
+  addPoint(x: number, y: number) {
+    if (!this.#ctx) return;
+
+    const midX = (this.#lastX + x) / 2;
+    const midY = (this.#lastY + y) / 2;
+
+    this.#ctx.beginPath();
+    if (!this.#hasFirstPoint) {
+      // First segment: just a line from start to midpoint
+      this.#ctx.moveTo(this.#lastX, this.#lastY);
+      this.#ctx.lineTo(midX, midY);
+      this.#hasFirstPoint = true;
+    } else {
+      // Subsequent segments: curve from last midpoint through last point to new midpoint
+      this.#ctx.moveTo(this.#lastMidX, this.#lastMidY);
+      this.#ctx.quadraticCurveTo(this.#lastX, this.#lastY, midX, midY);
+    }
+    this.#ctx.stroke();
+
+    this.#lastX = x;
+    this.#lastY = y;
+    this.#lastMidX = midX;
+    this.#lastMidY = midY;
+  }
+
+  /**
+   * End the current stroke (draw final segment to last point).
+   */
+  endStroke() {
+    if (!this.#ctx || !this.#hasFirstPoint) return;
+    this.#ctx.beginPath();
+    this.#ctx.moveTo(this.#lastMidX, this.#lastMidY);
+    this.#ctx.lineTo(this.#lastX, this.#lastY);
+    this.#ctx.stroke();
+  }
+
+  /**
+   * Clear the canvas contents.
+   */
+  clear() {
+    if (!this.#ctx || !this.#canvas) return;
+    this.#ctx.clearRect(
+      0,
+      0,
+      this.#canvas.width / devicePixelRatio,
+      this.#canvas.height / devicePixelRatio,
+    );
+  }
+
+  /**
+   * Remove the canvas from the DOM and clean up.
+   */
+  destroy() {
+    if (this.#canvas) {
+      this.#canvas.remove();
+      this.#canvas = null;
+    }
+    this.#ctx = null;
+    this.#parent = null;
+    this.#hasFirstPoint = false;
+  }
+}

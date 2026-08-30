@@ -163,7 +163,7 @@ Before opening a PR, run
 bun run check
 ```
 
-which type-checks the tree, enforces the `src/analysis/` → `src/pdf/` layering
+which type-checks the tree (TypeScript throughout, `noImplicitAny` on), enforces the `src/analysis/` → `src/pdf/` layering
 rule, and runs the reference/citation snapshot tests (`bun test`) over the
 fixture PDFs in _marketing/List of Papers_. If a snapshot moves, read the diff
 and decide whether the move was intended before accepting it with

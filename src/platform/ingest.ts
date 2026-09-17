@@ -78,8 +78,7 @@ export function isExtensionContext(): boolean {
 function parkInPage(record: PendingRecord): Promise<void> {
   return new Promise((resolve, reject) => {
     const req = indexedDB.open(PENDING_DB_NAME, 1);
-    req.onupgradeneeded = () =>
-      req.result.createObjectStore(PENDING_DB_STORE);
+    req.onupgradeneeded = () => req.result.createObjectStore(PENDING_DB_STORE);
     req.onsuccess = () => {
       const db = req.result;
       const tx = db.transaction(PENDING_DB_STORE, "readwrite");
@@ -166,6 +165,8 @@ export async function fetchPdfFromUrl(
   url: string,
   onProgress?: (p: LoadProgress) => void,
 ): Promise<ArrayBuffer> {
+  if (url.startsWith("file:")) return readFileUrl(url, onProgress);
+
   const response = await fetch(url);
   if (!response.ok) {
     throw new Error(`HTTP ${response.status}: ${response.statusText}`);
@@ -202,6 +203,56 @@ export async function fetchPdfFromUrl(
     offset += chunk.length;
   }
   return combined.buffer as ArrayBuffer;
+}
+
+export const FILE_ACCESS_MESSAGE =
+  'Could not read this local file. Enable "Allow access to file URLs" for ' +
+  "Hover on the browser's extensions page, then reload.";
+
+/**
+ * Read a file: URL into a buffer. Local PDFs land here rather than in the
+ * fetch above because the Fetch API refuses the file: scheme; XHR does not,
+ * and an extension page may use it once the user has granted file access.
+ * This is also why the background never parks a local PDF — a service worker
+ * has no XMLHttpRequest, so the viewer page is the only context that can read
+ * one.
+ */
+function readFileUrl(
+  url: string,
+  onProgress?: (p: LoadProgress) => void,
+): Promise<ArrayBuffer> {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open("GET", url);
+    xhr.responseType = "arraybuffer";
+    xhr.onprogress = (e) => {
+      if (!onProgress) return;
+      const total = e.lengthComputable ? e.total : -1;
+      onProgress({
+        loaded: e.loaded,
+        total,
+        percent: total > 0 ? Math.round((e.loaded / total) * 100) : 0,
+        phase: "downloading",
+      });
+    };
+    xhr.onload = () => {
+      // A successful file: read reports status 0, not 200.
+      if (xhr.status !== 0 && (xhr.status < 200 || xhr.status >= 300)) {
+        reject(new Error(`HTTP ${xhr.status}`));
+      } else if (
+        !xhr.response ||
+        (xhr.response as ArrayBuffer).byteLength === 0
+      ) {
+        reject(new Error(FILE_ACCESS_MESSAGE));
+      } else {
+        resolve(xhr.response as ArrayBuffer);
+      }
+    };
+    // Denied file access looks exactly like any other network error here —
+    // there is no separate signal to distinguish it from a missing file.
+    xhr.onerror = () => reject(new Error(FILE_ACCESS_MESSAGE));
+    xhr.send();
+  });
 }
 
 /** The `?file=` / `?url=` a dev-server viewer was opened with. */
@@ -251,7 +302,10 @@ export async function resolvePdfSource({
   if (isExtensionContext()) {
     let pending = await consumePendingPdf();
 
-    if (!pending && intendedUrl) {
+    // A file: URL skips the background hand-off: the service worker can't read
+    // local files, so asking it to park them only costs a round trip before
+    // the viewer-side read below.
+    if (!pending && intendedUrl && !intendedUrl.startsWith("file:")) {
       onStatus("Downloading document...");
       pending = await parkViaBackground(intendedUrl, onStatus);
     }

@@ -287,12 +287,7 @@ if (chrome.webRequest?.onHeadersReceived) {
         return {};
       }
 
-      return {
-        redirectUrl:
-          chrome.runtime.getURL("index.html") +
-          "?url=" +
-          encodeURIComponent(details.url),
-      };
+      return { redirectUrl: viewerUrlFor(details.url) };
     },
     { urls: ["http://*/*", "https://*/*"], types: ["main_frame"] },
     ["blocking", "responseHeaders"],
@@ -302,6 +297,42 @@ if (chrome.webRequest?.onHeadersReceived) {
 // ============================================
 // PDF Interception
 // ============================================
+
+/**
+ * Whether the browser will let us read file: URLs at all ("Allow access to
+ * file URLs" in Chrome). Browsers that don't expose the API — Safari — can't
+ * be asked, so assume access and let the read itself report the failure.
+ */
+async function hasFileSchemeAccess(): Promise<boolean> {
+  if (typeof chrome.extension?.isAllowedFileSchemeAccess !== "function") {
+    return true;
+  }
+  return await chrome.extension.isAllowedFileSchemeAccess();
+}
+
+/** The viewer page, told which document it was opened for. */
+function viewerUrlFor(url: string): string {
+  return (
+    chrome.runtime.getURL("index.html") + "?url=" + encodeURIComponent(url)
+  );
+}
+
+/**
+ * Open a local PDF by pointing the viewer at its file: URL. Nothing is parked
+ * first because nothing here can read the bytes — `fetch` rejects the file:
+ * scheme in both the service worker and a content script, and the worker has
+ * no XMLHttpRequest. The viewer page can (see `fetchPdfFromUrl`), once the
+ * user has granted "Allow access to file URLs", so the navigation is the whole
+ * hand-off. Returns false when that access is missing.
+ */
+async function openLocalPdfInViewer(
+  url: string,
+  tabId: number,
+): Promise<boolean> {
+  if (!(await hasFileSchemeAccess())) return false;
+  await chrome.tabs.update(tabId, { url: viewerUrlFor(url) });
+  return true;
+}
 
 async function handlePdfPageDetected(
   message: { url: string },
@@ -318,11 +349,16 @@ async function handlePdfPageDetected(
   }
 
   const url = message.url;
-  const isLocal = url.startsWith("file:");
-  const canDirectFetch =
-    url.startsWith("http:") || url.startsWith("https:") || isLocal;
 
-  if (!canDirectFetch) {
+  // Local files can't be parked from here — fetchPdfBuffer() below would always
+  // throw on a file: URL — so the viewer reads them itself.
+  if (url.startsWith("file:")) {
+    return (await openLocalPdfInViewer(url, sender.tab.id))
+      ? { action: "done" }
+      : { action: "file_access_denied" };
+  }
+
+  if (!(url.startsWith("http:") || url.startsWith("https:"))) {
     return { action: "content_fetch" };
   }
 
@@ -336,13 +372,11 @@ async function handlePdfPageDetected(
       name: extractFilename(url),
     });
 
-    const viewerUrl =
-      chrome.runtime.getURL("index.html") + "?url=" + encodeURIComponent(url);
-    await chrome.tabs.update(sender.tab.id, { url: viewerUrl });
+    await chrome.tabs.update(sender.tab.id, { url: viewerUrlFor(url) });
 
     return { action: "done" };
   } catch {
-    return { action: isLocal ? "file_access_denied" : "content_fetch" };
+    return { action: "content_fetch" };
   }
 }
 
@@ -383,9 +417,7 @@ async function handlePdfDataReady(
     name: extractFilename(url),
   });
 
-  const viewerUrl =
-    chrome.runtime.getURL("index.html") + "?url=" + encodeURIComponent(url);
-  await chrome.tabs.update(sender.tab.id, { url: viewerUrl });
+  await chrome.tabs.update(sender.tab.id, { url: viewerUrlFor(url) });
 
   return { success: true };
 }
@@ -401,6 +433,16 @@ async function handleStoreLocalPdf(message: { data: string; name: string }) {
 
 async function handleFetchTabAsPdf(message: { url: string; tabId: number }) {
   const { url, tabId } = message;
+
+  // A local PDF opened directly: the content script can no more fetch a file:
+  // URL than we can, so hand it to the viewer instead of asking for bytes.
+  // Local pages that merely *contain* a PDF still go the capture route below,
+  // where the embedded document may well be an http(s) one we can read.
+  if (url.startsWith("file:") && /\.pdf(?:[?#]|$)/i.test(url)) {
+    return (await openLocalPdfInViewer(url, tabId))
+      ? { success: true }
+      : { success: false, error: "Enable file access first" };
+  }
 
   try {
     const result = await chrome.tabs.sendMessage(tabId, {
@@ -418,9 +460,7 @@ async function handleFetchTabAsPdf(message: { url: string; tabId: number }) {
       name: extractFilename(url),
     });
 
-    const viewerUrl =
-      chrome.runtime.getURL("index.html") + "?url=" + encodeURIComponent(url);
-    await chrome.tabs.update(tabId, { url: viewerUrl });
+    await chrome.tabs.update(tabId, { url: viewerUrlFor(url) });
 
     return { success: true };
   } catch (e) {

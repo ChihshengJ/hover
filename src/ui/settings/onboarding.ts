@@ -1479,7 +1479,7 @@ export class OnboardingWalkthrough {
     )[3] as HTMLElement;
     console.log(link);
     // `top` is not a ScrollIntoViewOptions member — it was always ignored.
-    link.scrollIntoView({ block: "center", behavior: "instant" });
+    link.scrollIntoView({ block: "center", behavior: "smooth" });
     step.spotlight = this.#getSpotlightFromElement(link, 4);
     if (step.spotlight) {
       this.#showSpotlightOverlay(step.spotlight);

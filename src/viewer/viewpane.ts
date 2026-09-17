@@ -442,9 +442,11 @@ export class ViewerPane {
     this.scroller.addEventListener("pointerdown", (e) => {
       if ((e.target as Element).closest(".textLayer span")) return;
 
-      if ((e.target as Element).closest(
+      if (
+        (e.target as Element).closest(
           "a, button, .pane-controls, .annotationLayer a",
-        ))
+        )
+      )
         return;
 
       if (e.button !== 0) return;
@@ -607,7 +609,7 @@ export class ViewerPane {
 
     this.scroller.scrollTo({
       top: Math.max(0, targetTop),
-      behavior: "instant",
+      behavior: "smooth",
     });
 
     const landedPage = this.#computeCurrentPage();

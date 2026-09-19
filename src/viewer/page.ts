@@ -68,7 +68,18 @@ export class PageView {
   endOfContent: HTMLElement | null = null;
   page: PdfPageObject | null = null;
   textSlices: TextLine[] | null = null;
-  renderTask: unknown = null;
+  /**
+   * Bumped whenever a render starts or is invalidated. A render captures the
+   * value before awaiting PDFium and discards its result if it has moved on,
+   * so a page released or re-rendered underneath an in-flight render is never
+   * painted with pixels from the render it superseded.
+   *
+   * Dropping the result is the whole of what cancellation can mean here. The
+   * engine renders on this thread, synchronously, and hands back an already
+   * settled Task — `abort()` on it would do nothing, and there is no work in
+   * flight to stop. The only open question is whether to keep what came back.
+   */
+  #renderGeneration = 0;
   scale = 1;
   /** Set by `resize()`, consumed by the next `render()`. */
   pendingRenderScale?: number;
@@ -167,7 +178,7 @@ export class PageView {
   }
 
   async render(requestedScale?: number) {
-    this.cancel();
+    const generation = ++this.#renderGeneration;
     this.scale = requestedScale || this.pendingRenderScale || 1;
 
     const page = this.#getPage();
@@ -204,6 +215,12 @@ export class PageView {
           withAnnotations: false,
         })
         .toPromise();
+
+      // Anything that invalidated this page while PDFium was working — a
+      // release, a zoom, a re-render — has already bumped the generation.
+      // Painting now would put stale pixels on the canvas and, worse, mark it
+      // rendered, so the page would never be redrawn correctly.
+      if (generation !== this.#renderGeneration) return;
 
       const imageData = new ImageData(
         pageData.data,
@@ -264,8 +281,6 @@ export class PageView {
           err,
         );
       }
-    } finally {
-      this.renderTask = null;
     }
   }
 
@@ -584,8 +599,9 @@ export class PageView {
   // Lifecycle
   // ============================================
 
+  /** Invalidate any in-flight render, so its result is discarded on arrival. */
   cancel() {
-    this.renderTask = null;
+    this.#renderGeneration++;
   }
 
   release() {

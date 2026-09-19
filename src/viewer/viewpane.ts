@@ -142,7 +142,7 @@ export class ViewerPane {
       this.pageMap.set(pageView.wrapper, pageView);
       return pageView;
     });
-    this.resizeAllCanvases(this.scale);
+    this.layoutPages(this.scale);
     await new Promise((resolve) => setTimeout(resolve, 50));
     this.setupLazyRender();
     this.#setupGlobalClickToSelect();
@@ -202,6 +202,11 @@ export class ViewerPane {
 
       const canvas = document.createElement("canvas");
       canvas.dataset.pageNumber = String(i);
+      // A fresh canvas defaults to a 300x150 buffer. Nothing renders into it
+      // until PageView sizes it, so drop it and let `width` mean what it says
+      // everywhere else: this page currently holds pixels.
+      canvas.width = 0;
+      canvas.height = 0;
 
       wrapper.appendChild(canvas);
       wrapper.appendChild(label);
@@ -552,7 +557,7 @@ export class ViewerPane {
       const docY = (scroller.scrollTop + focusY) / this.scale;
 
       this.scale = finalScale;
-      this.resizeAllCanvases(finalScale);
+      this.layoutPages(finalScale);
 
       const targetLeft = docX * finalScale - focusX;
       const targetTop = docY * finalScale - focusY;
@@ -692,7 +697,16 @@ export class ViewerPane {
     );
   }
 
-  async resizeAllCanvases(scale: number) {
+  /**
+   * Lay out every page for `scale` and the current rotation: wrapper boxes,
+   * overlay layers, and the backing-store size each page should render at.
+   *
+   * It sizes no canvas itself. Buffers follow visibility — PageView allocates
+   * one on render and frees it on release — so this publishes the target and
+   * drops the pixels of anything now off-screen. Every caller follows it with
+   * a render of the visible pages, which is what puts those pixels back.
+   */
+  async layoutPages(scale: number) {
     const outputScale = window.devicePixelRatio || 1;
     const MAX_RENDER_SCALE = 7.0;
     const effectiveScale = Math.min(scale, MAX_RENDER_SCALE);
@@ -716,12 +730,9 @@ export class ViewerPane {
       const canvasWidth = origWidth * outputScale;
       const canvasHeight = origHeight * outputScale;
 
-      // The size this page renders at. PageView allocates the buffer itself,
-      // on render, and gives it back on release.
+      // Publish the size this page renders at.
       page.canvasWidth = canvasWidth;
       page.canvasHeight = canvasHeight;
-      page.canvas.width = canvasWidth;
-      page.canvas.height = canvasHeight;
 
       Object.assign(page.canvas.style, {
         width: `${origWidth}px`,
@@ -783,7 +794,7 @@ export class ViewerPane {
   }
 
   async refreshAllPages() {
-    await this.resizeAllCanvases(this.scale);
+    await this.layoutPages(this.scale);
     this.#renderVisiblePages();
     this.annotationManager?.refresh();
   }
@@ -1020,7 +1031,7 @@ export class ViewerPane {
         ?.classList.remove("visible");
     }
 
-    this.resizeAllCanvases(this.scale);
+    this.layoutPages(this.scale);
     this.#renderVisiblePages();
     this.annotationManager?.refresh();
   }

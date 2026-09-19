@@ -146,6 +146,9 @@ export class SplitWindowManager {
       this.panes.push(newPane);
     }
     this.toolbar.enterSplitMode();
+    // The active pane was set before this one existed, so the per-pane
+    // listeners (pinch gestures, an active drag tool) have not seen it yet.
+    this.controls.updateActivePane();
     this.#updateLayout();
     this.#createResizer();
 

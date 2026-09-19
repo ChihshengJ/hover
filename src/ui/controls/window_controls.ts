@@ -366,14 +366,18 @@ export class WindowControls {
 
     const currentIndex = panes.indexOf(this.activePane);
     const nextIndex = (currentIndex + 1) % panes.length;
+    // setActivePane routes back through updateActivePane below, which is
+    // what notifies the per-pane listeners — nothing to do here.
     this.wm.setActivePane(panes[nextIndex]);
-
-    // Notify search controller of pane change
-    this.searchController?.onPaneChange();
   }
 
   updateActivePane() {
     this.#bindGestures();
+    // An active drag tool listens on every pane, so it has to learn about a
+    // pane appearing or going away. This runs on split and unsplit too —
+    // both set the active pane on their way through.
+    this.regionSelectController?.syncPanes();
+    this.drawingController?.syncPanes();
     // Notify search controller of pane change
     this.searchController?.onPaneChange();
   }

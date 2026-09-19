@@ -24,6 +24,45 @@
  * missed release cannot strand the document.
  */
 
+/**
+ * Precedence between the three things that want the same pointerdown on a
+ * page, highest first:
+ *
+ *   1. a drag tool (drawing, region select) — switched on deliberately
+ *   2. hand-mode panning — a mode, not a tool
+ *   3. text selection — the default, and the only one that also happens by
+ *      accident
+ *
+ * All three listen on the same scroller, so which one ran first used to
+ * depend on which was switched on first, and in hand mode both the pan and
+ * the tool ran: the page scrolled out from under the stroke being drawn.
+ * Instead an active tool claims the pointer for as long as it is on, and the
+ * two below it stand down by asking here.
+ */
+let toolClaims = 0;
+
+/**
+ * Claim the pointer for a drag tool, for as long as that tool is active —
+ * unlike the gesture claims below, this spans many gestures, so it is taken
+ * on activate and dropped on deactivate rather than per pointerdown.
+ *
+ * @returns release
+ */
+export function claimPointerTool(): () => void {
+  toolClaims++;
+  let released = false;
+  return () => {
+    if (released) return;
+    released = true;
+    toolClaims--;
+  };
+}
+
+/** Whether a drag tool owns the pointer — pan and selection defer to it. */
+export function isPointerToolActive(): boolean {
+  return toolClaims > 0;
+}
+
 /** Claims that suppress the engine's own selection for this gesture. */
 let nativeClaims = 0;
 /** Claims that additionally forbid any selection at all. */

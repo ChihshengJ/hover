@@ -14,6 +14,7 @@ import { DrawingCanvasLayer } from "../annotation/drawing/drawing_canvas_layer.j
 import { DrawingToolbar } from "../annotation/drawing/drawing_toolbar.js";
 import { LazyBrush } from "../annotation/drawing/lazy_brush.js";
 import { onPointerDrag } from "../../viewer/pointer_gesture.js";
+import { PaneToolBinding } from "./pane_tool_binding.js";
 import { COLOR_NAME_TO_HEX } from "../annotation/drawing/drawing_geometry.js";
 
 import type { PageView } from "../../viewer/page.js";
@@ -55,7 +56,11 @@ export class DrawingController {
 
   #strokeWidthName: StrokeWidthName = "medium";
 
-  #boundScroller: HTMLElement | null = null;
+  /** Pointer ownership and the per-pane listeners; see pane_tool_binding.js. */
+  #binding: PaneToolBinding;
+
+  /** The pane the current stroke (and the commit it lands in) belongs to. */
+  #gesturePane: ViewerPane | null = null;
 
   #canvasLayer: DrawingCanvasLayer | null = null;
 
@@ -74,6 +79,10 @@ export class DrawingController {
   constructor(wm: SplitWindowManager, actionButton: ActionButton) {
     this.#wm = wm;
     this.#actionButton = actionButton;
+    this.#binding = new PaneToolBinding(wm, {
+      className: "drawing-mode-active",
+      onPointerDown: this.#onPointerDown,
+    });
   }
 
   get isActive() {
@@ -86,17 +95,14 @@ export class DrawingController {
 
   activate() {
     if (this.#isActive) return;
-    const pane = this.#wm.activePane;
-    if (!pane?.scroller) return;
+    if (!this.#wm.activePane?.scroller) return;
 
     this.#isActive = true;
-    this.#boundScroller = pane.scroller;
-    this.#boundScroller.classList.add("drawing-mode-active");
 
     // Clear any existing text selection to prevent annotation toolbar from firing
     document.getSelection()?.removeAllRanges();
 
-    this.#boundScroller.addEventListener("pointerdown", this.#onPointerDown);
+    this.#binding.attach();
     document.addEventListener("keydown", this.#onKeyDown);
 
     // Create canvas layer
@@ -131,6 +137,11 @@ export class DrawingController {
     this.#actionButton.setToolActive(true);
   }
 
+  /** Called by the pane lifecycle when a pane appears or goes away. */
+  syncPanes() {
+    this.#binding.sync();
+  }
+
   deactivate() {
     if (!this.#isActive) return;
 
@@ -148,14 +159,8 @@ export class DrawingController {
 
     this.#isActive = false;
 
-    if (this.#boundScroller) {
-      this.#boundScroller.classList.remove("drawing-mode-active");
-      this.#boundScroller.removeEventListener(
-        "pointerdown",
-        this.#onPointerDown,
-      );
-      this.#boundScroller = null;
-    }
+    this.#binding.detach();
+    this.#gesturePane = null;
 
     document.removeEventListener("keydown", this.#onKeyDown);
 
@@ -189,13 +194,15 @@ export class DrawingController {
     // Skip drawing if clicking on an existing drawing annotation (let selection handle it)
     if ((e.target as Element).closest(".annotation-mark.drawing")) return;
 
-    const pane = this.#wm.activePane;
+    const pane = this.#binding.paneFor(e);
     if (!pane) return;
 
     const page = this.#findPageFromPoint(e.clientX, e.clientY, pane);
     if (!page) return;
 
     e.preventDefault();
+
+    this.#gesturePane = pane;
 
     // Cancel commit timer (new stroke within the 3s window)
     if (this.#commitTimer !== null) {
@@ -308,7 +315,7 @@ export class DrawingController {
   async #commitDrawing() {
     if (this.#pendingStrokes.length === 0) return;
 
-    const pane = this.#wm.activePane;
+    const pane = this.#gesturePane ?? this.#wm.activePane;
     if (!pane || !this.#currentPage) return;
 
     const pageNumber = this.#currentPage.pageNumber;

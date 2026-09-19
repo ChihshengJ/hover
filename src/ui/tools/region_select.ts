@@ -8,8 +8,10 @@
 
 import { getSharedImageModal } from "../controls/image_modal.js";
 import { onPointerDrag } from "../../viewer/pointer_gesture.js";
+import { PaneToolBinding } from "./pane_tool_binding.js";
 
 import type { PageView } from "../../viewer/page.js";
+import type { ViewerPane } from "../../viewer/viewpane.js";
 import type { SplitWindowManager } from "../../viewer/window_manager.js";
 const MIN_SELECTION_PX = 5;
 const RENDER_SCALE_FACTOR = 3;
@@ -25,7 +27,11 @@ export class RegionSelectController {
   #startX = 0;
   #startY = 0;
 
-  #boundScroller: HTMLElement | null = null;
+  /** Pointer ownership and the per-pane listeners; see pane_tool_binding.js. */
+  #binding: PaneToolBinding;
+
+  /** The pane the live drag started in. */
+  #gesturePane: ViewerPane | null = null;
 
   /** Ends the active drag early (deactivate / Escape). */
   #endDrag: (() => void) | null = null;
@@ -38,6 +44,10 @@ export class RegionSelectController {
 
   constructor(wm: SplitWindowManager) {
     this.#wm = wm;
+    this.#binding = new PaneToolBinding(wm, {
+      className: "region-select-active",
+      onPointerDown: this.#onPointerDown,
+    });
   }
 
   get isActive() {
@@ -46,14 +56,16 @@ export class RegionSelectController {
 
   activate() {
     if (this.#isActive) return;
-    const pane = this.#wm.activePane;
-    if (!pane?.scroller) return;
+    if (!this.#wm.activePane?.scroller) return;
 
     this.#isActive = true;
-    this.#boundScroller = pane.scroller;
-    this.#boundScroller.classList.add("region-select-active");
-    this.#boundScroller.addEventListener("pointerdown", this.#onPointerDown);
+    this.#binding.attach();
     document.addEventListener("keydown", this.#onKeyDown);
+  }
+
+  /** Called by the pane lifecycle when a pane appears or goes away. */
+  syncPanes() {
+    this.#binding.sync();
   }
 
   deactivate() {
@@ -63,14 +75,8 @@ export class RegionSelectController {
     this.#cancelDrag();
     this.#removeOverlay();
 
-    if (this.#boundScroller) {
-      this.#boundScroller.classList.remove("region-select-active");
-      this.#boundScroller.removeEventListener(
-        "pointerdown",
-        this.#onPointerDown,
-      );
-      this.#boundScroller = null;
-    }
+    this.#binding.detach();
+    this.#gesturePane = null;
 
     document.removeEventListener("keydown", this.#onKeyDown);
     document.getSelection()?.removeAllRanges();
@@ -84,11 +90,15 @@ export class RegionSelectController {
     if (e.button !== 0) return;
     if ((e.target as Element).closest("a, button, .pane-controls")) return;
 
-    const page = this.#findPageFromPoint(e.clientX, e.clientY);
+    const pane = this.#binding.paneFor(e);
+    if (!pane) return;
+
+    const page = this.#findPageFromPoint(e.clientX, e.clientY, pane);
     if (!page) return;
 
     e.preventDefault();
 
+    this.#gesturePane = pane;
     this.#isDragging = true;
     this.#startPage = page;
 
@@ -143,12 +153,19 @@ export class RegionSelectController {
     const height = Math.abs(cy - this.#startY);
 
     const page = this.#startPage;
+    const pane = this.#gesturePane;
     this.#removeOverlay();
     this.#startPage = null;
+    this.#gesturePane = null;
 
     if (width < MIN_SELECTION_PX || height < MIN_SELECTION_PX) return;
+    if (!pane) return;
 
-    const imageData = this.#renderRegion(page, { left, top, width, height });
+    const imageData = this.#renderRegion(
+      page,
+      { left, top, width, height },
+      pane,
+    );
     if (imageData) {
       this.deactivate();
       getSharedImageModal().show({ getPixelData: () => imageData });
@@ -205,6 +222,7 @@ export class RegionSelectController {
     // Cleared first so the onEnd below short-circuits instead of cropping.
     this.#isDragging = false;
     this.#startPage = null;
+    this.#gesturePane = null;
     this.#endDrag?.();
     this.#endDrag = null;
   }
@@ -213,10 +231,11 @@ export class RegionSelectController {
   // Page hit-testing & coordinate conversion
   // ===========================================================================
 
-  #findPageFromPoint(clientX: number, clientY: number): PageView | null {
-    const pane = this.#wm.activePane;
-    if (!pane) return null;
-
+  #findPageFromPoint(
+    clientX: number,
+    clientY: number,
+    pane: ViewerPane,
+  ): PageView | null {
     for (const pageView of pane.pages) {
       const rect = pageView.rotateInner.getBoundingClientRect();
       if (
@@ -253,10 +272,8 @@ export class RegionSelectController {
   #renderRegion(
     pageView: PageView,
     rect: { left: number; top: number; width: number; height: number },
+    pane: ViewerPane,
   ): ImageData | null {
-    const pane = this.#wm.activePane;
-    if (!pane) return null;
-
     const doc = pane.document;
     const handle = doc.lowLevelHandle;
     if (!handle) {

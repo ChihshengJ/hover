@@ -2,7 +2,11 @@ import { PageView } from "./page.js";
 import { PaneControls } from "../ui/controls/pane_controls.js";
 import { TextSelectionManager } from "./text_manager.js";
 import { AnnotationManager } from "../ui/annotation/annotation_manager.js";
-import { beginCustomSelectionGesture } from "./pointer_gesture.js";
+import {
+  beginCustomSelectionGesture,
+  beginDragGesture,
+  isPointerToolActive,
+} from "./pointer_gesture.js";
 import { DocEvent, ANNOTATION_EVENTS } from "../model/doc_events.js";
 
 import type { PDFDocumentModel } from "../model/doc.js";
@@ -93,6 +97,8 @@ export class ViewerPane {
   _zoomRAF: number | null = null;
 
   _onPanStart: ((e: PointerEvent) => void) | null = null;
+  /** Releases the pan's gesture claim; see pointer_gesture.js. */
+  _releasePan: (() => void) | null = null;
   _onPanMove: ((e: PointerEvent) => void) | null = null;
   _onPanEnd: (() => void) | null = null;
 
@@ -445,6 +451,10 @@ export class ViewerPane {
     };
 
     this.scroller.addEventListener("pointerdown", (e) => {
+      // Lowest of the three gestures: a drag tool owns the pointer outright,
+      // and in hand mode the pan does. See pointer_gesture.js.
+      if (isPointerToolActive() || this.handMode) return;
+
       if ((e.target as Element).closest(".textLayer span")) return;
 
       if (
@@ -1041,6 +1051,10 @@ export class ViewerPane {
       // Only handle left mouse button
       if (e.button !== 0) return;
 
+      // A drawing or region-select drag outranks the hand: without this both
+      // ran, and the page scrolled out from under the tool's own gesture.
+      if (isPointerToolActive()) return;
+
       // Ignore clicks on interactive elements
       if (
         (e.target as Element).closest(
@@ -1050,6 +1064,10 @@ export class ViewerPane {
         return;
 
       e.preventDefault();
+      // The pan outranks text selection in turn. The hand-mode CSS already
+      // makes the text layer unselectable, but a drag that starts off it can
+      // still arm a selection in WebKit, which no CSS can call back.
+      this._releasePan = beginDragGesture();
       this.isPanning = true;
       this.scroller.classList.add("panning");
 
@@ -1075,6 +1093,8 @@ export class ViewerPane {
       if (!this.isPanning) return;
       this.isPanning = false;
       this.scroller.classList.remove("panning");
+      this._releasePan?.();
+      this._releasePan = null;
     };
 
     this.scroller.addEventListener("pointerdown", this._onPanStart);
@@ -1083,6 +1103,9 @@ export class ViewerPane {
   }
 
   #teardownPanHandler() {
+    this._releasePan?.();
+    this._releasePan = null;
+    this.isPanning = false;
     if (this._onPanStart) {
       this.scroller.removeEventListener("pointerdown", this._onPanStart);
       document.removeEventListener("pointermove", this._onPanMove!);
@@ -1107,6 +1130,9 @@ export class ViewerPane {
       this.centerObserver = null;
       this.centeredPages.clear();
     }
+    // Hand mode parks listeners on `document`; without this they outlive the
+    // pane and keep scrolling a detached scroller.
+    this.#teardownPanHandler();
     this.controls.destroy();
     this.textSelectionManager.destroy();
     this.annotationManager?.destroy();

@@ -1,3 +1,28 @@
+/**
+ * PDFium image-object extraction — Retired, not dead.
+ *
+ * Nothing imports this module today. It backed a feature that let the viewer
+ * find the image objects on a page, outline them, and open one in the image
+ * modal on click. The feature was switched off rather than removed, and its
+ * call sites are commented out in place so they can be read alongside this:
+ *
+ *   - src/model/doc.ts     — the `imageExtractor` / `imagesByPage` fields,
+ *                            their setup in #setupLowLevelAccess(), #scanImages(),
+ *                            getPageImages(), and the clean-up in close().
+ *   - src/viewer/page.ts   — #renderImageOverlays() and its two call sites in
+ *                            render(), plus the click handler that opened the
+ *                            modal.
+ *
+ * To re-enable, uncomment those and call #scanImages() from buildIndex() —
+ * which is also the catch: it walks every page eagerly at index time, which is
+ * why it was parked. A revival should make it lazy (per page, on demand) rather
+ * than restoring the eager scan as-is.
+ *
+ * Note that the image *modal* is not parked: src/ui/controls/image_modal.ts is
+ * live, used by region_select.ts for drag-to-capture. Only the extraction of
+ * the PDF's own embedded image objects is switched off.
+ */
+
 import { PAGEOBJ, PdfiumFFI } from "./pdfium_ffi.js";
 import type { WrappedPdfiumModule } from "@embedpdf/pdfium";
 import type { ObjectBounds } from "./pdfium_reader.js";

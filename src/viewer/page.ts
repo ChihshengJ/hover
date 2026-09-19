@@ -8,6 +8,7 @@ import type { TextSelectionManager } from "./text_manager.js";
 import type { TextLine } from "../analysis/text_index.js";
 import type { CrossReference } from "../analysis/cross_reference_builder.js";
 import type { CitationTarget } from "../analysis/citation_builder.js";
+import { buildLuminanceMap, clearLuminanceMap } from "./page_luminance.js";
 
 let sharedPopup: CitationPopup | null = null;
 function getSharedPopup(): CitationPopup {
@@ -60,13 +61,25 @@ export class PageView {
   wrapper: HTMLElement;
   rotateInner: HTMLDivElement;
   canvas: HTMLCanvasElement;
+  ctx: CanvasRenderingContext2D;
   textLayer: HTMLElement;
   annotationLayer: HTMLElement;
 
   endOfContent: HTMLElement | null = null;
   page: PdfPageObject | null = null;
   textSlices: TextLine[] | null = null;
-  renderTask: unknown = null;
+  /**
+   * Bumped whenever a render starts or is invalidated. A render captures the
+   * value before awaiting PDFium and discards its result if it has moved on,
+   * so a page released or re-rendered underneath an in-flight render is never
+   * painted with pixels from the render it superseded.
+   *
+   * Dropping the result is the whole of what cancellation can mean here. The
+   * engine renders on this thread, synchronously, and hands back an already
+   * settled Task — `abort()` on it would do nothing, and there is no work in
+   * flight to stop. The only open question is whether to keep what came back.
+   */
+  #renderGeneration = 0;
   scale = 1;
   /** Set by `resize()`, consumed by the next `render()`. */
   pendingRenderScale?: number;
@@ -76,7 +89,20 @@ export class PageView {
   _showTimer: ReturnType<typeof setTimeout> | null = null;
   _delegatedListenersAttached = false;
 
-  constructor(host: PageViewHost, pageNumber: number, canvas: HTMLCanvasElement) {
+  /**
+   * Backing-store size this page should render at, in device px. The pane's
+   * layout pass owns these (it knows the scale, rotation and dpr); the canvas
+   * itself only carries a buffer of that size while the page is actually
+   * rendered.
+   */
+  canvasWidth = 0;
+  canvasHeight = 0;
+
+  constructor(
+    host: PageViewHost,
+    pageNumber: number,
+    canvas: HTMLCanvasElement,
+  ) {
     this.host = host;
     this.doc = host.doc;
     this.pageNumber = pageNumber;
@@ -90,6 +116,19 @@ export class PageView {
     this.wrapper.insertBefore(this.rotateInner, this.wrapper.firstChild);
 
     this.canvas = canvas;
+    /**
+     * The canvas's one 2D context, bound here rather than re-fetched per call.
+     *
+     * `getContext` only honours its attributes on the *first* call for a canvas;
+     * every later call returns that same context and silently ignores whatever
+     * options it was passed.
+     *
+     * Deliberately *not* `willReadFrequently`: that pins the canvas to an
+     * unaccelerated CPU surface, and nothing here ever reads pixels back — the
+     * traffic is one-way, `putImageData` from PDFium's bitmap. Asking for the
+     * read-optimised surface only buys a second full-size copy of every page.
+     */
+    this.ctx = canvas.getContext("2d", { alpha: false })!;
     this.textLayer = this.#initLayer("text");
     this.annotationLayer = this.#initLayer("annotation");
   }
@@ -99,6 +138,29 @@ export class PageView {
       this.page = this.doc.getPage(this.pageNumber);
     }
     return this.page;
+  }
+
+  /**
+   * Give the canvas the buffer it is supposed to render into, allocating it if
+   * `release` has taken it away (or if the pane has since resized us).
+   *
+   * Assigning `width`/`height` resets the canvas even when the value is
+   * unchanged, so the comparison is load-bearing: without it every re-render
+   * would throw away pixels it is about to redraw anyway.
+   *
+   * @returns false when no size has been published yet, which means the pane's
+   * layout pass has not run and there is nothing sensible to render into.
+   */
+  #ensureBackingStore(): boolean {
+    if (!this.canvasWidth || !this.canvasHeight) return false;
+    if (
+      this.canvas.width !== this.canvasWidth ||
+      this.canvas.height !== this.canvasHeight
+    ) {
+      this.canvas.width = this.canvasWidth;
+      this.canvas.height = this.canvasHeight;
+    }
+    return true;
   }
 
   #ensureEndOfContent() {
@@ -116,7 +178,7 @@ export class PageView {
   }
 
   async render(requestedScale?: number) {
-    this.cancel();
+    const generation = ++this.#renderGeneration;
     this.scale = requestedScale || this.pendingRenderScale || 1;
 
     const page = this.#getPage();
@@ -130,6 +192,8 @@ export class PageView {
       console.error(`[PageView] Engine not initialized`);
       return;
     }
+
+    if (!this.#ensureBackingStore()) return;
 
     const canvasWidth = this.canvas.width;
     const canvasHeight = this.canvas.height;
@@ -152,18 +216,36 @@ export class PageView {
         })
         .toPromise();
 
+      // Anything that invalidated this page while PDFium was working — a
+      // release, a zoom, a re-render — has already bumped the generation.
+      // Painting now would put stale pixels on the canvas and, worse, mark it
+      // rendered, so the page would never be redrawn correctly.
+      if (generation !== this.#renderGeneration) return;
+
       const imageData = new ImageData(
         pageData.data,
         pageData.width,
         pageData.height,
       );
 
-      const ctx = this.canvas.getContext("2d", { alpha: false })!;
+      const ctx = this.ctx;
       ctx.clearRect(0, 0, canvasWidth, canvasHeight);
 
       const offsetX = Math.floor((canvasWidth - imageData.width) / 2);
       const offsetY = Math.floor((canvasHeight - imageData.height) / 2);
       ctx.putImageData(imageData, offsetX, offsetY);
+
+      // Reduce the raster to a luminance grid while we still hold it in JS.
+      // This is what keeps the liquid-glass ball from having to read pixels
+      // back off this canvas later — see page_luminance.js.
+      buildLuminanceMap(
+        this.canvas,
+        pageData.data,
+        pageData.width,
+        pageData.height,
+        offsetX,
+        offsetY,
+      );
 
       const cssWidth = parseFloat(this.canvas.style.width);
       const cssHeight = parseFloat(this.canvas.style.height);
@@ -199,8 +281,6 @@ export class PageView {
           err,
         );
       }
-    } finally {
-      this.renderTask = null;
     }
   }
 
@@ -519,8 +599,9 @@ export class PageView {
   // Lifecycle
   // ============================================
 
+  /** Invalidate any in-flight render, so its result is discarded on arrival. */
   cancel() {
-    this.renderTask = null;
+    this.#renderGeneration++;
   }
 
   release() {
@@ -529,8 +610,16 @@ export class PageView {
 
     this.textLayer.innerHTML = "";
     this.annotationLayer.innerHTML = "";
-    const ctx = this.canvas.getContext("2d")!;
-    ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+    clearLuminanceMap(this.canvas);
+
+    // Hand back the pixels, not just their contents. `clearRect` paints the
+    // buffer blank but keeps it, and that buffer is the single largest thing
+    // this viewer holds — a letter page at scale 1.7 on a retina display is
+    // 2080x2692x4 = ~22 MB, once per page, for the life of the tab. Zeroing
+    // the dimensions is the only way to release it; `#ensureBackingStore`
+    // allocates it again on the next render.
+    this.canvas.width = 0;
+    this.canvas.height = 0;
     this._delegatedListenersAttached = false;
     this._cachedSpans = null;
     this._lastTextScale = null;
@@ -606,7 +695,9 @@ export class PageView {
     this.annotationLayer.addEventListener(
       "mouseenter",
       (e) => {
-        const citRect = (e.target as Element).closest<HTMLElement>(".citation-rect");
+        const citRect = (e.target as Element).closest<HTMLElement>(
+          ".citation-rect",
+        );
         if (citRect) {
           this.#handleCitationEnter(citRect, citationPopup);
           return;
@@ -618,7 +709,9 @@ export class PageView {
     this.annotationLayer.addEventListener(
       "mouseleave",
       (e) => {
-        const citRect = (e.target as Element).closest<HTMLElement>(".citation-rect");
+        const citRect = (e.target as Element).closest<HTMLElement>(
+          ".citation-rect",
+        );
         if (citRect) {
           this.#handleLeave(citRect, citationPopup);
           return;
@@ -628,14 +721,18 @@ export class PageView {
     );
 
     this.annotationLayer.addEventListener("click", (e) => {
-      const citRect = (e.target as Element).closest<HTMLElement>(".citation-rect");
+      const citRect = (e.target as Element).closest<HTMLElement>(
+        ".citation-rect",
+      );
       if (citRect) {
         e.preventDefault();
         this.#handleCitationClick(citRect);
         return;
       }
 
-      const refRect = (e.target as Element).closest<HTMLElement>(".crossref-rect");
+      const refRect = (e.target as Element).closest<HTMLElement>(
+        ".crossref-rect",
+      );
       if (refRect) {
         e.preventDefault();
         this.#handleCrossRefClick(refRect);

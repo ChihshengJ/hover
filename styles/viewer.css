@@ -321,7 +321,7 @@ body.ui-dragging * {
   /* Let the browser skip layout/paint of off-screen pages (incl. the page
      box-shadow and overlay layers), cutting per-frame raster work while
      scrolling long PDFs. The wrapper carries explicit width/height and a
-     per-page contain-intrinsic-size (set in resizeAllCanvases), so skipped
+     per-page contain-intrinsic-size (set in layoutPages), so skipped
      pages keep their exact layout box and the scrollbar stays accurate.
      No-op on browsers without support (older Safari) — pages just render. */
   content-visibility: auto;

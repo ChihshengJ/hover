@@ -8,10 +8,7 @@ import type { TextSelectionManager } from "./text_manager.js";
 import type { TextLine } from "../analysis/text_index.js";
 import type { CrossReference } from "../analysis/cross_reference_builder.js";
 import type { CitationTarget } from "../analysis/citation_builder.js";
-import {
-  buildLuminanceMap,
-  clearLuminanceMap,
-} from "./page_luminance.js";
+import { buildLuminanceMap, clearLuminanceMap } from "./page_luminance.js";
 
 let sharedPopup: CitationPopup | null = null;
 function getSharedPopup(): CitationPopup {
@@ -81,6 +78,15 @@ export class PageView {
   _showTimer: ReturnType<typeof setTimeout> | null = null;
   _delegatedListenersAttached = false;
 
+  /**
+   * Backing-store size this page should render at, in device px. The pane's
+   * layout pass owns these (it knows the scale, rotation and dpr); the canvas
+   * itself only carries a buffer of that size while the page is actually
+   * rendered.
+   */
+  canvasWidth = 0;
+  canvasHeight = 0;
+
   constructor(
     host: PageViewHost,
     pageNumber: number,
@@ -123,6 +129,29 @@ export class PageView {
     return this.page;
   }
 
+  /**
+   * Give the canvas the buffer it is supposed to render into, allocating it if
+   * `release` has taken it away (or if the pane has since resized us).
+   *
+   * Assigning `width`/`height` resets the canvas even when the value is
+   * unchanged, so the comparison is load-bearing: without it every re-render
+   * would throw away pixels it is about to redraw anyway.
+   *
+   * @returns false when no size has been published yet, which means the pane's
+   * layout pass has not run and there is nothing sensible to render into.
+   */
+  #ensureBackingStore(): boolean {
+    if (!this.canvasWidth || !this.canvasHeight) return false;
+    if (
+      this.canvas.width !== this.canvasWidth ||
+      this.canvas.height !== this.canvasHeight
+    ) {
+      this.canvas.width = this.canvasWidth;
+      this.canvas.height = this.canvasHeight;
+    }
+    return true;
+  }
+
   #ensureEndOfContent() {
     if (this.endOfContent && this.textLayer.contains(this.endOfContent)) {
       return this.endOfContent;
@@ -152,6 +181,8 @@ export class PageView {
       console.error(`[PageView] Engine not initialized`);
       return;
     }
+
+    if (!this.#ensureBackingStore()) return;
 
     const canvasWidth = this.canvas.width;
     const canvasHeight = this.canvas.height;
@@ -563,8 +594,16 @@ export class PageView {
 
     this.textLayer.innerHTML = "";
     this.annotationLayer.innerHTML = "";
-    this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
     clearLuminanceMap(this.canvas);
+
+    // Hand back the pixels, not just their contents. `clearRect` paints the
+    // buffer blank but keeps it, and that buffer is the single largest thing
+    // this viewer holds — a letter page at scale 1.7 on a retina display is
+    // 2080x2692x4 = ~22 MB, once per page, for the life of the tab. Zeroing
+    // the dimensions is the only way to release it; `#ensureBackingStore`
+    // allocates it again on the next render.
+    this.canvas.width = 0;
+    this.canvas.height = 0;
     this._delegatedListenersAttached = false;
     this._cachedSpans = null;
     this._lastTextScale = null;

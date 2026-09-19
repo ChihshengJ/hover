@@ -716,6 +716,10 @@ export class ViewerPane {
       const canvasWidth = origWidth * outputScale;
       const canvasHeight = origHeight * outputScale;
 
+      // The size this page renders at. PageView allocates the buffer itself,
+      // on render, and gives it back on release.
+      page.canvasWidth = canvasWidth;
+      page.canvasHeight = canvasHeight;
       page.canvas.width = canvasWidth;
       page.canvas.height = canvasHeight;
 

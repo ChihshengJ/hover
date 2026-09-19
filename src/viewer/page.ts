@@ -8,6 +8,10 @@ import type { TextSelectionManager } from "./text_manager.js";
 import type { TextLine } from "../analysis/text_index.js";
 import type { CrossReference } from "../analysis/cross_reference_builder.js";
 import type { CitationTarget } from "../analysis/citation_builder.js";
+import {
+  buildLuminanceMap,
+  clearLuminanceMap,
+} from "./page_luminance.js";
 
 let sharedPopup: CitationPopup | null = null;
 function getSharedPopup(): CitationPopup {
@@ -101,11 +105,13 @@ export class PageView {
      * `getContext` only honours its attributes on the *first* call for a canvas;
      * every later call returns that same context and silently ignores whatever
      * options it was passed.
+     *
+     * Deliberately *not* `willReadFrequently`: that pins the canvas to an
+     * unaccelerated CPU surface, and nothing here ever reads pixels back — the
+     * traffic is one-way, `putImageData` from PDFium's bitmap. Asking for the
+     * read-optimised surface only buys a second full-size copy of every page.
      */
-    this.ctx = canvas.getContext("2d", {
-      alpha: false,
-      willReadFrequently: true,
-    })!;
+    this.ctx = canvas.getContext("2d", { alpha: false })!;
     this.textLayer = this.#initLayer("text");
     this.annotationLayer = this.#initLayer("annotation");
   }
@@ -180,6 +186,18 @@ export class PageView {
       const offsetX = Math.floor((canvasWidth - imageData.width) / 2);
       const offsetY = Math.floor((canvasHeight - imageData.height) / 2);
       ctx.putImageData(imageData, offsetX, offsetY);
+
+      // Reduce the raster to a luminance grid while we still hold it in JS.
+      // This is what keeps the liquid-glass ball from having to read pixels
+      // back off this canvas later — see page_luminance.js.
+      buildLuminanceMap(
+        this.canvas,
+        pageData.data,
+        pageData.width,
+        pageData.height,
+        offsetX,
+        offsetY,
+      );
 
       const cssWidth = parseFloat(this.canvas.style.width);
       const cssHeight = parseFloat(this.canvas.style.height);
@@ -546,6 +564,7 @@ export class PageView {
     this.textLayer.innerHTML = "";
     this.annotationLayer.innerHTML = "";
     this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+    clearLuminanceMap(this.canvas);
     this._delegatedListenersAttached = false;
     this._cachedSpans = null;
     this._lastTextScale = null;

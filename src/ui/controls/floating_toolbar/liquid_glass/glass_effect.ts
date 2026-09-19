@@ -35,6 +35,7 @@ import {
   supportsSvgBackdropFilter,
 } from "./refraction_map.js";
 import type { BezelLUTOptions } from "./refraction_map.js";
+import { sampleLuminance } from "../../../../viewer/page_luminance.js";
 
 /** Goo container CSS size, px (see .goo-container). */
 const CONTAINER_SIZE = 80;
@@ -683,7 +684,10 @@ function sampleBackdropLuminance(x: number, y: number, night: boolean) {
   if (canvas && canvas.width) {
     const rect = canvas.getBoundingClientRect();
     if (rect.width && rect.height) {
-      const raw = sampleCanvasLuminance(
+      // Answered from the luminance grid PageView builds at render time, not
+      // by reading the canvas back. Null means that page is not currently
+      // rendered, so fall through to the wallpaper: that is what shows there.
+      const raw = sampleLuminance(
         canvas,
         (x - rect.left) * (canvas.width / rect.width),
         (y - rect.top) * (canvas.height / rect.height),
@@ -694,36 +698,6 @@ function sampleBackdropLuminance(x: number, y: number, night: boolean) {
 
   // No page under the ball — read the wallpaper (not inverted in night mode).
   return sampleWallpaperLuminance(x, y);
-}
-
-/**
- * Average perceived luminance (0..1) of a small patch of a canvas backing
- * store around image-space (px, py), or null if it can't be read.
- */
-function sampleCanvasLuminance(
-  canvas: HTMLCanvasElement,
-  px: number,
-  py: number,
-) {
-  const S = 28; // sample patch, canvas px
-  const x0 = Math.max(0, Math.min(canvas.width - S, Math.round(px - S / 2)));
-  const y0 = Math.max(0, Math.min(canvas.height - S, Math.round(py - S / 2)));
-  try {
-    // These attributes must match the ones PageView binds on this canvas.
-    // `getContext` applies them only on the first call per canvas and ignores
-    // them afterwards, so whichever caller gets there first decides — and the
-    // viewpane creates every page canvas up front while PageViews are built
-    // lazily, so a sample can land on a canvas this is the first to touch.
-    // Asking for the same thing means it no longer matters who wins.
-    const ctx = canvas.getContext("2d", {
-      alpha: false,
-      willReadFrequently: true,
-    });
-    if (!ctx) return null;
-    return averageLuminance(ctx.getImageData(x0, y0, S, S).data);
-  } catch {
-    return null; // tainted canvas — leave the caller on its fallback
-  }
 }
 
 // Wallpaper image cache: the loaded <img> plus a scratch canvas to read it.

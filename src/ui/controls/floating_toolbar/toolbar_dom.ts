@@ -1,3 +1,5 @@
+import { SPREAD_ICONS, SPREAD_TIPS, FIT_HORIZONTAL_ICON } from "./icons.js";
+
 /**
  * Pure DOM builder for the floating toolbar structure.
  *
@@ -40,13 +42,8 @@ export function buildToolbarDom() {
   const toolbarTop = document.createElement("div");
   toolbarTop.className = "floating-toolbar floating-toolbar-top";
   toolbarTop.innerHTML = `
-    <button class="tool-btn" data-action="horizontal-spread" data-tip-title="Spread Mode" data-tip-desc="Click to cycle: single → even → odd spread">
-      <div class="inner">
-        <svg class="tool-icon" width="25" height="25" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-          <path d="M5 17H9C10.6569 17 12 18.3431 12 20V10C12 7.17157 12 5.75736 11.1213 4.87868C10.2426 4 8.82843 4 6 4H5C4.05719 4 3.58579 4 3.29289 4.29289C3 4.58579 3 5.05719 3 6V15C3 15.9428 3 16.4142 3.29289 16.7071C3.58579 17 4.05719 17 5 17Z" stroke="currentColor"/>
-          <path d="M19 17H15C13.3431 17 12 18.3431 12 20V10C12 7.17157 12 5.75736 12.8787 4.87868C13.7574 4 15.1716 4 18 4H19C19.9428 4 20.4142 4 20.7071 4.29289C21 4.58579 21 5.05719 21 6V15C21 15.9428 21 16.4142 20.7071 16.7071C20.4142 17 19.9428 17 19 17Z" stroke="currentColor"/>
-        </svg>
-      </div>
+    <button class="tool-btn" data-action="horizontal-spread" data-tip-title="Spread Mode" data-tip-desc="${SPREAD_TIPS[0]}">
+      <div class="inner">${SPREAD_ICONS[0]}</div>
     </button>
     <button class="tool-btn" data-action="split-screen" data-tip-title="Split Screen" data-tip-desc="Click to toggle split-screen reading">
       <div class="inner">
@@ -69,17 +66,7 @@ export function buildToolbarDom() {
   toolbarBottom.className = "floating-toolbar floating-toolbar-bottom";
   toolbarBottom.innerHTML = `
     <button class="tool-btn" data-action="fit-width" data-tip-title="Fit to View" data-tip-desc="Click to toggle fit width / fit height">
-      <div class="inner">
-        <svg class="tool-icon" width="20" height="20" viewBox="0 0 800 800" fill="none" xmlns="http://www.w3.org/2000/svg">
-          <path d="M104 200V600" stroke="currentColor" stroke-width="33.3333" stroke-linecap="square"/>
-          <path d="M697 200V600" stroke="currentColor" stroke-width="33.3333" stroke-linecap="square"/>
-          <path d="M240.731 317.269L158 400" stroke="currentColor" stroke-width="33.3333" stroke-linecap="square"/>
-          <path d="M158.487 401.539L241.219 484.271" stroke="currentColor" stroke-width="33.3333" stroke-linecap="square"/>
-          <path d="M555.487 484L638.219 401.269" stroke="currentColor" stroke-width="33.3333" stroke-linecap="square"/>
-          <path d="M637.731 399.729L555 316.998" stroke="currentColor" stroke-width="33.3333" stroke-linecap="square"/>
-          <path d="M197 400H620" stroke="currentColor" stroke-width="33.3333" stroke-linecap="square"/>
-        </svg>
-      </div>
+      <div class="inner">${FIT_HORIZONTAL_ICON}</div>
     </button>
     <button class="tool-btn" data-action="zoom-in" data-tip-title="Zoom In" data-tip-desc="Increase zoom level">
       <div class="inner">

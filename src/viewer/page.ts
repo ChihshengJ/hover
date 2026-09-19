@@ -34,10 +34,10 @@ const crossRefData = new WeakMap<Element, CrossReference>();
 export interface PageViewHost {
   doc: PDFDocumentModel;
   getTextSelectionManager(): TextSelectionManager | null;
+  /** `top` is a PDF-space y (bottom-origin), as `PageLocation.y` carries. */
   scrollToPoint(
     pageIndex: number,
-    x: number,
-    y: number,
+    top: number,
     center?: boolean,
   ): Promise<void>;
 }
@@ -820,7 +820,6 @@ export class PageView {
         () => {
           this.host.scrollToPoint(
             citation.targetLocation.pageIndex,
-            citation.targetLocation.x,
             citation.targetLocation.y,
           );
         },
@@ -840,14 +839,13 @@ export class PageView {
 
     if (targetIndex !== null && citation.allTargets?.[targetIndex]?.location) {
       const loc = citation.allTargets[targetIndex].location;
-      await this.host.scrollToPoint(loc.pageIndex, loc.x, loc.y);
+      await this.host.scrollToPoint(loc.pageIndex, loc.y);
       return;
     }
 
     if (citation.targetLocation) {
       await this.host.scrollToPoint(
         citation.targetLocation.pageIndex,
-        citation.targetLocation.x,
         citation.targetLocation.y,
       );
       return;
@@ -858,7 +856,6 @@ export class PageView {
       if (refAnchor) {
         await this.host.scrollToPoint(
           refAnchor.pageNumber - 1,
-          refAnchor.startCoord.x,
           refAnchor.startCoord.y,
         );
       }
@@ -902,7 +899,6 @@ export class PageView {
 
     await this.host.scrollToPoint(
       crossRef.targetLocation.pageIndex,
-      crossRef.targetLocation.x,
       crossRef.targetLocation.y,
       scrollFlag,
     );

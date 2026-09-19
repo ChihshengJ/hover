@@ -133,8 +133,8 @@ export class ViewerPane {
           // Assigned in this constructor but read on click, long after; and
           // null until `initialize()` runs for the annotation layer.
           getTextSelectionManager: () => this.textSelectionManager,
-          scrollToPoint: (pageIndex, x, y, center) =>
-            this.scrollToPoint(pageIndex, x, y, center),
+          scrollToPoint: (pageIndex, top, center) =>
+            this.scrollToPoint(pageIndex, top, center),
         },
         idx + 1,
         canvas,

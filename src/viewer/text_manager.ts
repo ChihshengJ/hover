@@ -169,8 +169,9 @@ export class TextSelectionManager {
       "pointerdown",
       (e) => {
         this.#isPointerDown = true;
+        // Guard right button from starting a selection.
         this.#gestureLayer =
-          e.target instanceof Element
+          e.button === 0 && e.target instanceof Element
             ? e.target.closest<HTMLElement>(".textLayer")
             : null;
 

@@ -7,6 +7,12 @@
 import type { ViewerPane } from "../../../viewer/viewpane.js";
 import type { SplitWindowManager } from "../../../viewer/window_manager.js";
 import type { SpreadMode } from "../../../viewer/viewpane.js";
+import {
+  SPREAD_ICONS,
+  SPREAD_TIPS,
+  FIT_HORIZONTAL_ICON,
+  FIT_VERTICAL_ICON,
+} from "./icons.js";
 export interface ToolActionOptions {
   wm: SplitWindowManager;
   toolbarTop: HTMLElement;
@@ -99,40 +105,37 @@ export class ToolActions {
     }
   }
 
+  /**
+   * Swap in the glyph for `mode` — the three states are three SVGs, not one
+   * `<img>` with its `src` rewritten. State also goes to `data-tip-desc`,
+   * which is where the toolbar's own tooltip reads from; a native `title`
+   * would stack a second tooltip on top of it.
+   */
   #updateSpreadIcon(mode: SpreadMode) {
     const btn = this.toolbarTop.querySelector(
       '[data-action="horizontal-spread"]',
     ) as HTMLElement;
-    const img = btn.querySelector("img") as HTMLImageElement;
+    const inner = btn.querySelector(".inner");
+    if (!inner) return;
 
-    const config: Record<SpreadMode, { src: string; title: string }> = {
-      0: { src: "assets/book.svg", title: "Single page view" },
-      1: { src: "assets/even.png", title: "Even spread (1-2, 3-4...)" },
-      2: { src: "assets/odd.png", title: "Odd spread (1, 2-3, 4-5...)" },
-    };
-
-    const { src, title } = config[mode];
-    img.src = src;
-    btn.title = title;
+    inner.innerHTML = SPREAD_ICONS[mode];
+    btn.dataset.tipDesc = SPREAD_TIPS[mode];
   }
 
+  /** Same swap as the spread icon, for the two fit states. */
   #updateFitIcon(fitMode: number) {
     const btn = this.toolbarBottom.querySelector(
       '[data-action="fit-width"]',
     ) as HTMLElement;
-    const img = btn.querySelector("img") as HTMLImageElement;
+    const inner = btn.querySelector(".inner");
+    if (!inner) return;
 
-    if (fitMode === 1) {
-      img.src = "assets/fit_width.svg";
-      img.width = 20;
-      btn.title = "Fit horizontal";
-      btn.classList.add("active");
-    } else {
-      img.src = "assets/fit_height.svg";
-      img.width = 18;
-      btn.title = "Fit vertical";
-      btn.classList.remove("active");
-    }
+    const horizontal = fitMode === 1;
+    inner.innerHTML = horizontal ? FIT_HORIZONTAL_ICON : FIT_VERTICAL_ICON;
+    btn.dataset.tipDesc = horizontal
+      ? "Fit horizontal — click to fit vertical"
+      : "Fit vertical — click to fit horizontal";
+    btn.classList.toggle("active", horizontal);
   }
 
   #handleRotateClick() {

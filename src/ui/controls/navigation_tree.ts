@@ -1183,12 +1183,11 @@ export class NavigationTree {
   #navigateTo(node: TreeNode) {
     if (node.type === "annotation" && node.annotationId) {
       this.pane.annotationManager?.selectAnnotation?.(node.annotationId);
-      // Use PDF coordinates for scrolling (node.top is now in PDF coords)
-      this.pane.scrollToPoint(node.pageIndex, node.left, node.top);
-    } else {
-      // Sections and figures already use PDF coordinates
-      this.pane.scrollToPoint(node.pageIndex, node.left, node.top);
     }
+
+    // Every node type carries PDF coordinates; scrollToPoint only scrolls
+    // vertically, so node.left is not passed.
+    this.pane.scrollToPoint(node.pageIndex, node.top);
 
     if (this.pinnedPath.length === 0) {
       this.hide();

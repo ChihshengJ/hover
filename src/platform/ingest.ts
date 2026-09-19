@@ -13,8 +13,6 @@
  * answer involves this store.
  */
 
-import { arrayBufferToBase64 } from "./util/base64.js";
-
 /** The hand-off record: bytes, a display name, and where they came from. */
 export interface PendingRecord {
   data: ArrayBuffer;
@@ -48,14 +46,6 @@ const PENDING_DB_STORE = "data";
 const DEV_DEFAULT_PDF_URL = "https://arxiv.org/pdf/2501.19393";
 
 /**
- * True anywhere the extension APIs exist — popup and content script included.
- * `isExtensionContext()` is the stricter viewer-only test.
- */
-function inExtension(): boolean {
-  return typeof chrome !== "undefined" && !!chrome.runtime?.id;
-}
-
-/**
  * True only in the packaged viewer page, as opposed to the dev server. The
  * protocol check is what separates the two: `chrome.runtime.id` is also
  * present in a content script running on an ordinary http page.
@@ -72,10 +62,10 @@ export function isExtensionContext(): boolean {
 
 /**
  * Write a pending record straight to IndexedDB from the current page context.
- * Used only in dev, where there's no background to message; in the extension
- * the background owns the write so a single context manages the DB.
+ * Every page that parks — popup, viewer, empty state, dev server — is on the
+ * same origin as the viewer that will drain the record, so they share one DB.
  */
-function parkInPage(record: PendingRecord): Promise<void> {
+export async function parkInPage(record: PendingRecord): Promise<void> {
   return new Promise((resolve, reject) => {
     const req = indexedDB.open(PENDING_DB_NAME, 1);
     req.onupgradeneeded = () => req.result.createObjectStore(PENDING_DB_STORE);
@@ -96,23 +86,6 @@ function parkInPage(record: PendingRecord): Promise<void> {
   });
 }
 
-/** Park PDF bytes in the pending store for the viewer to pick up. */
-export async function parkPdfBytes(
-  arrayBuffer: ArrayBuffer,
-  name: string,
-  url: string | null = null,
-): Promise<void> {
-  if (inExtension()) {
-    await chrome.runtime.sendMessage({
-      type: "STORE_LOCAL_PDF",
-      data: arrayBufferToBase64(arrayBuffer),
-      name,
-    });
-  } else {
-    await parkInPage({ data: arrayBuffer, name, url });
-  }
-}
-
 /**
  * Ingest a File (popup picker, in-viewer import, drag & drop) into the pending
  * store. Does not navigate — the caller decides whether to open a new tab or
@@ -122,7 +95,7 @@ export async function ingestFile(file: File): Promise<void> {
   if (!file) throw new Error("No file provided");
   if (file.type !== "application/pdf") throw new Error("Not a PDF file");
   const arrayBuffer = await file.arrayBuffer();
-  await parkPdfBytes(arrayBuffer, file.name);
+  await parkInPage({ data: arrayBuffer, name: file.name, url: null });
 }
 
 // ============================================

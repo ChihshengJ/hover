@@ -583,12 +583,7 @@ export class ViewerPane {
       target.wrapper.scrollIntoView({ behavior: "smooth", block: "center" });
   }
 
-  async scrollToPoint(
-    pageIndex: number,
-    left: number,
-    top: number,
-    center = false,
-  ) {
+  async scrollToPoint(pageIndex: number, top: number, center = false) {
     const page = this.document.getPage(pageIndex + 1);
     if (!page) return;
 
@@ -612,10 +607,7 @@ export class ViewerPane {
       behavior: "smooth",
     });
 
-    const landedPage = this.#computeCurrentPage();
-    if (landedPage !== originPage) {
-      this.#showScrollBackButton(originScrollTop, originPage);
-    }
+    this.#showScrollBackButton(originScrollTop, originPage);
   }
 
   scrollToTop() {

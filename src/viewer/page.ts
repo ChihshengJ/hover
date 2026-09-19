@@ -60,6 +60,7 @@ export class PageView {
   wrapper: HTMLElement;
   rotateInner: HTMLDivElement;
   canvas: HTMLCanvasElement;
+  ctx: CanvasRenderingContext2D;
   textLayer: HTMLElement;
   annotationLayer: HTMLElement;
 
@@ -76,7 +77,11 @@ export class PageView {
   _showTimer: ReturnType<typeof setTimeout> | null = null;
   _delegatedListenersAttached = false;
 
-  constructor(host: PageViewHost, pageNumber: number, canvas: HTMLCanvasElement) {
+  constructor(
+    host: PageViewHost,
+    pageNumber: number,
+    canvas: HTMLCanvasElement,
+  ) {
     this.host = host;
     this.doc = host.doc;
     this.pageNumber = pageNumber;
@@ -90,6 +95,17 @@ export class PageView {
     this.wrapper.insertBefore(this.rotateInner, this.wrapper.firstChild);
 
     this.canvas = canvas;
+    /**
+     * The canvas's one 2D context, bound here rather than re-fetched per call.
+     *
+     * `getContext` only honours its attributes on the *first* call for a canvas;
+     * every later call returns that same context and silently ignores whatever
+     * options it was passed.
+     */
+    this.ctx = canvas.getContext("2d", {
+      alpha: false,
+      willReadFrequently: true,
+    })!;
     this.textLayer = this.#initLayer("text");
     this.annotationLayer = this.#initLayer("annotation");
   }
@@ -158,7 +174,7 @@ export class PageView {
         pageData.height,
       );
 
-      const ctx = this.canvas.getContext("2d", { alpha: false })!;
+      const ctx = this.ctx;
       ctx.clearRect(0, 0, canvasWidth, canvasHeight);
 
       const offsetX = Math.floor((canvasWidth - imageData.width) / 2);
@@ -529,8 +545,7 @@ export class PageView {
 
     this.textLayer.innerHTML = "";
     this.annotationLayer.innerHTML = "";
-    const ctx = this.canvas.getContext("2d")!;
-    ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+    this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
     this._delegatedListenersAttached = false;
     this._cachedSpans = null;
     this._lastTextScale = null;
@@ -606,7 +621,9 @@ export class PageView {
     this.annotationLayer.addEventListener(
       "mouseenter",
       (e) => {
-        const citRect = (e.target as Element).closest<HTMLElement>(".citation-rect");
+        const citRect = (e.target as Element).closest<HTMLElement>(
+          ".citation-rect",
+        );
         if (citRect) {
           this.#handleCitationEnter(citRect, citationPopup);
           return;
@@ -618,7 +635,9 @@ export class PageView {
     this.annotationLayer.addEventListener(
       "mouseleave",
       (e) => {
-        const citRect = (e.target as Element).closest<HTMLElement>(".citation-rect");
+        const citRect = (e.target as Element).closest<HTMLElement>(
+          ".citation-rect",
+        );
         if (citRect) {
           this.#handleLeave(citRect, citationPopup);
           return;
@@ -628,14 +647,18 @@ export class PageView {
     );
 
     this.annotationLayer.addEventListener("click", (e) => {
-      const citRect = (e.target as Element).closest<HTMLElement>(".citation-rect");
+      const citRect = (e.target as Element).closest<HTMLElement>(
+        ".citation-rect",
+      );
       if (citRect) {
         e.preventDefault();
         this.#handleCitationClick(citRect);
         return;
       }
 
-      const refRect = (e.target as Element).closest<HTMLElement>(".crossref-rect");
+      const refRect = (e.target as Element).closest<HTMLElement>(
+        ".crossref-rect",
+      );
       if (refRect) {
         e.preventDefault();
         this.#handleCrossRefClick(refRect);

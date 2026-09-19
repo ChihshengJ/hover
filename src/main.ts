@@ -73,6 +73,24 @@ function adoptContentScriptOverlay() {
 }
 
 /**
+ * Release a document that will never be shown.
+ *
+ * A loaded model holds two PDFium documents in the WASM heap — the engine's,
+ * and the low-level handle's, which also owns the file buffer PDFium keeps
+ * referencing. Nothing else frees those, so any path that abandons a model
+ * while the page stays open has to close it by hand. Failures here are
+ * reported and swallowed: the caller is already handling a more interesting
+ * error than this one.
+ */
+async function closeQuietly(pdfmodel: PDFDocumentModel) {
+  try {
+    await pdfmodel.close();
+  } catch (err) {
+    console.warn("[Main] Error closing abandoned document:", err);
+  }
+}
+
+/**
  * Build the viewer around a loaded model: window manager, file menu, title.
  */
 async function constructViewer(
@@ -131,19 +149,26 @@ async function runOnboarding(
   );
 
   const pdfmodel = new PDFDocumentModel();
-  await pdfmodel.load(tutorialData, onProgress);
-  loadingOverlay.setProgress(0.95, "Initializing viewer...");
+  try {
+    await pdfmodel.load(tutorialData, onProgress);
+    loadingOverlay.setProgress(0.95, "Initializing viewer...");
 
-  const { wm, fileMenu } = await constructViewer(pdfmodel, "Tutorial");
-  document.title = "Welcome to Hover - Tutorial";
-  await loadingOverlay.hide();
+    const { wm, fileMenu } = await constructViewer(pdfmodel, "Tutorial");
+    document.title = "Welcome to Hover - Tutorial";
+    await loadingOverlay.hide();
 
-  await pdfmodel.buildIndex();
+    await pdfmodel.buildIndex();
 
-  setTimeout(async () => {
-    const onboarding = new OnboardingWalkthrough(wm, fileMenu);
-    await onboarding.start();
-  }, 500);
+    setTimeout(async () => {
+      const onboarding = new OnboardingWalkthrough(wm, fileMenu);
+      await onboarding.start();
+    }, 500);
+  } catch (err) {
+    // loadPdf's catch can't see this model, so release it here before the
+    // error travels up to it. See the note there.
+    await closeQuietly(pdfmodel);
+    throw err;
+  }
 }
 
 async function loadPdf(isFirstLaunch = false) {
@@ -164,6 +189,10 @@ async function loadPdf(isFirstLaunch = false) {
     if (fraction === undefined) loadingOverlay.setIndeterminate(message);
     else loadingOverlay.setProgress(fraction, message);
   };
+
+  // Declared out here so the catch below can release it: everything after
+  // load() runs with a live document, and this page stays open on failure.
+  let pdfmodel: PDFDocumentModel | null = null;
 
   try {
     const intendedUrl = getIntendedUrl();
@@ -188,8 +217,17 @@ async function loadPdf(isFirstLaunch = false) {
       return;
     }
 
+    // Where this document came from, for anything that needs to point back at
+    // the original — the File menu's "View original", chiefly. `source.url` is
+    // the resolved answer to that question; re-reading `?url=` off the address
+    // bar only happens to agree with it today, and won't once bytes are parked
+    // with a provenance the address bar never saw.
+    if (source.url) {
+      document.documentElement.dataset.hoverOriginalUrl = source.url;
+    }
+
     loadingOverlay.setProgress(0.1, "Loading document...");
-    const pdfmodel = new PDFDocumentModel();
+    pdfmodel = new PDFDocumentModel();
     await pdfmodel.load(source.data, onProgress);
     loadingOverlay.setProgress(0.95, "Initializing viewer...");
 
@@ -212,6 +250,10 @@ async function loadPdf(isFirstLaunch = false) {
     await initializeTrail(pdfmodel, detectedTitle, source.url);
   } catch (error) {
     console.error("[Main] Error loading PDF:", error);
+    // The error screen below leaves the tab open, so nothing will reclaim the
+    // WASM heap on its own. Free it rather than sitting on two PDFium
+    // documents for as long as the user leaves the failed tab around.
+    if (pdfmodel) await closeQuietly(pdfmodel);
     loadingOverlay.destroy();
     el.wd.innerHTML = `
       <div style="color: red; text-align: center; padding: 50px;">

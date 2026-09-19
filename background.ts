@@ -3,8 +3,8 @@
 // ============================================
 // NOTE: this file is emitted as a standalone classic script (Firefox loads it
 // via background.scripts, Chrome as a service worker), so it cannot `import`
-// shared modules at runtime — keep its helpers self-contained. The ES-module
-// side of the app shares these via src/platform/util/base64.js instead.
+// shared modules at runtime — keep its helpers self-contained. content.ts
+// carries its own copy of the base64 helper for the same reason.
 
 let bypassUrls = new Set();
 
@@ -179,13 +179,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     fetchWebsite(message.query)
       .then((result) => sendResponse({ success: true, data: result }))
       .catch((error) => sendResponse({ success: false, error: error.message }));
-    return true;
-  }
-
-  if (message.type === "STORE_LOCAL_PDF") {
-    handleStoreLocalPdf(message)
-      .then(() => sendResponse({ success: true }))
-      .catch((err) => sendResponse({ success: false, error: err.message }));
     return true;
   }
 
@@ -420,15 +413,6 @@ async function handlePdfDataReady(
   await chrome.tabs.update(sender.tab.id, { url: viewerUrlFor(url) });
 
   return { success: true };
-}
-
-async function handleStoreLocalPdf(message: { data: string; name: string }) {
-  const arrayBuffer = base64ToArrayBuffer(message.data);
-  await storePendingPdf({
-    data: arrayBuffer,
-    name: message.name || "document.pdf",
-    url: null,
-  });
 }
 
 async function handleFetchTabAsPdf(message: { url: string; tabId: number }) {

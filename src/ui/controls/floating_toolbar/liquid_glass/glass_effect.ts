@@ -709,7 +709,16 @@ function sampleCanvasLuminance(
   const x0 = Math.max(0, Math.min(canvas.width - S, Math.round(px - S / 2)));
   const y0 = Math.max(0, Math.min(canvas.height - S, Math.round(py - S / 2)));
   try {
-    const ctx = canvas.getContext("2d");
+    // These attributes must match the ones PageView binds on this canvas.
+    // `getContext` applies them only on the first call per canvas and ignores
+    // them afterwards, so whichever caller gets there first decides — and the
+    // viewpane creates every page canvas up front while PageViews are built
+    // lazily, so a sample can land on a canvas this is the first to touch.
+    // Asking for the same thing means it no longer matters who wins.
+    const ctx = canvas.getContext("2d", {
+      alpha: false,
+      willReadFrequently: true,
+    });
     if (!ctx) return null;
     return averageLuminance(ctx.getImageData(x0, y0, S, S).data);
   } catch {

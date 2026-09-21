@@ -1,5 +1,6 @@
 import { defineConfig } from "vite";
 import { resolve } from "path";
+import { pruneJunk } from "./scripts/clean_junk.mjs";
 import {
   copyFileSync,
   existsSync,
@@ -120,6 +121,18 @@ export default defineConfig({
           /new URL\('pdfium\.wasm',\s*import\.meta\.url\)\.href/g,
           "'pdfium.wasm'",
         );
+      },
+    },
+    {
+      // public/ picks up .DS_Store from Finder and Vite copies it verbatim
+      // into dist/, where AMO's validator flags it. Drop it every build so
+      // the output directory is submission-clean without a manual pass.
+      name: "strip-junk-files",
+      closeBundle() {
+        const removed = pruneJunk(resolve(__dirname, OUT_DIR));
+        if (removed.length) {
+          console.log(`[vite] Stripped ${removed.length} junk file(s) from ${OUT_DIR}/`);
+        }
       },
     },
     {

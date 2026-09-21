@@ -16,6 +16,7 @@
     "build:all": "bun run build:chrome && bun run build:firefox && bun run build:safari",
     "build:store": "STORE_BUILD=1 bun run build:all",
     "package": "bun run build:all && bun scripts/package.mjs",
+    "release": "bun run check && STORE_BUILD=1 bun run build:chrome && STORE_BUILD=1 bun run build:firefox && bun scripts/package.mjs",
     "watch:chrome": "TARGET=chrome vite build --watch",
     "dev:firefox": "bun run build:firefox && web-ext run --source-dir dist/firefox --firefox-profile '/Users/zs_jin/Library/Application Support/Firefox/profiles/bncnexsu.default-release' & TARGET=firefox vite build --watch",
     "lint:firefox": "web-ext lint --source-dir dist/firefox",

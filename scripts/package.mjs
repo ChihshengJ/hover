@@ -14,10 +14,23 @@
  *      hidden files, and Finder/ditto add the forks unconditionally. The zip
  *      CLI doesn't, and we prune the source tree first as well.
  *
- * Usage: bun scripts/package.mjs [--targets chrome,firefox] [--no-lint]
+ * Firefox review additionally requires the unminified source, since the
+ * uploaded build is minified — see packageSource() below.
+ *
+ * Usage: bun scripts/package.mjs [--targets chrome,firefox] [--no-lint] [--no-src]
  */
 import { execFileSync, execSync } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, statSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { pruneJunk, JUNK } from "./clean_junk.mjs";
 
 const args = process.argv.slice(2);
@@ -29,6 +42,7 @@ const value = (name, fallback) => {
 
 const targets = value("--targets", "chrome,firefox").split(",");
 const lint = !flag("--no-lint");
+const src = !flag("--no-src");
 const version = JSON.parse(readFileSync("manifest.json", "utf8")).version;
 mkdirSync("releases", { recursive: true });
 
@@ -99,6 +113,114 @@ for (const target of targets) {
   }
 
   console.log(`Packaged ${zip} (${entries.length} entries, ${mb(zip)} MB)`);
+}
+
+/**
+ * Zip the unminified sources for AMO review, which requires them whenever the
+ * uploaded build is minified (ours is — `build.minify` is on).
+ *
+ * The file list comes from the *working tree* rather than `git archive HEAD`
+ * on purpose: the reviewer has to be able to reproduce the exact artifact we
+ * uploaded, and dist/ is built from the working tree, which is routinely ahead
+ * of the last commit. Ignored paths are skipped via --exclude-standard, so
+ * node_modules/ and dist/ stay out. Three tracked paths are dropped as pure
+ * bloat, none of which the build reads: `marketing/` and `assets/` are
+ * screenshots and demo GIFs used by README.md and the store listings (the
+ * images the extension actually ships live in `public/assets/`), and
+ * `releases/` holds two legacy zips committed before it was gitignored.
+ */
+function packageSource(version) {
+  const tracked = execFileSync(
+    "git",
+    ["ls-files", "-co", "--exclude-standard", "-z"],
+    { encoding: "utf8" },
+  )
+    .split("\0")
+    .filter(Boolean)
+    .filter(
+      (f) =>
+        !f.startsWith("marketing/") &&
+        !f.startsWith("assets/") &&
+        !f.startsWith("releases/"),
+    )
+    .filter((f) => !JUNK.includes(f.split("/").pop()));
+
+  const zip = `releases/hover-src-${version}.zip`;
+  const tmp = mkdtempSync(join(tmpdir(), "hover-src-"));
+  try {
+    const listFile = join(tmp, "files.txt");
+    writeFileSync(listFile, tracked.join("\n") + "\n");
+    execSync(`rm -f "${zip}"; zip -qX "${zip}" -@ < "${listFile}"`, {
+      stdio: "inherit",
+      shell: "/bin/bash",
+    });
+
+    // AMO wants build instructions alongside the source. Generate them so the
+    // recorded toolchain versions can't drift from the machine that built.
+    const buildDoc = join(tmp, "BUILD.md");
+    writeFileSync(buildDoc, buildInstructions(version));
+    execFileSync("zip", ["-qXj", zip, buildDoc]);
+  } finally {
+    rmSync(tmp, { recursive: true, force: true });
+  }
+
+  const entries = execFileSync("unzip", ["-Z1", zip], { encoding: "utf8" })
+    .split("\n")
+    .filter(Boolean);
+  for (const required of ["package.json", "bun.lock", "vite.config.js", "BUILD.md"]) {
+    if (!entries.includes(required)) {
+      console.error(`  ${zip} is missing ${required} — reviewers can't rebuild`);
+      return false;
+    }
+  }
+  console.log(`Packaged ${zip} (${entries.length} entries, ${mb(zip)} MB)`);
+  return true;
+}
+
+function buildInstructions(version) {
+  const bun = execFileSync("bun", ["--version"], { encoding: "utf8" }).trim();
+  return `# Build instructions — Hover PDF ${version} (Firefox)
+
+Produces a \`dist/firefox/\` tree identical to the contents of the uploaded
+\`hover-firefox-${version}.zip\`.
+
+## Environment
+
+- bun ${bun} (https://bun.sh) — used as both package manager and task runner
+- No other toolchain is required; bun runs the TypeScript and Vite build.
+- Built and verified on macOS; Linux works the same way.
+
+## Steps
+
+\`\`\`bash
+bun install --frozen-lockfile
+STORE_BUILD=1 bun run build:firefox
+\`\`\`
+
+The output is \`dist/firefox/\`.
+
+## Notes for the reviewer
+
+- \`STORE_BUILD=1\` pins the PDF engine to the locally bundled WebAssembly
+  binary and strips the CDN URL that @embedpdf/pdfium would otherwise fall
+  back to, so the build loads no remote code.
+- \`public/pdfium.wasm\` is absent from this archive by design. It is copied
+  verbatim from \`node_modules/@embedpdf/pdfium/dist/pdfium.wasm\` during
+  \`bun install\` + build by the \`copy-wasm-to-public\` plugin in
+  \`vite.config.js\`; it is a third-party binary, not our source.
+- The screenshots and demo GIFs referenced by README.md are omitted; they are
+  listing media, not build inputs, so some image links in README.md will not
+  resolve. The images the extension itself ships are under \`public/assets/\`.
+- \`manifest.json\` in this archive is the Chrome base manifest. The Firefox
+  manifest is produced at build time by deep-merging \`manifests/firefox.json\`
+  over it (see the \`emit-target-manifest\` plugin in \`vite.config.js\`).
+- The build is minified (\`build.minify\` in \`vite.config.js\`). No other
+  transformation, obfuscation, or code generation is applied.
+`;
+}
+
+if (src && targets.includes("firefox")) {
+  if (!packageSource(version)) failed = true;
 }
 
 if (failed) process.exit(1);

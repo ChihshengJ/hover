@@ -837,8 +837,8 @@ export class FileMenu {
     return text.substring(0, maxLength - 3) + "...";
   }
 
-  #escapeHtml(str: string): string {
-    return str
+  #escapeHtml(str: unknown): string {
+    return String(str)
       .replace(/&/g, "&amp;")
       .replace(/</g, "&lt;")
       .replace(/>/g, "&gt;")
@@ -921,18 +921,18 @@ export class FileMenu {
         <div class="file-menu-modal-content">
           <div class="metadata-row">
             <span class="metadata-label">Title</span>
-            <span class="metadata-value">${data.title}</span>
+            <span class="metadata-value">${this.#escapeHtml(data.title)}</span>
           </div>
           <div class="metadata-row">
             <span class="metadata-label">Author</span>
-            <span class="metadata-value">${data.author}</span>
+            <span class="metadata-value">${this.#escapeHtml(data.author)}</span>
           </div>
           ${
             data.subject
               ? `
           <div class="metadata-row">
             <span class="metadata-label">Subject</span>
-            <span class="metadata-value">${data.subject}</span>
+            <span class="metadata-value">${this.#escapeHtml(data.subject)}</span>
           </div>`
               : ""
           }
@@ -941,7 +941,7 @@ export class FileMenu {
               ? `
           <div class="metadata-row">
             <span class="metadata-label">Keywords</span>
-            <span class="metadata-value">${data.keywords}</span>
+            <span class="metadata-value">${this.#escapeHtml(data.keywords)}</span>
           </div>`
               : ""
           }
@@ -950,7 +950,7 @@ export class FileMenu {
               ? `
             <div class="metadata-row">
               <span class="metadata-label">DOI</span>
-              <span class="metadata-value">${data.custom.DOI}</span>
+              <span class="metadata-value">${this.#escapeHtml(data.custom.DOI)}</span>
             </div>
           `
               : ""
@@ -960,7 +960,7 @@ export class FileMenu {
               ? `
             <div class="metadata-row">
               <span class="metadata-label">License</span>
-              <span class="metadata-value">${data.custom.License}</span>
+              <span class="metadata-value">${this.#escapeHtml(data.custom.License)}</span>
             </div>
           `
               : ""
@@ -970,7 +970,7 @@ export class FileMenu {
               ? `
             <div class="metadata-row">
               <span class="metadata-label">arXiv</span>
-              <span class="metadata-value">${data.custom.arXivID}</span>
+              <span class="metadata-value">${this.#escapeHtml(data.custom.arXivID)}</span>
             </div>
           `
               : ""
@@ -980,7 +980,7 @@ export class FileMenu {
               ? `
             <div class="metadata-row">
               <span class="metadata-label">PTEX</span>
-              <span class="metadata-value">${data.custom["PTEX.Fullbanner"]}</span>
+              <span class="metadata-value">${this.#escapeHtml(data.custom["PTEX.Fullbanner"])}</span>
             </div>
           `
               : ""
@@ -992,18 +992,18 @@ export class FileMenu {
           </div>
           <div class="metadata-row">
             <span class="metadata-label">Created</span>
-            <span class="metadata-value">${data.creationDate}</span>
+            <span class="metadata-value">${this.#escapeHtml(data.creationDate)}</span>
           </div>
           <div class="metadata-row">
             <span class="metadata-label">Modified</span>
-            <span class="metadata-value">${data.modDate}</span>
+            <span class="metadata-value">${this.#escapeHtml(data.modDate)}</span>
           </div>
           ${
             data.creator
               ? `
           <div class="metadata-row">
             <span class="metadata-label">Creator</span>
-            <span class="metadata-value">${data.creator}</span>
+            <span class="metadata-value">${this.#escapeHtml(data.creator)}</span>
           </div>`
               : ""
           }

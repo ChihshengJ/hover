@@ -149,6 +149,7 @@ export class ViewerPane {
       return pageView;
     });
     this.layoutPages(this.scale);
+    this.#watchDevicePixelRatio();
     await new Promise((resolve) => setTimeout(resolve, 50));
     this.setupLazyRender();
     this.#setupGlobalClickToSelect();
@@ -737,16 +738,21 @@ export class ViewerPane {
       const aspectRatio = dims.height / dims.width;
       const origHeight = Math.round(origWidth * aspectRatio);
 
-      const canvasWidth = origWidth * outputScale;
-      const canvasHeight = origHeight * outputScale;
+      // A canvas backing store is whole pixels, so round here rather than let
+      // the `canvas.width` setter truncate. At a fractional devicePixelRatio
+      // (browser zoom, 125%/150% display scaling) the CSS box is then derived
+      // from the rounded store, so one buffer pixel maps to one device pixel
+      // and the compositor never resamples (blurs) the page.
+      const canvasWidth = Math.round(origWidth * outputScale);
+      const canvasHeight = Math.round(origHeight * outputScale);
 
       // Publish the size this page renders at.
       page.canvasWidth = canvasWidth;
       page.canvasHeight = canvasHeight;
 
       Object.assign(page.canvas.style, {
-        width: `${origWidth}px`,
-        height: `${origHeight}px`,
+        width: `${canvasWidth / outputScale}px`,
+        height: `${canvasHeight / outputScale}px`,
         transform: "",
         transformOrigin: "",
       });
@@ -801,6 +807,38 @@ export class ViewerPane {
       Object.assign(page.annotationLayer.style, layerStyles);
       Object.assign(page.textLayer.style, layerStyles);
     }
+  }
+
+  #dprQuery: MediaQueryList | null = null;
+  #onDprChange: (() => void) | null = null;
+
+  /**
+   * Re-lay out and re-render when devicePixelRatio changes — the window moved
+   * to a display with a different density, or browser zoom changed. Moving
+   * between displays doesn't always fire `resize`, and the backing stores
+   * would otherwise stay sized for the old ratio. A `resolution` query only
+   * matches one ratio, so it is re-armed for the new one on every change.
+   */
+  #watchDevicePixelRatio() {
+    this.#unwatchDevicePixelRatio();
+    this.#dprQuery = window.matchMedia(
+      `(resolution: ${window.devicePixelRatio}dppx)`,
+    );
+    this.#onDprChange = () => {
+      this.#watchDevicePixelRatio();
+      this.refreshAllPages();
+    };
+    this.#dprQuery.addEventListener("change", this.#onDprChange, {
+      once: true,
+    });
+  }
+
+  #unwatchDevicePixelRatio() {
+    if (this.#dprQuery && this.#onDprChange) {
+      this.#dprQuery.removeEventListener("change", this.#onDprChange);
+    }
+    this.#dprQuery = null;
+    this.#onDprChange = null;
   }
 
   async refreshAllPages() {
@@ -1118,6 +1156,7 @@ export class ViewerPane {
 
   destroy() {
     this.document.unsubscribe(this);
+    this.#unwatchDevicePixelRatio();
     if (this.observer) {
       for (const page of this.pages) {
         this.observer.unobserve(page.wrapper);

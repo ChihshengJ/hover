@@ -10,6 +10,14 @@ export class DrawingCanvasLayer {
 
   #parent: HTMLElement | null = null;
 
+  /** devicePixelRatio the backing store and transform were sized for. */
+  #dpr = 1;
+
+  /** Size `ensureCanvas` was last asked for, in CSS px. */
+  #width = 0;
+
+  #height = 0;
+
   #lastX: number = 0;
 
   #lastY: number = 0;
@@ -28,31 +36,44 @@ export class DrawingCanvasLayer {
    * @param height CSS pixel height
    */
   ensureCanvas(pageRotateInner: HTMLElement, width: number, height: number) {
-    // Reuse existing canvas if same parent and dimensions match
-    if (this.#canvas && this.#parent === pageRotateInner) {
+    const dpr = window.devicePixelRatio || 1;
+
+    // Reuse existing canvas if same parent, dimensions and pixel ratio match.
+    // The ratio changes when the window moves to a display of another density;
+    // a canvas sized for the old one would draw the live stroke blurry.
+    if (
+      this.#canvas &&
+      this.#parent === pageRotateInner &&
+      this.#dpr === dpr
+    ) {
       const curW = Math.round(width);
       const curH = Math.round(height);
-      const canW = Math.round(parseFloat(this.#canvas.style.width));
-      const canH = Math.round(parseFloat(this.#canvas.style.height));
+      const canW = Math.round(this.#width);
+      const canH = Math.round(this.#height);
       if (curW === canW && curH === canH) return;
     }
 
-    // Different page or dimensions changed — destroy old canvas and create new one
+    // Different page, dimensions or ratio — destroy old canvas and create new one
     this.destroy();
 
     this.#parent = pageRotateInner;
+    this.#dpr = dpr;
+    this.#width = width;
+    this.#height = height;
     this.#canvas = document.createElement("canvas");
     this.#canvas.className = "drawing-canvas-overlay";
-    this.#canvas.width = width * devicePixelRatio;
-    this.#canvas.height = height * devicePixelRatio;
-    this.#canvas.style.width = `${width}px`;
-    this.#canvas.style.height = `${height}px`;
+    // Whole-pixel store with the CSS box derived from it, as the page canvases
+    // do (see ViewerPane.layoutPages), so the stroke maps 1:1 to the screen.
+    this.#canvas.width = Math.ceil(width * dpr);
+    this.#canvas.height = Math.ceil(height * dpr);
+    this.#canvas.style.width = `${this.#canvas.width / dpr}px`;
+    this.#canvas.style.height = `${this.#canvas.height / dpr}px`;
     // Inline styles to override `.page-wrapper canvas { position: relative; z-index: 0 }`
     this.#canvas.style.position = "absolute";
     this.#canvas.style.zIndex = "100";
 
     this.#ctx = this.#canvas.getContext("2d");
-    this.#ctx.scale(devicePixelRatio, devicePixelRatio);
+    this.#ctx.scale(dpr, dpr);
     this.#ctx.lineCap = "round";
     this.#ctx.lineJoin = "round";
 
@@ -123,11 +144,13 @@ export class DrawingCanvasLayer {
    */
   clear() {
     if (!this.#ctx || !this.#canvas) return;
+    // In the units of the transform set at creation, not the current ratio:
+    // after a display change the latter would clear only part of the canvas.
     this.#ctx.clearRect(
       0,
       0,
-      this.#canvas.width / devicePixelRatio,
-      this.#canvas.height / devicePixelRatio,
+      this.#canvas.width / this.#dpr,
+      this.#canvas.height / this.#dpr,
     );
   }
 

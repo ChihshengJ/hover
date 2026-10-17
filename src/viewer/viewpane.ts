@@ -742,9 +742,12 @@ export class ViewerPane {
       // the `canvas.width` setter truncate. At a fractional devicePixelRatio
       // (browser zoom, 125%/150% display scaling) the CSS box is then derived
       // from the rounded store, so one buffer pixel maps to one device pixel
-      // and the compositor never resamples (blurs) the page.
-      const canvasWidth = Math.round(origWidth * outputScale);
-      const canvasHeight = Math.round(origHeight * outputScale);
+      // and the compositor never resamples (blurs) the page. Round *up*: the
+      // wrapper stays `origWidth` and is transparent, so a canvas a fraction
+      // of a pixel short would leave a seam of wallpaper along its edge; one
+      // that overhangs is clipped by the wrapper's paint containment.
+      const canvasWidth = Math.ceil(origWidth * outputScale);
+      const canvasHeight = Math.ceil(origHeight * outputScale);
 
       // Publish the size this page renders at.
       page.canvasWidth = canvasWidth;

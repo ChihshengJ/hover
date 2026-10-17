@@ -719,6 +719,7 @@ export class ViewerPane {
    */
   async layoutPages(scale: number) {
     const outputScale = window.devicePixelRatio || 1;
+    this.#layoutDpr = outputScale;
     const MAX_RENDER_SCALE = 7.0;
     const effectiveScale = Math.min(scale, MAX_RENDER_SCALE);
     const isSwapped = this.rotation === 90 || this.rotation === 270;
@@ -814,6 +815,9 @@ export class ViewerPane {
 
   #dprQuery: MediaQueryList | null = null;
   #onDprChange: (() => void) | null = null;
+  #dprRAF: number | null = null;
+  /** devicePixelRatio the last `layoutPages` sized the backing stores for. */
+  #layoutDpr = 0;
 
   /**
    * Re-lay out and re-render when devicePixelRatio changes — the window moved
@@ -821,6 +825,11 @@ export class ViewerPane {
    * between displays doesn't always fire `resize`, and the backing stores
    * would otherwise stay sized for the old ratio. A `resolution` query only
    * matches one ratio, so it is re-armed for the new one on every change.
+   *
+   * Browser zoom changes the ratio *and* fires `resize`, whose handler already
+   * re-lays out every pane. So wait a frame, and refresh only if nothing has
+   * laid out at the new ratio by then — otherwise each zoom step would render
+   * every visible page twice.
    */
   #watchDevicePixelRatio() {
     this.#unwatchDevicePixelRatio();
@@ -829,7 +838,12 @@ export class ViewerPane {
     );
     this.#onDprChange = () => {
       this.#watchDevicePixelRatio();
-      this.refreshAllPages();
+      this.#dprRAF = requestAnimationFrame(() => {
+        this.#dprRAF = null;
+        if ((window.devicePixelRatio || 1) !== this.#layoutDpr) {
+          this.refreshAllPages();
+        }
+      });
     };
     this.#dprQuery.addEventListener("change", this.#onDprChange, {
       once: true,
@@ -840,8 +854,10 @@ export class ViewerPane {
     if (this.#dprQuery && this.#onDprChange) {
       this.#dprQuery.removeEventListener("change", this.#onDprChange);
     }
+    if (this.#dprRAF !== null) cancelAnimationFrame(this.#dprRAF);
     this.#dprQuery = null;
     this.#onDprChange = null;
+    this.#dprRAF = null;
   }
 
   async refreshAllPages() {

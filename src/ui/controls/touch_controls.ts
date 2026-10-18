@@ -25,6 +25,8 @@ export interface GestureDetail {
   direction?: "in" | "out" | "up" | "down";
 }
 
+const GESTURE_END_DELAY_MS = 50;
+
 export type GestureType = "pinchstart" | "pinchupdate" | "pinchend" | "wheel";
 
 export class GestureDetector {
@@ -163,7 +165,6 @@ export class GestureDetector {
       window.clearTimeout(this.wheelEndTimeout_);
       this.wheelEndTimeout_ = null;
     }
-    const gestureEndDelayMs = 100;
     const endEvent = {
       startScaleRatio: this.accumulatedWheelScale_,
       center: position,
@@ -172,7 +173,7 @@ export class GestureDetector {
       this.notify_("pinchend", endEvent);
       this.wheelEndTimeout_ = null;
       this.accumulatedWheelScale_ = null;
-    }, gestureEndDelayMs);
+    }, GESTURE_END_DELAY_MS);
   }
   handleContextMenuEvent_(e: MouseEvent) {
     // `sourceCapabilities` is Chromium-only and absent from lib.dom.

@@ -19,13 +19,15 @@ import {
 import type { PDFDocumentModel } from "../model/doc.js";
 import type { DocEventName } from "../model/doc_events.js";
 import type { PageBox, ZoomAnchor } from "./zoom_anchor.js";
-
-/** Gap above and below each page, in PDF points; 14px at the default 1.7. */
-const PAGE_GAP = 8;
 import type {
   AnnotationHost,
   PaneAnnotationCallbacks,
 } from "../ui/annotation/host.js";
+
+/** Gap above and below each page, in PDF points; 14px at the default 1.7. */
+const PAGE_GAP = 8;
+/** How far above and below the viewport pages are kept rendered, in px. */
+const RENDER_MARGIN = 400;
 
 export interface ViewerPaneOptions {
   id?: string;
@@ -269,18 +271,16 @@ export class ViewerPane {
 
           if (entry.isIntersecting) {
             this.visiblePages.add(pageView);
-            if (pageView.canvas.dataset.rendered === "false") {
-              pageView.render(this.scale);
-            }
           } else {
             this.visiblePages.delete(pageView);
             this.#maybeRelease(pageView);
           }
         }
+        this.#renderVisiblePages();
       },
       {
         root: this.scroller,
-        rootMargin: "400px 0px",
+        rootMargin: `${RENDER_MARGIN}px 0px`,
         threshold: 0.1,
       },
     );
@@ -352,11 +352,81 @@ export class ViewerPane {
     }
   }
 
+  /**
+   * Render the visible pages that need it. PDFium renders synchronously on
+   * this thread, so a batch holds the frame until every page in it is done.
+   * Only the pages on screen render now, for the frame being built; those
+   * only in the observer's margin are queued, nearest the viewport first, and
+   * render one per task so frames can paint in between.
+   *
+   * Nothing renders mid-pinch: the scale is about to change, and the pinch
+   * calls this again when it ends.
+   */
   #renderVisiblePages() {
-    for (const pageView of this.visiblePages) {
-      if (pageView.canvas.dataset.rendered === "false") {
-        pageView.render(this.scale);
+    if (this._pinch) return;
+
+    const view = this.scroller.getBoundingClientRect();
+    // Measure everything before rendering any of it, as a render touches the
+    // DOM and the next read would force another layout.
+    const pending: { page: PageView; rect: DOMRect }[] = [];
+    for (const page of this.visiblePages) {
+      if (page.canvas.dataset.rendered === "false") {
+        pending.push({ page, rect: page.wrapper.getBoundingClientRect() });
       }
+    }
+
+    const queued: { page: PageView; gap: number }[] = [];
+    for (const { page, rect } of pending) {
+      const gapX = Math.max(view.left - rect.right, rect.left - view.right);
+      const gapY = Math.max(view.top - rect.bottom, rect.top - view.bottom);
+      if (gapX < 0 && gapY < 0) {
+        page.render(this.scale);
+      } else {
+        queued.push({ page, gap: Math.max(gapX, 0) + Math.max(gapY, 0) });
+      }
+    }
+
+    this.#renderQueue = queued
+      .sort((a, b) => a.gap - b.gap)
+      .map(({ page }) => page);
+    if (this.#renderQueue.length > 0 && this.#renderTimer === null) {
+      this.#renderTimer = setTimeout(() => this.#renderNextQueued(), 0);
+    }
+  }
+
+  /** Margin pages waiting to render; see `#renderVisiblePages()`. */
+  #renderQueue: PageView[] = [];
+  #renderTimer: ReturnType<typeof setTimeout> | null = null;
+
+  #renderNextQueued() {
+    this.#renderTimer = null;
+    // The pinch's end rebuilds the queue for the scale it commits.
+    if (this._pinch) return;
+
+    // A page may have been rendered by a rebuild, or moved out of range,
+    // since it was queued — after a zoom with no pinch, the visible set is
+    // the one from before it until the observer next reports.
+    const view = this.scroller.getBoundingClientRect();
+    let page: PageView | undefined;
+    while ((page = this.#renderQueue.shift())) {
+      if (
+        !this.visiblePages.has(page) ||
+        page.canvas.dataset.rendered !== "false"
+      ) {
+        continue;
+      }
+      const rect = page.wrapper.getBoundingClientRect();
+      if (
+        rect.bottom < view.top - RENDER_MARGIN ||
+        rect.top > view.bottom + RENDER_MARGIN
+      ) {
+        continue;
+      }
+      page.render(this.scale);
+      break;
+    }
+    if (this.#renderQueue.length > 0) {
+      this.#renderTimer = setTimeout(() => this.#renderNextQueued(), 0);
     }
   }
 
@@ -717,10 +787,13 @@ export class ViewerPane {
     const scale = clampScale(pinch.startScale * ratio);
     if (scale !== this.scale) {
       this.zoomAt(scale, focusX, focusY, pinch.anchor);
-    } else if (pinch.anchor) {
-      // No zoom to commit, but the fingers may have moved: keep the pan.
-      this.#scrollToAnchor(pinch.anchor, focusX, focusY);
+      return;
     }
+    // No zoom to commit, but the fingers may have moved: keep the pan.
+    if (pinch.anchor) this.#scrollToAnchor(pinch.anchor, focusX, focusY);
+    // Pages the pinch brought into view were left for its end, and the
+    // observer won't report those still in view again.
+    this.#renderVisiblePages();
   }
 
   /** Anchor the document point at (focusX, focusY), in scroller viewport px. */
@@ -1391,6 +1464,9 @@ export class ViewerPane {
     // Clean up spread layout
     this.#clearSpreadLayout();
 
+    if (this.#renderTimer !== null) clearTimeout(this.#renderTimer);
+    this.#renderTimer = null;
+    this.#renderQueue = [];
     for (const page of this.pages) {
       page.release();
     }

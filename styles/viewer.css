@@ -328,13 +328,18 @@ body.ui-dragging * {
   content-visibility: auto;
 }
 
-/* No hover or click on the pages mid-pinch (ViewerPane.beginPinch). Every
-   descendant, as the overlay layers opt back in with pointer-events: auto.
-   Wheel and touch still reach the pane's gesture detector through the
-   scroller. */
-.viewer-pane.pinching .viewer-stage,
-.viewer-pane.pinching .viewer-stage * {
-  pointer-events: none !important;
+/* No hover or click on the pages mid-pinch (ViewerPane.beginPinch): a shield
+   over the pane takes the pointer instead. It is one box, so toggling it
+   restyles nothing else, where a rule reaching into the stage would restyle
+   every text-layer span as the pinch starts and again in the frame it
+   commits. Wheel events now land on the pane itself and touch events stay
+   with the target they started on; the gesture detector listens on the pane
+   and hears both. */
+.viewer-pane.pinching::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: var(--z-dropdown);
 }
 
 .page-wrapper canvas {

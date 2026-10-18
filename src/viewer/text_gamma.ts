@@ -33,7 +33,7 @@ const PAD = 1;
 let done = new Uint8Array(0);
 
 /** Where the whole page lies in the raster, in raster px. */
-interface PagePlacement {
+export interface PagePlacement {
   /** Negative when the raster is a crop of the page. */
   x: number;
   y: number;

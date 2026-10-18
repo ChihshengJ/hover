@@ -12,6 +12,7 @@ import { buildLuminanceMap, clearLuminanceMap } from "./page_luminance.js";
 import { TEXT_GAMMA_ENABLED, applyTextGamma } from "./text_gamma.js";
 
 import type { Edges } from "./detail_region.js";
+import type { PagePlacement } from "./text_gamma.js";
 
 let sharedPopup: CitationPopup | null = null;
 function getSharedPopup(): CitationPopup {
@@ -107,6 +108,11 @@ export class PageView {
    */
   fullWidth = 0;
   fullHeight = 0;
+
+  /** Whether the base canvas holds less than the full-resolution raster. */
+  get capped(): boolean {
+    return this.canvasWidth < this.fullWidth;
+  }
 
   /**
    * Full-resolution raster of a region of the page, laid over the base canvas
@@ -255,12 +261,7 @@ export class PageView {
         return;
       }
 
-      if (TEXT_GAMMA_ENABLED) {
-        const boxes = this.doc.getPageTextBoxes(this.pageNumber - 1);
-        if (boxes) {
-          applyTextGamma(pageData.data, pageData.width, pageData.height, boxes);
-        }
-      }
+      this.#applyTextGamma(pageData);
 
       const imageData = new ImageData(
         pageData.data,
@@ -273,7 +274,7 @@ export class PageView {
       this.ctx.putImageData(imageData, 0, 0);
       // Uncapped, the base is now as sharp as any region over it: the region
       // was only there to show the part in view before the rest was ready.
-      if (this.canvasWidth >= this.fullWidth) this.dropDetail();
+      if (!this.capped) this.dropDetail();
 
       // Reduce the raster to a luminance grid while we still hold it in JS.
       // This is what keeps the liquid-glass ball from having to read pixels
@@ -378,21 +379,24 @@ export class PageView {
 
       if (generation !== this.#detailGeneration) return;
 
-      if (TEXT_GAMMA_ENABLED) {
-        const boxes = this.doc.getPageTextBoxes(this.pageNumber - 1);
-        if (boxes) {
-          applyTextGamma(pageData.data, pageData.width, pageData.height, boxes, {
-            x: -region.left,
-            y: -region.top,
-            width: page.size.width * scale,
-            height: page.size.height * scale,
-          });
-        }
-      }
+      this.#applyTextGamma(pageData, {
+        x: -region.left,
+        y: -region.top,
+        width: page.size.width * scale,
+        height: page.size.height * scale,
+      });
 
+      if (!this.#detail) {
+        const canvas = document.createElement("canvas");
+        canvas.className = "page-detail";
+        // Like the base canvas: opaque, and never read back.
+        const ctx = canvas.getContext("2d", { alpha: false })!;
+        this.canvas.after(canvas);
+        this.#detail = { canvas, ctx };
+      }
       // Sized and painted in one go, after the raster is in hand: resizing a
       // canvas clears it, and the old region stays up until this replaces it.
-      const { canvas, ctx } = this.#ensureDetailCanvas();
+      const { canvas, ctx } = this.#detail;
       if (
         canvas.width !== pageData.width ||
         canvas.height !== pageData.height
@@ -429,16 +433,22 @@ export class PageView {
     }
   }
 
-  #ensureDetailCanvas() {
-    if (!this.#detail) {
-      const canvas = document.createElement("canvas");
-      canvas.className = "page-detail";
-      // Like the base canvas: opaque, and never read back.
-      const ctx = canvas.getContext("2d", { alpha: false })!;
-      this.canvas.after(canvas);
-      this.#detail = { canvas, ctx };
-    }
-    return this.#detail;
+  /**
+   * Text gamma on a raster of this page, in place. `placement` is where the
+   * whole page lies in it, for a raster that is a crop.
+   */
+  #applyTextGamma(
+    raster: {
+      data: Uint8ClampedArray | Uint8Array;
+      width: number;
+      height: number;
+    },
+    placement?: PagePlacement,
+  ) {
+    if (!TEXT_GAMMA_ENABLED) return;
+    const boxes = this.doc.getPageTextBoxes(this.pageNumber - 1);
+    if (!boxes) return;
+    applyTextGamma(raster.data, raster.width, raster.height, boxes, placement);
   }
 
   /**
@@ -801,15 +811,12 @@ export class PageView {
     this.endOfContent = null;
     this.canvas.dataset.rendered = "false";
 
-    if (this._showTimer) {
-      clearTimeout(this._showTimer);
-      this._showTimer = null;
-    }
+    this.cancelCitationHover();
   }
 
   /**
    * Drop a citation popup that is pending or open on this page — its anchor
-   * is about to move, as when a pinch starts.
+   * is about to move, as when a pinch starts, or has gone with the release.
    */
   cancelCitationHover() {
     if (this._showTimer) {
@@ -831,8 +838,8 @@ export class PageView {
   }
 
   /**
-   * Re-render only the annotation overlay layer (citations, cross-refs, URLs)
-   * for pages that are already rendered. Called when background indexing completes.
+   * Rebuild the overlay layers of a page that is already rendered, without
+   * re-rendering the raster. Called when background indexing completes.
    */
   refreshOverlays() {
     if (this.canvas.dataset.rendered !== "true") return;
@@ -840,34 +847,11 @@ export class PageView {
     const page = this.#getPage();
     if (!page) return;
 
-    const cssWidth = parseFloat(this.canvas.style.width);
-    const cssHeight = parseFloat(this.canvas.style.height);
-    const textScale = cssWidth / page.size.width;
-
-    this.annotationLayer.innerHTML = "";
-    // this.#renderImageOverlays(textScale);
-    this.#renderUrlLinks(page, textScale, cssWidth, cssHeight);
-    this.#renderCitationOverlays(page, textScale, cssWidth, cssHeight);
-    this.#renderCrossRefOverlays(page, textScale, cssWidth, cssHeight);
-
+    // The index may have lines for this page now that it didn't at render.
     if (!this._cachedSpans && this.doc.textIndex) {
       this.textSlices = this.doc.textIndex.getPageLines(this.pageNumber);
-      if (this.textSlices) {
-        const pageHeight = page.size.height;
-        if (this.host.getTextSelectionManager()) {
-          this.host.getTextSelectionManager().unregister(this.textLayer);
-        }
-        this.textLayer.innerHTML = "";
-        this.#buildTextLayer(page, textScale, pageHeight);
-        this.textLayer.style.setProperty(
-          "--total-scale-factor",
-          `${this.scale}`,
-        );
-        this.#ensureEndOfContent();
-        this.textLayer.style.width = `${cssWidth}px`;
-        this.textLayer.style.height = `${cssHeight}px`;
-      }
     }
+    this.#renderOverlays(page);
   }
 
   // ============================================

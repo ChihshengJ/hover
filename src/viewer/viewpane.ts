@@ -422,7 +422,12 @@ export class ViewerPane {
         continue;
       }
       const region = this.#detailRegion(page, rect, view, 0);
-      if (region && this.#cropFirst(page, region)) {
+      const cropFirst =
+        region &&
+        (page.capped ||
+          (region.right - region.left) * (region.bottom - region.top) <
+            CROP_FIRST_BELOW * page.fullWidth * page.fullHeight);
+      if (cropFirst) {
         page.renderDetail(region, this.scale);
         queued.push({ page, gap: -1 });
       } else {
@@ -507,14 +512,6 @@ export class ViewerPane {
     });
   }
 
-  /** Whether to render `region` of an on-screen page before the rest of it. */
-  #cropFirst(page: PageView, region: Edges): boolean {
-    if (page.canvasWidth < page.fullWidth) return true;
-    const area =
-      (region.right - region.left) * (region.bottom - region.top);
-    return area < CROP_FIRST_BELOW * page.fullWidth * page.fullHeight;
-  }
-
   #detailTimer: ReturnType<typeof setTimeout> | null = null;
   #scheduleDetailRefresh = () => {
     if (this.#detailTimer !== null) clearTimeout(this.#detailTimer);
@@ -536,7 +533,7 @@ export class ViewerPane {
     const view = this.scroller.getBoundingClientRect();
     const updates: { page: PageView; region: Edges }[] = [];
     for (const page of this.visiblePages) {
-      if (page.canvasWidth >= page.fullWidth) continue;
+      if (!page.capped) continue;
       const rect = page.wrapper.getBoundingClientRect();
       const inView = this.#detailRegion(page, rect, view, 0);
       if (!inView) {
@@ -791,7 +788,11 @@ export class ViewerPane {
 
     this._pendingZoom = {
       scale,
-      anchor: this.#captureZoomAnchor(focusX, focusY),
+      anchor: captureAnchor(
+        this.pages.map((page) => this.#pageBox(page)),
+        this.scroller.scrollLeft + focusX,
+        this.scroller.scrollTop + focusY,
+      ),
       focusX,
       focusY,
     };
@@ -913,15 +914,6 @@ export class ViewerPane {
     // Pages the pinch brought into view were left for its end, and the
     // observer won't report those still in view again.
     this.#renderVisiblePages();
-  }
-
-  /** Anchor the document point at (focusX, focusY), in scroller viewport px. */
-  #captureZoomAnchor(focusX: number, focusY: number): ZoomAnchor | null {
-    return captureAnchor(
-      this.pages.map((page) => this.#pageBox(page)),
-      this.scroller.scrollLeft + focusX,
-      this.scroller.scrollTop + focusY,
-    );
   }
 
   /** Scroll so `anchor` sits at (focusX, focusY), in scroller viewport px. */
@@ -1111,8 +1103,11 @@ export class ViewerPane {
       const page = this.pages[i];
       const dims = this.document.pageDimensions[i];
 
+      // Off-screen pages are released; on-screen ones keep their pixels until
+      // the re-render, but not their detail region, cut for the old layout.
       if (this.visiblePages.has(page)) {
         page.canvas.dataset.rendered = "false";
+        page.dropDetail();
       } else {
         page.release();
       }
@@ -1141,8 +1136,6 @@ export class ViewerPane {
       page.canvasHeight = store.height;
       page.fullWidth = fullWidth;
       page.fullHeight = fullHeight;
-      // Cut for the old layout; the visible pages' render cuts a new one.
-      page.dropDetail();
 
       Object.assign(page.canvas.style, {
         width: `${fullWidth / outputScale}px`,

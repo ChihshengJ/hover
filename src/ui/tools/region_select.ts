@@ -377,7 +377,7 @@ export class RegionSelectController {
         }
       }
 
-      // The same text weight as the page on screen, so the capture matches it.
+      // Match the on-screen text weight.
       if (TEXT_GAMMA_ENABLED) {
         const boxes = doc.getPageTextBoxes(pageIndex);
         if (boxes) {

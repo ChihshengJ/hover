@@ -201,13 +201,7 @@ export class PageView {
     const pageWidth = page.size.width;
     const pageHeight = page.size.height;
 
-    // The canvas's width and height are rounded to device px separately, so
-    // the two axes' scales differ by a fraction of a pixel, and PDFium renders
-    // at one uniform scale. Take the larger: the raster then covers the
-    // canvas on both axes, and the at most a pixel or two it overhangs on the
-    // other is clipped. The smaller left that axis short, and the uncovered
-    // strip — opaque black on this `alpha: false` context — showed as a white
-    // seam along the page edge once night mode inverted it.
+    // Larger axis scale, so the raster covers the canvas (docs/pdf_lifecycle.md §5).
     const scaleX = canvasWidth / pageWidth;
     const scaleY = canvasHeight / pageHeight;
     const renderScale = Math.max(scaleX, scaleY);
@@ -233,12 +227,7 @@ export class PageView {
       if (TEXT_GAMMA_ENABLED) {
         const boxes = this.doc.getPageTextBoxes(this.pageNumber - 1);
         if (boxes) {
-          applyTextGamma(pageData.data, pageData.width, pageData.height, boxes, {
-            x: 0,
-            y: 0,
-            width: pageData.width,
-            height: pageData.height,
-          });
+          applyTextGamma(pageData.data, pageData.width, pageData.height, boxes);
         }
       }
 
@@ -248,10 +237,7 @@ export class PageView {
         pageData.height,
       );
 
-      // The raster covers the whole canvas (see renderScale), so it replaces
-      // every pixel and nothing needs clearing first. Anchored at the origin,
-      // like the text and annotation layers, so the overhang falls off the
-      // right or bottom edge rather than shifting the page.
+      // Covers every pixel, so no clear; the overhang clips off the right or bottom.
       this.ctx.putImageData(imageData, 0, 0);
 
       // Reduce the raster to a luminance grid while we still hold it in JS.

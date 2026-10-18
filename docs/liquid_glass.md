@@ -48,9 +48,24 @@ feGaussianBlur → frost (yours is currently 0)
 feColorMatrix → saturation boost
 feComposite "in" → cut out the goo shape with the map's ALPHA channel
 
-That last line is the fix from our final round. While painting the map we also write "is this pixel inside the goo?" into its alpha (with a soft 1.5px edge), and the filter clips its own output with it.
-It first lived in the blue channel. Chromium colour-manages the map's RGB (sRGB → display), so on a non-sRGB display "outside, mask 0" arrived as ~12%, and a faint displaced copy of the page showed across the whole 200px box. Alpha is never colour-managed.
+That last line is the fix from our final round. While painting the map we also write "is this pixel inside the goo?" into its alpha (with a soft 1.5px edge), and the filter clips its own output with it. Why alpha and not a spare colour channel: see "The refraction map" below.
 Before, the visible outline came from a clip-path buionstruction (Bézier arcs and fillets) that disagreedwith the SDF exactly at the viscous taper — hence your dead delta region. Now the shape that refracts and the shape you see are the same pixels of the same image. They cannot disagree.
+
+## The refraction map
+
+`computeDisplacementField` (`refraction_map.ts`) writes one RGBA pixel per map pixel:
+
+| Channel | Meaning |
+| ------- | ------- |
+| R, G | Displacement, `128 + 127 * component / maxDisp`. 128 is no shift. |
+| B | Unused, always 0. |
+| A | Body coverage: 1 inside the goo, 0 outside, a 1.5 px anti-aliased ramp at the edge. The filter's `feComposite in` masks its output with it. |
+
+- **The vector field.** Pixels beyond the edge slack (`CLIP_SLACK`) or deeper than the bezel band stay neutral. Inside the band the vector is the bezel LUT at that depth, along the inward SDF gradient. With `bezelWidth` equal to the shape's inradius the band covers the whole interior: a full dome, nothing flat.
+- **The mask is the silhouette.** In refract mode there is no CSS clip-path. The Bézier outline and the smooth-min field disagree at the bridge taper, and a clip would carve refraction-free slivers out of it. The mask is the field itself, so the frost can never extend past or fall short of the refracting shape.
+- **Why the mask is in alpha.** Chromium colour-converts the map's RGB from sRGB to the display's colour space before the filter reads it. With the mask in blue, a non-sRGB display got ~12% instead of 0 outside the body, and a faint displaced copy of the page showed across the whole 200 px box. Alpha is never colour-managed. `feDisplacementMap` reads the map unpremultiplied, so a zero alpha outside the body does not disturb R/G inside it.
+- **Known limitation.** The R/G vectors are still converted, so on a non-sRGB display the refraction inside the body is slightly off. There is no clean fix: the vectors need two channels of one image, and Chromium also converts RGB at every two-input filter primitive, so they can't be carried in alpha and joined inside the filter either.
+- The function is pure, separate from the canvas step, so it can be unit-tested outside the browser.
 
 ## The choreography
 

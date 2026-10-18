@@ -192,14 +192,8 @@ export class PdfiumPageReader {
   }
 
   /**
-   * Boxes around the visible text on a page, as fractions of the page as
-   * displayed (after /Rotate and the crop box, top-left origin), packed
-   * [left, top, right, bottom, ...]. Consecutive characters of one text
-   * object share a box. Loose boxes span the font's ascent to descent, so
-   * accents and descenders are inside.
-   *
-   * Invisible text (render mode 3, and 7, which only clips) is left out:
-   * scanned PDFs lay an OCR layer of it over the page image.
+   * One box per run of a visible text object, as fractions of the displayed
+   * page, packed [left, top, right, bottom, ...]. See docs/text_rendering.md §6.
    */
   readVisibleTextBoxes(
     pagePtr: number,
@@ -209,9 +203,7 @@ export class PdfiumPageReader {
     const pdfium = this.#pdfium;
     const ffi = this.#ffi;
 
-    // Page space to displayed-page fractions. FPDF_PageToDevice only reports
-    // whole device pixels, so sample it on a large virtual device and fit
-    // the affine map once.
+    // Fit the page-space → displayed-fraction affine map on a large virtual device.
     const N = 1 << 20;
     const [ox, oy, ax, ay, bx, by] = ffi.frame(() => {
       const [dx, dy] = ffi.slots(2, 4);
@@ -270,6 +262,7 @@ export class PdfiumPageReader {
         if (!obj) continue;
         let shown = visible.get(obj);
         if (shown === undefined) {
+          // 3 is invisible, 7 is clip-only.
           const mode = pdfium.FPDFTextObj_GetTextRenderMode(obj);
           shown = mode !== 3 && mode !== 7;
           visible.set(obj, shown);

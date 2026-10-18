@@ -158,34 +158,6 @@ function sampleLut(lut: Float64Array, t: number): number {
   return lut[i] + (lut[j] - lut[i]) * (pos - i);
 }
 
-/**
- * Rasterize the displacement field over an arbitrary SDF. Pixels beyond
- * the edge slack or deeper than the bezel band stay neutral (128, 128);
- * inside the band the vector is LUT(distance) along the inward SDF
- * gradient, encoded as channel = 128 + 127 * component / maxDisp. With
- * bezelWidth equal to the shape's inradius the band covers the whole
- * interior — a full dome, nothing left flat.
- * The alpha channel carries the field's AA'd body coverage. The SVG filter
- * masks its own output with it, which replaces the CSS clip-path: the
- * visible silhouette is then exactly this field, so the refraction can
- * never disagree with the goo shape it is applied to.
- * It has to be alpha. Chromium colour-converts the map's RGB from sRGB to
- * the display's colour space before the filter reads it, and on a
- * non-sRGB display a mask in blue arrived as ~12% instead of 0 outside the
- * body: a faint, displaced copy of the page across the whole 200px box.
- * Alpha is never colour-managed. feDisplacementMap reads the map
- * unpremultiplied, so a zero alpha outside the body does not disturb R/G
- * inside it.
- * The R/G vectors are still converted, so on such a display the refraction
- * inside the body is a little off. That has no clean fix: the vectors need
- * two channels of one image, and Chromium also converts RGB at every
- * two-input filter primitive, so they cannot be carried in alpha and joined
- * inside the filter either.
- * Pure — exported separately from the canvas step so it can be unit-tested
- * outside the browser.
- *
- * @returns RGBA, row-major.
- */
 export interface DisplacementFieldOptions {
   /** Square map size, CSS px. */
   cssSize: number;
@@ -206,6 +178,12 @@ export interface DisplacementFieldOptions {
   out?: Uint8ClampedArray;
 }
 
+/**
+ * Rasterizes the refraction map over an SDF: R/G hold the inward displacement,
+ * A the body coverage. See docs/liquid_glass.md "The refraction map".
+ *
+ * @returns RGBA, row-major.
+ */
 export function computeDisplacementField({
   cssSize,
   res,

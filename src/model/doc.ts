@@ -343,9 +343,7 @@ export class PDFDocumentModel {
   }
 
   /**
-   * Boxes around the visible text on a page, as fractions of the displayed
-   * page, packed [left, top, right, bottom, ...]. Cached: they don't change
-   * with zoom. Null without low-level PDFium access.
+   * Cached visible-text boxes for a page; null without a low-level handle.
    *
    * @param pageIndex 0-based
    */

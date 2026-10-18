@@ -345,12 +345,7 @@ export class GlassEffect {
     svg.style.position = "absolute";
     svg.style.width = "0";
     svg.style.height = "0";
-    // The map's alpha holds the field's body coverage, and the feComposite
-    // masks the filter's own output with it. That mask — not the Bézier
-    // clip-path — defines the visible silhouette in refract mode, so the
-    // frost can never extend past (or fall short of) the refracting field.
-    // (Alpha, because the map's RGB gets colour-managed; see
-    // computeDisplacementField.)
+    // The feComposite masks the output with the map's alpha, which is the silhouette.
     svg.innerHTML = `
       <defs>
         <filter id="${REFRACTION_FILTER_ID}" x="0" y="0" width="${size}" height="${size}"
@@ -543,10 +538,7 @@ export class GlassEffect {
     this.#updateTextColor(false);
 
     if (this.refraction) {
-      // Refract mode: the filter masks its own output with the field's
-      // coverage (map alpha), so no clip-path — the Bézier outline
-      // and the smooth-min field disagree at the bridge taper, and a clip
-      // would carve refraction-free slivers out of the silhouette.
+      // Refract mode: the filter's alpha mask is the silhouette, so no clip-path.
       this.#updateRefractionMap(s);
       return;
     }

@@ -1,55 +1,23 @@
 /**
- * Darken anti-aliased glyph edges in a PDFium raster so text reads at the
- * weight Preview and Chrome show on macOS (issue #25).
- *
- * Those viewers hand glyphs to CoreGraphics, whose font smoothing thickens
- * stems. Our wasm PDFium has no CoreGraphics, so every glyph is plain FreeType
- * coverage and looks thin. See docs/text_rendering.md for the measurements.
- *
- * A gamma curve on glyph coverage pulls edge pixels toward the text colour.
- * γ = 1.5 matched the ink of native-text renders to within 0.1% on body text.
- * The dilation step #25 also proposed overshot that target and costs several
- * times more, so it is left out.
- *
- * Only edge pixels inside the page's visible-text boxes change. Per box, the
- * background is the commonest colour on its border and the text colour the
- * pixel furthest from it; a pixel's coverage is where it sits between the
- * two. So fills behind text, the text colour itself, and figures outside or
- * under the boxes all keep their exact tones.
- *
- * This is a stopgap until PDFium can embolden glyphs itself.
+ * Darkens anti-aliased glyph edges inside a page's text boxes so text matches
+ * macOS's native weight. See docs/text_rendering.md §6.
  */
 
 const GAMMA = 1.5;
 
-/**
- * Glyph coverage in, darkened coverage out, both as 0..255. On black text
- * over white this is exactly `255 * (v / 255) ** GAMMA` on each channel.
- */
+/** Coverage index (0..255) to darkened coverage (0..1). */
 const CURVE = new Float32Array(256);
 for (let k = 0; k < 256; k++) {
   CURVE[k] = 1 - (1 - k / 255) ** GAMMA;
 }
 
-/**
- * Below this text/background contrast (RGB distance) there is no edge worth
- * darkening.
- */
+/** Min text/background RGB distance for a box to be curved. */
 const MIN_CONTRAST = 32;
 
-/**
- * How far off the background-to-text line a pixel may sit (RGB distance) and
- * still count as a glyph edge. PDFium's greyscale anti-aliasing puts edge
- * pixels on that line up to rounding; anything further is something else
- * drawn in the box, like a figure under its label.
- */
+/** Max RGB distance off the background→text line for a pixel to count as an edge. */
 const OFF_LINE = 12;
 
-/**
- * Whether to apply the curve at all: only on macOS, the one platform whose
- * native viewers draw text heavier than PDFium. On Windows and Linux they
- * render it about as thin as we do, and nobody there has asked for more.
- */
+/** On for macOS only. */
 export const TEXT_GAMMA_ENABLED = isMac();
 
 function isMac(): boolean {
@@ -58,15 +26,15 @@ function isMac(): boolean {
   return /mac/i.test(platform ?? "");
 }
 
-/** Raster px added around each box, for anti-aliasing that bleeds past it. */
+/** Raster px added around each box for anti-aliasing bleed. */
 const PAD = 1;
 
-/** Pixels already curved this call, so overlapping boxes apply it once. */
+/** Pixels already curved this call, shared across calls to avoid reallocating. */
 let done = new Uint8Array(0);
 
 /** Where the whole page lies in the raster, in raster px. */
-export interface PagePlacement {
-  /** Page's left edge; negative when the raster is a crop of the page. */
+interface PagePlacement {
+  /** Negative when the raster is a crop of the page. */
   x: number;
   y: number;
   width: number;
@@ -74,18 +42,22 @@ export interface PagePlacement {
 }
 
 /**
- * Apply the curve in place to the text on an RGBA (or BGRA) raster. Alpha is
- * not touched.
+ * Applies the curve in place to the text in an RGBA raster.
  *
- * @param boxes Visible-text boxes as fractions of the page, packed
- *   [left, top, right, bottom, ...] (PDFDocumentModel#getPageTextBoxes).
+ * @param boxes from PDFDocumentModel#getPageTextBoxes
+ * @param page defaults to the raster being the whole page
  */
 export function applyTextGamma(
   pixels: Uint8ClampedArray | Uint8Array,
   rasterWidth: number,
   rasterHeight: number,
   boxes: Float32Array,
-  page: PagePlacement,
+  page: PagePlacement = {
+    x: 0,
+    y: 0,
+    width: rasterWidth,
+    height: rasterHeight,
+  },
 ): void {
   const n = rasterWidth * rasterHeight;
   if (done.length < n) done = new Uint8Array(n);

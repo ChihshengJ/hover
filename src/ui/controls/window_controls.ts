@@ -12,6 +12,7 @@ import { ActionButton } from "./action_button.js";
 import { RegionSelectController } from "../tools/region_select.js";
 import { DrawingController } from "../tools/drawing_controller.js";
 
+import type { GestureDetail } from "./touch_controls.js";
 import type { ViewerPane } from "../../viewer/viewpane.js";
 import type { SplitWindowManager } from "../../viewer/window_manager.js";
 export class WindowControls {
@@ -20,7 +21,6 @@ export class WindowControls {
   searchController: SearchController;
   regionSelectController: RegionSelectController;
   drawingController: DrawingController | null;
-  MAX_RENDER_SCALE: number;
   _lastNavKey: string | null;
   _lastNavKeyTime: number;
   actionButton: ActionButton;
@@ -38,7 +38,6 @@ export class WindowControls {
     this.drawingController = new DrawingController(wm, this.actionButton);
     this.#setupKeyboardShortcuts();
     this.#bindGestures();
-    this.MAX_RENDER_SCALE = 7;
 
     this._lastNavKey = null;
     this._lastNavKeyTime = 0;
@@ -171,8 +170,6 @@ export class WindowControls {
         else if (e.key === "-" || e.key === "_") pane.zoom(-0.25);
         else if (e.key === "0")
           pane.zoomAt(1, scroller.clientWidth / 2, scroller.clientHeight / 2);
-        // Refresh search highlights after zoom
-        this.searchController?.refresh();
         return;
       }
 
@@ -254,101 +251,32 @@ export class WindowControls {
     const gesture = new GestureDetector(pane.paneEl);
     this.gestureDetectors.set(pane, gesture);
 
-    let startScale = 1;
-    let isTransforming = false;
-    let pageStates = new Map();
+    // The detector reports pane-local px; the pane zooms in scroller px.
+    const focus = (e: Event) => {
+      const { center } = (e as CustomEvent<GestureDetail>).detail;
+      const paneRect = pane.paneEl.getBoundingClientRect();
+      const scrollerRect = pane.scroller.getBoundingClientRect();
+      return {
+        x: center.x - (scrollerRect.left - paneRect.left),
+        y: center.y - (scrollerRect.top - paneRect.top),
+      };
+    };
+    const ratio = (e: Event) =>
+      (e as CustomEvent<GestureDetail>).detail.startScaleRatio ?? 1;
 
-    gesture.getEventTarget().addEventListener("pinchstart", (evt: Event) => {
-      const e = evt as CustomEvent;
+    const events = gesture.getEventTarget();
+    events.addEventListener("pinchstart", (e) => {
       this.wm.setActivePane(pane);
-
-      startScale = pane.scale;
-      isTransforming = true;
-      pageStates.clear();
-
-      const pinchX = e.detail.center.x;
-      const pinchY = e.detail.center.y;
-
-      const paneRect = pane.paneEl.getBoundingClientRect();
-      const scrollerRect = pane.scroller.getBoundingClientRect();
-      const scrollerOffsetX = scrollerRect.left - paneRect.left;
-      const scrollerOffsetY = scrollerRect.top - paneRect.top;
-
-      const docPinchX = pane.scroller.scrollLeft + (pinchX - scrollerOffsetX);
-      const docPinchY = pane.scroller.scrollTop + (pinchY - scrollerOffsetY);
-
-      const wrappers =
-        pane.stage.querySelectorAll<HTMLElement>(".page-wrapper");
-      wrappers.forEach((wrapper) => {
-        const wrapperLeft = wrapper.offsetLeft;
-        const wrapperTop = wrapper.offsetTop;
-        const wrapperWidth = wrapper.offsetWidth;
-        const wrapperHeight = wrapper.offsetHeight;
-
-        const percentX = ((docPinchX - wrapperLeft) / wrapperWidth) * 100;
-        const percentY = ((docPinchY - wrapperTop) / wrapperHeight) * 100;
-
-        pageStates.set(wrapper, { percentX, percentY });
-      });
+      const { x, y } = focus(e);
+      pane.beginPinch(x, y);
     });
-
-    gesture.getEventTarget().addEventListener("pinchupdate", (evt: Event) => {
-      const e = evt as CustomEvent;
-      if (!isTransforming) return;
-
-      const ratio = e.detail.startScaleRatio;
-      const newScale = Math.max(
-        0.5,
-        Math.min(this.MAX_RENDER_SCALE, startScale * ratio),
-      );
-      const visualScaleDelta = newScale / startScale;
-
-      const wrappers =
-        pane.stage.querySelectorAll<HTMLElement>(".page-wrapper");
-      wrappers.forEach((wrapper) => {
-        const state = pageStates.get(wrapper);
-        if (!state) return;
-
-        wrapper.style.transformOrigin = `${state.percentX}% ${state.percentY}%`;
-        wrapper.style.transform = `scale(${visualScaleDelta})`;
-      });
+    events.addEventListener("pinchupdate", (e) => {
+      const { x, y } = focus(e);
+      pane.updatePinch(ratio(e), x, y);
     });
-
-    gesture.getEventTarget().addEventListener("pinchend", (evt: Event) => {
-      const e = evt as CustomEvent;
-      if (!isTransforming) return;
-
-      // Clear transforms first
-      const wrappers =
-        pane.stage.querySelectorAll<HTMLElement>(".page-wrapper");
-      wrappers.forEach((wrapper) => {
-        wrapper.style.transform = "";
-        wrapper.style.transformOrigin = "";
-      });
-
-      const ratio = e.detail.startScaleRatio;
-      const finalScale = Math.max(
-        0.5,
-        Math.min(this.MAX_RENDER_SCALE, startScale * ratio),
-      );
-
-      const paneRect = pane.paneEl.getBoundingClientRect();
-      const scrollerRect = pane.scroller.getBoundingClientRect();
-      const scrollerOffsetX = scrollerRect.left - paneRect.left;
-      const scrollerOffsetY = scrollerRect.top - paneRect.top;
-
-      const focusX = e.detail.center.x - scrollerOffsetX;
-      const focusY = e.detail.center.y - scrollerOffsetY;
-
-      pane.zoomAt(finalScale, focusX, focusY);
-
-      isTransforming = false;
-      pageStates.clear();
-      if (!pane.controls.isHidden) {
-        pane.controls.updateZoomDisplay();
-      }
-
-      this.searchController?.refresh();
+    events.addEventListener("pinchend", (e) => {
+      const { x, y } = focus(e);
+      pane.endPinch(ratio(e), x, y);
     });
   }
 

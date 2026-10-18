@@ -87,6 +87,8 @@ export class PaneControls {
 
     this.options.paneEl.appendChild(this.element);
     this.isHidden = true;
+    // Zooms before now had no bar to update.
+    this.updateZoomDisplay();
   }
 
   bindScrollEvents() {
@@ -162,16 +164,13 @@ export class PaneControls {
         break;
       case "zoom-in":
         this.options.zoom(0.25);
-        this.updateZoomDisplay();
         break;
       case "zoom-out":
         this.options.zoom(-0.25);
-        this.updateZoomDisplay();
         break;
       case "fit-width":
         //Only fit width
         this.options.fit(1, 1);
-        this.updateZoomDisplay();
         break;
       case "hand-tool":
         if (!this.options.getHandMode()) {
@@ -219,9 +218,10 @@ export class PaneControls {
     }
   }
 
+  /** Safe to call before `attach()`: a single pane has no control bar. */
   updateZoomDisplay() {
     const pct = Math.round(this.options.getScale() * 100);
-    const el = this.element.querySelector(".pane-zoom-level");
+    const el = this.element?.querySelector(".pane-zoom-level");
     if (el) el.textContent = `${pct}%`;
   }
 

@@ -8,13 +8,51 @@ import {
   isPointerToolActive,
 } from "./pointer_gesture.js";
 import { DocEvent, ANNOTATION_EVENTS } from "../model/doc_events.js";
+import {
+  anchoredScroll,
+  captureAnchor,
+  clampScale,
+  fitOffset,
+} from "./zoom_anchor.js";
+import {
+  cappedSize,
+  covers,
+  deviceRegion,
+  unrotate,
+} from "./detail_region.js";
 
 import type { PDFDocumentModel } from "../model/doc.js";
 import type { DocEventName } from "../model/doc_events.js";
+import type { PageBox, ZoomAnchor } from "./zoom_anchor.js";
+import type { Edges } from "./detail_region.js";
 import type {
   AnnotationHost,
   PaneAnnotationCallbacks,
 } from "../ui/annotation/host.js";
+
+/** Gap above and below each page, in PDF points; 14px at the default 1.7. */
+const PAGE_GAP = 8;
+/**
+ * How far above and below the viewport pages are kept rendered, in viewport
+ * heights. A page renders this far ahead of reaching the screen; at 5K a
+ * render can take 100 ms, so a fixed few hundred px let a quick scroll
+ * arrive first.
+ */
+const RENDER_MARGIN = 1;
+/**
+ * How far past the viewport a detail region reaches once scrolling settles,
+ * as a fraction of the viewport on each side, so a short scroll stays sharp.
+ */
+const DETAIL_MARGIN = 0.125;
+/** How long scrolling must pause before detail regions follow it, in ms. */
+const DETAIL_SETTLE_MS = 100;
+/**
+ * Below the size cap, an on-screen page renders the region in view first only
+ * when that is under this fraction of the page. Its whole page follows at full
+ * resolution anyway, so a crop of most of the page saves the frame little and
+ * costs a second render of the same pixels.
+ */
+const CROP_FIRST_BELOW = 0.75;
 
 export interface ViewerPaneOptions {
   id?: string;
@@ -92,9 +130,28 @@ export class ViewerPane {
     | null = null;
   selectAnnotation: PaneAnnotationCallbacks["selectAnnotation"] | null = null;
 
-  /** Zoom bookkeeping for the transform-then-rerender two-step in `zoomAt()`. */
-  _pendingScale: number | null = null;
+  /** A zoom waiting for the next frame; see `zoomAt()`. */
+  _pendingZoom: {
+    scale: number;
+    anchor: ZoomAnchor | null;
+    focusX: number;
+    focusY: number;
+  } | null = null;
   _zoomRAF: number | null = null;
+  /**
+   * A pinch in progress: the scale and anchor it started from, the stage
+   * point under the fingers then, and the extent of the pages and the stage
+   * at that scale — all in scroll-content px.
+   */
+  _pinch: {
+    startScale: number;
+    anchor: ZoomAnchor;
+    originX: number;
+    originY: number;
+    contentLeft: number;
+    contentWidth: number;
+    stageHeight: number;
+  } | null = null;
 
   _onPanStart: ((e: PointerEvent) => void) | null = null;
   /** Releases the pan's gesture claim; see pointer_gesture.js. */
@@ -182,6 +239,9 @@ export class ViewerPane {
   #createScroller() {
     this.scroller = document.createElement("div");
     this.scroller.className = "pane-scroll-area";
+    this.scroller.addEventListener("scroll", this.#scheduleDetailRefresh, {
+      passive: true,
+    });
     this.paneEl.appendChild(this.scroller);
   }
 
@@ -199,7 +259,6 @@ export class ViewerPane {
     for (let i = 1; i <= numPages; i++) {
       const wrapper = document.createElement("div");
       wrapper.className = "page-wrapper";
-      wrapper.style.margin = "14px 0";
       wrapper.style.display = "block";
       wrapper.style.width = "fit-content";
 
@@ -238,20 +297,23 @@ export class ViewerPane {
           const pageView = this.pageMap.get(entry.target);
           if (!pageView) continue;
 
+          // In range, the page is painted ahead like the rest of the screen,
+          // not left for `content-visibility` to paint as it arrives; see
+          // viewer.css.
+          pageView.wrapper.classList.toggle("in-range", entry.isIntersecting);
           if (entry.isIntersecting) {
             this.visiblePages.add(pageView);
-            if (pageView.canvas.dataset.rendered === "false") {
-              pageView.render(this.scale);
-            }
           } else {
             this.visiblePages.delete(pageView);
+            pageView.dropDetail();
             this.#maybeRelease(pageView);
           }
         }
+        this.#renderVisiblePages();
       },
       {
         root: this.scroller,
-        rootMargin: "400px 0px",
+        rootMargin: `${RENDER_MARGIN * 100}% 0px`,
         threshold: 0.1,
       },
     );
@@ -323,11 +385,169 @@ export class ViewerPane {
     }
   }
 
+  /**
+   * Render the visible pages that need it. PDFium renders synchronously on
+   * this thread, so a batch holds the frame until every page in it is done.
+   * Only the pages on screen render now, for the frame being built; those
+   * only in the observer's margin are queued, nearest the viewport first, and
+   * render one per task so frames can paint in between.
+   *
+   * An on-screen page renders only the region in view now, at full
+   * resolution, when it is past the size cap or mostly out of view; its whole
+   * page — capped or not — joins the front of the queue. The work in the
+   * frame then follows the viewport rather than the pages it cuts across.
+   *
+   * Nothing renders mid-pinch: the scale is about to change, and the pinch
+   * calls this again when it ends.
+   */
   #renderVisiblePages() {
-    for (const pageView of this.visiblePages) {
-      if (pageView.canvas.dataset.rendered === "false") {
-        pageView.render(this.scale);
+    if (this._pinch) return;
+
+    const view = this.scroller.getBoundingClientRect();
+    // Measure everything before rendering any of it, as a render touches the
+    // DOM and the next read would force another layout.
+    const pending: { page: PageView; rect: DOMRect }[] = [];
+    for (const page of this.visiblePages) {
+      if (page.canvas.dataset.rendered === "false") {
+        pending.push({ page, rect: page.wrapper.getBoundingClientRect() });
       }
+    }
+
+    const queued: { page: PageView; gap: number }[] = [];
+    for (const { page, rect } of pending) {
+      const gapX = Math.max(view.left - rect.right, rect.left - view.right);
+      const gapY = Math.max(view.top - rect.bottom, rect.top - view.bottom);
+      if (gapX >= 0 || gapY >= 0) {
+        queued.push({ page, gap: Math.max(gapX, 0) + Math.max(gapY, 0) });
+        continue;
+      }
+      const region = this.#detailRegion(page, rect, view, 0);
+      const cropFirst =
+        region &&
+        (page.capped ||
+          (region.right - region.left) * (region.bottom - region.top) <
+            CROP_FIRST_BELOW * page.fullWidth * page.fullHeight);
+      if (cropFirst) {
+        page.renderDetail(region, this.scale);
+        queued.push({ page, gap: -1 });
+      } else {
+        page.render(this.scale);
+      }
+    }
+
+    this.#renderQueue = queued
+      .sort((a, b) => a.gap - b.gap)
+      .map(({ page }) => page);
+    if (this.#renderQueue.length > 0 && this.#renderTimer === null) {
+      this.#renderTimer = setTimeout(() => this.#renderNextQueued(), 0);
+    }
+  }
+
+  /** Margin pages waiting to render; see `#renderVisiblePages()`. */
+  #renderQueue: PageView[] = [];
+  #renderTimer: ReturnType<typeof setTimeout> | null = null;
+
+  #renderNextQueued() {
+    this.#renderTimer = null;
+    // The pinch's end rebuilds the queue for the scale it commits.
+    if (this._pinch) return;
+
+    // A page may have been rendered by a rebuild, or moved out of range,
+    // since it was queued — after a zoom with no pinch, the visible set is
+    // the one from before it until the observer next reports.
+    const view = this.scroller.getBoundingClientRect();
+    let page: PageView | undefined;
+    while ((page = this.#renderQueue.shift())) {
+      if (
+        !this.visiblePages.has(page) ||
+        page.canvas.dataset.rendered !== "false"
+      ) {
+        continue;
+      }
+      const rect = page.wrapper.getBoundingClientRect();
+      if (
+        rect.bottom < view.top - view.height * RENDER_MARGIN ||
+        rect.top > view.bottom + view.height * RENDER_MARGIN
+      ) {
+        continue;
+      }
+      page.render(this.scale);
+      break;
+    }
+    if (this.#renderQueue.length > 0) {
+      this.#renderTimer = setTimeout(() => this.#renderNextQueued(), 0);
+    }
+  }
+
+  /**
+   * The region of `page` to render in detail, in its full-resolution device
+   * px: the part inside the viewport, grown by `margin` of the viewport on
+   * each side. Null when none of the page is in range. `rect` and `view` are
+   * the page wrapper's and the scroller's client rects.
+   */
+  #detailRegion(
+    page: PageView,
+    rect: DOMRect,
+    view: DOMRect,
+    margin: number,
+  ): Edges | null {
+    const mx = view.width * margin;
+    const my = view.height * margin;
+    const local = {
+      left: Math.max(view.left - mx, rect.left) - rect.left,
+      top: Math.max(view.top - my, rect.top) - rect.top,
+      right: Math.min(view.right + mx, rect.right) - rect.left,
+      bottom: Math.min(view.bottom + my, rect.bottom) - rect.top,
+    };
+    const swapped = this.rotation === 90 || this.rotation === 270;
+    const inner = unrotate(
+      local,
+      this.rotation,
+      swapped ? rect.height : rect.width,
+      swapped ? rect.width : rect.height,
+    );
+    return deviceRegion(inner, this.#layoutDpr, {
+      width: page.fullWidth,
+      height: page.fullHeight,
+    });
+  }
+
+  #detailTimer: ReturnType<typeof setTimeout> | null = null;
+  #scheduleDetailRefresh = () => {
+    if (this.#detailTimer !== null) clearTimeout(this.#detailTimer);
+    this.#detailTimer = setTimeout(
+      () => this.#refreshDetails(),
+      DETAIL_SETTLE_MS,
+    );
+  };
+
+  /**
+   * Once scrolling settles, move each on-screen page's detail region to
+   * where the page now is, if it no longer covers the part in view. Until
+   * then the uncovered part shows the capped base, a little soft.
+   */
+  #refreshDetails() {
+    this.#detailTimer = null;
+    if (this._pinch) return;
+
+    const view = this.scroller.getBoundingClientRect();
+    const updates: { page: PageView; region: Edges }[] = [];
+    for (const page of this.visiblePages) {
+      if (!page.capped) continue;
+      const rect = page.wrapper.getBoundingClientRect();
+      const inView = this.#detailRegion(page, rect, view, 0);
+      if (!inView) {
+        page.dropDetail();
+        continue;
+      }
+      if (page.detailRegion && covers(page.detailRegion, inView)) continue;
+      updates.push({
+        page,
+        region: this.#detailRegion(page, rect, view, DETAIL_MARGIN)!,
+      });
+    }
+    for (const { page, region } of updates) {
+      page.renderDetail(region, this.scale);
     }
   }
 
@@ -544,52 +764,200 @@ export class ViewerPane {
     return this.currentPage;
   }
 
+  /**
+   * Zoom to `scale`, keeping the document point at (focusX, focusY) — in
+   * scroller viewport px — where it is on screen.
+   *
+   * The relayout waits for the next frame, so zooms requested within one
+   * frame (key repeat, a run of button clicks) cost one relayout. The first
+   * request's anchor holds for the batch; later ones only move the scale.
+   */
   zoomAt(scale: number, focusX: number, focusY: number) {
+    // A relayout under the pinch transform would pull the page out from
+    // under the fingers; the pinch commits its own zoom when it ends.
+    if (this._pinch) return;
+
+    scale = clampScale(scale);
+    const pending = this._pendingZoom;
+    if (scale === (pending?.scale ?? this.scale)) return;
+
+    if (pending) {
+      pending.scale = scale;
+      return;
+    }
+
+    this._pendingZoom = {
+      scale,
+      anchor: captureAnchor(
+        this.pages.map((page) => this.#pageBox(page)),
+        this.scroller.scrollLeft + focusX,
+        this.scroller.scrollTop + focusY,
+      ),
+      focusX,
+      focusY,
+    };
+    this._zoomRAF = requestAnimationFrame(() => this.#commitZoom());
+  }
+
+  #commitZoom() {
+    if (this._zoomRAF !== null) cancelAnimationFrame(this._zoomRAF);
+    this._zoomRAF = null;
+    const zoom = this._pendingZoom;
+    if (!zoom) return;
+    this._pendingZoom = null;
+
+    this.scale = zoom.scale;
+    this.layoutPages(zoom.scale);
+    if (zoom.anchor) this.#scrollToAnchor(zoom.anchor, zoom.focusX, zoom.focusY);
+
+    this.#renderVisiblePages();
+    this.annotationManager?.refresh();
+    this.controls.updateZoomDisplay();
+  }
+
+  /**
+   * Start a pinch centred at (focusX, focusY), in scroller viewport px.
+   *
+   * Until `endPinch()`, the stage is only transformed: the document point
+   * under the fingers at the start follows them as they spread and move,
+   * and the pages are relaid and re-rendered once, at the end.
+   */
+  beginPinch(focusX: number, focusY: number) {
+    if (this._pinch) return;
+    // A zoom still waiting for its frame would relayout under the transform.
+    this.#commitZoom();
+
     const scroller = this.scroller;
-    const prevScale = this._pendingScale ?? this.scale;
-    if (scale === prevScale) return;
+    const boxes = this.pages.map((page) => this.#pageBox(page));
+    const originX = scroller.scrollLeft + focusX;
+    const originY = scroller.scrollTop + focusY;
+    // Null only with no pages, and then there is nothing to pinch.
+    const anchor = captureAnchor(boxes, originX, originY);
+    if (!anchor) return;
+    const contentLeft = Math.min(...boxes.map((b) => b.left));
+    const contentRight = Math.max(...boxes.map((b) => b.left + b.width));
+    this._pinch = {
+      startScale: this.scale,
+      anchor,
+      originX,
+      originY,
+      contentLeft,
+      contentWidth: contentRight - contentLeft,
+      stageHeight: this.stage.offsetHeight,
+    };
+    // The stage's box is at least the pane's width, so scaling it up
+    // overflows sideways even while the pages still fit, which would flash
+    // the horizontal scrollbar. If there's no horizontal scroll yet, the
+    // commit decides whether there is one.
+    if (scroller.scrollWidth <= scroller.clientWidth) {
+      scroller.style.overflowX = "hidden";
+    }
 
-    this._pendingScale = scale;
-    const ratio = scale / this.scale;
+    // Hover interactions would chase anchors that are moving under the
+    // cursor: block them for the pinch and drop any popup already pending.
+    this.paneEl.classList.add("pinching");
+    for (const page of this.pages) page.cancelCitationHover();
+  }
 
-    this.stage.style.transformOrigin = `${scroller.scrollLeft + focusX}px ${scroller.scrollTop + focusY}px`;
-    this.stage.style.transform = `scale(${ratio})`;
+  /** `ratio` is the scale since `beginPinch()`; the focus is where it is now. */
+  updatePinch(ratio: number, focusX: number, focusY: number) {
+    const pinch = this._pinch;
+    if (!pinch) return;
 
-    if (this._zoomRAF) cancelAnimationFrame(this._zoomRAF);
-    this._zoomRAF = requestAnimationFrame(() => {
-      this._zoomRAF = null;
-      const finalScale = this._pendingScale!;
-      this._pendingScale = null;
+    const { scrollLeft, scrollTop, clientWidth, clientHeight } = this.scroller;
+    const r = clampScale(pinch.startScale * ratio) / pinch.startScale;
 
-      this.stage.style.transform = "";
-      this.stage.style.transformOrigin = "";
+    // A stage point P shows at `t + r·P − scroll` in the viewport. Follow the
+    // fingers: put the point under them at the start where they are now.
+    // Scroll is read fresh, as a shrinking stage can make the scroller clamp it.
+    const tx = scrollLeft + focusX - r * pinch.originX;
+    const ty = scrollTop + focusY - r * pinch.originY;
 
-      const docX = (scroller.scrollLeft + focusX) / this.scale;
-      const docY = (scroller.scrollTop + focusY) / this.scale;
+    // Then hold the pages where the commit will put them: centred across
+    // while narrower than the pane, and never past the document's edges.
+    const left = fitOffset(
+      tx + r * pinch.contentLeft - scrollLeft,
+      r * pinch.contentWidth,
+      clientWidth,
+      true,
+    );
+    const top = fitOffset(
+      ty - scrollTop,
+      r * pinch.stageHeight,
+      clientHeight,
+      false,
+    );
+    const x = left - r * pinch.contentLeft + scrollLeft;
+    const y = top + scrollTop;
+    this.stage.style.transform = `translate(${x}px, ${y}px) scale(${r})`;
+  }
 
-      this.scale = finalScale;
-      this.layoutPages(finalScale);
+  endPinch(ratio: number, focusX: number, focusY: number) {
+    const pinch = this._pinch;
+    if (!pinch) return;
+    this._pinch = null;
 
-      const targetLeft = docX * finalScale - focusX;
-      const targetTop = docY * finalScale - focusY;
-      const maxLeft = Math.max(0, scroller.scrollWidth - scroller.clientWidth);
-      const maxTop = Math.max(0, scroller.scrollHeight - scroller.clientHeight);
-      scroller.scrollLeft = Math.min(Math.max(0, targetLeft), maxLeft);
-      scroller.scrollTop = Math.min(Math.max(0, targetTop), maxTop);
+    this.stage.style.transform = "";
+    this.scroller.style.overflowX = "";
+    this.paneEl.classList.remove("pinching");
 
-      this.#renderVisiblePages();
-      this.annotationManager?.refresh();
-    });
+    const scale = clampScale(pinch.startScale * ratio);
+    if (scale !== this.scale) {
+      // Held by the anchor from the pinch's start, not one taken now: with the
+      // transform gone, the point under the fingers is no longer that one.
+      this._pendingZoom = { scale, anchor: pinch.anchor, focusX, focusY };
+      this._zoomRAF = requestAnimationFrame(() => this.#commitZoom());
+      return;
+    }
+    // No zoom to commit, but the fingers may have moved: keep the pan.
+    this.#scrollToAnchor(pinch.anchor, focusX, focusY);
+    // Pages the pinch brought into view were left for its end, and the
+    // observer won't report those still in view again.
+    this.#renderVisiblePages();
+  }
+
+  /** Scroll so `anchor` sits at (focusX, focusY), in scroller viewport px. */
+  #scrollToAnchor(anchor: ZoomAnchor, focusX: number, focusY: number) {
+    const page = this.pages[anchor.index];
+    if (!page) return;
+    const { left, top } = anchoredScroll(
+      this.#pageBox(page),
+      anchor,
+      focusX,
+      focusY,
+    );
+    this.scroller.scrollLeft = left;
+    this.scroller.scrollTop = top;
+  }
+
+  /**
+   * A page's box in scroll-content px. Built from offsets, which are layout
+   * positions, so a transform on the stage doesn't move it. The stage is the
+   * scroller's only in-flow child and sits at the content origin.
+   */
+  #pageBox(page: PageView): PageBox {
+    let left = 0;
+    let top = 0;
+    for (
+      let el: HTMLElement | null = page.wrapper;
+      el && el !== this.stage;
+      el = el.offsetParent as HTMLElement | null
+    ) {
+      left += el.offsetLeft;
+      top += el.offsetTop;
+    }
+    return {
+      left,
+      top,
+      width: page.wrapper.offsetWidth,
+      height: page.wrapper.offsetHeight,
+    };
   }
 
   zoom(delta: number) {
-    const scroller = this.scroller;
-    const rect = scroller.getBoundingClientRect();
-    const focusX = rect.width / 2;
-    const focusY = rect.height / 2;
-
-    const newScale = Math.min(Math.max(this.scale + delta, 0.5), 7);
-    this.zoomAt(newScale, focusX, focusY);
+    const rect = this.scroller.getBoundingClientRect();
+    const scale = (this._pendingZoom?.scale ?? this.scale) + delta;
+    this.zoomAt(scale, rect.width / 2, rect.height / 2);
   }
 
   scrollToRelative(delta: number) {
@@ -720,22 +1088,34 @@ export class ViewerPane {
   async layoutPages(scale: number) {
     const outputScale = window.devicePixelRatio || 1;
     this.#layoutDpr = outputScale;
-    const MAX_RENDER_SCALE = 7.0;
-    const effectiveScale = Math.min(scale, MAX_RENDER_SCALE);
     const isSwapped = this.rotation === 90 || this.rotation === 270;
+
+    // The gap above and below each page (or spread row) scales with the
+    // pages, so a pinch's preview — one transform over the whole stage —
+    // shows the gaps where its commit leaves them. Whole px, so pages land
+    // on pixel boundaries and the compositor never resamples them.
+    this.stage.style.setProperty(
+      "--page-gap",
+      `${Math.round(PAGE_GAP * scale)}px`,
+    );
 
     for (let i = 0; i < this.pages.length; i++) {
       const page = this.pages[i];
       const dims = this.document.pageDimensions[i];
 
+      // Off-screen pages are released; on-screen ones keep their pixels until
+      // the re-render, but not a render in flight or a detail region, both cut
+      // for the old layout.
       if (this.visiblePages.has(page)) {
         page.canvas.dataset.rendered = "false";
+        page.cancel();
+        page.dropDetail();
       } else {
         page.release();
       }
 
       // Original (unrotated) visual dimensions
-      const origWidth = Math.round(dims.width * effectiveScale);
+      const origWidth = Math.round(dims.width * scale);
       const aspectRatio = dims.height / dims.width;
       const origHeight = Math.round(origWidth * aspectRatio);
 
@@ -747,16 +1127,21 @@ export class ViewerPane {
       // wrapper stays `origWidth` and is transparent, so a canvas a fraction
       // of a pixel short would leave a seam of wallpaper along its edge; one
       // that overhangs is clipped by the wrapper's paint containment.
-      const canvasWidth = Math.ceil(origWidth * outputScale);
-      const canvasHeight = Math.ceil(origHeight * outputScale);
+      const fullWidth = Math.ceil(origWidth * outputScale);
+      const fullHeight = Math.ceil(origHeight * outputScale);
 
-      // Publish the size this page renders at.
-      page.canvasWidth = canvasWidth;
-      page.canvasHeight = canvasHeight;
+      // Publish the size this page renders at: in full, or capped with a
+      // detail region over it (detail_region.ts). The CSS box is the full
+      // size either way, so a capped store is stretched to fill it.
+      const store = cappedSize({ width: fullWidth, height: fullHeight });
+      page.canvasWidth = store.width;
+      page.canvasHeight = store.height;
+      page.fullWidth = fullWidth;
+      page.fullHeight = fullHeight;
 
       Object.assign(page.canvas.style, {
-        width: `${canvasWidth / outputScale}px`,
-        height: `${canvasHeight / outputScale}px`,
+        width: `${fullWidth / outputScale}px`,
+        height: `${fullHeight / outputScale}px`,
         transform: "",
         transformOrigin: "",
       });
@@ -1199,6 +1584,15 @@ export class ViewerPane {
     // Clean up spread layout
     this.#clearSpreadLayout();
 
+    if (this.#renderTimer !== null) clearTimeout(this.#renderTimer);
+    this.#renderTimer = null;
+    this.#renderQueue = [];
+    this.scroller.removeEventListener("scroll", this.#scheduleDetailRefresh);
+    if (this.#detailTimer !== null) clearTimeout(this.#detailTimer);
+    this.#detailTimer = null;
+    if (this._zoomRAF !== null) cancelAnimationFrame(this._zoomRAF);
+    this._zoomRAF = null;
+    this._pendingZoom = null;
     for (const page of this.pages) {
       page.release();
     }

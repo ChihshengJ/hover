@@ -61,15 +61,9 @@ export class ToolActions {
     switch (action) {
       case "zoom-in":
         pane.zoom(0.25);
-        if (!pane.controls.isHidden) {
-          pane.controls.updateZoomDisplay();
-        }
         break;
       case "zoom-out":
         pane.zoom(-0.25);
-        if (!pane.controls.isHidden) {
-          pane.controls.updateZoomDisplay();
-        }
         break;
       case "rotate":
         this.#handleRotateClick();

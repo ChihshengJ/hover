@@ -32,7 +32,7 @@
     0 2px 4px 5px rgba(0, 0, 0, 0.1);
   padding: 0;
   overflow: hidden;
-  transition: all var(--transition-normal) cubic-bezier(0.4, 0, 0.2, 1);
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .annotation-toolbar.collapsed {

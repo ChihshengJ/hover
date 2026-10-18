@@ -11,6 +11,8 @@ import type { CitationTarget } from "../analysis/citation_builder.js";
 import { buildLuminanceMap, clearLuminanceMap } from "./page_luminance.js";
 import { TEXT_GAMMA_ENABLED, applyTextGamma } from "./text_gamma.js";
 
+import type { Edges } from "./detail_region.js";
+
 let sharedPopup: CitationPopup | null = null;
 function getSharedPopup(): CitationPopup {
   if (!sharedPopup) {
@@ -94,10 +96,34 @@ export class PageView {
    * Backing-store size this page should render at, in device px. The pane's
    * layout pass owns these (it knows the scale, rotation and dpr); the canvas
    * itself only carries a buffer of that size while the page is actually
-   * rendered.
+   * rendered. Capped at `MAX_CANVAS_PIXELS`; see `fullWidth`.
    */
   canvasWidth = 0;
   canvasHeight = 0;
+  /**
+   * The page's size at full resolution, in device px — the backing store
+   * before the cap. Where it exceeds `canvasWidth`, the base canvas is
+   * stretched to fit, and `renderDetail()` covers the part in view.
+   */
+  fullWidth = 0;
+  fullHeight = 0;
+
+  /**
+   * Full-resolution raster of a region of the page, laid over the base canvas
+   * at the region's place. Created on first use.
+   */
+  #detail: {
+    canvas: HTMLCanvasElement;
+    ctx: CanvasRenderingContext2D;
+  } | null = null;
+  /** The region the detail canvas holds, in full-resolution device px. */
+  detailRegion: Edges | null = null;
+  #detailGeneration = 0;
+  /**
+   * The CSS width the overlay layers were last built at, or null when they
+   * have been cleared. `renderDetail()` uses it to tell if they are stale.
+   */
+  #overlayWidth: number | null = null;
 
   constructor(
     host: PageViewHost,
@@ -239,6 +265,9 @@ export class PageView {
 
       // Covers every pixel, so no clear; the overhang clips off the right or bottom.
       this.ctx.putImageData(imageData, 0, 0);
+      // Uncapped, the base is now as sharp as any region over it: the region
+      // was only there to show the part in view before the rest was ready.
+      if (this.canvasWidth >= this.fullWidth) this.dropDetail();
 
       // Reduce the raster to a luminance grid while we still hold it in JS.
       // This is what keeps the liquid-glass ball from having to read pixels
@@ -250,32 +279,7 @@ export class PageView {
         pageData.height,
       );
 
-      const cssWidth = parseFloat(this.canvas.style.width);
-      const cssHeight = parseFloat(this.canvas.style.height);
-      const textScale = cssWidth / pageWidth;
-
-      this.annotationLayer.innerHTML = "";
-      // this.#renderImageOverlays(textScale);
-      this.#renderUrlLinks(page, textScale, cssWidth, cssHeight);
-      this.#renderCitationOverlays(page, textScale, cssWidth, cssHeight);
-      this.#renderCrossRefOverlays(page, textScale, cssWidth, cssHeight);
-      if (this.textSlices) {
-        if (this._cachedSpans) {
-          this.#rescaleTextLayer(textScale);
-        } else {
-          if (this.host.getTextSelectionManager()) {
-            this.host.getTextSelectionManager().unregister(this.textLayer);
-          }
-          this.textLayer.innerHTML = "";
-          this.#buildTextLayer(page, textScale, pageHeight);
-        }
-      }
-      this.textLayer.style.setProperty("--total-scale-factor", `${this.scale}`);
-      this.#ensureEndOfContent();
-      this.textLayer.style.width = `${cssWidth}px`;
-      this.textLayer.style.height = `${cssHeight}px`;
-      this.#setupAnnotationLayerEvents();
-
+      this.#renderOverlays(page);
       this.canvas.dataset.rendered = "true";
     } catch (err) {
       if ((err as { name?: string })?.name !== "RenderingCancelledException") {
@@ -285,6 +289,164 @@ export class PageView {
         );
       }
     }
+  }
+
+  /**
+   * Rebuild the overlay layers — links, citations, cross-refs and the text
+   * layer — for the page's current CSS size.
+   */
+  #renderOverlays(page: PdfPageObject) {
+    const cssWidth = parseFloat(this.canvas.style.width);
+    const cssHeight = parseFloat(this.canvas.style.height);
+    const textScale = cssWidth / page.size.width;
+
+    this.annotationLayer.innerHTML = "";
+    // this.#renderImageOverlays(textScale);
+    this.#renderUrlLinks(page, textScale, cssWidth, cssHeight);
+    this.#renderCitationOverlays(page, textScale, cssWidth, cssHeight);
+    this.#renderCrossRefOverlays(page, textScale, cssWidth, cssHeight);
+    if (this.textSlices) {
+      if (this._cachedSpans) {
+        this.#rescaleTextLayer(textScale);
+      } else {
+        if (this.host.getTextSelectionManager()) {
+          this.host.getTextSelectionManager().unregister(this.textLayer);
+        }
+        this.textLayer.innerHTML = "";
+        this.#buildTextLayer(page, textScale, page.size.height);
+      }
+    }
+    this.textLayer.style.setProperty("--total-scale-factor", `${this.scale}`);
+    this.#ensureEndOfContent();
+    this.textLayer.style.width = `${cssWidth}px`;
+    this.textLayer.style.height = `${cssHeight}px`;
+    this.#setupAnnotationLayerEvents();
+    this.#overlayWidth = cssWidth;
+  }
+
+  /**
+   * Render `region` of the page — full-resolution device px, as
+   * `detail_region.ts` computes it — into the detail canvas, and show it over
+   * the base canvas. For a page whose base canvas is capped, this is what
+   * puts sharp pixels in view; the base only shows where the region doesn't
+   * reach, until the pane moves the region there.
+   *
+   * Brings the overlay layers up to the current size too, as the base render
+   * that would otherwise do it may be some tasks behind.
+   */
+  async renderDetail(region: Edges, requestedScale?: number) {
+    const generation = ++this.#detailGeneration;
+    if (requestedScale) this.scale = requestedScale;
+
+    const page = this.#getPage();
+    const { native, pdfDoc } = this.doc;
+    if (!page || !native || !pdfDoc || !this.fullWidth) return;
+
+    // The scale the uncapped base would render at (§5's larger axis), so the
+    // region's device px are the ones a full render would have put there.
+    const scale = Math.max(
+      this.fullWidth / page.size.width,
+      this.fullHeight / page.size.height,
+    );
+
+    try {
+      if (!this.textSlices) {
+        this.textSlices = this.doc.textIndex?.getPageLines(this.pageNumber);
+      }
+
+      // PDFium's rect is in page points, top-left origin.
+      const pageData = await native
+        .renderPageRect(
+          pdfDoc,
+          page,
+          {
+            origin: { x: region.left / scale, y: region.top / scale },
+            size: {
+              width: (region.right - region.left) / scale,
+              height: (region.bottom - region.top) / scale,
+            },
+          },
+          { scaleFactor: scale, withAnnotations: false },
+        )
+        .toPromise();
+
+      if (generation !== this.#detailGeneration) return;
+
+      if (TEXT_GAMMA_ENABLED) {
+        const boxes = this.doc.getPageTextBoxes(this.pageNumber - 1);
+        if (boxes) {
+          applyTextGamma(pageData.data, pageData.width, pageData.height, boxes, {
+            x: -region.left,
+            y: -region.top,
+            width: page.size.width * scale,
+            height: page.size.height * scale,
+          });
+        }
+      }
+
+      // Sized and painted in one go, after the raster is in hand: resizing a
+      // canvas clears it, and the old region stays up until this replaces it.
+      const { canvas, ctx } = this.#ensureDetailCanvas();
+      if (
+        canvas.width !== pageData.width ||
+        canvas.height !== pageData.height
+      ) {
+        canvas.width = pageData.width;
+        canvas.height = pageData.height;
+      }
+      ctx.putImageData(
+        new ImageData(pageData.data, pageData.width, pageData.height),
+        0,
+        0,
+      );
+
+      // Device px to the page's CSS px: the base canvas's CSS box is the
+      // full-resolution store at the layout's devicePixelRatio.
+      const cssPerPx = parseFloat(this.canvas.style.width) / this.fullWidth;
+      Object.assign(canvas.style, {
+        left: `${region.left * cssPerPx}px`,
+        top: `${region.top * cssPerPx}px`,
+        width: `${pageData.width * cssPerPx}px`,
+        height: `${pageData.height * cssPerPx}px`,
+      });
+      canvas.hidden = false;
+      this.detailRegion = region;
+
+      if (this.#overlayWidth !== parseFloat(this.canvas.style.width)) {
+        this.#renderOverlays(page);
+      }
+    } catch (err) {
+      console.error(
+        `[PageView] Detail render error on page ${this.pageNumber}:`,
+        err,
+      );
+    }
+  }
+
+  #ensureDetailCanvas() {
+    if (!this.#detail) {
+      const canvas = document.createElement("canvas");
+      canvas.className = "page-detail";
+      // Like the base canvas: opaque, and never read back.
+      const ctx = canvas.getContext("2d", { alpha: false })!;
+      this.canvas.after(canvas);
+      this.#detail = { canvas, ctx };
+    }
+    return this.#detail;
+  }
+
+  /**
+   * Drop the detail region and hand back its pixels, and invalidate any in
+   * flight — the layout it was cut for has changed, or the page has gone.
+   */
+  dropDetail() {
+    this.#detailGeneration++;
+    this.detailRegion = null;
+    if (!this.#detail) return;
+    const { canvas } = this.#detail;
+    canvas.hidden = true;
+    canvas.width = 0;
+    canvas.height = 0;
   }
 
   #isValidTextContent(text: string): boolean {
@@ -609,6 +771,7 @@ export class PageView {
 
   release() {
     this.cancel();
+    this.dropDetail();
     this.host.getTextSelectionManager()?.unregister(this.textLayer);
 
     this.textLayer.innerHTML = "";
@@ -626,6 +789,7 @@ export class PageView {
     this._delegatedListenersAttached = false;
     this._cachedSpans = null;
     this._lastTextScale = null;
+    this.#overlayWidth = null;
 
     this.page = null;
     this.endOfContent = null;

@@ -347,6 +347,14 @@ body.ui-dragging * {
   z-index: 0;
 }
 
+/* The full-resolution region over a zoomed page's capped canvas
+   (PageView.renderDetail). Placed by inline left/top; the pointer goes
+   through to the page canvas below, as if it weren't there. */
+.page-wrapper canvas.page-detail {
+  position: absolute;
+  pointer-events: none;
+}
+
 .page-rotate-inner {
   position: relative;
   transform-origin: 0 0;

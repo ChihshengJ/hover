@@ -15,10 +15,17 @@ import {
   clampScale,
   fitOffset,
 } from "./zoom_anchor.js";
+import {
+  cappedSize,
+  covers,
+  deviceRegion,
+  unrotate,
+} from "./detail_region.js";
 
 import type { PDFDocumentModel } from "../model/doc.js";
 import type { DocEventName } from "../model/doc_events.js";
 import type { PageBox, ZoomAnchor } from "./zoom_anchor.js";
+import type { Edges } from "./detail_region.js";
 import type {
   AnnotationHost,
   PaneAnnotationCallbacks,
@@ -28,6 +35,20 @@ import type {
 const PAGE_GAP = 8;
 /** How far above and below the viewport pages are kept rendered, in px. */
 const RENDER_MARGIN = 400;
+/**
+ * How far past the viewport a detail region reaches once scrolling settles,
+ * as a fraction of the viewport on each side, so a short scroll stays sharp.
+ */
+const DETAIL_MARGIN = 0.125;
+/** How long scrolling must pause before detail regions follow it, in ms. */
+const DETAIL_SETTLE_MS = 100;
+/**
+ * Below the size cap, an on-screen page renders the region in view first only
+ * when that is under this fraction of the page. Its whole page follows at full
+ * resolution anyway, so a crop of most of the page saves the frame little and
+ * costs a second render of the same pixels.
+ */
+const CROP_FIRST_BELOW = 0.75;
 
 export interface ViewerPaneOptions {
   id?: string;
@@ -273,6 +294,7 @@ export class ViewerPane {
             this.visiblePages.add(pageView);
           } else {
             this.visiblePages.delete(pageView);
+            pageView.dropDetail();
             this.#maybeRelease(pageView);
           }
         }
@@ -289,6 +311,11 @@ export class ViewerPane {
     for (const pageView of this.pages) {
       this.observer.observe(pageView.wrapper);
     }
+
+    // Re-adding the same listener is a no-op, so this is safe to run again.
+    this.scroller.addEventListener("scroll", this.#onScrollForDetail, {
+      passive: true,
+    });
 
     this.#setupCurrentPageTracking();
   }
@@ -359,6 +386,11 @@ export class ViewerPane {
    * only in the observer's margin are queued, nearest the viewport first, and
    * render one per task so frames can paint in between.
    *
+   * An on-screen page renders only the region in view now, at full
+   * resolution, when it is past the size cap or mostly out of view; its whole
+   * page — capped or not — joins the front of the queue. The work in the
+   * frame then follows the viewport rather than the pages it cuts across.
+   *
    * Nothing renders mid-pinch: the scale is about to change, and the pinch
    * calls this again when it ends.
    */
@@ -379,10 +411,16 @@ export class ViewerPane {
     for (const { page, rect } of pending) {
       const gapX = Math.max(view.left - rect.right, rect.left - view.right);
       const gapY = Math.max(view.top - rect.bottom, rect.top - view.bottom);
-      if (gapX < 0 && gapY < 0) {
-        page.render(this.scale);
-      } else {
+      if (gapX >= 0 || gapY >= 0) {
         queued.push({ page, gap: Math.max(gapX, 0) + Math.max(gapY, 0) });
+        continue;
+      }
+      const region = this.#detailRegion(page, rect, view, 0);
+      if (region && this.#cropFirst(page, region)) {
+        page.renderDetail(region, this.scale);
+        queued.push({ page, gap: -1 });
+      } else {
+        page.render(this.scale);
       }
     }
 
@@ -427,6 +465,86 @@ export class ViewerPane {
     }
     if (this.#renderQueue.length > 0) {
       this.#renderTimer = setTimeout(() => this.#renderNextQueued(), 0);
+    }
+  }
+
+  /**
+   * The region of `page` to render in detail, in its full-resolution device
+   * px: the part inside the viewport, grown by `margin` of the viewport on
+   * each side. Null when none of the page is in range. `rect` and `view` are
+   * the page wrapper's and the scroller's client rects.
+   */
+  #detailRegion(
+    page: PageView,
+    rect: DOMRect,
+    view: DOMRect,
+    margin: number,
+  ): Edges | null {
+    const mx = view.width * margin;
+    const my = view.height * margin;
+    const local = {
+      left: Math.max(view.left - mx, rect.left) - rect.left,
+      top: Math.max(view.top - my, rect.top) - rect.top,
+      right: Math.min(view.right + mx, rect.right) - rect.left,
+      bottom: Math.min(view.bottom + my, rect.bottom) - rect.top,
+    };
+    const swapped = this.rotation === 90 || this.rotation === 270;
+    const inner = unrotate(
+      local,
+      this.rotation,
+      swapped ? rect.height : rect.width,
+      swapped ? rect.width : rect.height,
+    );
+    return deviceRegion(inner, this.#layoutDpr, {
+      width: page.fullWidth,
+      height: page.fullHeight,
+    });
+  }
+
+  /** Whether to render `region` of an on-screen page before the rest of it. */
+  #cropFirst(page: PageView, region: Edges): boolean {
+    if (page.canvasWidth < page.fullWidth) return true;
+    const area =
+      (region.right - region.left) * (region.bottom - region.top);
+    return area < CROP_FIRST_BELOW * page.fullWidth * page.fullHeight;
+  }
+
+  #detailTimer: ReturnType<typeof setTimeout> | null = null;
+  #onScrollForDetail = () => {
+    if (this.#detailTimer !== null) clearTimeout(this.#detailTimer);
+    this.#detailTimer = setTimeout(
+      () => this.#refreshDetails(),
+      DETAIL_SETTLE_MS,
+    );
+  };
+
+  /**
+   * Once scrolling settles, move each on-screen page's detail region to
+   * where the page now is, if it no longer covers the part in view. Until
+   * then the uncovered part shows the capped base, a little soft.
+   */
+  #refreshDetails() {
+    this.#detailTimer = null;
+    if (this._pinch) return;
+
+    const view = this.scroller.getBoundingClientRect();
+    const updates: { page: PageView; region: Edges }[] = [];
+    for (const page of this.visiblePages) {
+      if (page.canvasWidth >= page.fullWidth) continue;
+      const rect = page.wrapper.getBoundingClientRect();
+      const inView = this.#detailRegion(page, rect, view, 0);
+      if (!inView) {
+        page.dropDetail();
+        continue;
+      }
+      if (page.detailRegion && covers(page.detailRegion, inView)) continue;
+      updates.push({
+        page,
+        region: this.#detailRegion(page, rect, view, DETAIL_MARGIN)!,
+      });
+    }
+    for (const { page, region } of updates) {
+      page.renderDetail(region, this.scale);
     }
   }
 
@@ -1012,16 +1130,23 @@ export class ViewerPane {
       // wrapper stays `origWidth` and is transparent, so a canvas a fraction
       // of a pixel short would leave a seam of wallpaper along its edge; one
       // that overhangs is clipped by the wrapper's paint containment.
-      const canvasWidth = Math.ceil(origWidth * outputScale);
-      const canvasHeight = Math.ceil(origHeight * outputScale);
+      const fullWidth = Math.ceil(origWidth * outputScale);
+      const fullHeight = Math.ceil(origHeight * outputScale);
 
-      // Publish the size this page renders at.
-      page.canvasWidth = canvasWidth;
-      page.canvasHeight = canvasHeight;
+      // Publish the size this page renders at: in full, or capped with a
+      // detail region over it (detail_region.ts). The CSS box is the full
+      // size either way, so a capped store is stretched to fill it.
+      const store = cappedSize({ width: fullWidth, height: fullHeight });
+      page.canvasWidth = store.width;
+      page.canvasHeight = store.height;
+      page.fullWidth = fullWidth;
+      page.fullHeight = fullHeight;
+      // Cut for the old layout; the visible pages' render cuts a new one.
+      page.dropDetail();
 
       Object.assign(page.canvas.style, {
-        width: `${canvasWidth / outputScale}px`,
-        height: `${canvasHeight / outputScale}px`,
+        width: `${fullWidth / outputScale}px`,
+        height: `${fullHeight / outputScale}px`,
         transform: "",
         transformOrigin: "",
       });
@@ -1467,6 +1592,9 @@ export class ViewerPane {
     if (this.#renderTimer !== null) clearTimeout(this.#renderTimer);
     this.#renderTimer = null;
     this.#renderQueue = [];
+    this.scroller.removeEventListener("scroll", this.#onScrollForDetail);
+    if (this.#detailTimer !== null) clearTimeout(this.#detailTimer);
+    this.#detailTimer = null;
     for (const page of this.pages) {
       page.release();
     }

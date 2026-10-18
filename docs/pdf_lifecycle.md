@@ -329,6 +329,41 @@ The smaller scale left a strip of the canvas uncovered. On the `alpha: false`
 context that strip is opaque black, and night mode's `invert(1)` filter turned
 it into a white seam along the left or bottom edge at some zoom levels.
 
+### Detail rendering
+
+PDFium renders on the main thread, and a full-page raster grows with the
+square of the zoom: a Letter page at devicePixelRatio 2 is 5.6 M px at scale
+1.7 and 95 M px (380 MB of RGBA) at scale 7. So past `MAX_CANVAS_PIXELS`
+(2²⁴, `src/viewer/detail_region.ts`) a page renders in two parts:
+
+- **Base.** `layoutPages` publishes two sizes: `fullWidth/fullHeight`, the
+  store the page would have, and `canvasWidth/canvasHeight`, that capped to
+  the limit with its aspect kept. The canvas's CSS box is the full size, so a
+  capped store is stretched to fill it, a little soft.
+- **Detail.** `PageView.renderDetail(region)` renders just `region` — whole
+  device px of the full-resolution raster — with `renderPageRect`, into a
+  second canvas (`canvas.page-detail`) placed over the base at the region's
+  spot. It lives inside `.page-rotate-inner`, so the region is cut in
+  unrotated page space (`unrotate`) and the rotation transform places it.
+  Text gamma runs on it with the page's placement in the crop. The luminance
+  grid stays the base's.
+
+`ViewerPane` decides when each runs:
+
+- When a page on screen needs rendering (a zoom commit, or the observer), a
+  capped page renders the detail of the part in view at once, and its base
+  joins the front of the render queue. So does an uncapped page with under
+  `CROP_FIRST_BELOW` of it in view; its base is full resolution, so the
+  region is dropped once the base lands. The render cost of the frame that
+  shows the zoom follows the viewport, not the zoom or the pages it cuts
+  across.
+- When scrolling pauses (`DETAIL_SETTLE_MS`), any on-screen page whose
+  region no longer covers the part in view gets a new one, reaching
+  `DETAIL_MARGIN` of the viewport past it on each side, so a short scroll
+  stays sharp. Until then the newly revealed part shows the base.
+- `layoutPages` drops every region, as it was cut for the old layout; so does
+  a page leaving the observer's range, or being released.
+
 Note `withAnnotations: false` — **Hover's own annotations are never baked into
 the rendered raster.** They are drawn as separate SVG/canvas layers
 (`annotation_svg_layer.ts`, `drawing_canvas_layer.ts`), which is what makes them

@@ -62,6 +62,25 @@ export function captureAnchor(
 }
 
 /**
+ * Where content of `size` px should start in a viewport of `view` px, given
+ * where following the anchor alone would put it (`anchored`).
+ *
+ * Mirrors what layout and scroll clamping do once a zoom commits: content
+ * that fits is centred (`centre`) or held at the start, and content that
+ * doesn't is kept covering the viewport, never showing space past its edges.
+ * A pinch preview run through this matches where its commit will land.
+ */
+export function fitOffset(
+  anchored: number,
+  size: number,
+  view: number,
+  centre: boolean,
+): number {
+  if (size <= view) return centre ? (view - size) / 2 : 0;
+  return Math.min(0, Math.max(view - size, anchored));
+}
+
+/**
  * The scroll offset that puts `anchor` under the viewport point
  * (focusX, focusY), given its page's relaid `box`. Unclamped; the scroller
  * clamps it on assignment.

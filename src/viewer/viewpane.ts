@@ -13,6 +13,7 @@ import {
   anchoredScroll,
   captureAnchor,
   clampScale,
+  fitOffset,
 } from "./zoom_anchor.js";
 
 import type { PDFDocumentModel } from "../model/doc.js";
@@ -108,14 +109,18 @@ export class ViewerPane {
   } | null = null;
   _zoomRAF: number | null = null;
   /**
-   * A pinch in progress: the scale and anchor it started from, and the stage
-   * point under the fingers then, in scroll-content px.
+   * A pinch in progress: the scale and anchor it started from, the stage
+   * point under the fingers then, and the extent of the pages and the stage
+   * at that scale — all in scroll-content px.
    */
   _pinch: {
     startScale: number;
     anchor: ZoomAnchor | null;
     originX: number;
     originY: number;
+    contentLeft: number;
+    contentWidth: number;
+    stageHeight: number;
   } | null = null;
 
   _onPanStart: ((e: PointerEvent) => void) | null = null;
@@ -630,16 +635,24 @@ export class ViewerPane {
    * and the pages are relaid and re-rendered once, at the end.
    */
   beginPinch(focusX: number, focusY: number) {
-    if (this._pinch) return;
+    if (this._pinch || this.pages.length === 0) return;
     // A zoom still waiting for its frame would relayout under the transform.
     this.#commitZoom();
 
     const scroller = this.scroller;
+    const boxes = this.pages.map((page) => this.#pageBox(page));
+    const originX = scroller.scrollLeft + focusX;
+    const originY = scroller.scrollTop + focusY;
+    const contentLeft = Math.min(...boxes.map((b) => b.left));
+    const contentRight = Math.max(...boxes.map((b) => b.left + b.width));
     this._pinch = {
       startScale: this.scale,
-      anchor: this.#captureZoomAnchor(focusX, focusY),
-      originX: scroller.scrollLeft + focusX,
-      originY: scroller.scrollTop + focusY,
+      anchor: captureAnchor(boxes, originX, originY),
+      originX,
+      originY,
+      contentLeft,
+      contentWidth: contentRight - contentLeft,
+      stageHeight: this.stage.offsetHeight,
     };
     this.stage.style.transformOrigin = "0 0";
   }
@@ -649,12 +662,32 @@ export class ViewerPane {
     const pinch = this._pinch;
     if (!pinch) return;
 
+    const { scrollLeft, scrollTop, clientWidth, clientHeight } = this.scroller;
     const r = clampScale(pinch.startScale * ratio) / pinch.startScale;
-    // Map the stage point under the fingers at the start onto where they are
-    // now. Scroll is read fresh: a shrinking stage can make the scroller clamp it.
-    const tx = this.scroller.scrollLeft + focusX - r * pinch.originX;
-    const ty = this.scroller.scrollTop + focusY - r * pinch.originY;
-    this.stage.style.transform = `translate(${tx}px, ${ty}px) scale(${r})`;
+
+    // A stage point P shows at `t + r·P − scroll` in the viewport. Follow the
+    // fingers: put the point under them at the start where they are now.
+    // Scroll is read fresh, as a shrinking stage can make the scroller clamp it.
+    const tx = scrollLeft + focusX - r * pinch.originX;
+    const ty = scrollTop + focusY - r * pinch.originY;
+
+    // Then hold the pages where the commit will put them: centred across
+    // while narrower than the pane, and never past the document's edges.
+    const left = fitOffset(
+      tx + r * pinch.contentLeft - scrollLeft,
+      r * pinch.contentWidth,
+      clientWidth,
+      true,
+    );
+    const top = fitOffset(
+      ty - scrollTop,
+      r * pinch.stageHeight,
+      clientHeight,
+      false,
+    );
+    const x = left - r * pinch.contentLeft + scrollLeft;
+    const y = top + scrollTop;
+    this.stage.style.transform = `translate(${x}px, ${y}px) scale(${r})`;
   }
 
   endPinch(ratio: number, focusX: number, focusY: number) {

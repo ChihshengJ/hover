@@ -328,6 +328,17 @@ body.ui-dragging * {
   content-visibility: auto;
 }
 
+/* Pages in the render range (ViewerPane.setupLazyRender) are painted ahead,
+   like everything else on screen. Left to `auto`, a page is only painted as
+   it reaches the viewport, and if the main thread is busy rendering another
+   page then, the compositor scrolls it in unpainted: a dark page for a beat.
+   Same containment as `auto` applies while not skipping, so the canvas's
+   sub-px overhang is still clipped. */
+.page-wrapper.in-range {
+  content-visibility: visible;
+  contain: layout style paint;
+}
+
 /* No hover or click on the pages mid-pinch (ViewerPane.beginPinch): a shield
    over the pane takes the pointer instead. It is one box, so toggling it
    restyles nothing else, where a rule reaching into the stage would restyle
@@ -342,9 +353,13 @@ body.ui-dragging * {
   z-index: var(--z-dropdown);
 }
 
+/* White shows wherever a page has no pixels yet — never rendered, or
+   released — so it reads as a blank page, not a hole.
+   Night mode's filter on the canvas inverts it with the page, to match. */
 .page-wrapper canvas {
   position: relative;
   z-index: 0;
+  background: white;
 }
 
 /* The full-resolution region over a zoomed page's capped canvas

@@ -33,8 +33,13 @@ import type {
 
 /** Gap above and below each page, in PDF points; 14px at the default 1.7. */
 const PAGE_GAP = 8;
-/** How far above and below the viewport pages are kept rendered, in px. */
-const RENDER_MARGIN = 400;
+/**
+ * How far above and below the viewport pages are kept rendered, in viewport
+ * heights. A page renders this far ahead of reaching the screen; at 5K a
+ * render can take 100 ms, so a fixed few hundred px let a quick scroll
+ * arrive first.
+ */
+const RENDER_MARGIN = 1;
 /**
  * How far past the viewport a detail region reaches once scrolling settles,
  * as a fraction of the viewport on each side, so a short scroll stays sharp.
@@ -290,6 +295,10 @@ export class ViewerPane {
           const pageView = this.pageMap.get(entry.target);
           if (!pageView) continue;
 
+          // In range, the page is painted ahead like the rest of the screen,
+          // not left for `content-visibility` to paint as it arrives; see
+          // viewer.css.
+          pageView.wrapper.classList.toggle("in-range", entry.isIntersecting);
           if (entry.isIntersecting) {
             this.visiblePages.add(pageView);
           } else {
@@ -302,7 +311,7 @@ export class ViewerPane {
       },
       {
         root: this.scroller,
-        rootMargin: `${RENDER_MARGIN}px 0px`,
+        rootMargin: `${RENDER_MARGIN * 100}% 0px`,
         threshold: 0.1,
       },
     );
@@ -313,7 +322,7 @@ export class ViewerPane {
     }
 
     // Re-adding the same listener is a no-op, so this is safe to run again.
-    this.scroller.addEventListener("scroll", this.#onScrollForDetail, {
+    this.scroller.addEventListener("scroll", this.#scheduleDetailRefresh, {
       passive: true,
     });
 
@@ -455,8 +464,8 @@ export class ViewerPane {
       }
       const rect = page.wrapper.getBoundingClientRect();
       if (
-        rect.bottom < view.top - RENDER_MARGIN ||
-        rect.top > view.bottom + RENDER_MARGIN
+        rect.bottom < view.top - view.height * RENDER_MARGIN ||
+        rect.top > view.bottom + view.height * RENDER_MARGIN
       ) {
         continue;
       }
@@ -510,7 +519,7 @@ export class ViewerPane {
   }
 
   #detailTimer: ReturnType<typeof setTimeout> | null = null;
-  #onScrollForDetail = () => {
+  #scheduleDetailRefresh = () => {
     if (this.#detailTimer !== null) clearTimeout(this.#detailTimer);
     this.#detailTimer = setTimeout(
       () => this.#refreshDetails(),
@@ -1592,7 +1601,7 @@ export class ViewerPane {
     if (this.#renderTimer !== null) clearTimeout(this.#renderTimer);
     this.#renderTimer = null;
     this.#renderQueue = [];
-    this.scroller.removeEventListener("scroll", this.#onScrollForDetail);
+    this.scroller.removeEventListener("scroll", this.#scheduleDetailRefresh);
     if (this.#detailTimer !== null) clearTimeout(this.#detailTimer);
     this.#detailTimer = null;
     for (const page of this.pages) {

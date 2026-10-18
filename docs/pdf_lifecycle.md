@@ -324,6 +324,11 @@ as `round(page.width * scale) × round(page.height * scale)`.
 - The raster goes at the canvas origin, like the text and annotation layers,
   so the overhang never shifts the page against them.
 - Every canvas pixel is overwritten, so the canvas is not cleared first.
+- The backing store is resized only with the raster in hand, just before
+  `putImageData`. Resizing clears it, and on the `alpha: false` context a
+  cleared canvas is opaque black; a render that failed or was superseded
+  after an early resize left the page black. Where a canvas holds no pixels
+  at all, its CSS background (white, inverted with it in night mode) shows.
 
 The smaller scale left a strip of the canvas uncovered. On the `alpha: false`
 context that strip is opaque black, and night mode's `invert(1)` filter turned

@@ -175,11 +175,11 @@ export class PageView {
    * unchanged, so the comparison is load-bearing: without it every re-render
    * would throw away pixels it is about to redraw anyway.
    *
-   * @returns false when no size has been published yet, which means the pane's
-   * layout pass has not run and there is nothing sensible to render into.
+   * Call it only with the raster in hand, right before painting it: a reset
+   * canvas on this opaque context is black, and a render that fails or is
+   * superseded after the reset would leave it so.
    */
-  #ensureBackingStore(): boolean {
-    if (!this.canvasWidth || !this.canvasHeight) return false;
+  #ensureBackingStore() {
     if (
       this.canvas.width !== this.canvasWidth ||
       this.canvas.height !== this.canvasHeight
@@ -187,7 +187,6 @@ export class PageView {
       this.canvas.width = this.canvasWidth;
       this.canvas.height = this.canvasHeight;
     }
-    return true;
   }
 
   #ensureEndOfContent() {
@@ -220,16 +219,14 @@ export class PageView {
       return;
     }
 
-    if (!this.#ensureBackingStore()) return;
-
-    const canvasWidth = this.canvas.width;
-    const canvasHeight = this.canvas.height;
-    const pageWidth = page.size.width;
-    const pageHeight = page.size.height;
+    // No size published yet: the pane's layout pass has not run, and there is
+    // nothing sensible to render into.
+    const { canvasWidth, canvasHeight } = this;
+    if (!canvasWidth || !canvasHeight) return;
 
     // Larger axis scale, so the raster covers the canvas (docs/pdf_lifecycle.md §5).
-    const scaleX = canvasWidth / pageWidth;
-    const scaleY = canvasHeight / pageHeight;
+    const scaleX = canvasWidth / page.size.width;
+    const scaleY = canvasHeight / page.size.height;
     const renderScale = Math.max(scaleX, scaleY);
 
     try {
@@ -249,6 +246,14 @@ export class PageView {
       // Painting now would put stale pixels on the canvas and, worse, mark it
       // rendered, so the page would never be redrawn correctly.
       if (generation !== this.#renderGeneration) return;
+      // Nor paint a raster cut for a size the layout has since moved off; the
+      // pane renders every page it relays.
+      if (
+        canvasWidth !== this.canvasWidth ||
+        canvasHeight !== this.canvasHeight
+      ) {
+        return;
+      }
 
       if (TEXT_GAMMA_ENABLED) {
         const boxes = this.doc.getPageTextBoxes(this.pageNumber - 1);
@@ -264,6 +269,7 @@ export class PageView {
       );
 
       // Covers every pixel, so no clear; the overhang clips off the right or bottom.
+      this.#ensureBackingStore();
       this.ctx.putImageData(imageData, 0, 0);
       // Uncapped, the base is now as sharp as any region over it: the region
       // was only there to show the part in view before the rest was ready.

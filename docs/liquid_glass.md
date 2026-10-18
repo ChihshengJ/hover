@@ -46,10 +46,10 @@ feImage → the map we just painted
 feDisplacementMap → bend the page backdrop using map R/G
 feGaussianBlur → frost (yours is currently 0)
 feColorMatrix → saturation boost
-feColorMatrix → pull the map's BLUE channel into alpha…
-feComposite "in" → …and use it to cut out the goo shape
+feComposite "in" → cut out the goo shape with the map's ALPHA channel
 
-Those last two lines are the fix from our final round. The map's blue channel was unused, so while painting the map we also write "is this pixel inside the goo?" into blue (with a soft 1.5px edge). the filter turns that into a mask and clips its own output with it.
+That last line is the fix from our final round. While painting the map we also write "is this pixel inside the goo?" into its alpha (with a soft 1.5px edge), and the filter clips its own output with it.
+It first lived in the blue channel. Chromium colour-manages the map's RGB (sRGB → display), so on a non-sRGB display "outside, mask 0" arrived as ~12%, and a faint displaced copy of the page showed across the whole 200px box. Alpha is never colour-managed.
 Before, the visible outline came from a clip-path buionstruction (Bézier arcs and fillets) that disagreedwith the SDF exactly at the viscous taper — hence your dead delta region. Now the shape that refracts and the shape you see are the same pixels of the same image. They cannot disagree.
 
 ## The choreography

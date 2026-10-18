@@ -165,10 +165,17 @@ function sampleLut(lut: Float64Array, t: number): number {
  * gradient, encoded as channel = 128 + 127 * component / maxDisp. With
  * bezelWidth equal to the shape's inradius the band covers the whole
  * interior — a full dome, nothing left flat.
- * The blue channel carries the field's AA'd body coverage. The SVG filter
- * lifts it into an alpha mask for its own output, which replaces the CSS
- * clip-path: the visible silhouette is then exactly this field, so the
- * refraction can never disagree with the goo shape it is applied to.
+ * The alpha channel carries the field's AA'd body coverage. The SVG filter
+ * masks its own output with it, which replaces the CSS clip-path: the
+ * visible silhouette is then exactly this field, so the refraction can
+ * never disagree with the goo shape it is applied to.
+ * It has to be alpha. Chromium colour-converts the map's RGB from sRGB to
+ * the display's colour space before the filter reads it, and on a
+ * non-sRGB display a mask in blue arrived as ~12% instead of 0 outside the
+ * body: a faint, displaced copy of the page across the whole 200px box.
+ * Alpha is never colour-managed. feDisplacementMap reads the map
+ * unpremultiplied, so a zero alpha outside the body does not disturb R/G
+ * inside it.
  * Pure — exported separately from the canvas step so it can be unit-tested
  * outside the browser.
  *
@@ -245,10 +252,10 @@ export function computeDisplacementField({
 
       data[o] = r;
       data[o + 1] = g;
+      data[o + 2] = 0;
       // Outside the prefilter dn === d, but the ramp is saturated there
       // either way (|d| far exceeds MASK_AA), so the mask is unaffected.
-      data[o + 2] = 255 * Math.min(Math.max(0.5 - dn / (2 * MASK_AA), 0), 1);
-      data[o + 3] = 255;
+      data[o + 3] = 255 * Math.min(Math.max(0.5 - dn / (2 * MASK_AA), 0), 1);
     }
   }
 

@@ -8,9 +8,16 @@ import {
   isPointerToolActive,
 } from "./pointer_gesture.js";
 import { DocEvent, ANNOTATION_EVENTS } from "../model/doc_events.js";
+import {
+  MAX_SCALE,
+  anchoredScroll,
+  captureAnchor,
+  clampScale,
+} from "./zoom_anchor.js";
 
 import type { PDFDocumentModel } from "../model/doc.js";
 import type { DocEventName } from "../model/doc_events.js";
+import type { PageBox, ZoomAnchor } from "./zoom_anchor.js";
 import type {
   AnnotationHost,
   PaneAnnotationCallbacks,
@@ -92,8 +99,13 @@ export class ViewerPane {
     | null = null;
   selectAnnotation: PaneAnnotationCallbacks["selectAnnotation"] | null = null;
 
-  /** Zoom bookkeeping for the transform-then-rerender two-step in `zoomAt()`. */
-  _pendingScale: number | null = null;
+  /** A zoom waiting for the next frame; see `zoomAt()`. */
+  _pendingZoom: {
+    scale: number;
+    anchor: ZoomAnchor | null;
+    focusX: number;
+    focusY: number;
+  } | null = null;
   _zoomRAF: number | null = null;
 
   _onPanStart: ((e: PointerEvent) => void) | null = null;
@@ -544,52 +556,101 @@ export class ViewerPane {
     return this.currentPage;
   }
 
-  zoomAt(scale: number, focusX: number, focusY: number) {
-    const scroller = this.scroller;
-    const prevScale = this._pendingScale ?? this.scale;
-    if (scale === prevScale) return;
+  /**
+   * Zoom to `scale`, keeping the document point at (focusX, focusY) — in
+   * scroller viewport px — where it is on screen.
+   *
+   * The relayout waits for the next frame, so zooms requested within one
+   * frame (key repeat, a run of button clicks) cost one relayout. The first
+   * request's anchor holds for the batch; later ones only move the scale.
+   * `anchor` is for a caller that captured it earlier, before transforming
+   * the stage; otherwise it is taken here.
+   */
+  zoomAt(
+    scale: number,
+    focusX: number,
+    focusY: number,
+    anchor?: ZoomAnchor | null,
+  ) {
+    scale = clampScale(scale);
+    const pending = this._pendingZoom;
+    if (scale === (pending?.scale ?? this.scale)) return;
 
-    this._pendingScale = scale;
-    const ratio = scale / this.scale;
+    if (pending) {
+      pending.scale = scale;
+      if (anchor !== undefined) Object.assign(pending, { anchor, focusX, focusY });
+      return;
+    }
 
-    this.stage.style.transformOrigin = `${scroller.scrollLeft + focusX}px ${scroller.scrollTop + focusY}px`;
-    this.stage.style.transform = `scale(${ratio})`;
-
-    if (this._zoomRAF) cancelAnimationFrame(this._zoomRAF);
+    this._pendingZoom = {
+      scale,
+      anchor:
+        anchor === undefined ? this.captureZoomAnchor(focusX, focusY) : anchor,
+      focusX,
+      focusY,
+    };
     this._zoomRAF = requestAnimationFrame(() => {
       this._zoomRAF = null;
-      const finalScale = this._pendingScale!;
-      this._pendingScale = null;
+      const zoom = this._pendingZoom!;
+      this._pendingZoom = null;
 
-      this.stage.style.transform = "";
-      this.stage.style.transformOrigin = "";
-
-      const docX = (scroller.scrollLeft + focusX) / this.scale;
-      const docY = (scroller.scrollTop + focusY) / this.scale;
-
-      this.scale = finalScale;
-      this.layoutPages(finalScale);
-
-      const targetLeft = docX * finalScale - focusX;
-      const targetTop = docY * finalScale - focusY;
-      const maxLeft = Math.max(0, scroller.scrollWidth - scroller.clientWidth);
-      const maxTop = Math.max(0, scroller.scrollHeight - scroller.clientHeight);
-      scroller.scrollLeft = Math.min(Math.max(0, targetLeft), maxLeft);
-      scroller.scrollTop = Math.min(Math.max(0, targetTop), maxTop);
+      this.scale = zoom.scale;
+      this.layoutPages(zoom.scale);
+      if (zoom.anchor) {
+        const page = this.pages[zoom.anchor.index];
+        const { left, top } = anchoredScroll(
+          this.#pageBox(page),
+          zoom.anchor,
+          zoom.focusX,
+          zoom.focusY,
+        );
+        this.scroller.scrollLeft = left;
+        this.scroller.scrollTop = top;
+      }
 
       this.#renderVisiblePages();
       this.annotationManager?.refresh();
+      this.controls.updateZoomDisplay();
     });
   }
 
-  zoom(delta: number) {
-    const scroller = this.scroller;
-    const rect = scroller.getBoundingClientRect();
-    const focusX = rect.width / 2;
-    const focusY = rect.height / 2;
+  /** Anchor the document point at (focusX, focusY), in scroller viewport px. */
+  captureZoomAnchor(focusX: number, focusY: number): ZoomAnchor | null {
+    return captureAnchor(
+      this.pages.map((page) => this.#pageBox(page)),
+      this.scroller.scrollLeft + focusX,
+      this.scroller.scrollTop + focusY,
+    );
+  }
 
-    const newScale = Math.min(Math.max(this.scale + delta, 0.5), 7);
-    this.zoomAt(newScale, focusX, focusY);
+  /**
+   * A page's box in scroll-content px. Built from offsets, which are layout
+   * positions, so a transform on the stage doesn't move it. The stage is the
+   * scroller's only in-flow child and sits at the content origin.
+   */
+  #pageBox(page: PageView): PageBox {
+    let left = 0;
+    let top = 0;
+    for (
+      let el: HTMLElement | null = page.wrapper;
+      el && el !== this.stage;
+      el = el.offsetParent as HTMLElement | null
+    ) {
+      left += el.offsetLeft;
+      top += el.offsetTop;
+    }
+    return {
+      left,
+      top,
+      width: page.wrapper.offsetWidth,
+      height: page.wrapper.offsetHeight,
+    };
+  }
+
+  zoom(delta: number) {
+    const rect = this.scroller.getBoundingClientRect();
+    const scale = (this._pendingZoom?.scale ?? this.scale) + delta;
+    this.zoomAt(scale, rect.width / 2, rect.height / 2);
   }
 
   scrollToRelative(delta: number) {
@@ -720,8 +781,7 @@ export class ViewerPane {
   async layoutPages(scale: number) {
     const outputScale = window.devicePixelRatio || 1;
     this.#layoutDpr = outputScale;
-    const MAX_RENDER_SCALE = 7.0;
-    const effectiveScale = Math.min(scale, MAX_RENDER_SCALE);
+    const effectiveScale = Math.min(scale, MAX_SCALE);
     const isSwapped = this.rotation === 90 || this.rotation === 270;
 
     for (let i = 0; i < this.pages.length; i++) {

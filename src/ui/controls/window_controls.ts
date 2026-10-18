@@ -7,6 +7,7 @@
  */
 
 import { GestureDetector } from "./touch_controls.js";
+import { clampScale } from "../../viewer/zoom_anchor.js";
 import { SearchController } from "./search/search_controller.js";
 import { ActionButton } from "./action_button.js";
 import { RegionSelectController } from "../tools/region_select.js";
@@ -20,7 +21,6 @@ export class WindowControls {
   searchController: SearchController;
   regionSelectController: RegionSelectController;
   drawingController: DrawingController | null;
-  MAX_RENDER_SCALE: number;
   _lastNavKey: string | null;
   _lastNavKeyTime: number;
   actionButton: ActionButton;
@@ -38,7 +38,6 @@ export class WindowControls {
     this.drawingController = new DrawingController(wm, this.actionButton);
     this.#setupKeyboardShortcuts();
     this.#bindGestures();
-    this.MAX_RENDER_SCALE = 7;
 
     this._lastNavKey = null;
     this._lastNavKeyTime = 0;
@@ -297,10 +296,7 @@ export class WindowControls {
       if (!isTransforming) return;
 
       const ratio = e.detail.startScaleRatio;
-      const newScale = Math.max(
-        0.5,
-        Math.min(this.MAX_RENDER_SCALE, startScale * ratio),
-      );
+      const newScale = clampScale(startScale * ratio);
       const visualScaleDelta = newScale / startScale;
 
       const wrappers =
@@ -327,10 +323,7 @@ export class WindowControls {
       });
 
       const ratio = e.detail.startScaleRatio;
-      const finalScale = Math.max(
-        0.5,
-        Math.min(this.MAX_RENDER_SCALE, startScale * ratio),
-      );
+      const finalScale = clampScale(startScale * ratio);
 
       const paneRect = pane.paneEl.getBoundingClientRect();
       const scrollerRect = pane.scroller.getBoundingClientRect();

@@ -107,6 +107,16 @@ export class ViewerPane {
     focusY: number;
   } | null = null;
   _zoomRAF: number | null = null;
+  /**
+   * A pinch in progress: the scale and anchor it started from, and the stage
+   * point under the fingers then, in scroll-content px.
+   */
+  _pinch: {
+    startScale: number;
+    anchor: ZoomAnchor | null;
+    originX: number;
+    originY: number;
+  } | null = null;
 
   _onPanStart: ((e: PointerEvent) => void) | null = null;
   /** Releases the pan's gesture claim; see pointer_gesture.js. */
@@ -572,6 +582,10 @@ export class ViewerPane {
     focusY: number,
     anchor?: ZoomAnchor | null,
   ) {
+    // A relayout under the pinch transform would pull the page out from
+    // under the fingers; the pinch commits its own zoom when it ends.
+    if (this._pinch) return;
+
     scale = clampScale(scale);
     const pending = this._pendingZoom;
     if (scale === (pending?.scale ?? this.scale)) return;
@@ -585,42 +599,102 @@ export class ViewerPane {
     this._pendingZoom = {
       scale,
       anchor:
-        anchor === undefined ? this.captureZoomAnchor(focusX, focusY) : anchor,
+        anchor === undefined ? this.#captureZoomAnchor(focusX, focusY) : anchor,
       focusX,
       focusY,
     };
-    this._zoomRAF = requestAnimationFrame(() => {
-      this._zoomRAF = null;
-      const zoom = this._pendingZoom!;
-      this._pendingZoom = null;
+    this._zoomRAF = requestAnimationFrame(() => this.#commitZoom());
+  }
 
-      this.scale = zoom.scale;
-      this.layoutPages(zoom.scale);
-      if (zoom.anchor) {
-        const page = this.pages[zoom.anchor.index];
-        const { left, top } = anchoredScroll(
-          this.#pageBox(page),
-          zoom.anchor,
-          zoom.focusX,
-          zoom.focusY,
-        );
-        this.scroller.scrollLeft = left;
-        this.scroller.scrollTop = top;
-      }
+  #commitZoom() {
+    if (this._zoomRAF !== null) cancelAnimationFrame(this._zoomRAF);
+    this._zoomRAF = null;
+    const zoom = this._pendingZoom;
+    if (!zoom) return;
+    this._pendingZoom = null;
 
-      this.#renderVisiblePages();
-      this.annotationManager?.refresh();
-      this.controls.updateZoomDisplay();
-    });
+    this.scale = zoom.scale;
+    this.layoutPages(zoom.scale);
+    if (zoom.anchor) this.#scrollToAnchor(zoom.anchor, zoom.focusX, zoom.focusY);
+
+    this.#renderVisiblePages();
+    this.annotationManager?.refresh();
+    this.controls.updateZoomDisplay();
+  }
+
+  /**
+   * Start a pinch centred at (focusX, focusY), in scroller viewport px.
+   *
+   * Until `endPinch()`, the stage is only transformed: the document point
+   * under the fingers at the start follows them as they spread and move,
+   * and the pages are relaid and re-rendered once, at the end.
+   */
+  beginPinch(focusX: number, focusY: number) {
+    if (this._pinch) return;
+    // A zoom still waiting for its frame would relayout under the transform.
+    this.#commitZoom();
+
+    const scroller = this.scroller;
+    this._pinch = {
+      startScale: this.scale,
+      anchor: this.#captureZoomAnchor(focusX, focusY),
+      originX: scroller.scrollLeft + focusX,
+      originY: scroller.scrollTop + focusY,
+    };
+    this.stage.style.transformOrigin = "0 0";
+  }
+
+  /** `ratio` is the scale since `beginPinch()`; the focus is where it is now. */
+  updatePinch(ratio: number, focusX: number, focusY: number) {
+    const pinch = this._pinch;
+    if (!pinch) return;
+
+    const r = clampScale(pinch.startScale * ratio) / pinch.startScale;
+    // Map the stage point under the fingers at the start onto where they are
+    // now. Scroll is read fresh: a shrinking stage can make the scroller clamp it.
+    const tx = this.scroller.scrollLeft + focusX - r * pinch.originX;
+    const ty = this.scroller.scrollTop + focusY - r * pinch.originY;
+    this.stage.style.transform = `translate(${tx}px, ${ty}px) scale(${r})`;
+  }
+
+  endPinch(ratio: number, focusX: number, focusY: number) {
+    const pinch = this._pinch;
+    if (!pinch) return;
+    this._pinch = null;
+
+    this.stage.style.transform = "";
+    this.stage.style.transformOrigin = "";
+
+    const scale = clampScale(pinch.startScale * ratio);
+    if (scale !== this.scale) {
+      this.zoomAt(scale, focusX, focusY, pinch.anchor);
+    } else if (pinch.anchor) {
+      // No zoom to commit, but the fingers may have moved: keep the pan.
+      this.#scrollToAnchor(pinch.anchor, focusX, focusY);
+    }
   }
 
   /** Anchor the document point at (focusX, focusY), in scroller viewport px. */
-  captureZoomAnchor(focusX: number, focusY: number): ZoomAnchor | null {
+  #captureZoomAnchor(focusX: number, focusY: number): ZoomAnchor | null {
     return captureAnchor(
       this.pages.map((page) => this.#pageBox(page)),
       this.scroller.scrollLeft + focusX,
       this.scroller.scrollTop + focusY,
     );
+  }
+
+  /** Scroll so `anchor` sits at (focusX, focusY), in scroller viewport px. */
+  #scrollToAnchor(anchor: ZoomAnchor, focusX: number, focusY: number) {
+    const page = this.pages[anchor.index];
+    if (!page) return;
+    const { left, top } = anchoredScroll(
+      this.#pageBox(page),
+      anchor,
+      focusX,
+      focusY,
+    );
+    this.scroller.scrollLeft = left;
+    this.scroller.scrollTop = top;
   }
 
   /**

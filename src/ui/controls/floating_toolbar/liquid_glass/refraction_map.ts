@@ -176,6 +176,11 @@ function sampleLut(lut: Float64Array, t: number): number {
  * Alpha is never colour-managed. feDisplacementMap reads the map
  * unpremultiplied, so a zero alpha outside the body does not disturb R/G
  * inside it.
+ * The R/G vectors are still converted, so on such a display the refraction
+ * inside the body is a little off. That has no clean fix: the vectors need
+ * two channels of one image, and Chromium also converts RGB at every
+ * two-input filter primitive, so they cannot be carried in alpha and joined
+ * inside the filter either.
  * Pure — exported separately from the canvas step so it can be unit-tested
  * outside the browser.
  *

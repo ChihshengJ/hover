@@ -247,6 +247,20 @@ export class PdfiumTextExtractor {
     return result;
   }
 
+  /**
+   * Boxes around the visible text on a page; see
+   * PdfiumPageReader#readVisibleTextBoxes. Empty when the page won't load.
+   *
+   * @param pageIndex 0-based
+   */
+  extractTextBoxes(docPtr: number, pageIndex: number): Float32Array {
+    return (
+      this.withTextPage(docPtr, pageIndex, ({ pagePtr, textPagePtr, charCount }) =>
+        this.#reader.readVisibleTextBoxes(pagePtr, textPagePtr, charCount),
+      ) ?? new Float32Array(0)
+    );
+  }
+
   // ============================================================================
   // High-level path extraction (general-purpose)
   // ============================================================================
@@ -363,6 +377,14 @@ export class PdfiumDocumentHandle {
    */
   extractPagePaths(pageIndex: number): PagePathsResult {
     return this.#extractor.extractPagePaths(this.#docPtr, pageIndex);
+  }
+
+  /**
+   * Boxes around the visible text on a page.
+   * @param pageIndex 0-based page index
+   */
+  extractTextBoxes(pageIndex: number): Float32Array {
+    return this.#extractor.extractTextBoxes(this.#docPtr, pageIndex);
   }
 
   /** Get page count. */

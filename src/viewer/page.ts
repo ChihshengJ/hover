@@ -9,7 +9,7 @@ import type { TextLine } from "../analysis/text_index.js";
 import type { CrossReference } from "../analysis/cross_reference_builder.js";
 import type { CitationTarget } from "../analysis/citation_builder.js";
 import { buildLuminanceMap, clearLuminanceMap } from "./page_luminance.js";
-import { applyTextGamma } from "./text_gamma.js";
+import { TEXT_GAMMA_ENABLED, applyTextGamma } from "./text_gamma.js";
 
 let sharedPopup: CitationPopup | null = null;
 function getSharedPopup(): CitationPopup {
@@ -223,7 +223,17 @@ export class PageView {
       // rendered, so the page would never be redrawn correctly.
       if (generation !== this.#renderGeneration) return;
 
-      applyTextGamma(pageData.data);
+      if (TEXT_GAMMA_ENABLED) {
+        const boxes = this.doc.getPageTextBoxes(this.pageNumber - 1);
+        if (boxes) {
+          applyTextGamma(pageData.data, pageData.width, pageData.height, boxes, {
+            x: 0,
+            y: 0,
+            width: pageData.width,
+            height: pageData.height,
+          });
+        }
+      }
 
       const imageData = new ImageData(
         pageData.data,

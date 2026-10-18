@@ -1104,9 +1104,11 @@ export class ViewerPane {
       const dims = this.document.pageDimensions[i];
 
       // Off-screen pages are released; on-screen ones keep their pixels until
-      // the re-render, but not their detail region, cut for the old layout.
+      // the re-render, but not a render in flight or a detail region, both cut
+      // for the old layout.
       if (this.visiblePages.has(page)) {
         page.canvas.dataset.rendered = "false";
+        page.cancel();
         page.dropDetail();
       } else {
         page.release();
@@ -1588,6 +1590,9 @@ export class ViewerPane {
     this.scroller.removeEventListener("scroll", this.#scheduleDetailRefresh);
     if (this.#detailTimer !== null) clearTimeout(this.#detailTimer);
     this.#detailTimer = null;
+    if (this._zoomRAF !== null) cancelAnimationFrame(this._zoomRAF);
+    this._zoomRAF = null;
+    this._pendingZoom = null;
     for (const page of this.pages) {
       page.release();
     }

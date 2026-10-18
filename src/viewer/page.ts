@@ -248,18 +248,10 @@ export class PageView {
         .toPromise();
 
       // Anything that invalidated this page while PDFium was working — a
-      // release, a zoom, a re-render — has already bumped the generation.
+      // release, a relayout, a re-render — has already bumped the generation.
       // Painting now would put stale pixels on the canvas and, worse, mark it
       // rendered, so the page would never be redrawn correctly.
       if (generation !== this.#renderGeneration) return;
-      // Nor paint a raster cut for a size the layout has since moved off; the
-      // pane renders every page it relays.
-      if (
-        canvasWidth !== this.canvasWidth ||
-        canvasHeight !== this.canvasHeight
-      ) {
-        return;
-      }
 
       this.#applyTextGamma(pageData);
 

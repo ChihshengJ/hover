@@ -12,6 +12,12 @@ import type { Edges } from "./detail_region.js";
  */
 const RENDER_MARGIN = 1;
 /**
+ * How far above and below the viewport a page keeps its pixels, in viewport
+ * heights; past it, the page is released. Wider than `RENDER_MARGIN`, so a
+ * page scrolled just out of range and back is not rendered all over again.
+ */
+const RELEASE_MARGIN = 2;
+/**
  * How far past the viewport a detail region reaches once scrolling settles,
  * as a fraction of the viewport on each side, so a short scroll stays sharp.
  */
@@ -49,6 +55,7 @@ export class RenderScheduler {
   #host: RenderSchedulerHost;
   #pageMap: Map<Element, PageView>;
   #observer: IntersectionObserver | null = null;
+  #releaseObserver: IntersectionObserver | null = null;
   /** Margin pages waiting to render; see `renderVisible()`. */
   #queue: PageView[] = [];
   #queueTimer: ReturnType<typeof setTimeout> | null = null;
@@ -62,9 +69,13 @@ export class RenderScheduler {
     });
   }
 
-  /** Start watching which pages are in range; each report renders them. */
+  /**
+   * Start watching which pages are in range, rendering them as they arrive,
+   * and which have gone past `RELEASE_MARGIN`, releasing them as they leave.
+   */
   observe() {
     this.#observer?.disconnect();
+    this.#releaseObserver?.disconnect();
 
     this.#observer = new IntersectionObserver(
       (entries) => {
@@ -81,7 +92,6 @@ export class RenderScheduler {
           } else {
             this.visiblePages.delete(pageView);
             pageView.dropDetail();
-            this.#maybeRelease(pageView);
           }
         }
         this.renderVisible();
@@ -93,14 +103,37 @@ export class RenderScheduler {
       },
     );
 
+    // Its own observer, as the render range's reports come too early: a page
+    // leaves it about `RENDER_MARGIN` away, and once out of range it is
+    // reported no more, however far it is scrolled. Checking the distance
+    // there released almost nothing, and every page scrolled past kept its
+    // backing store. Created second, so in a frame where a page leaves both
+    // ranges, the render range's report has taken it out of `visiblePages`
+    // by the time this one releases it.
+    this.#releaseObserver = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          if (entry.isIntersecting) continue;
+          this.#pageMap.get(entry.target)?.release();
+        }
+      },
+      {
+        root: this.#host.scroller,
+        rootMargin: `${RELEASE_MARGIN * 100}% 0px`,
+      },
+    );
+
     for (const pageView of this.#host.pages) {
       this.#observer.observe(pageView.wrapper);
+      this.#releaseObserver.observe(pageView.wrapper);
     }
   }
 
   destroy() {
     this.#observer?.disconnect();
     this.#observer = null;
+    this.#releaseObserver?.disconnect();
+    this.#releaseObserver = null;
     if (this.#queueTimer !== null) clearTimeout(this.#queueTimer);
     this.#queueTimer = null;
     this.#queue = [];
@@ -110,15 +143,6 @@ export class RenderScheduler {
     );
     if (this.#detailTimer !== null) clearTimeout(this.#detailTimer);
     this.#detailTimer = null;
-  }
-
-  #maybeRelease(page: PageView) {
-    const rect = page.wrapper.getBoundingClientRect();
-    const threshold = window.innerHeight * 2;
-
-    if (rect.bottom < -threshold || rect.top > window.innerHeight + threshold) {
-      page.release();
-    }
   }
 
   /**
@@ -172,9 +196,7 @@ export class RenderScheduler {
       }
     }
 
-    this.#queue = queued
-      .sort((a, b) => a.gap - b.gap)
-      .map(({ page }) => page);
+    this.#queue = queued.sort((a, b) => a.gap - b.gap).map(({ page }) => page);
     if (this.#queue.length > 0 && this.#queueTimer === null) {
       this.#queueTimer = setTimeout(() => this.#renderNextQueued(), 0);
     }

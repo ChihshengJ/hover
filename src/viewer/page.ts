@@ -637,6 +637,19 @@ export class PageView {
     }
   }
 
+  /**
+   * Drop a citation popup that is pending or open on this page — its anchor
+   * is about to move, as when a pinch starts.
+   */
+  cancelCitationHover() {
+    if (this._showTimer) {
+      clearTimeout(this._showTimer);
+      this._showTimer = null;
+    }
+    const anchor = sharedPopup?.currentAnchor;
+    if (anchor && this.wrapper.contains(anchor)) sharedPopup.hide(true);
+  }
+
   async resize(scale: number) {
     this.scale = scale;
     this.pendingRenderScale = scale;

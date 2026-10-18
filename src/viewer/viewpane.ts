@@ -19,6 +19,9 @@ import {
 import type { PDFDocumentModel } from "../model/doc.js";
 import type { DocEventName } from "../model/doc_events.js";
 import type { PageBox, ZoomAnchor } from "./zoom_anchor.js";
+
+/** Gap above and below each page, in PDF points; 14px at the default 1.7. */
+const PAGE_GAP = 8;
 import type {
   AnnotationHost,
   PaneAnnotationCallbacks,
@@ -226,7 +229,6 @@ export class ViewerPane {
     for (let i = 1; i <= numPages; i++) {
       const wrapper = document.createElement("div");
       wrapper.className = "page-wrapper";
-      wrapper.style.margin = "14px 0";
       wrapper.style.display = "block";
       wrapper.style.width = "fit-content";
 
@@ -655,6 +657,18 @@ export class ViewerPane {
       stageHeight: this.stage.offsetHeight,
     };
     this.stage.style.transformOrigin = "0 0";
+    // The stage's box is at least the pane's width, so scaling it up
+    // overflows sideways even while the pages still fit, which would flash
+    // the horizontal scrollbar. If there's no horizontal scroll yet, the
+    // commit decides whether there is one.
+    if (scroller.scrollWidth <= scroller.clientWidth) {
+      scroller.style.overflowX = "hidden";
+    }
+
+    // Hover interactions would chase anchors that are moving under the
+    // cursor: block them for the pinch and drop any popup already pending.
+    this.paneEl.classList.add("pinching");
+    for (const page of this.pages) page.cancelCitationHover();
   }
 
   /** `ratio` is the scale since `beginPinch()`; the focus is where it is now. */
@@ -697,6 +711,8 @@ export class ViewerPane {
 
     this.stage.style.transform = "";
     this.stage.style.transformOrigin = "";
+    this.scroller.style.overflowX = "";
+    this.paneEl.classList.remove("pinching");
 
     const scale = clampScale(pinch.startScale * ratio);
     if (scale !== this.scale) {
@@ -890,6 +906,15 @@ export class ViewerPane {
     this.#layoutDpr = outputScale;
     const effectiveScale = Math.min(scale, MAX_SCALE);
     const isSwapped = this.rotation === 90 || this.rotation === 270;
+
+    // The gap above and below each page (or spread row) scales with the
+    // pages, so a pinch's preview — one transform over the whole stage —
+    // shows the gaps where its commit leaves them. Whole px, so pages land
+    // on pixel boundaries and the compositor never resamples them.
+    this.stage.style.setProperty(
+      "--page-gap",
+      `${Math.round(PAGE_GAP * effectiveScale)}px`,
+    );
 
     for (let i = 0; i < this.pages.length; i++) {
       const page = this.pages[i];

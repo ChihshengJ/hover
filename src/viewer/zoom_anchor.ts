@@ -1,10 +1,11 @@
 /**
  * Keeping the document point under the cursor or fingers fixed across a zoom.
  *
- * The stage does not grow in proportion to scale — every page carries a fixed
- * margin, and pages narrower than the pane are centred in it — so a point
- * can't be carried over as `scroll / scale`. It is held instead as a fraction
- * of the page it falls on, and found again on that page once it is relaid.
+ * The stage does not grow in proportion to scale — pages narrower than the
+ * pane are centred in it, and page sizes and gaps are rounded to whole px —
+ * so a point can't be carried over as `scroll / scale`. It is held instead as
+ * a fraction of the page it falls on, and found again on that page once it is
+ * relaid.
  */
 
 export const MIN_SCALE = 0.5;

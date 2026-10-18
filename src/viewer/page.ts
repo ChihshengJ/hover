@@ -241,8 +241,14 @@ export class PageView {
         pageData.height,
       );
 
+      // PDFium sizes the raster at one uniform scale, so on one axis it can
+      // come out a device pixel short of the canvas. Paint that sliver paper
+      // white, as PDFium fills its own bitmap: on this `alpha: false` context
+      // `clearRect` leaves opaque black, which night mode inverts to a white
+      // seam along the page edge.
       const ctx = this.ctx;
-      ctx.clearRect(0, 0, canvasWidth, canvasHeight);
+      ctx.fillStyle = "#fff";
+      ctx.fillRect(0, 0, canvasWidth, canvasHeight);
 
       const offsetX = Math.floor((canvasWidth - imageData.width) / 2);
       const offsetY = Math.floor((canvasHeight - imageData.height) / 2);

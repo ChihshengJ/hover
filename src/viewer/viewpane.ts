@@ -1,12 +1,12 @@
 import { PageView } from "./page.js";
 import { PaneControls } from "../ui/controls/pane_controls.js";
+import { ScrollBackButton } from "../ui/controls/scroll_back_button.js";
 import { TextSelectionManager } from "./text_manager.js";
+import { NearestSpanSelection } from "./nearest_span_selection.js";
+import { HandPan } from "./hand_pan.js";
+import { SpreadLayout } from "./spread_layout.js";
+import { watchDevicePixelRatio } from "./device_pixel_ratio.js";
 import { AnnotationManager } from "../ui/annotation/annotation_manager.js";
-import {
-  beginCustomSelectionGesture,
-  beginDragGesture,
-  isPointerToolActive,
-} from "./pointer_gesture.js";
 import { DocEvent, ANNOTATION_EVENTS } from "../model/doc_events.js";
 import {
   anchoredScroll,
@@ -25,6 +25,7 @@ import type { PDFDocumentModel } from "../model/doc.js";
 import type { DocEventName } from "../model/doc_events.js";
 import type { PageBox, ZoomAnchor } from "./zoom_anchor.js";
 import type { Edges } from "./detail_region.js";
+import type { SpreadMode } from "./spread_layout.js";
 import type {
   AnnotationHost,
   PaneAnnotationCallbacks,
@@ -59,16 +60,7 @@ export interface ViewerPaneOptions {
   pinned?: boolean;
 }
 
-/** 0: no spread; 1: even spread; 2: odd spread. */
-export type SpreadMode = 0 | 1 | 2;
-
-/** Where the reader was before a citation jump, so it can be offered back. */
-interface ScrollBackState {
-  scrollTop: number;
-  page: number;
-  timer: ReturnType<typeof setTimeout> | null;
-  el: HTMLElement | null;
-}
+export type { SpreadMode };
 
 export class ViewerPane {
   document: PDFDocumentModel;
@@ -96,25 +88,19 @@ export class ViewerPane {
   currentPage = 0;
 
   spreadMode: SpreadMode = 0;
-  spreadRows: HTMLElement[] = [];
-  spreadContainer: HTMLDivElement | null = null;
+  spreadLayout = new SpreadLayout();
 
   handMode = false;
-  isPanning = false;
-  panStart = { x: 0, y: 0, scrollLeft: 0, scrollTop: 0 };
+  handPan = new HandPan(() => this.scroller);
 
   /** CSS-based, per-pane: 0, 90, 180 or 270. */
   rotation = 0;
 
   textSelectionManager = new TextSelectionManager();
+  nearestSpanSelection: NearestSpanSelection | null = null;
   annotationManager: AnnotationManager | null = null;
 
-  _scrollBack: ScrollBackState = {
-    scrollTop: 0,
-    page: 0,
-    timer: null,
-    el: null,
-  };
+  scrollBack: ScrollBackButton;
 
   /**
    * The annotation entry points, republished here for the callers that only
@@ -153,12 +139,6 @@ export class ViewerPane {
     stageHeight: number;
   } | null = null;
 
-  _onPanStart: ((e: PointerEvent) => void) | null = null;
-  /** Releases the pan's gesture claim; see pointer_gesture.js. */
-  _releasePan: (() => void) | null = null;
-  _onPanMove: ((e: PointerEvent) => void) | null = null;
-  _onPanEnd: (() => void) | null = null;
-
   constructor(
     documentModel: PDFDocumentModel,
     paneEl: HTMLElement,
@@ -177,8 +157,12 @@ export class ViewerPane {
       getHandMode: () => this.handMode,
       zoom: (delta) => this.zoom(delta),
       fit: (mode, target) => this.fit(mode, target),
-      toggleHandMode: () => this.toggleHandMode(),
+      setHandMode: (on) => this.setHandMode(on),
       scrollToRelative: (delta) => this.scrollToRelative(delta),
+    });
+    this.scrollBack = new ScrollBackButton({
+      paneEl: this.paneEl,
+      getScroller: () => this.scroller,
     });
 
     this.document.subscribe(this);
@@ -206,10 +190,22 @@ export class ViewerPane {
       return pageView;
     });
     this.layoutPages(this.scale);
-    this.#watchDevicePixelRatio();
+    // Browser zoom changes the ratio *and* fires `resize`, whose handler
+    // already re-lays out every pane. So refresh only if nothing has laid out
+    // at the new ratio by the watcher's frame — otherwise each zoom step
+    // would render every visible page twice.
+    this.#unwatchDpr = watchDevicePixelRatio(() => {
+      if ((window.devicePixelRatio || 1) !== this.#layoutDpr) {
+        this.refreshAllPages();
+      }
+    });
     await new Promise((resolve) => setTimeout(resolve, 50));
     this.setupLazyRender();
-    this.#setupGlobalClickToSelect();
+    this.nearestSpanSelection = new NearestSpanSelection({
+      scroller: this.scroller,
+      getVisiblePages: () => this.visiblePages,
+      getHandMode: () => this.handMode,
+    });
     this.controls.bindScrollEvents();
     this.annotationManager = new AnnotationManager(this.#annotationHost());
   }
@@ -551,193 +547,6 @@ export class ViewerPane {
     }
   }
 
-  /**
-   * Selection for pointerdowns that land *off* a text span: anchor to the
-   * nearest span and drive the range ourselves. Because we compute the
-   * selection, the engine must not also run its own — see pointer_gesture.js.
-   */
-  #setupGlobalClickToSelect() {
-    let isSelecting = false;
-    let anchorNode: Node | null = null;
-    let anchorOffset = 0;
-    let releaseGesture: (() => void) | null = null;
-
-    const findNearestSpanAndOffset = (clientX: number, clientY: number) => {
-      let nearestSpan: HTMLSpanElement | null = null;
-      let nearestDistance = Infinity;
-
-      for (const pageView of this.visiblePages) {
-        const textLayer = pageView.textLayer;
-        const spans = textLayer.querySelectorAll("span");
-
-        for (const span of spans) {
-          if (!span.textContent || !span.firstChild) continue;
-
-          const rect = span.getBoundingClientRect();
-
-          let dx: number;
-          if (clientX < rect.left) {
-            dx = rect.left - clientX;
-          } else if (clientX > rect.right) {
-            dx = clientX - rect.right;
-          } else {
-            dx = 0;
-          }
-
-          let dy: number;
-          if (clientY < rect.top) {
-            dy = rect.top - clientY;
-          } else if (clientY > rect.bottom) {
-            dy = clientY - rect.bottom;
-          } else {
-            dy = 0;
-          }
-
-          const distSq = dx * dx + dy * dy * 4;
-
-          if (distSq < nearestDistance) {
-            nearestDistance = distSq;
-            nearestSpan = span;
-          }
-        }
-      }
-
-      if (!nearestSpan || !nearestSpan.firstChild) return null;
-
-      // Calculate offset within text
-      const rect = nearestSpan.getBoundingClientRect();
-      const textNode = nearestSpan.firstChild;
-      const text = textNode.textContent ?? "";
-
-      let offset: number;
-      if (clientX <= rect.left) {
-        offset = 0;
-      } else if (clientX >= rect.right) {
-        offset = text.length;
-      } else {
-        const proportion = (clientX - rect.left) / rect.width;
-        offset = Math.round(proportion * text.length);
-      }
-
-      return { node: textNode, offset, span: nearestSpan };
-    };
-
-    const updateSelection = (clientX: number, clientY: number) => {
-      const focus = findNearestSpanAndOffset(clientX, clientY);
-      if (!focus || !anchorNode) return;
-
-      const selection = document.getSelection()!;
-      const range = document.createRange();
-
-      const position = anchorNode.compareDocumentPosition(focus.node);
-
-      let startNode: Node;
-      let startOffset: number;
-      let endNode: Node;
-      let endOffset: number;
-
-      if (position & Node.DOCUMENT_POSITION_FOLLOWING) {
-        // Anchor comes before focus
-        startNode = anchorNode;
-        startOffset = anchorOffset;
-        endNode = focus.node;
-        endOffset = focus.offset;
-      } else if (position & Node.DOCUMENT_POSITION_PRECEDING) {
-        // Focus comes before anchor
-        startNode = focus.node;
-        startOffset = focus.offset;
-        endNode = anchorNode;
-        endOffset = anchorOffset;
-      } else {
-        // Same node
-        startNode = anchorNode;
-        endNode = anchorNode;
-        if (anchorOffset < focus.offset) {
-          startOffset = anchorOffset;
-          endOffset = focus.offset;
-        } else {
-          startOffset = focus.offset;
-          endOffset = anchorOffset;
-        }
-      }
-
-      try {
-        range.setStart(startNode, startOffset);
-        range.setEnd(endNode, endOffset);
-        selection.removeAllRanges();
-        selection.addRange(range);
-      } catch (e) {
-        console.warn("Selection range error:", e);
-      }
-    };
-
-    this.scroller.addEventListener("pointerdown", (e) => {
-      // Lowest of the three gestures: a drag tool owns the pointer outright,
-      // and in hand mode the pan does. See pointer_gesture.js.
-      if (isPointerToolActive() || this.handMode) return;
-
-      if ((e.target as Element).closest(".textLayer span")) return;
-
-      if (
-        (e.target as Element).closest(
-          "a, button, .pane-controls, .annotationLayer a",
-        )
-      )
-        return;
-
-      if (e.button !== 0) return;
-
-      const anchor = findNearestSpanAndOffset(e.clientX, e.clientY);
-      if (!anchor) return;
-
-      const maxDistance = 500;
-      const rect = anchor.span.getBoundingClientRect();
-      const dx = Math.max(
-        0,
-        Math.max(rect.left - e.clientX, e.clientX - rect.right),
-      );
-      const dy = Math.max(
-        0,
-        Math.max(rect.top - e.clientY, e.clientY - rect.bottom),
-      );
-      if (dx * dx + dy * dy > maxDistance * maxDistance) return;
-
-      e.preventDefault();
-      // preventDefault() above only suppresses the engine's own selection on
-      // Blink; WebKit/Gecko need the claim.
-      releaseGesture = beginCustomSelectionGesture();
-
-      isSelecting = true;
-      anchorNode = anchor.node;
-      anchorOffset = anchor.offset;
-
-      const selection = document.getSelection()!;
-      const range = document.createRange();
-      range.setStart(anchorNode, anchorOffset);
-      range.collapse(true);
-      selection.removeAllRanges();
-      selection.addRange(range);
-
-      anchor.span.closest(".textLayer")?.classList.add("selecting");
-      anchor.span.closest(".page-wrapper")?.classList.add("text-selecting");
-    });
-
-    document.addEventListener("pointermove", (e) => {
-      if (!isSelecting) return;
-      e.preventDefault();
-      updateSelection(e.clientX, e.clientY);
-    });
-
-    document.addEventListener("pointerup", () => {
-      if (!isSelecting) return;
-      isSelecting = false;
-      anchorNode = null;
-      anchorOffset = 0;
-      releaseGesture?.();
-      releaseGesture = null;
-    });
-  }
-
   //*******************
   // Viewer controls
   // ******************
@@ -991,7 +800,7 @@ export class ViewerPane {
       behavior: "smooth",
     });
 
-    this.#showScrollBackButton(originScrollTop, originPage);
+    this.scrollBack.show(originScrollTop, originPage);
   }
 
   scrollToTop() {
@@ -1011,69 +820,6 @@ export class ViewerPane {
     const target = this.pages.find((p) => p.pageNumber === n);
     if (target)
       target.wrapper.scrollIntoView({ behavior: "instant", block: "start" });
-  }
-
-  // ==================
-  // Scroll-back button
-  // ==================
-
-  #showScrollBackButton(scrollTop: number, page: number) {
-    this.#dismissScrollBackButton(true);
-
-    this._scrollBack.scrollTop = scrollTop;
-    this._scrollBack.page = page;
-
-    const btn = document.createElement("button");
-    btn.className = "scroll-back-btn";
-    btn.title = `Back to page ${page}`;
-    btn.innerHTML = `
-      <svg width="14" height="14" viewBox="0 0 14 14" fill="none" xmlns="http://www.w3.org/2000/svg">
-        <path d="M11 7H3M3 7L6.5 3.5M3 7L6.5 10.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
-      </svg>
-      <span> Back to page ${page}</span>
-    `;
-
-    btn.addEventListener("click", () => {
-      this.scroller.scrollTo({
-        top: this._scrollBack.scrollTop,
-        behavior: "instant",
-      });
-      this.#dismissScrollBackButton();
-    });
-
-    this.paneEl.appendChild(btn);
-    this._scrollBack.el = btn;
-
-    requestAnimationFrame(() => btn.classList.add("visible"));
-
-    this._scrollBack.timer = setTimeout(() => {
-      this.#dismissScrollBackButton();
-    }, 7000);
-  }
-
-  #dismissScrollBackButton(immediate = false) {
-    const { el, timer } = this._scrollBack;
-    if (timer) {
-      clearTimeout(timer);
-      this._scrollBack.timer = null;
-    }
-    if (!el) return;
-
-    if (immediate) {
-      el.remove();
-      this._scrollBack.el = null;
-      return;
-    }
-
-    el.classList.add("fading");
-    el.addEventListener(
-      "transitionend",
-      () => {
-        el.remove();
-        if (this._scrollBack.el === el) this._scrollBack.el = null;
-      },
-      { once: true },
-    );
   }
 
   /**
@@ -1198,52 +944,9 @@ export class ViewerPane {
     }
   }
 
-  #dprQuery: MediaQueryList | null = null;
-  #onDprChange: (() => void) | null = null;
-  #dprRAF: number | null = null;
   /** devicePixelRatio the last `layoutPages` sized the backing stores for. */
   #layoutDpr = 0;
-
-  /**
-   * Re-lay out and re-render when devicePixelRatio changes — the window moved
-   * to a display with a different density, or browser zoom changed. Moving
-   * between displays doesn't always fire `resize`, and the backing stores
-   * would otherwise stay sized for the old ratio. A `resolution` query only
-   * matches one ratio, so it is re-armed for the new one on every change.
-   *
-   * Browser zoom changes the ratio *and* fires `resize`, whose handler already
-   * re-lays out every pane. So wait a frame, and refresh only if nothing has
-   * laid out at the new ratio by then — otherwise each zoom step would render
-   * every visible page twice.
-   */
-  #watchDevicePixelRatio() {
-    this.#unwatchDevicePixelRatio();
-    this.#dprQuery = window.matchMedia(
-      `(resolution: ${window.devicePixelRatio}dppx)`,
-    );
-    this.#onDprChange = () => {
-      this.#watchDevicePixelRatio();
-      this.#dprRAF = requestAnimationFrame(() => {
-        this.#dprRAF = null;
-        if ((window.devicePixelRatio || 1) !== this.#layoutDpr) {
-          this.refreshAllPages();
-        }
-      });
-    };
-    this.#dprQuery.addEventListener("change", this.#onDprChange, {
-      once: true,
-    });
-  }
-
-  #unwatchDevicePixelRatio() {
-    if (this.#dprQuery && this.#onDprChange) {
-      this.#dprQuery.removeEventListener("change", this.#onDprChange);
-    }
-    if (this.#dprRAF !== null) cancelAnimationFrame(this.#dprRAF);
-    this.#dprQuery = null;
-    this.#onDprChange = null;
-    this.#dprRAF = null;
-  }
+  #unwatchDpr: (() => void) | null = null;
 
   async refreshAllPages() {
     await this.layoutPages(this.scale);
@@ -1294,14 +997,8 @@ export class ViewerPane {
     if (this.spreadMode === mode) return;
 
     const currentPage = this.getCurrentPage();
-    this.#clearSpreadLayout();
     this.spreadMode = mode;
-
-    if (mode === 0) {
-      this.#layoutSinglePage();
-    } else {
-      this.#layoutSpread(mode);
-    }
+    this.spreadLayout.apply(this.stage, this.pages, mode);
 
     if (currentPage > 0) {
       this.goToPage(currentPage);
@@ -1311,106 +1008,6 @@ export class ViewerPane {
       this.fit(1, 1);
       this.annotationManager?.refresh();
     });
-  }
-
-  #clearSpreadLayout() {
-    for (const row of this.spreadRows) {
-      while (row.firstChild) {
-        this.stage.appendChild(row.firstChild);
-      }
-      row.remove();
-    }
-    this.spreadRows = [];
-
-    if (this.spreadContainer) {
-      while (this.spreadContainer.firstChild) {
-        this.stage.appendChild(this.spreadContainer.firstChild);
-      }
-      this.spreadContainer.remove();
-      this.spreadContainer = null;
-    }
-  }
-
-  #layoutSinglePage() {
-    for (const pageView of this.pages) {
-      pageView.wrapper.classList.remove(
-        "spread-page",
-        "spread-page-left",
-        "spread-page-right",
-        "spread-page-single",
-      );
-      this.stage.appendChild(pageView.wrapper);
-    }
-  }
-
-  #layoutSpread(mode: SpreadMode) {
-    this.spreadContainer = document.createElement("div");
-    this.spreadContainer.className = "spread-container";
-    this.stage.appendChild(this.spreadContainer);
-
-    // Group pages into pairs based on mode
-    const pairs = this.#createPagePairs(mode);
-
-    for (const pair of pairs) {
-      const row = document.createElement("div");
-      row.className = "spread-row";
-
-      if (pair.length === 1) {
-        // Single page (first page in odd mode, or last page if odd total)
-        const pageView = pair[0];
-        pageView.wrapper.classList.add("spread-page", "spread-page-single");
-        pageView.wrapper.classList.remove(
-          "spread-page-left",
-          "spread-page-right",
-        );
-        row.appendChild(pageView.wrapper);
-        row.classList.add("spread-row-single");
-      } else {
-        // Page pair
-        const [left, right] = pair;
-
-        left.wrapper.classList.add("spread-page", "spread-page-left");
-        left.wrapper.classList.remove(
-          "spread-page-single",
-          "spread-page-right",
-        );
-        row.appendChild(left.wrapper);
-
-        right.wrapper.classList.add("spread-page", "spread-page-right");
-        right.wrapper.classList.remove(
-          "spread-page-single",
-          "spread-page-left",
-        );
-        row.appendChild(right.wrapper);
-      }
-
-      this.spreadContainer.appendChild(row);
-      this.spreadRows.push(row);
-    }
-  }
-
-  #createPagePairs(mode: SpreadMode): PageView[][] {
-    const pairs: PageView[][] = [];
-    if (mode === 1) {
-      for (let i = 0; i < this.pages.length; i += 2) {
-        if (i + 1 < this.pages.length) {
-          pairs.push([this.pages[i], this.pages[i + 1]]);
-        } else {
-          pairs.push([this.pages[i]]);
-        }
-      }
-    } else if (mode === 2) {
-      pairs.push([this.pages[0]]);
-      for (let i = 1; i < this.pages.length; i += 2) {
-        if (i + 1 < this.pages.length) {
-          pairs.push([this.pages[i], this.pages[i + 1]]);
-        } else {
-          pairs.push([this.pages[i]]);
-        }
-      }
-    }
-
-    return pairs;
   }
 
   onDocumentChange(event: DocEventName, data?: Record<string, any>) {
@@ -1436,20 +1033,17 @@ export class ViewerPane {
     this.textSelectionManager.clearSelection();
   }
 
-  toggleHandMode() {
-    this.handMode = !this.handMode;
+  setHandMode(on: boolean) {
+    if (this.handMode === on) return;
+    this.handMode = on;
 
-    if (this.handMode) {
+    if (on) {
       // Clear any existing selection
       this.clearSelection();
-      this.scroller.classList.add("hand-mode");
-      this.#setupPanHandler();
+      this.handPan.enable();
     } else {
-      this.scroller.classList.remove("hand-mode", "panning");
-      this.#teardownPanHandler();
+      this.handPan.disable();
     }
-
-    return this.handMode;
   }
 
   // ==================
@@ -1488,79 +1082,10 @@ export class ViewerPane {
     this.annotationManager?.refresh();
   }
 
-  #setupPanHandler() {
-    this._onPanStart = (e: PointerEvent) => {
-      // Only handle left mouse button
-      if (e.button !== 0) return;
-
-      // A drawing or region-select drag outranks the hand: without this both
-      // ran, and the page scrolled out from under the tool's own gesture.
-      if (isPointerToolActive()) return;
-
-      // Ignore clicks on interactive elements
-      if (
-        (e.target as Element).closest(
-          "a, button, .pane-controls, .annotation-toolbar-container",
-        )
-      )
-        return;
-
-      e.preventDefault();
-      // The pan outranks text selection in turn. The hand-mode CSS already
-      // makes the text layer unselectable, but a drag that starts off it can
-      // still arm a selection in WebKit, which no CSS can call back.
-      this._releasePan = beginDragGesture();
-      this.isPanning = true;
-      this.scroller.classList.add("panning");
-
-      this.panStart = {
-        x: e.clientX,
-        y: e.clientY,
-        scrollLeft: this.scroller.scrollLeft,
-        scrollTop: this.scroller.scrollTop,
-      };
-    };
-
-    this._onPanMove = (e: PointerEvent) => {
-      if (!this.isPanning) return;
-
-      const deltaX = e.clientX - this.panStart.x;
-      const deltaY = e.clientY - this.panStart.y;
-
-      this.scroller.scrollLeft = this.panStart.scrollLeft - deltaX;
-      this.scroller.scrollTop = this.panStart.scrollTop - deltaY;
-    };
-
-    this._onPanEnd = () => {
-      if (!this.isPanning) return;
-      this.isPanning = false;
-      this.scroller.classList.remove("panning");
-      this._releasePan?.();
-      this._releasePan = null;
-    };
-
-    this.scroller.addEventListener("pointerdown", this._onPanStart);
-    document.addEventListener("pointermove", this._onPanMove);
-    document.addEventListener("pointerup", this._onPanEnd);
-  }
-
-  #teardownPanHandler() {
-    this._releasePan?.();
-    this._releasePan = null;
-    this.isPanning = false;
-    if (this._onPanStart) {
-      this.scroller.removeEventListener("pointerdown", this._onPanStart);
-      document.removeEventListener("pointermove", this._onPanMove!);
-      document.removeEventListener("pointerup", this._onPanEnd!);
-      this._onPanStart = null;
-      this._onPanMove = null;
-      this._onPanEnd = null;
-    }
-  }
-
   destroy() {
     this.document.unsubscribe(this);
-    this.#unwatchDevicePixelRatio();
+    this.#unwatchDpr?.();
+    this.#unwatchDpr = null;
     if (this.observer) {
       for (const page of this.pages) {
         this.observer.unobserve(page.wrapper);
@@ -1573,16 +1098,18 @@ export class ViewerPane {
       this.centerObserver = null;
       this.centeredPages.clear();
     }
-    // Hand mode parks listeners on `document`; without this they outlive the
-    // pane and keep scrolling a detached scroller.
-    this.#teardownPanHandler();
+    // Hand mode and the off-span selection park listeners on `document`;
+    // without this they outlive the pane.
+    this.handPan.disable();
+    this.nearestSpanSelection?.destroy();
+    this.nearestSpanSelection = null;
     this.controls.destroy();
     this.textSelectionManager.destroy();
     this.annotationManager?.destroy();
-    this.#dismissScrollBackButton(true);
+    this.scrollBack.destroy();
 
     // Clean up spread layout
-    this.#clearSpreadLayout();
+    this.spreadLayout.clear(this.stage);
 
     if (this.#renderTimer !== null) clearTimeout(this.#renderTimer);
     this.#renderTimer = null;

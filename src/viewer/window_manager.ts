@@ -194,6 +194,9 @@ export class SplitWindowManager {
 
     paneToRemove.destroy();
     paneToRemove.paneEl.remove();
+    // Hand mode is split-only: its toggle lives in the pane control strip,
+    // which a single pane doesn't have.
+    paneToKeep.setHandMode(false);
 
     this.panes = [paneToKeep];
     this.activePane = paneToKeep;

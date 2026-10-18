@@ -8,6 +8,7 @@
 
 import { getSharedImageModal } from "../controls/image_modal.js";
 import { onPointerDrag } from "../../viewer/pointer_gesture.js";
+import { applyTextGamma } from "../../viewer/text_gamma.js";
 import { PaneToolBinding } from "./pane_tool_binding.js";
 
 import type { PageView } from "../../viewer/page.js";
@@ -371,6 +372,9 @@ export class RegionSelectController {
           rgba[dst + 3] = 255; // A (opaque, bitmap has no alpha)
         }
       }
+
+      // The same text weight as the page on screen, so the capture matches it.
+      applyTextGamma(rgba);
 
       return new ImageData(rgba, bitmapW, bitmapH);
     } finally {

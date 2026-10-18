@@ -9,6 +9,7 @@ import type { TextLine } from "../analysis/text_index.js";
 import type { CrossReference } from "../analysis/cross_reference_builder.js";
 import type { CitationTarget } from "../analysis/citation_builder.js";
 import { buildLuminanceMap, clearLuminanceMap } from "./page_luminance.js";
+import { applyTextGamma } from "./text_gamma.js";
 
 let sharedPopup: CitationPopup | null = null;
 function getSharedPopup(): CitationPopup {
@@ -221,6 +222,8 @@ export class PageView {
       // Painting now would put stale pixels on the canvas and, worse, mark it
       // rendered, so the page would never be redrawn correctly.
       if (generation !== this.#renderGeneration) return;
+
+      applyTextGamma(pageData.data);
 
       const imageData = new ImageData(
         pageData.data,

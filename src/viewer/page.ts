@@ -87,8 +87,6 @@ export class PageView {
    */
   #renderGeneration = 0;
   scale = 1;
-  /** Set by `resize()`, consumed by the next `render()`. */
-  pendingRenderScale?: number;
 
   _cachedSpans: CachedSpan[] | null = null;
   _lastTextScale: number | null = null;
@@ -211,9 +209,9 @@ export class PageView {
     return endOfContent;
   }
 
-  async render(requestedScale?: number) {
+  async render(scale: number) {
     const generation = ++this.#renderGeneration;
-    this.scale = requestedScale || this.pendingRenderScale || 1;
+    this.scale = scale;
 
     const page = this.#getPage();
     if (!page) {
@@ -874,16 +872,6 @@ export class PageView {
     }
     const anchor = sharedPopup?.currentAnchor;
     if (anchor && this.wrapper.contains(anchor)) sharedPopup.hide(true);
-  }
-
-  async resize(scale: number) {
-    this.scale = scale;
-    this.pendingRenderScale = scale;
-  }
-
-  async renderIfNeed() {
-    if (this.canvas.dataset.rendered === "true") return;
-    await this.render();
   }
 
   /**

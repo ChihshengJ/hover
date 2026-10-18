@@ -23,6 +23,8 @@ import type {
 
 /** Gap above and below each page, in PDF points; 14px at the default 1.7. */
 const PAGE_GAP = 8;
+/** Gap between the two pages of a spread, in CSS px; `.spread-row` in viewer.css. */
+const SPREAD_GUTTER = 4;
 
 export interface ViewerPaneOptions {
   id?: string;
@@ -283,10 +285,8 @@ export class ViewerPane {
   }
 
   scrollToRelative(delta: number) {
-    const current = this.getCurrentPage();
-    const target = this.pages.find((p) => p.pageNumber === current + delta);
-    if (target)
-      target.wrapper.scrollIntoView({ behavior: "smooth", block: "center" });
+    const target = this.#page(this.getCurrentPage() + delta);
+    target?.wrapper.scrollIntoView({ behavior: "smooth", block: "center" });
   }
 
   async scrollToPoint(pageIndex: number, top: number, center = false) {
@@ -317,9 +317,7 @@ export class ViewerPane {
   }
 
   scrollToTop() {
-    const target = this.pages.find((p) => p.pageNumber === 1);
-    if (target)
-      target.wrapper.scrollIntoView({ behavior: "instant", block: "start" });
+    this.goToPage(1);
   }
 
   scrollToBottom() {
@@ -330,9 +328,15 @@ export class ViewerPane {
   }
 
   goToPage(n: number) {
-    const target = this.pages.find((p) => p.pageNumber === n);
-    if (target)
-      target.wrapper.scrollIntoView({ behavior: "instant", block: "start" });
+    this.#page(n)?.wrapper.scrollIntoView({
+      behavior: "instant",
+      block: "start",
+    });
+  }
+
+  /** The page numbered `n` (1-based), if there is one. */
+  #page(n: number): PageView | undefined {
+    return this.pages[n - 1];
   }
 
   /**
@@ -386,33 +390,30 @@ export class ViewerPane {
   }
 
   fit(percentage = 1, overrideMode = 0) {
-    const viewRect = this.scroller.getBoundingClientRect();
-    const fitMode = overrideMode === 1 ? 1 : this.fitMode;
-    const isSwapped = isQuarterTurn(this.rotation);
+    const view = this.scroller.getBoundingClientRect();
+    const byWidth = overrideMode === 1 || this.fitMode === 1;
     const dims = this.document.pageDimensions[0];
+    // The page's extent as it shows on screen, rotation included.
+    const [pageWidth, pageHeight] = isQuarterTurn(this.rotation)
+      ? [dims?.height, dims?.width]
+      : [dims?.width, dims?.height];
+    const pageExtent = byWidth ? pageWidth : pageHeight;
+    if (!pageExtent) return;
 
-    if (fitMode === 1) {
-      if (this.spreadMode === 0) {
-        const intrinsicWidth = isSwapped ? dims?.height : dims?.width;
-        if (!intrinsicWidth) return;
-
-        const targetScale = (viewRect.width / intrinsicWidth) * percentage;
-        this.zoomAt(targetScale, viewRect.width / 2, viewRect.height / 2);
-      } else {
-        const pageWidth = (isSwapped ? dims?.height : dims?.width) || 0;
-        const spreadWidth = pageWidth * 2 + 4;
-        const targetScale = (viewRect.width / spreadWidth) * percentage;
-        this.zoomAt(targetScale, viewRect.width / 2, viewRect.height / 2);
-      }
-      this.fitMode = 2;
+    let targetScale: number;
+    if (!byWidth) {
+      targetScale = view.height / pageExtent;
+    } else if (this.spreadMode === 0) {
+      targetScale = view.width / pageExtent;
     } else {
-      const intrinsicHeight = isSwapped ? dims?.width : dims?.height;
-      if (!intrinsicHeight) return;
-      const targetScale = (viewRect.height / intrinsicHeight) * percentage;
-      this.zoomAt(targetScale, viewRect.width / 2, viewRect.height / 2);
-      this.fitMode = 1;
+      // Two pages side by side. The gutter between them is fixed CSS px and
+      // doesn't scale, so it comes off the width before the pages share it.
+      targetScale = (view.width - SPREAD_GUTTER) / (pageExtent * 2);
     }
+    this.zoomAt(targetScale * percentage, view.width / 2, view.height / 2);
 
+    // Each fit alternates with the other for next time.
+    this.fitMode = byWidth ? 2 : 1;
     return this.fitMode;
   }
 

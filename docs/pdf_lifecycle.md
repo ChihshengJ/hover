@@ -302,7 +302,8 @@ already-rendered document.
 
 1. `native.renderPageRaw(pdfDoc, page, { scaleFactor, withAnnotations: false })`
 2. Wrap the result in `new ImageData(...)` and `ctx.putImageData()` onto the
-   page's canvas, centred.
+   page's canvas at its origin. The scale is the larger of the two axes', so
+   the raster covers the canvas and its pixel or so of overhang is clipped.
 3. Rebuild the overlay layers: URL links, citation overlays, cross-ref overlays,
    and the text layer (from `textIndex.getPageLines()`, cached as `_cachedSpans`
    and merely rescaled on zoom).

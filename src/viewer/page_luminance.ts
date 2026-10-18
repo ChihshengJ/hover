@@ -33,9 +33,6 @@ const PATCH = 28;
 interface LuminanceMap {
   cols: number;
   rows: number;
-  /** Where the raster sits on the canvas — `render()` centres it. */
-  offsetX: number;
-  offsetY: number;
   /** Row-major, one Rec.601 luma byte per cell. */
   cells: Uint8Array;
 }
@@ -45,19 +42,15 @@ const maps = new WeakMap<HTMLCanvasElement, LuminanceMap>();
 /**
  * Reduce a freshly rendered page raster to a luminance grid and attach it to
  * the canvas it was drawn on. Call this from the render path, with the same
- * `ImageData` and centring offsets that went to `putImageData`.
+ * raster that went to `putImageData` at the canvas origin.
  *
  * @param data RGBA raster, as PDFium produced it
- * @param offsetX where the raster's left edge landed on the canvas
- * @param offsetY where the raster's top edge landed on the canvas
  */
 export function buildLuminanceMap(
   canvas: HTMLCanvasElement,
   data: Uint8ClampedArray,
   width: number,
   height: number,
-  offsetX: number,
-  offsetY: number,
 ): void {
   const cols = Math.max(1, Math.ceil(width / BLOCK));
   const rows = Math.max(1, Math.ceil(height / BLOCK));
@@ -83,7 +76,7 @@ export function buildLuminanceMap(
     }
   }
 
-  maps.set(canvas, { cols, rows, offsetX, offsetY, cells });
+  maps.set(canvas, { cols, rows, cells });
 }
 
 /** Drop a canvas's map, when the page it belonged to is released. */
@@ -108,17 +101,12 @@ export function sampleLuminance(
   if (!map) return null;
 
   const { cols, rows, cells } = map;
-  const rx = px - map.offsetX;
-  const ry = py - map.offsetY;
   const half = PATCH / 2;
 
-  // Clamped to the raster rather than to the canvas: where the canvas is wider
-  // than the page it holds, the margin is cleared pixels, which on an
-  // `alpha: false` context read back as black and would drag the average down.
-  const c0 = clamp(Math.floor((rx - half) / BLOCK), 0, cols - 1);
-  const c1 = clamp(Math.floor((rx + half) / BLOCK), 0, cols - 1);
-  const r0 = clamp(Math.floor((ry - half) / BLOCK), 0, rows - 1);
-  const r1 = clamp(Math.floor((ry + half) / BLOCK), 0, rows - 1);
+  const c0 = clamp(Math.floor((px - half) / BLOCK), 0, cols - 1);
+  const c1 = clamp(Math.floor((px + half) / BLOCK), 0, cols - 1);
+  const r0 = clamp(Math.floor((py - half) / BLOCK), 0, rows - 1);
+  const r1 = clamp(Math.floor((py + half) / BLOCK), 0, rows - 1);
 
   let sum = 0;
   let n = 0;

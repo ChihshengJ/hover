@@ -201,9 +201,16 @@ export class PageView {
     const pageWidth = page.size.width;
     const pageHeight = page.size.height;
 
+    // The canvas's width and height are rounded to device px separately, so
+    // the two axes' scales differ by a fraction of a pixel, and PDFium renders
+    // at one uniform scale. Take the larger: the raster then covers the
+    // canvas on both axes, and the at most a pixel or two it overhangs on the
+    // other is clipped. The smaller left that axis short, and the uncovered
+    // strip — opaque black on this `alpha: false` context — showed as a white
+    // seam along the page edge once night mode inverted it.
     const scaleX = canvasWidth / pageWidth;
     const scaleY = canvasHeight / pageHeight;
-    const renderScale = Math.min(scaleX, scaleY);
+    const renderScale = Math.max(scaleX, scaleY);
 
     try {
       if (!this.textSlices) {
@@ -241,18 +248,11 @@ export class PageView {
         pageData.height,
       );
 
-      // PDFium sizes the raster at one uniform scale, so on one axis it can
-      // come out a device pixel short of the canvas. Paint that sliver paper
-      // white, as PDFium fills its own bitmap: on this `alpha: false` context
-      // `clearRect` leaves opaque black, which night mode inverts to a white
-      // seam along the page edge.
-      const ctx = this.ctx;
-      ctx.fillStyle = "#fff";
-      ctx.fillRect(0, 0, canvasWidth, canvasHeight);
-
-      const offsetX = Math.floor((canvasWidth - imageData.width) / 2);
-      const offsetY = Math.floor((canvasHeight - imageData.height) / 2);
-      ctx.putImageData(imageData, offsetX, offsetY);
+      // The raster covers the whole canvas (see renderScale), so it replaces
+      // every pixel and nothing needs clearing first. Anchored at the origin,
+      // like the text and annotation layers, so the overhang falls off the
+      // right or bottom edge rather than shifting the page.
+      this.ctx.putImageData(imageData, 0, 0);
 
       // Reduce the raster to a luminance grid while we still hold it in JS.
       // This is what keeps the liquid-glass ball from having to read pixels
@@ -262,8 +262,6 @@ export class PageView {
         pageData.data,
         pageData.width,
         pageData.height,
-        offsetX,
-        offsetY,
       );
 
       const cssWidth = parseFloat(this.canvas.style.width);

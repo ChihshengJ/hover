@@ -192,6 +192,109 @@ export class PdfiumPageReader {
   }
 
   /**
+   * One box per run of a visible text object, as fractions of the displayed
+   * page, packed [left, top, right, bottom, ...]. See docs/text_rendering.md §6.
+   */
+  readVisibleTextBoxes(
+    pagePtr: number,
+    textPagePtr: number,
+    charCount: number,
+  ): Float32Array {
+    const pdfium = this.#pdfium;
+    const ffi = this.#ffi;
+
+    // Fit the page-space → displayed-fraction affine map on a large virtual device.
+    const N = 1 << 20;
+    const [ox, oy, ax, ay, bx, by] = ffi.frame(() => {
+      const [dx, dy] = ffi.slots(2, 4);
+      const at = (x: number, y: number) => {
+        pdfium.FPDF_PageToDevice(pagePtr, 0, 0, N, N, 0, x, y, dx, dy);
+        return [ffi.i32(dx) / N, ffi.i32(dy) / N];
+      };
+      const o = at(0, 0);
+      const ex = at(1000, 0);
+      const ey = at(0, 1000);
+      return [
+        o[0],
+        o[1],
+        (ex[0] - o[0]) / 1000,
+        (ex[1] - o[1]) / 1000,
+        (ey[0] - o[0]) / 1000,
+        (ey[1] - o[1]) / 1000,
+      ];
+    });
+
+    const boxes: number[] = [];
+    // The open run, in page space (y up).
+    let runObj = 0;
+    let left = 0;
+    let top = 0;
+    let right = 0;
+    let bottom = 0;
+    const flush = () => {
+      if (!runObj) return;
+      const xs = [left, right];
+      const ys = [bottom, top];
+      let minX = Infinity;
+      let minY = Infinity;
+      let maxX = -Infinity;
+      let maxY = -Infinity;
+      for (const x of xs) {
+        for (const y of ys) {
+          const u = ox + ax * x + bx * y;
+          const v = oy + ay * x + by * y;
+          minX = Math.min(minX, u);
+          maxX = Math.max(maxX, u);
+          minY = Math.min(minY, v);
+          maxY = Math.max(maxY, v);
+        }
+      }
+      boxes.push(minX, minY, maxX, maxY);
+    };
+
+    const visible = new Map<number, boolean>();
+    ffi.frame(() => {
+      // FS_RECTF: left, top, right, bottom as f32, contiguous.
+      const [rect] = ffi.slots(4, 4);
+      for (let i = 0; i < charCount; i++) {
+        // Null for the spaces and line breaks PDFium generates itself.
+        const obj = pdfium.FPDFText_GetTextObject(textPagePtr, i);
+        if (!obj) continue;
+        let shown = visible.get(obj);
+        if (shown === undefined) {
+          // 3 is invisible, 7 is clip-only.
+          const mode = pdfium.FPDFTextObj_GetTextRenderMode(obj);
+          shown = mode !== 3 && mode !== 7;
+          visible.set(obj, shown);
+        }
+        if (!shown) continue;
+        if (!pdfium.FPDFText_GetLooseCharBox(textPagePtr, i, rect)) continue;
+
+        const l = ffi.f32(rect);
+        const t = ffi.f32(rect + 4);
+        const r = ffi.f32(rect + 8);
+        const b = ffi.f32(rect + 12);
+        if (obj === runObj) {
+          left = Math.min(left, l);
+          top = Math.max(top, t);
+          right = Math.max(right, r);
+          bottom = Math.min(bottom, b);
+        } else {
+          flush();
+          runObj = obj;
+          left = l;
+          top = t;
+          right = r;
+          bottom = b;
+        }
+      }
+    });
+    flush();
+
+    return new Float32Array(boxes);
+  }
+
+  /**
    * Font size and family for the character at `charIndex`.
    *
    */

@@ -9,6 +9,7 @@ import type { TextLine } from "../analysis/text_index.js";
 import type { CrossReference } from "../analysis/cross_reference_builder.js";
 import type { CitationTarget } from "../analysis/citation_builder.js";
 import { buildLuminanceMap, clearLuminanceMap } from "./page_luminance.js";
+import { TEXT_GAMMA_ENABLED, applyTextGamma } from "./text_gamma.js";
 
 let sharedPopup: CitationPopup | null = null;
 function getSharedPopup(): CitationPopup {
@@ -200,9 +201,10 @@ export class PageView {
     const pageWidth = page.size.width;
     const pageHeight = page.size.height;
 
+    // Larger axis scale, so the raster covers the canvas (docs/pdf_lifecycle.md §5).
     const scaleX = canvasWidth / pageWidth;
     const scaleY = canvasHeight / pageHeight;
-    const renderScale = Math.min(scaleX, scaleY);
+    const renderScale = Math.max(scaleX, scaleY);
 
     try {
       if (!this.textSlices) {
@@ -222,18 +224,21 @@ export class PageView {
       // rendered, so the page would never be redrawn correctly.
       if (generation !== this.#renderGeneration) return;
 
+      if (TEXT_GAMMA_ENABLED) {
+        const boxes = this.doc.getPageTextBoxes(this.pageNumber - 1);
+        if (boxes) {
+          applyTextGamma(pageData.data, pageData.width, pageData.height, boxes);
+        }
+      }
+
       const imageData = new ImageData(
         pageData.data,
         pageData.width,
         pageData.height,
       );
 
-      const ctx = this.ctx;
-      ctx.clearRect(0, 0, canvasWidth, canvasHeight);
-
-      const offsetX = Math.floor((canvasWidth - imageData.width) / 2);
-      const offsetY = Math.floor((canvasHeight - imageData.height) / 2);
-      ctx.putImageData(imageData, offsetX, offsetY);
+      // Covers every pixel, so no clear; the overhang clips off the right or bottom.
+      this.ctx.putImageData(imageData, 0, 0);
 
       // Reduce the raster to a luminance grid while we still hold it in JS.
       // This is what keeps the liquid-glass ball from having to read pixels
@@ -243,8 +248,6 @@ export class PageView {
         pageData.data,
         pageData.width,
         pageData.height,
-        offsetX,
-        offsetY,
       );
 
       const cssWidth = parseFloat(this.canvas.style.width);

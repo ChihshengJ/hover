@@ -301,11 +301,33 @@ already-rendered document.
 `PageView.render()` (`src/viewer/page.ts`) is the per-page read path:
 
 1. `native.renderPageRaw(pdfDoc, page, { scaleFactor, withAnnotations: false })`
-2. Wrap the result in `new ImageData(...)` and `ctx.putImageData()` onto the
-   page's canvas, centred.
-3. Rebuild the overlay layers: URL links, citation overlays, cross-ref overlays,
+2. On macOS, darken the text in the raster (`applyTextGamma`, see
+   `docs/text_rendering.md` §6).
+3. Wrap the result in `new ImageData(...)` and `ctx.putImageData()` onto the
+   page's canvas at its origin, then reduce it to the luminance grid the
+   liquid-glass ball samples (`buildLuminanceMap`).
+4. Rebuild the overlay layers: URL links, citation overlays, cross-ref overlays,
    and the text layer (from `textIndex.getPageLines()`, cached as `_cachedSpans`
    and merely rescaled on zoom).
+
+### Render scale
+
+`layoutPages` sizes the canvas backing store per axis, as
+`ceil(round(cssSize) * dpr)`, so the width and height scales
+(`canvas.width / page.width`, `canvas.height / page.height`) differ by a
+fraction of a pixel. PDFium renders at one uniform scale and sizes its raster
+as `round(page.width * scale) × round(page.height * scale)`.
+
+- `render()` uses the **larger** of the two scales, so the raster covers the
+  canvas on both axes. The overhang on the other axis is at most a pixel or
+  two, and is clipped off the right or bottom edge.
+- The raster goes at the canvas origin, like the text and annotation layers,
+  so the overhang never shifts the page against them.
+- Every canvas pixel is overwritten, so the canvas is not cleared first.
+
+The smaller scale left a strip of the canvas uncovered. On the `alpha: false`
+context that strip is opaque black, and night mode's `invert(1)` filter turned
+it into a white seam along the left or bottom edge at some zoom levels.
 
 Note `withAnnotations: false` — **Hover's own annotations are never baked into
 the rendered raster.** They are drawn as separate SVG/canvas layers

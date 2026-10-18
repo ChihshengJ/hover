@@ -158,22 +158,6 @@ function sampleLut(lut: Float64Array, t: number): number {
   return lut[i] + (lut[j] - lut[i]) * (pos - i);
 }
 
-/**
- * Rasterize the displacement field over an arbitrary SDF. Pixels beyond
- * the edge slack or deeper than the bezel band stay neutral (128, 128);
- * inside the band the vector is LUT(distance) along the inward SDF
- * gradient, encoded as channel = 128 + 127 * component / maxDisp. With
- * bezelWidth equal to the shape's inradius the band covers the whole
- * interior — a full dome, nothing left flat.
- * The blue channel carries the field's AA'd body coverage. The SVG filter
- * lifts it into an alpha mask for its own output, which replaces the CSS
- * clip-path: the visible silhouette is then exactly this field, so the
- * refraction can never disagree with the goo shape it is applied to.
- * Pure — exported separately from the canvas step so it can be unit-tested
- * outside the browser.
- *
- * @returns RGBA, row-major.
- */
 export interface DisplacementFieldOptions {
   /** Square map size, CSS px. */
   cssSize: number;
@@ -194,6 +178,12 @@ export interface DisplacementFieldOptions {
   out?: Uint8ClampedArray;
 }
 
+/**
+ * Rasterizes the refraction map over an SDF: R/G hold the inward displacement,
+ * A the body coverage. See docs/liquid_glass.md "The refraction map".
+ *
+ * @returns RGBA, row-major.
+ */
 export function computeDisplacementField({
   cssSize,
   res,
@@ -245,10 +235,10 @@ export function computeDisplacementField({
 
       data[o] = r;
       data[o + 1] = g;
+      data[o + 2] = 0;
       // Outside the prefilter dn === d, but the ramp is saturated there
       // either way (|d| far exceeds MASK_AA), so the mask is unaffected.
-      data[o + 2] = 255 * Math.min(Math.max(0.5 - dn / (2 * MASK_AA), 0), 1);
-      data[o + 3] = 255;
+      data[o + 3] = 255 * Math.min(Math.max(0.5 - dn / (2 * MASK_AA), 0), 1);
     }
   }
 

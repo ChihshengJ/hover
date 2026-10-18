@@ -100,6 +100,8 @@ export class PDFDocumentModel {
 
   pdfData: Uint8Array | null = null;
   lowLevelHandle: PdfiumDocumentHandle | null = null;
+  /** getPageTextBoxes results, by 0-based page index. */
+  #textBoxes = new Map<number, Float32Array>();
   textExtractor: PdfiumTextExtractor | null = null;
   // imageExtractor: PdfiumImageExtractor | null = null;
 
@@ -340,6 +342,21 @@ export class PDFDocumentModel {
     return this.lowLevelHandle.extractPageText(pageIndex);
   }
 
+  /**
+   * Cached visible-text boxes for a page; null without a low-level handle.
+   *
+   * @param pageIndex 0-based
+   */
+  getPageTextBoxes(pageIndex: number): Float32Array | null {
+    if (!this.lowLevelHandle) return null;
+    let boxes = this.#textBoxes.get(pageIndex);
+    if (!boxes) {
+      boxes = this.lowLevelHandle.extractTextBoxes(pageIndex);
+      this.#textBoxes.set(pageIndex, boxes);
+    }
+    return boxes;
+  }
+
   // ============================================================================
   // Subscribers
   // ============================================================================
@@ -514,6 +531,7 @@ export class PDFDocumentModel {
     if (this.lowLevelHandle) {
       this.lowLevelHandle.close();
       this.lowLevelHandle = null;
+      this.#textBoxes.clear();
       this.textExtractor = null;
       // this.imageExtractor = null;
     }

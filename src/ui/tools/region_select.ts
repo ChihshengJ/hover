@@ -8,6 +8,10 @@
 
 import { getSharedImageModal } from "../controls/image_modal.js";
 import { onPointerDrag } from "../../viewer/pointer_gesture.js";
+import {
+  TEXT_GAMMA_ENABLED,
+  applyTextGamma,
+} from "../../viewer/text_gamma.js";
 import { PaneToolBinding } from "./pane_tool_binding.js";
 
 import type { PageView } from "../../viewer/page.js";
@@ -312,6 +316,12 @@ export class RegionSelectController {
     const bitmapW = Math.max(1, Math.ceil(regionWidthPdf * S));
     const bitmapH = Math.max(1, Math.ceil(regionHeightPdf * S));
 
+    // The whole page at scale S, shifted so the region lands at the origin.
+    const sizeX = Math.ceil(pageWidthPdf * S);
+    const sizeY = Math.ceil(pageHeightPdf * S);
+    const startX = Math.round(-regionLeftPdf * S);
+    const startY = Math.round(-regionTopPdf * S);
+
     const bitmapPtr = pdfium.FPDFBitmap_Create(bitmapW, bitmapH, 0);
     if (!bitmapPtr) {
       console.warn("[RegionSelect] Failed to create bitmap");
@@ -326,11 +336,6 @@ export class RegionSelectController {
       if (!pagePtr) return null;
 
       try {
-        const sizeX = Math.ceil(pageWidthPdf * S);
-        const sizeY = Math.ceil(pageHeightPdf * S);
-        const startX = Math.round(-regionLeftPdf * S);
-        const startY = Math.round(-regionTopPdf * S);
-
         // flags: FPDF_ANNOT (0x01) | FPDF_PRINTING (0x800)
         pdfium.FPDF_RenderPageBitmap(
           bitmapPtr,
@@ -369,6 +374,19 @@ export class RegionSelectController {
           rgba[dst + 1] = src[s + 1]; // G
           rgba[dst + 2] = src[s]; // B <- R
           rgba[dst + 3] = 255; // A (opaque, bitmap has no alpha)
+        }
+      }
+
+      // Match the on-screen text weight.
+      if (TEXT_GAMMA_ENABLED) {
+        const boxes = doc.getPageTextBoxes(pageIndex);
+        if (boxes) {
+          applyTextGamma(rgba, bitmapW, bitmapH, boxes, {
+            x: startX,
+            y: startY,
+            width: sizeX,
+            height: sizeY,
+          });
         }
       }
 

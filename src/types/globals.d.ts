@@ -24,7 +24,10 @@ interface HTMLElement {
 // User-Agent Client Hints. Chromium-only and not yet in lib.dom; the liquid
 // glass code uses the presence of `brands` as its Chromium check.
 interface Navigator {
-  userAgentData?: { brands: Array<{ brand: string; version: string }> };
+  userAgentData?: {
+    brands: Array<{ brand: string; version: string }>;
+    platform?: string;
+  };
 }
 
 declare module "*.css";

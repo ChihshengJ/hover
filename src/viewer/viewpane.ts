@@ -9,7 +9,6 @@ import {
 } from "./pointer_gesture.js";
 import { DocEvent, ANNOTATION_EVENTS } from "../model/doc_events.js";
 import {
-  MAX_SCALE,
   anchoredScroll,
   captureAnchor,
   clampScale,
@@ -146,7 +145,7 @@ export class ViewerPane {
    */
   _pinch: {
     startScale: number;
-    anchor: ZoomAnchor | null;
+    anchor: ZoomAnchor;
     originX: number;
     originY: number;
     contentLeft: number;
@@ -240,6 +239,9 @@ export class ViewerPane {
   #createScroller() {
     this.scroller = document.createElement("div");
     this.scroller.className = "pane-scroll-area";
+    this.scroller.addEventListener("scroll", this.#scheduleDetailRefresh, {
+      passive: true,
+    });
     this.paneEl.appendChild(this.scroller);
   }
 
@@ -320,11 +322,6 @@ export class ViewerPane {
     for (const pageView of this.pages) {
       this.observer.observe(pageView.wrapper);
     }
-
-    // Re-adding the same listener is a no-op, so this is safe to run again.
-    this.scroller.addEventListener("scroll", this.#scheduleDetailRefresh, {
-      passive: true,
-    });
 
     this.#setupCurrentPageTracking();
   }
@@ -777,15 +774,8 @@ export class ViewerPane {
    * The relayout waits for the next frame, so zooms requested within one
    * frame (key repeat, a run of button clicks) cost one relayout. The first
    * request's anchor holds for the batch; later ones only move the scale.
-   * `anchor` is for a caller that captured it earlier, before transforming
-   * the stage; otherwise it is taken here.
    */
-  zoomAt(
-    scale: number,
-    focusX: number,
-    focusY: number,
-    anchor?: ZoomAnchor | null,
-  ) {
+  zoomAt(scale: number, focusX: number, focusY: number) {
     // A relayout under the pinch transform would pull the page out from
     // under the fingers; the pinch commits its own zoom when it ends.
     if (this._pinch) return;
@@ -796,14 +786,12 @@ export class ViewerPane {
 
     if (pending) {
       pending.scale = scale;
-      if (anchor !== undefined) Object.assign(pending, { anchor, focusX, focusY });
       return;
     }
 
     this._pendingZoom = {
       scale,
-      anchor:
-        anchor === undefined ? this.#captureZoomAnchor(focusX, focusY) : anchor,
+      anchor: this.#captureZoomAnchor(focusX, focusY),
       focusX,
       focusY,
     };
@@ -834,7 +822,7 @@ export class ViewerPane {
    * and the pages are relaid and re-rendered once, at the end.
    */
   beginPinch(focusX: number, focusY: number) {
-    if (this._pinch || this.pages.length === 0) return;
+    if (this._pinch) return;
     // A zoom still waiting for its frame would relayout under the transform.
     this.#commitZoom();
 
@@ -842,18 +830,20 @@ export class ViewerPane {
     const boxes = this.pages.map((page) => this.#pageBox(page));
     const originX = scroller.scrollLeft + focusX;
     const originY = scroller.scrollTop + focusY;
+    // Null only with no pages, and then there is nothing to pinch.
+    const anchor = captureAnchor(boxes, originX, originY);
+    if (!anchor) return;
     const contentLeft = Math.min(...boxes.map((b) => b.left));
     const contentRight = Math.max(...boxes.map((b) => b.left + b.width));
     this._pinch = {
       startScale: this.scale,
-      anchor: captureAnchor(boxes, originX, originY),
+      anchor,
       originX,
       originY,
       contentLeft,
       contentWidth: contentRight - contentLeft,
       stageHeight: this.stage.offsetHeight,
     };
-    this.stage.style.transformOrigin = "0 0";
     // The stage's box is at least the pane's width, so scaling it up
     // overflows sideways even while the pages still fit, which would flash
     // the horizontal scrollbar. If there's no horizontal scroll yet, the
@@ -907,17 +897,19 @@ export class ViewerPane {
     this._pinch = null;
 
     this.stage.style.transform = "";
-    this.stage.style.transformOrigin = "";
     this.scroller.style.overflowX = "";
     this.paneEl.classList.remove("pinching");
 
     const scale = clampScale(pinch.startScale * ratio);
     if (scale !== this.scale) {
-      this.zoomAt(scale, focusX, focusY, pinch.anchor);
+      // Held by the anchor from the pinch's start, not one taken now: with the
+      // transform gone, the point under the fingers is no longer that one.
+      this._pendingZoom = { scale, anchor: pinch.anchor, focusX, focusY };
+      this._zoomRAF = requestAnimationFrame(() => this.#commitZoom());
       return;
     }
     // No zoom to commit, but the fingers may have moved: keep the pan.
-    if (pinch.anchor) this.#scrollToAnchor(pinch.anchor, focusX, focusY);
+    this.#scrollToAnchor(pinch.anchor, focusX, focusY);
     // Pages the pinch brought into view were left for its end, and the
     // observer won't report those still in view again.
     this.#renderVisiblePages();
@@ -1104,7 +1096,6 @@ export class ViewerPane {
   async layoutPages(scale: number) {
     const outputScale = window.devicePixelRatio || 1;
     this.#layoutDpr = outputScale;
-    const effectiveScale = Math.min(scale, MAX_SCALE);
     const isSwapped = this.rotation === 90 || this.rotation === 270;
 
     // The gap above and below each page (or spread row) scales with the
@@ -1113,7 +1104,7 @@ export class ViewerPane {
     // on pixel boundaries and the compositor never resamples them.
     this.stage.style.setProperty(
       "--page-gap",
-      `${Math.round(PAGE_GAP * effectiveScale)}px`,
+      `${Math.round(PAGE_GAP * scale)}px`,
     );
 
     for (let i = 0; i < this.pages.length; i++) {
@@ -1127,7 +1118,7 @@ export class ViewerPane {
       }
 
       // Original (unrotated) visual dimensions
-      const origWidth = Math.round(dims.width * effectiveScale);
+      const origWidth = Math.round(dims.width * scale);
       const aspectRatio = dims.height / dims.width;
       const origHeight = Math.round(origWidth * aspectRatio);
 

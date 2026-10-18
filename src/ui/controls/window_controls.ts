@@ -170,8 +170,6 @@ export class WindowControls {
         else if (e.key === "-" || e.key === "_") pane.zoom(-0.25);
         else if (e.key === "0")
           pane.zoomAt(1, scroller.clientWidth / 2, scroller.clientHeight / 2);
-        // Refresh search highlights after zoom
-        this.searchController?.refresh();
         return;
       }
 
@@ -279,7 +277,6 @@ export class WindowControls {
     events.addEventListener("pinchend", (e) => {
       const { x, y } = focus(e);
       pane.endPinch(ratio(e), x, y);
-      this.searchController?.refresh();
     });
   }
 

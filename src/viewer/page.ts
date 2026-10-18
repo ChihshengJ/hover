@@ -340,13 +340,13 @@ export class PageView {
    * Brings the overlay layers up to the current size too, as the base render
    * that would otherwise do it may be some tasks behind.
    */
-  async renderDetail(region: Edges, requestedScale?: number) {
+  async renderDetail(region: Edges, requestedScale: number) {
     const generation = ++this.#detailGeneration;
-    if (requestedScale) this.scale = requestedScale;
+    this.scale = requestedScale;
 
     const page = this.#getPage();
     const { native, pdfDoc } = this.doc;
-    if (!page || !native || !pdfDoc || !this.fullWidth) return;
+    if (!page || !native || !pdfDoc) return;
 
     // The scale the uncapped base would render at (§5's larger axis), so the
     // region's device px are the ones a full render would have put there.

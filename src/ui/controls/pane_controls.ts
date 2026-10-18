@@ -164,16 +164,13 @@ export class PaneControls {
         break;
       case "zoom-in":
         this.options.zoom(0.25);
-        this.updateZoomDisplay();
         break;
       case "zoom-out":
         this.options.zoom(-0.25);
-        this.updateZoomDisplay();
         break;
       case "fit-width":
         //Only fit width
         this.options.fit(1, 1);
-        this.updateZoomDisplay();
         break;
       case "hand-tool":
         if (!this.options.getHandMode()) {

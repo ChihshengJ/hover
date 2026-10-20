@@ -42,7 +42,8 @@ export function cappedSize(full: Size, max = MAX_CANVAS_PIXELS): Size {
  * Map `r` from the page wrapper's CSS px, which are rotated, to the page's
  * own, which are not — the space of everything inside `.page-rotate-inner`.
  * `width` and `height` are the unrotated page's; `rotation` is in degrees and
- * matches the transforms `ViewerPane.layoutPages()` gives the inner box.
+ * matches the transforms `rotateTransform()` in page_layout.ts gives the
+ * inner box.
  */
 export function unrotate(
   r: Edges,

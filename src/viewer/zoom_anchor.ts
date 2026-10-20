@@ -24,6 +24,31 @@ export interface PageBox {
 }
 
 /**
+ * The box of a page `wrapper` on `stage`, in scroll-content px. Built from
+ * offsets, which are layout positions, so a transform on the stage doesn't
+ * move it. The stage must be the scroller's only in-flow child, sitting at
+ * the content origin.
+ */
+export function pageBox(wrapper: HTMLElement, stage: HTMLElement): PageBox {
+  let left = 0;
+  let top = 0;
+  for (
+    let el: HTMLElement | null = wrapper;
+    el && el !== stage;
+    el = el.offsetParent as HTMLElement | null
+  ) {
+    left += el.offsetLeft;
+    top += el.offsetTop;
+  }
+  return {
+    left,
+    top,
+    width: wrapper.offsetWidth,
+    height: wrapper.offsetHeight,
+  };
+}
+
+/**
  * A point as a fraction of one page's box. A point in the gap between pages
  * is held against the nearest page, so the fractions can fall outside 0..1.
  */

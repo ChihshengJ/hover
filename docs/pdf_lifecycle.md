@@ -312,7 +312,8 @@ already-rendered document.
 
 ### Render scale
 
-`layoutPages` sizes the canvas backing store per axis, as
+`computePageLayout` (`src/viewer/page_layout.ts`) sizes the canvas backing
+store per axis, as
 `ceil(round(cssSize) * dpr)`, so the width and height scales
 (`canvas.width / page.width`, `canvas.height / page.height`) differ by a
 fraction of a pixel. PDFium renders at one uniform scale and sizes its raster
@@ -341,7 +342,7 @@ square of the zoom: a Letter page at devicePixelRatio 2 is 5.6 M px at scale
 1.7 and 95 M px (380 MB of RGBA) at scale 7. So past `MAX_CANVAS_PIXELS`
 (2²⁴, `src/viewer/detail_region.ts`) a page renders in two parts:
 
-- **Base.** `layoutPages` publishes two sizes: `fullWidth/fullHeight`, the
+- **Base.** The layout pass publishes two sizes: `fullWidth/fullHeight`, the
   store the page would have, and `canvasWidth/canvasHeight`, that capped to
   the limit with its aspect kept. The canvas's CSS box is the full size, so a
   capped store is stretched to fill it, a little soft.
@@ -353,7 +354,7 @@ square of the zoom: a Letter page at devicePixelRatio 2 is 5.6 M px at scale
   Text gamma runs on it with the page's placement in the crop. The luminance
   grid stays the base's.
 
-`ViewerPane` decides when each runs:
+`RenderScheduler` (`src/viewer/render_scheduler.ts`) decides when each runs:
 
 - When a page on screen needs rendering (a zoom commit, or the observer), a
   capped page renders the detail of the part in view at once, and its base

@@ -28,10 +28,7 @@ import type {
 } from "@embedpdf/models";
 import type { WrappedPdfiumModule } from "@embedpdf/pdfium";
 import type { DocEventName } from "./doc_events.js";
-import type {
-  PdfiumDocumentHandle,
-  PdfiumTextExtractor,
-} from "../pdf/text_extractor.js";
+import type { PdfiumDocumentHandle } from "../pdf/text_extractor.js";
 import type {
   ReferenceAnchor,
   ReferenceIndex,
@@ -102,7 +99,6 @@ export class PDFDocumentModel {
   lowLevelHandle: PdfiumDocumentHandle | null = null;
   /** getPageTextBoxes results, by 0-based page index. */
   #textBoxes = new Map<number, Float32Array>();
-  textExtractor: PdfiumTextExtractor | null = null;
   // imageExtractor: PdfiumImageExtractor | null = null;
 
   indexingState: "pending" | "running" | "complete" = "pending";
@@ -258,7 +254,6 @@ export class PDFDocumentModel {
     try {
       const factory = new PdfiumDocumentFactory(pdfiumModule);
       this.lowLevelHandle = factory.loadFromBuffer(this.pdfData);
-      this.textExtractor = this.lowLevelHandle.extractor;
       // this.imageExtractor = new PdfiumImageExtractor(pdfiumModule);
     } catch (error) {
       console.error("[Doc] Error setting up low-level access:", error);
@@ -335,11 +330,6 @@ export class PDFDocumentModel {
 
   resolveDestination(destName: string): NamedDestination | null {
     return this.allNamedDests.get(destName) || null;
-  }
-
-  extractPageText(pageIndex: number) {
-    if (!this.lowLevelHandle) return null;
-    return this.lowLevelHandle.extractPageText(pageIndex);
   }
 
   /**
@@ -532,7 +522,6 @@ export class PDFDocumentModel {
       this.lowLevelHandle.close();
       this.lowLevelHandle = null;
       this.#textBoxes.clear();
-      this.textExtractor = null;
       // this.imageExtractor = null;
     }
 

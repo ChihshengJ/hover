@@ -1,30 +1,21 @@
 import { PageView } from "./page.js";
 import { PaneControls } from "../ui/controls/pane_controls.js";
+import { ScrollBackButton } from "../ui/controls/scroll_back_button.js";
 import { TextSelectionManager } from "./text_manager.js";
+import { NearestSpanSelection } from "./nearest_span_selection.js";
+import { HandPan } from "./hand_pan.js";
+import { SpreadLayout } from "./spread_layout.js";
+import { RenderScheduler } from "./render_scheduler.js";
+import { CurrentPageTracker } from "./current_page.js";
+import { ZoomController } from "./zoom_controller.js";
+import { computePageLayout, isQuarterTurn } from "./page_layout.js";
+import { watchDevicePixelRatio } from "./device_pixel_ratio.js";
 import { AnnotationManager } from "../ui/annotation/annotation_manager.js";
-import {
-  beginCustomSelectionGesture,
-  beginDragGesture,
-  isPointerToolActive,
-} from "./pointer_gesture.js";
 import { DocEvent, ANNOTATION_EVENTS } from "../model/doc_events.js";
-import {
-  anchoredScroll,
-  captureAnchor,
-  clampScale,
-  fitOffset,
-} from "./zoom_anchor.js";
-import {
-  cappedSize,
-  covers,
-  deviceRegion,
-  unrotate,
-} from "./detail_region.js";
 
 import type { PDFDocumentModel } from "../model/doc.js";
 import type { DocEventName } from "../model/doc_events.js";
-import type { PageBox, ZoomAnchor } from "./zoom_anchor.js";
-import type { Edges } from "./detail_region.js";
+import type { SpreadMode } from "./spread_layout.js";
 import type {
   AnnotationHost,
   PaneAnnotationCallbacks,
@@ -32,43 +23,15 @@ import type {
 
 /** Gap above and below each page, in PDF points; 14px at the default 1.7. */
 const PAGE_GAP = 8;
-/**
- * How far above and below the viewport pages are kept rendered, in viewport
- * heights. A page renders this far ahead of reaching the screen; at 5K a
- * render can take 100 ms, so a fixed few hundred px let a quick scroll
- * arrive first.
- */
-const RENDER_MARGIN = 1;
-/**
- * How far past the viewport a detail region reaches once scrolling settles,
- * as a fraction of the viewport on each side, so a short scroll stays sharp.
- */
-const DETAIL_MARGIN = 0.125;
-/** How long scrolling must pause before detail regions follow it, in ms. */
-const DETAIL_SETTLE_MS = 100;
-/**
- * Below the size cap, an on-screen page renders the region in view first only
- * when that is under this fraction of the page. Its whole page follows at full
- * resolution anyway, so a crop of most of the page saves the frame little and
- * costs a second render of the same pixels.
- */
-const CROP_FIRST_BELOW = 0.75;
+/** Gap between the two pages of a spread, in CSS px; `.spread-row` in viewer.css. */
+const SPREAD_GUTTER = 4;
 
 export interface ViewerPaneOptions {
   id?: string;
   pinned?: boolean;
 }
 
-/** 0: no spread; 1: even spread; 2: odd spread. */
-export type SpreadMode = 0 | 1 | 2;
-
-/** Where the reader was before a citation jump, so it can be offered back. */
-interface ScrollBackState {
-  scrollTop: number;
-  page: number;
-  timer: ReturnType<typeof setTimeout> | null;
-  el: HTMLElement | null;
-}
+export type { SpreadMode };
 
 export class ViewerPane {
   document: PDFDocumentModel;
@@ -76,45 +39,31 @@ export class ViewerPane {
   scroller!: HTMLDivElement;
   stage!: HTMLDivElement;
   id: string;
-  canvases: HTMLCanvasElement[] = [];
 
   scale = 1;
   /** 1 for width, 2 for height. */
   fitMode = 1;
   pages: PageView[] = [];
-  pageMap = new Map<Element, PageView>();
-  visiblePages = new Set<PageView>();
-  observer: IntersectionObserver | null = null;
-  /**
-   * Dedicated observer reporting which page(s) cross the viewport's vertical
-   * centre, for `getCurrentPage()`.
-   */
-  centerObserver: IntersectionObserver | null = null;
-  /** Pages currently over the center line. */
-  centeredPages = new Set<PageView>();
   controls: PaneControls;
-  currentPage = 0;
+
+  renderScheduler!: RenderScheduler;
+  currentPageTracker!: CurrentPageTracker;
+  zoomController!: ZoomController;
 
   spreadMode: SpreadMode = 0;
-  spreadRows: HTMLElement[] = [];
-  spreadContainer: HTMLDivElement | null = null;
+  spreadLayout = new SpreadLayout();
 
   handMode = false;
-  isPanning = false;
-  panStart = { x: 0, y: 0, scrollLeft: 0, scrollTop: 0 };
+  handPan = new HandPan(() => this.scroller);
 
   /** CSS-based, per-pane: 0, 90, 180 or 270. */
   rotation = 0;
 
   textSelectionManager = new TextSelectionManager();
+  nearestSpanSelection: NearestSpanSelection | null = null;
   annotationManager: AnnotationManager | null = null;
 
-  _scrollBack: ScrollBackState = {
-    scrollTop: 0,
-    page: 0,
-    timer: null,
-    el: null,
-  };
+  scrollBack: ScrollBackButton;
 
   /**
    * The annotation entry points, republished here for the callers that only
@@ -130,34 +79,9 @@ export class ViewerPane {
     | null = null;
   selectAnnotation: PaneAnnotationCallbacks["selectAnnotation"] | null = null;
 
-  /** A zoom waiting for the next frame; see `zoomAt()`. */
-  _pendingZoom: {
-    scale: number;
-    anchor: ZoomAnchor | null;
-    focusX: number;
-    focusY: number;
-  } | null = null;
-  _zoomRAF: number | null = null;
-  /**
-   * A pinch in progress: the scale and anchor it started from, the stage
-   * point under the fingers then, and the extent of the pages and the stage
-   * at that scale — all in scroll-content px.
-   */
-  _pinch: {
-    startScale: number;
-    anchor: ZoomAnchor;
-    originX: number;
-    originY: number;
-    contentLeft: number;
-    contentWidth: number;
-    stageHeight: number;
-  } | null = null;
-
-  _onPanStart: ((e: PointerEvent) => void) | null = null;
-  /** Releases the pan's gesture claim; see pointer_gesture.js. */
-  _releasePan: (() => void) | null = null;
-  _onPanMove: ((e: PointerEvent) => void) | null = null;
-  _onPanEnd: (() => void) | null = null;
+  /** devicePixelRatio the last `layoutPages` sized the backing stores for. */
+  #layoutDpr = 0;
+  #unwatchDpr: (() => void) | null = null;
 
   constructor(
     documentModel: PDFDocumentModel,
@@ -177,8 +101,12 @@ export class ViewerPane {
       getHandMode: () => this.handMode,
       zoom: (delta) => this.zoom(delta),
       fit: (mode, target) => this.fit(mode, target),
-      toggleHandMode: () => this.toggleHandMode(),
+      setHandMode: (on) => this.setHandMode(on),
       scrollToRelative: (delta) => this.scrollToRelative(delta),
+    });
+    this.scrollBack = new ScrollBackButton({
+      paneEl: this.paneEl,
+      getScroller: () => this.scroller,
     });
 
     this.document.subscribe(this);
@@ -188,9 +116,8 @@ export class ViewerPane {
     this.scale = scale;
     this.#createScroller();
     this.#createStage();
-    this.canvases = await this.#createCanvasPlaceholders();
-    this.pages = this.canvases.map((canvas, idx) => {
-      const pageView = new PageView(
+    this.pages = this.#createCanvasPlaceholders().map((canvas, idx) => {
+      return new PageView(
         {
           doc: this.document,
           // Assigned in this constructor but read on click, long after; and
@@ -202,14 +129,55 @@ export class ViewerPane {
         idx + 1,
         canvas,
       );
-      this.pageMap.set(pageView.wrapper, pageView);
-      return pageView;
     });
+    this.renderScheduler = new RenderScheduler({
+      scroller: this.scroller,
+      pages: this.pages,
+      getScale: () => this.scale,
+      getRotation: () => this.rotation,
+      getLayoutDpr: () => this.#layoutDpr,
+      isPaused: () => this.zoomController.pinching,
+    });
+    this.currentPageTracker = new CurrentPageTracker(
+      this.scroller,
+      this.pages,
+      () => this.controls.notifyPageChange(),
+    );
+    this.zoomController = new ZoomController({
+      paneEl: this.paneEl,
+      scroller: this.scroller,
+      stage: this.stage,
+      pages: this.pages,
+      getScale: () => this.scale,
+      relayout: (scale) => {
+        this.scale = scale;
+        this.layoutPages(scale);
+      },
+      renderVisible: () => this.renderScheduler.renderVisible(),
+      onZoomed: () => {
+        this.annotationManager?.refresh();
+        this.controls.updateZoomDisplay();
+      },
+    });
+
     this.layoutPages(this.scale);
-    this.#watchDevicePixelRatio();
+    // Browser zoom changes the ratio *and* fires `resize`, whose handler
+    // already re-lays out every pane. So refresh only if nothing has laid out
+    // at the new ratio by the watcher's frame — otherwise each zoom step
+    // would render every visible page twice.
+    this.#unwatchDpr = watchDevicePixelRatio(() => {
+      if ((window.devicePixelRatio || 1) !== this.#layoutDpr) {
+        this.refreshAllPages();
+      }
+    });
     await new Promise((resolve) => setTimeout(resolve, 50));
-    this.setupLazyRender();
-    this.#setupGlobalClickToSelect();
+    this.renderScheduler.observe();
+    this.currentPageTracker.observe();
+    this.nearestSpanSelection = new NearestSpanSelection({
+      scroller: this.scroller,
+      getVisiblePages: () => this.visiblePages,
+      getHandMode: () => this.handMode,
+    });
     this.controls.bindScrollEvents();
     this.annotationManager = new AnnotationManager(this.#annotationHost());
   }
@@ -239,9 +207,6 @@ export class ViewerPane {
   #createScroller() {
     this.scroller = document.createElement("div");
     this.scroller.className = "pane-scroll-area";
-    this.scroller.addEventListener("scroll", this.#scheduleDetailRefresh, {
-      passive: true,
-    });
     this.paneEl.appendChild(this.scroller);
   }
 
@@ -252,7 +217,7 @@ export class ViewerPane {
     this.scroller.appendChild(this.stage);
   }
 
-  async #createCanvasPlaceholders(): Promise<HTMLCanvasElement[]> {
+  #createCanvasPlaceholders(): HTMLCanvasElement[] {
     const canvases: HTMLCanvasElement[] = [];
     const numPages = this.document.numPages;
 
@@ -283,459 +248,9 @@ export class ViewerPane {
     return canvases;
   }
 
-  //*******************
-  // Render management
-  // ******************
-  setupLazyRender() {
-    if (this.observer) {
-      this.observer.disconnect();
-    }
-
-    const observer = new IntersectionObserver(
-      (entries) => {
-        for (const entry of entries) {
-          const pageView = this.pageMap.get(entry.target);
-          if (!pageView) continue;
-
-          // In range, the page is painted ahead like the rest of the screen,
-          // not left for `content-visibility` to paint as it arrives; see
-          // viewer.css.
-          pageView.wrapper.classList.toggle("in-range", entry.isIntersecting);
-          if (entry.isIntersecting) {
-            this.visiblePages.add(pageView);
-          } else {
-            this.visiblePages.delete(pageView);
-            pageView.dropDetail();
-            this.#maybeRelease(pageView);
-          }
-        }
-        this.#renderVisiblePages();
-      },
-      {
-        root: this.scroller,
-        rootMargin: `${RENDER_MARGIN * 100}% 0px`,
-        threshold: 0.1,
-      },
-    );
-    this.observer = observer;
-
-    for (const pageView of this.pages) {
-      this.observer.observe(pageView.wrapper);
-    }
-
-    this.#setupCurrentPageTracking();
-  }
-
-  /**
-   * Tracks the current page under the viewport's vertical center.
-   * The negative top/bottom rootMargin collapses the observer root to a thin
-   * band at the scroller's mid-height, so a page is "intersecting" exactly
-   * while it crosses that center line.
-   */
-  #setupCurrentPageTracking() {
-    if (this.centerObserver) {
-      this.centerObserver.disconnect();
-    }
-    this.centeredPages.clear();
-
-    this.centerObserver = new IntersectionObserver(
-      (entries) => {
-        for (const entry of entries) {
-          const pageView = this.pageMap.get(entry.target);
-          if (!pageView) continue;
-          if (entry.isIntersecting) {
-            this.centeredPages.add(pageView);
-          } else {
-            this.centeredPages.delete(pageView);
-          }
-        }
-        // In gaps between pages the set is briefly empty — keep the last value.
-        // In spread mode two pages share the center line; pick the lower number
-        // to match the old left-to-right scan order.
-        let min = Infinity;
-        for (const pv of this.centeredPages) {
-          if (pv.pageNumber < min) min = pv.pageNumber;
-        }
-        // Notify on change so page indicators refresh even when the page
-        // changed via an instant jump (where the scroll handler already ran
-        // before this async callback updated currentPage).
-        if (min !== Infinity && min !== this.currentPage) {
-          this.currentPage = min;
-          this.controls.notifyPageChange();
-        }
-      },
-      {
-        root: this.scroller,
-        rootMargin: "-50% 0px -50% 0px",
-        threshold: 0,
-      },
-    );
-
-    for (const pageView of this.pages) {
-      this.centerObserver.observe(pageView.wrapper);
-    }
-  }
-
-  #maybeRelease(page: PageView) {
-    const rect = page.wrapper.getBoundingClientRect();
-    const threshold = window.innerHeight * 2;
-
-    if (rect.bottom < -threshold || rect.top > window.innerHeight + threshold) {
-      page.release();
-    }
-  }
-
-  /**
-   * Render the visible pages that need it. PDFium renders synchronously on
-   * this thread, so a batch holds the frame until every page in it is done.
-   * Only the pages on screen render now, for the frame being built; those
-   * only in the observer's margin are queued, nearest the viewport first, and
-   * render one per task so frames can paint in between.
-   *
-   * An on-screen page renders only the region in view now, at full
-   * resolution, when it is past the size cap or mostly out of view; its whole
-   * page — capped or not — joins the front of the queue. The work in the
-   * frame then follows the viewport rather than the pages it cuts across.
-   *
-   * Nothing renders mid-pinch: the scale is about to change, and the pinch
-   * calls this again when it ends.
-   */
-  #renderVisiblePages() {
-    if (this._pinch) return;
-
-    const view = this.scroller.getBoundingClientRect();
-    // Measure everything before rendering any of it, as a render touches the
-    // DOM and the next read would force another layout.
-    const pending: { page: PageView; rect: DOMRect }[] = [];
-    for (const page of this.visiblePages) {
-      if (page.canvas.dataset.rendered === "false") {
-        pending.push({ page, rect: page.wrapper.getBoundingClientRect() });
-      }
-    }
-
-    const queued: { page: PageView; gap: number }[] = [];
-    for (const { page, rect } of pending) {
-      const gapX = Math.max(view.left - rect.right, rect.left - view.right);
-      const gapY = Math.max(view.top - rect.bottom, rect.top - view.bottom);
-      if (gapX >= 0 || gapY >= 0) {
-        queued.push({ page, gap: Math.max(gapX, 0) + Math.max(gapY, 0) });
-        continue;
-      }
-      const region = this.#detailRegion(page, rect, view, 0);
-      const cropFirst =
-        region &&
-        (page.capped ||
-          (region.right - region.left) * (region.bottom - region.top) <
-            CROP_FIRST_BELOW * page.fullWidth * page.fullHeight);
-      if (cropFirst) {
-        page.renderDetail(region, this.scale);
-        queued.push({ page, gap: -1 });
-      } else {
-        page.render(this.scale);
-      }
-    }
-
-    this.#renderQueue = queued
-      .sort((a, b) => a.gap - b.gap)
-      .map(({ page }) => page);
-    if (this.#renderQueue.length > 0 && this.#renderTimer === null) {
-      this.#renderTimer = setTimeout(() => this.#renderNextQueued(), 0);
-    }
-  }
-
-  /** Margin pages waiting to render; see `#renderVisiblePages()`. */
-  #renderQueue: PageView[] = [];
-  #renderTimer: ReturnType<typeof setTimeout> | null = null;
-
-  #renderNextQueued() {
-    this.#renderTimer = null;
-    // The pinch's end rebuilds the queue for the scale it commits.
-    if (this._pinch) return;
-
-    // A page may have been rendered by a rebuild, or moved out of range,
-    // since it was queued — after a zoom with no pinch, the visible set is
-    // the one from before it until the observer next reports.
-    const view = this.scroller.getBoundingClientRect();
-    let page: PageView | undefined;
-    while ((page = this.#renderQueue.shift())) {
-      if (
-        !this.visiblePages.has(page) ||
-        page.canvas.dataset.rendered !== "false"
-      ) {
-        continue;
-      }
-      const rect = page.wrapper.getBoundingClientRect();
-      if (
-        rect.bottom < view.top - view.height * RENDER_MARGIN ||
-        rect.top > view.bottom + view.height * RENDER_MARGIN
-      ) {
-        continue;
-      }
-      page.render(this.scale);
-      break;
-    }
-    if (this.#renderQueue.length > 0) {
-      this.#renderTimer = setTimeout(() => this.#renderNextQueued(), 0);
-    }
-  }
-
-  /**
-   * The region of `page` to render in detail, in its full-resolution device
-   * px: the part inside the viewport, grown by `margin` of the viewport on
-   * each side. Null when none of the page is in range. `rect` and `view` are
-   * the page wrapper's and the scroller's client rects.
-   */
-  #detailRegion(
-    page: PageView,
-    rect: DOMRect,
-    view: DOMRect,
-    margin: number,
-  ): Edges | null {
-    const mx = view.width * margin;
-    const my = view.height * margin;
-    const local = {
-      left: Math.max(view.left - mx, rect.left) - rect.left,
-      top: Math.max(view.top - my, rect.top) - rect.top,
-      right: Math.min(view.right + mx, rect.right) - rect.left,
-      bottom: Math.min(view.bottom + my, rect.bottom) - rect.top,
-    };
-    const swapped = this.rotation === 90 || this.rotation === 270;
-    const inner = unrotate(
-      local,
-      this.rotation,
-      swapped ? rect.height : rect.width,
-      swapped ? rect.width : rect.height,
-    );
-    return deviceRegion(inner, this.#layoutDpr, {
-      width: page.fullWidth,
-      height: page.fullHeight,
-    });
-  }
-
-  #detailTimer: ReturnType<typeof setTimeout> | null = null;
-  #scheduleDetailRefresh = () => {
-    if (this.#detailTimer !== null) clearTimeout(this.#detailTimer);
-    this.#detailTimer = setTimeout(
-      () => this.#refreshDetails(),
-      DETAIL_SETTLE_MS,
-    );
-  };
-
-  /**
-   * Once scrolling settles, move each on-screen page's detail region to
-   * where the page now is, if it no longer covers the part in view. Until
-   * then the uncovered part shows the capped base, a little soft.
-   */
-  #refreshDetails() {
-    this.#detailTimer = null;
-    if (this._pinch) return;
-
-    const view = this.scroller.getBoundingClientRect();
-    const updates: { page: PageView; region: Edges }[] = [];
-    for (const page of this.visiblePages) {
-      if (!page.capped) continue;
-      const rect = page.wrapper.getBoundingClientRect();
-      const inView = this.#detailRegion(page, rect, view, 0);
-      if (!inView) {
-        page.dropDetail();
-        continue;
-      }
-      if (page.detailRegion && covers(page.detailRegion, inView)) continue;
-      updates.push({
-        page,
-        region: this.#detailRegion(page, rect, view, DETAIL_MARGIN)!,
-      });
-    }
-    for (const { page, region } of updates) {
-      page.renderDetail(region, this.scale);
-    }
-  }
-
-  /**
-   * Selection for pointerdowns that land *off* a text span: anchor to the
-   * nearest span and drive the range ourselves. Because we compute the
-   * selection, the engine must not also run its own — see pointer_gesture.js.
-   */
-  #setupGlobalClickToSelect() {
-    let isSelecting = false;
-    let anchorNode: Node | null = null;
-    let anchorOffset = 0;
-    let releaseGesture: (() => void) | null = null;
-
-    const findNearestSpanAndOffset = (clientX: number, clientY: number) => {
-      let nearestSpan: HTMLSpanElement | null = null;
-      let nearestDistance = Infinity;
-
-      for (const pageView of this.visiblePages) {
-        const textLayer = pageView.textLayer;
-        const spans = textLayer.querySelectorAll("span");
-
-        for (const span of spans) {
-          if (!span.textContent || !span.firstChild) continue;
-
-          const rect = span.getBoundingClientRect();
-
-          let dx: number;
-          if (clientX < rect.left) {
-            dx = rect.left - clientX;
-          } else if (clientX > rect.right) {
-            dx = clientX - rect.right;
-          } else {
-            dx = 0;
-          }
-
-          let dy: number;
-          if (clientY < rect.top) {
-            dy = rect.top - clientY;
-          } else if (clientY > rect.bottom) {
-            dy = clientY - rect.bottom;
-          } else {
-            dy = 0;
-          }
-
-          const distSq = dx * dx + dy * dy * 4;
-
-          if (distSq < nearestDistance) {
-            nearestDistance = distSq;
-            nearestSpan = span;
-          }
-        }
-      }
-
-      if (!nearestSpan || !nearestSpan.firstChild) return null;
-
-      // Calculate offset within text
-      const rect = nearestSpan.getBoundingClientRect();
-      const textNode = nearestSpan.firstChild;
-      const text = textNode.textContent ?? "";
-
-      let offset: number;
-      if (clientX <= rect.left) {
-        offset = 0;
-      } else if (clientX >= rect.right) {
-        offset = text.length;
-      } else {
-        const proportion = (clientX - rect.left) / rect.width;
-        offset = Math.round(proportion * text.length);
-      }
-
-      return { node: textNode, offset, span: nearestSpan };
-    };
-
-    const updateSelection = (clientX: number, clientY: number) => {
-      const focus = findNearestSpanAndOffset(clientX, clientY);
-      if (!focus || !anchorNode) return;
-
-      const selection = document.getSelection()!;
-      const range = document.createRange();
-
-      const position = anchorNode.compareDocumentPosition(focus.node);
-
-      let startNode: Node;
-      let startOffset: number;
-      let endNode: Node;
-      let endOffset: number;
-
-      if (position & Node.DOCUMENT_POSITION_FOLLOWING) {
-        // Anchor comes before focus
-        startNode = anchorNode;
-        startOffset = anchorOffset;
-        endNode = focus.node;
-        endOffset = focus.offset;
-      } else if (position & Node.DOCUMENT_POSITION_PRECEDING) {
-        // Focus comes before anchor
-        startNode = focus.node;
-        startOffset = focus.offset;
-        endNode = anchorNode;
-        endOffset = anchorOffset;
-      } else {
-        // Same node
-        startNode = anchorNode;
-        endNode = anchorNode;
-        if (anchorOffset < focus.offset) {
-          startOffset = anchorOffset;
-          endOffset = focus.offset;
-        } else {
-          startOffset = focus.offset;
-          endOffset = anchorOffset;
-        }
-      }
-
-      try {
-        range.setStart(startNode, startOffset);
-        range.setEnd(endNode, endOffset);
-        selection.removeAllRanges();
-        selection.addRange(range);
-      } catch (e) {
-        console.warn("Selection range error:", e);
-      }
-    };
-
-    this.scroller.addEventListener("pointerdown", (e) => {
-      // Lowest of the three gestures: a drag tool owns the pointer outright,
-      // and in hand mode the pan does. See pointer_gesture.js.
-      if (isPointerToolActive() || this.handMode) return;
-
-      if ((e.target as Element).closest(".textLayer span")) return;
-
-      if (
-        (e.target as Element).closest(
-          "a, button, .pane-controls, .annotationLayer a",
-        )
-      )
-        return;
-
-      if (e.button !== 0) return;
-
-      const anchor = findNearestSpanAndOffset(e.clientX, e.clientY);
-      if (!anchor) return;
-
-      const maxDistance = 500;
-      const rect = anchor.span.getBoundingClientRect();
-      const dx = Math.max(
-        0,
-        Math.max(rect.left - e.clientX, e.clientX - rect.right),
-      );
-      const dy = Math.max(
-        0,
-        Math.max(rect.top - e.clientY, e.clientY - rect.bottom),
-      );
-      if (dx * dx + dy * dy > maxDistance * maxDistance) return;
-
-      e.preventDefault();
-      // preventDefault() above only suppresses the engine's own selection on
-      // Blink; WebKit/Gecko need the claim.
-      releaseGesture = beginCustomSelectionGesture();
-
-      isSelecting = true;
-      anchorNode = anchor.node;
-      anchorOffset = anchor.offset;
-
-      const selection = document.getSelection()!;
-      const range = document.createRange();
-      range.setStart(anchorNode, anchorOffset);
-      range.collapse(true);
-      selection.removeAllRanges();
-      selection.addRange(range);
-
-      anchor.span.closest(".textLayer")?.classList.add("selecting");
-      anchor.span.closest(".page-wrapper")?.classList.add("text-selecting");
-    });
-
-    document.addEventListener("pointermove", (e) => {
-      if (!isSelecting) return;
-      e.preventDefault();
-      updateSelection(e.clientX, e.clientY);
-    });
-
-    document.addEventListener("pointerup", () => {
-      if (!isSelecting) return;
-      isSelecting = false;
-      anchorNode = null;
-      anchorOffset = 0;
-      releaseGesture?.();
-      releaseGesture = null;
-    });
+  /** Pages within render range of the viewport; see RenderScheduler. */
+  get visiblePages(): ReadonlySet<PageView> {
+    return this.renderScheduler.visiblePages;
   }
 
   //*******************
@@ -743,228 +258,35 @@ export class ViewerPane {
   // ******************
 
   getCurrentPage() {
-    return this.currentPage || this.#computeCurrentPage();
+    return this.currentPageTracker.get();
   }
 
-  /**
-   * Precise synchronous measurement of the centered page. Use after a
-   * programmatic instant scroll, where the async observer hasn't fired yet.
-   * Updates this.currentPage as a side effect.
-   */
-  #computeCurrentPage() {
-    const viewRect = this.scroller.getBoundingClientRect();
-    const viewportMidY = viewRect.top + viewRect.height / 2;
-    for (const canvas of this.canvases) {
-      const rect = canvas.getBoundingClientRect();
-      if (rect.top <= viewportMidY && rect.bottom >= viewportMidY) {
-        this.currentPage = parseInt(canvas.dataset.pageNumber!);
-        return this.currentPage;
-      }
-    }
-    return this.currentPage;
-  }
-
-  /**
-   * Zoom to `scale`, keeping the document point at (focusX, focusY) — in
-   * scroller viewport px — where it is on screen.
-   *
-   * The relayout waits for the next frame, so zooms requested within one
-   * frame (key repeat, a run of button clicks) cost one relayout. The first
-   * request's anchor holds for the batch; later ones only move the scale.
-   */
+  /** See `ZoomController.zoomAt()`. */
   zoomAt(scale: number, focusX: number, focusY: number) {
-    // A relayout under the pinch transform would pull the page out from
-    // under the fingers; the pinch commits its own zoom when it ends.
-    if (this._pinch) return;
-
-    scale = clampScale(scale);
-    const pending = this._pendingZoom;
-    if (scale === (pending?.scale ?? this.scale)) return;
-
-    if (pending) {
-      pending.scale = scale;
-      return;
-    }
-
-    this._pendingZoom = {
-      scale,
-      anchor: captureAnchor(
-        this.pages.map((page) => this.#pageBox(page)),
-        this.scroller.scrollLeft + focusX,
-        this.scroller.scrollTop + focusY,
-      ),
-      focusX,
-      focusY,
-    };
-    this._zoomRAF = requestAnimationFrame(() => this.#commitZoom());
+    this.zoomController.zoomAt(scale, focusX, focusY);
   }
 
-  #commitZoom() {
-    if (this._zoomRAF !== null) cancelAnimationFrame(this._zoomRAF);
-    this._zoomRAF = null;
-    const zoom = this._pendingZoom;
-    if (!zoom) return;
-    this._pendingZoom = null;
-
-    this.scale = zoom.scale;
-    this.layoutPages(zoom.scale);
-    if (zoom.anchor) this.#scrollToAnchor(zoom.anchor, zoom.focusX, zoom.focusY);
-
-    this.#renderVisiblePages();
-    this.annotationManager?.refresh();
-    this.controls.updateZoomDisplay();
-  }
-
-  /**
-   * Start a pinch centred at (focusX, focusY), in scroller viewport px.
-   *
-   * Until `endPinch()`, the stage is only transformed: the document point
-   * under the fingers at the start follows them as they spread and move,
-   * and the pages are relaid and re-rendered once, at the end.
-   */
   beginPinch(focusX: number, focusY: number) {
-    if (this._pinch) return;
-    // A zoom still waiting for its frame would relayout under the transform.
-    this.#commitZoom();
-
-    const scroller = this.scroller;
-    const boxes = this.pages.map((page) => this.#pageBox(page));
-    const originX = scroller.scrollLeft + focusX;
-    const originY = scroller.scrollTop + focusY;
-    // Null only with no pages, and then there is nothing to pinch.
-    const anchor = captureAnchor(boxes, originX, originY);
-    if (!anchor) return;
-    const contentLeft = Math.min(...boxes.map((b) => b.left));
-    const contentRight = Math.max(...boxes.map((b) => b.left + b.width));
-    this._pinch = {
-      startScale: this.scale,
-      anchor,
-      originX,
-      originY,
-      contentLeft,
-      contentWidth: contentRight - contentLeft,
-      stageHeight: this.stage.offsetHeight,
-    };
-    // The stage's box is at least the pane's width, so scaling it up
-    // overflows sideways even while the pages still fit, which would flash
-    // the horizontal scrollbar. If there's no horizontal scroll yet, the
-    // commit decides whether there is one.
-    if (scroller.scrollWidth <= scroller.clientWidth) {
-      scroller.style.overflowX = "hidden";
-    }
-
-    // Hover interactions would chase anchors that are moving under the
-    // cursor: block them for the pinch and drop any popup already pending.
-    this.paneEl.classList.add("pinching");
-    for (const page of this.pages) page.cancelCitationHover();
+    this.zoomController.beginPinch(focusX, focusY);
   }
 
-  /** `ratio` is the scale since `beginPinch()`; the focus is where it is now. */
   updatePinch(ratio: number, focusX: number, focusY: number) {
-    const pinch = this._pinch;
-    if (!pinch) return;
-
-    const { scrollLeft, scrollTop, clientWidth, clientHeight } = this.scroller;
-    const r = clampScale(pinch.startScale * ratio) / pinch.startScale;
-
-    // A stage point P shows at `t + r·P − scroll` in the viewport. Follow the
-    // fingers: put the point under them at the start where they are now.
-    // Scroll is read fresh, as a shrinking stage can make the scroller clamp it.
-    const tx = scrollLeft + focusX - r * pinch.originX;
-    const ty = scrollTop + focusY - r * pinch.originY;
-
-    // Then hold the pages where the commit will put them: centred across
-    // while narrower than the pane, and never past the document's edges.
-    const left = fitOffset(
-      tx + r * pinch.contentLeft - scrollLeft,
-      r * pinch.contentWidth,
-      clientWidth,
-      true,
-    );
-    const top = fitOffset(
-      ty - scrollTop,
-      r * pinch.stageHeight,
-      clientHeight,
-      false,
-    );
-    const x = left - r * pinch.contentLeft + scrollLeft;
-    const y = top + scrollTop;
-    this.stage.style.transform = `translate(${x}px, ${y}px) scale(${r})`;
+    this.zoomController.updatePinch(ratio, focusX, focusY);
   }
 
   endPinch(ratio: number, focusX: number, focusY: number) {
-    const pinch = this._pinch;
-    if (!pinch) return;
-    this._pinch = null;
-
-    this.stage.style.transform = "";
-    this.scroller.style.overflowX = "";
-    this.paneEl.classList.remove("pinching");
-
-    const scale = clampScale(pinch.startScale * ratio);
-    if (scale !== this.scale) {
-      // Held by the anchor from the pinch's start, not one taken now: with the
-      // transform gone, the point under the fingers is no longer that one.
-      this._pendingZoom = { scale, anchor: pinch.anchor, focusX, focusY };
-      this._zoomRAF = requestAnimationFrame(() => this.#commitZoom());
-      return;
-    }
-    // No zoom to commit, but the fingers may have moved: keep the pan.
-    this.#scrollToAnchor(pinch.anchor, focusX, focusY);
-    // Pages the pinch brought into view were left for its end, and the
-    // observer won't report those still in view again.
-    this.#renderVisiblePages();
-  }
-
-  /** Scroll so `anchor` sits at (focusX, focusY), in scroller viewport px. */
-  #scrollToAnchor(anchor: ZoomAnchor, focusX: number, focusY: number) {
-    const page = this.pages[anchor.index];
-    if (!page) return;
-    const { left, top } = anchoredScroll(
-      this.#pageBox(page),
-      anchor,
-      focusX,
-      focusY,
-    );
-    this.scroller.scrollLeft = left;
-    this.scroller.scrollTop = top;
-  }
-
-  /**
-   * A page's box in scroll-content px. Built from offsets, which are layout
-   * positions, so a transform on the stage doesn't move it. The stage is the
-   * scroller's only in-flow child and sits at the content origin.
-   */
-  #pageBox(page: PageView): PageBox {
-    let left = 0;
-    let top = 0;
-    for (
-      let el: HTMLElement | null = page.wrapper;
-      el && el !== this.stage;
-      el = el.offsetParent as HTMLElement | null
-    ) {
-      left += el.offsetLeft;
-      top += el.offsetTop;
-    }
-    return {
-      left,
-      top,
-      width: page.wrapper.offsetWidth,
-      height: page.wrapper.offsetHeight,
-    };
+    this.zoomController.endPinch(ratio, focusX, focusY);
   }
 
   zoom(delta: number) {
     const rect = this.scroller.getBoundingClientRect();
-    const scale = (this._pendingZoom?.scale ?? this.scale) + delta;
+    const scale = this.zoomController.targetScale + delta;
     this.zoomAt(scale, rect.width / 2, rect.height / 2);
   }
 
   scrollToRelative(delta: number) {
-    const current = this.getCurrentPage();
-    const target = this.pages.find((p) => p.pageNumber === current + delta);
-    if (target)
-      target.wrapper.scrollIntoView({ behavior: "smooth", block: "center" });
+    const target = this.#page(this.getCurrentPage() + delta);
+    target?.wrapper.scrollIntoView({ behavior: "smooth", block: "center" });
   }
 
   async scrollToPoint(pageIndex: number, top: number, center = false) {
@@ -972,7 +294,7 @@ export class ViewerPane {
     if (!page) return;
 
     const originScrollTop = this.scroller.scrollTop;
-    const originPage = this.#computeCurrentPage();
+    const originPage = this.currentPageTracker.measure();
 
     const pageHeight = page.size.height;
     const viewportY = (pageHeight - top) * this.scale;
@@ -991,13 +313,11 @@ export class ViewerPane {
       behavior: "smooth",
     });
 
-    this.#showScrollBackButton(originScrollTop, originPage);
+    this.scrollBack.show(originScrollTop, originPage);
   }
 
   scrollToTop() {
-    const target = this.pages.find((p) => p.pageNumber === 1);
-    if (target)
-      target.wrapper.scrollIntoView({ behavior: "instant", block: "start" });
+    this.goToPage(1);
   }
 
   scrollToBottom() {
@@ -1008,72 +328,15 @@ export class ViewerPane {
   }
 
   goToPage(n: number) {
-    const target = this.pages.find((p) => p.pageNumber === n);
-    if (target)
-      target.wrapper.scrollIntoView({ behavior: "instant", block: "start" });
-  }
-
-  // ==================
-  // Scroll-back button
-  // ==================
-
-  #showScrollBackButton(scrollTop: number, page: number) {
-    this.#dismissScrollBackButton(true);
-
-    this._scrollBack.scrollTop = scrollTop;
-    this._scrollBack.page = page;
-
-    const btn = document.createElement("button");
-    btn.className = "scroll-back-btn";
-    btn.title = `Back to page ${page}`;
-    btn.innerHTML = `
-      <svg width="14" height="14" viewBox="0 0 14 14" fill="none" xmlns="http://www.w3.org/2000/svg">
-        <path d="M11 7H3M3 7L6.5 3.5M3 7L6.5 10.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
-      </svg>
-      <span> Back to page ${page}</span>
-    `;
-
-    btn.addEventListener("click", () => {
-      this.scroller.scrollTo({
-        top: this._scrollBack.scrollTop,
-        behavior: "instant",
-      });
-      this.#dismissScrollBackButton();
+    this.#page(n)?.wrapper.scrollIntoView({
+      behavior: "instant",
+      block: "start",
     });
-
-    this.paneEl.appendChild(btn);
-    this._scrollBack.el = btn;
-
-    requestAnimationFrame(() => btn.classList.add("visible"));
-
-    this._scrollBack.timer = setTimeout(() => {
-      this.#dismissScrollBackButton();
-    }, 7000);
   }
 
-  #dismissScrollBackButton(immediate = false) {
-    const { el, timer } = this._scrollBack;
-    if (timer) {
-      clearTimeout(timer);
-      this._scrollBack.timer = null;
-    }
-    if (!el) return;
-
-    if (immediate) {
-      el.remove();
-      this._scrollBack.el = null;
-      return;
-    }
-
-    el.classList.add("fading");
-    el.addEventListener(
-      "transitionend",
-      () => {
-        el.remove();
-        if (this._scrollBack.el === el) this._scrollBack.el = null;
-      },
-      { once: true },
-    );
+  /** The page numbered `n` (1-based), if there is one. */
+  #page(n: number): PageView | undefined {
+    return this.pages[n - 1];
   }
 
   /**
@@ -1085,10 +348,9 @@ export class ViewerPane {
    * drops the pixels of anything now off-screen. Every caller follows it with
    * a render of the visible pages, which is what puts those pixels back.
    */
-  async layoutPages(scale: number) {
-    const outputScale = window.devicePixelRatio || 1;
-    this.#layoutDpr = outputScale;
-    const isSwapped = this.rotation === 90 || this.rotation === 270;
+  layoutPages(scale: number) {
+    const dpr = window.devicePixelRatio || 1;
+    this.#layoutDpr = dpr;
 
     // The gap above and below each page (or spread row) scales with the
     // pages, so a pinch's preview — one transform over the whole stage —
@@ -1101,7 +363,6 @@ export class ViewerPane {
 
     for (let i = 0; i < this.pages.length; i++) {
       const page = this.pages[i];
-      const dims = this.document.pageDimensions[i];
 
       // Off-screen pages are released; on-screen ones keep their pixels until
       // the re-render, but not a render in flight or a detail region, both cut
@@ -1114,171 +375,45 @@ export class ViewerPane {
         page.release();
       }
 
-      // Original (unrotated) visual dimensions
-      const origWidth = Math.round(dims.width * scale);
-      const aspectRatio = dims.height / dims.width;
-      const origHeight = Math.round(origWidth * aspectRatio);
-
-      // A canvas backing store is whole pixels, so round here rather than let
-      // the `canvas.width` setter truncate. At a fractional devicePixelRatio
-      // (browser zoom, 125%/150% display scaling) the CSS box is then derived
-      // from the rounded store, so one buffer pixel maps to one device pixel
-      // and the compositor never resamples (blurs) the page. Round *up*: the
-      // wrapper stays `origWidth` and is transparent, so a canvas a fraction
-      // of a pixel short would leave a seam of wallpaper along its edge; one
-      // that overhangs is clipped by the wrapper's paint containment.
-      const fullWidth = Math.ceil(origWidth * outputScale);
-      const fullHeight = Math.ceil(origHeight * outputScale);
-
-      // Publish the size this page renders at: in full, or capped with a
-      // detail region over it (detail_region.ts). The CSS box is the full
-      // size either way, so a capped store is stretched to fill it.
-      const store = cappedSize({ width: fullWidth, height: fullHeight });
-      page.canvasWidth = store.width;
-      page.canvasHeight = store.height;
-      page.fullWidth = fullWidth;
-      page.fullHeight = fullHeight;
-
-      Object.assign(page.canvas.style, {
-        width: `${fullWidth / outputScale}px`,
-        height: `${fullHeight / outputScale}px`,
-        transform: "",
-        transformOrigin: "",
-      });
-
-      // Inner container keeps original page dimensions
-      Object.assign(page.rotateInner.style, {
-        width: `${origWidth}px`,
-        height: `${origHeight}px`,
-        transformOrigin: "0 0",
-      });
-
-      // Apply rotation transform to inner container
-      switch (this.rotation) {
-        case 0:
-          page.rotateInner.style.transform = "";
-          break;
-        case 90:
-          page.rotateInner.style.transform = "rotate(90deg) translateY(-100%)";
-          break;
-        case 180:
-          page.rotateInner.style.transform =
-            "rotate(180deg) translate(-100%, -100%)";
-          break;
-        case 270:
-          page.rotateInner.style.transform = "rotate(270deg) translateX(-100%)";
-          break;
-      }
-
-      // Wrapper dimensions account for rotation
-      const wrapperWidth = isSwapped ? origHeight : origWidth;
-      const wrapperHeight = isSwapped ? origWidth : origHeight;
-
-      Object.assign(page.wrapper.style, {
-        width: `${wrapperWidth}px`,
-        height: `${wrapperHeight}px`,
-        // Placeholder size used while content-visibility:auto skips this page
-        // off-screen. `auto` lets the browser remember the real rendered size
-        // once seen; the lengths are the fallback for not-yet-rendered pages,
-        // matching the explicit box so the scrollbar never jumps.
-        containIntrinsicSize: `auto ${wrapperWidth}px auto ${wrapperHeight}px`,
-      });
-
-      // Overlay layers use original dimensions (inside rotateInner)
-      const layerStyles = {
-        left: "0px",
-        top: "0px",
-        width: `${origWidth}px`,
-        height: `${origHeight}px`,
-        transform: "",
-        transformOrigin: "",
-      };
-      Object.assign(page.annotationLayer.style, layerStyles);
-      Object.assign(page.textLayer.style, layerStyles);
+      const dims = this.document.pageDimensions[i];
+      page.applyLayout(
+        computePageLayout(dims, scale, dpr, this.rotation),
+        this.rotation,
+      );
     }
   }
 
-  #dprQuery: MediaQueryList | null = null;
-  #onDprChange: (() => void) | null = null;
-  #dprRAF: number | null = null;
-  /** devicePixelRatio the last `layoutPages` sized the backing stores for. */
-  #layoutDpr = 0;
-
-  /**
-   * Re-lay out and re-render when devicePixelRatio changes — the window moved
-   * to a display with a different density, or browser zoom changed. Moving
-   * between displays doesn't always fire `resize`, and the backing stores
-   * would otherwise stay sized for the old ratio. A `resolution` query only
-   * matches one ratio, so it is re-armed for the new one on every change.
-   *
-   * Browser zoom changes the ratio *and* fires `resize`, whose handler already
-   * re-lays out every pane. So wait a frame, and refresh only if nothing has
-   * laid out at the new ratio by then — otherwise each zoom step would render
-   * every visible page twice.
-   */
-  #watchDevicePixelRatio() {
-    this.#unwatchDevicePixelRatio();
-    this.#dprQuery = window.matchMedia(
-      `(resolution: ${window.devicePixelRatio}dppx)`,
-    );
-    this.#onDprChange = () => {
-      this.#watchDevicePixelRatio();
-      this.#dprRAF = requestAnimationFrame(() => {
-        this.#dprRAF = null;
-        if ((window.devicePixelRatio || 1) !== this.#layoutDpr) {
-          this.refreshAllPages();
-        }
-      });
-    };
-    this.#dprQuery.addEventListener("change", this.#onDprChange, {
-      once: true,
-    });
-  }
-
-  #unwatchDevicePixelRatio() {
-    if (this.#dprQuery && this.#onDprChange) {
-      this.#dprQuery.removeEventListener("change", this.#onDprChange);
-    }
-    if (this.#dprRAF !== null) cancelAnimationFrame(this.#dprRAF);
-    this.#dprQuery = null;
-    this.#onDprChange = null;
-    this.#dprRAF = null;
-  }
-
-  async refreshAllPages() {
-    await this.layoutPages(this.scale);
-    this.#renderVisiblePages();
+  refreshAllPages() {
+    this.layoutPages(this.scale);
+    this.renderScheduler.renderVisible();
     this.annotationManager?.refresh();
   }
 
   fit(percentage = 1, overrideMode = 0) {
-    const viewRect = this.scroller.getBoundingClientRect();
-    const fitMode = overrideMode === 1 ? 1 : this.fitMode;
-    const isSwapped = this.rotation === 90 || this.rotation === 270;
+    const view = this.scroller.getBoundingClientRect();
+    const byWidth = overrideMode === 1 || this.fitMode === 1;
     const dims = this.document.pageDimensions[0];
+    // The page's extent as it shows on screen, rotation included.
+    const [pageWidth, pageHeight] = isQuarterTurn(this.rotation)
+      ? [dims?.height, dims?.width]
+      : [dims?.width, dims?.height];
+    const pageExtent = byWidth ? pageWidth : pageHeight;
+    if (!pageExtent) return;
 
-    if (fitMode === 1) {
-      if (this.spreadMode === 0) {
-        const intrinsicWidth = isSwapped ? dims?.height : dims?.width;
-        if (!intrinsicWidth) return;
-
-        const targetScale = (viewRect.width / intrinsicWidth) * percentage;
-        this.zoomAt(targetScale, viewRect.width / 2, viewRect.height / 2);
-      } else {
-        const pageWidth = (isSwapped ? dims?.height : dims?.width) || 0;
-        const spreadWidth = pageWidth * 2 + 4;
-        const targetScale = (viewRect.width / spreadWidth) * percentage;
-        this.zoomAt(targetScale, viewRect.width / 2, viewRect.height / 2);
-      }
-      this.fitMode = 2;
+    let targetScale: number;
+    if (!byWidth) {
+      targetScale = view.height / pageExtent;
+    } else if (this.spreadMode === 0) {
+      targetScale = view.width / pageExtent;
     } else {
-      const intrinsicHeight = isSwapped ? dims?.width : dims?.height;
-      if (!intrinsicHeight) return;
-      const targetScale = (viewRect.height / intrinsicHeight) * percentage;
-      this.zoomAt(targetScale, viewRect.width / 2, viewRect.height / 2);
-      this.fitMode = 1;
+      // Two pages side by side. The gutter between them is fixed CSS px and
+      // doesn't scale, so it comes off the width before the pages share it.
+      targetScale = (view.width - SPREAD_GUTTER) / (pageExtent * 2);
     }
+    this.zoomAt(targetScale * percentage, view.width / 2, view.height / 2);
 
+    // Each fit alternates with the other for next time.
+    this.fitMode = byWidth ? 2 : 1;
     return this.fitMode;
   }
 
@@ -1294,14 +429,8 @@ export class ViewerPane {
     if (this.spreadMode === mode) return;
 
     const currentPage = this.getCurrentPage();
-    this.#clearSpreadLayout();
     this.spreadMode = mode;
-
-    if (mode === 0) {
-      this.#layoutSinglePage();
-    } else {
-      this.#layoutSpread(mode);
-    }
+    this.spreadLayout.apply(this.stage, this.pages, mode);
 
     if (currentPage > 0) {
       this.goToPage(currentPage);
@@ -1311,106 +440,6 @@ export class ViewerPane {
       this.fit(1, 1);
       this.annotationManager?.refresh();
     });
-  }
-
-  #clearSpreadLayout() {
-    for (const row of this.spreadRows) {
-      while (row.firstChild) {
-        this.stage.appendChild(row.firstChild);
-      }
-      row.remove();
-    }
-    this.spreadRows = [];
-
-    if (this.spreadContainer) {
-      while (this.spreadContainer.firstChild) {
-        this.stage.appendChild(this.spreadContainer.firstChild);
-      }
-      this.spreadContainer.remove();
-      this.spreadContainer = null;
-    }
-  }
-
-  #layoutSinglePage() {
-    for (const pageView of this.pages) {
-      pageView.wrapper.classList.remove(
-        "spread-page",
-        "spread-page-left",
-        "spread-page-right",
-        "spread-page-single",
-      );
-      this.stage.appendChild(pageView.wrapper);
-    }
-  }
-
-  #layoutSpread(mode: SpreadMode) {
-    this.spreadContainer = document.createElement("div");
-    this.spreadContainer.className = "spread-container";
-    this.stage.appendChild(this.spreadContainer);
-
-    // Group pages into pairs based on mode
-    const pairs = this.#createPagePairs(mode);
-
-    for (const pair of pairs) {
-      const row = document.createElement("div");
-      row.className = "spread-row";
-
-      if (pair.length === 1) {
-        // Single page (first page in odd mode, or last page if odd total)
-        const pageView = pair[0];
-        pageView.wrapper.classList.add("spread-page", "spread-page-single");
-        pageView.wrapper.classList.remove(
-          "spread-page-left",
-          "spread-page-right",
-        );
-        row.appendChild(pageView.wrapper);
-        row.classList.add("spread-row-single");
-      } else {
-        // Page pair
-        const [left, right] = pair;
-
-        left.wrapper.classList.add("spread-page", "spread-page-left");
-        left.wrapper.classList.remove(
-          "spread-page-single",
-          "spread-page-right",
-        );
-        row.appendChild(left.wrapper);
-
-        right.wrapper.classList.add("spread-page", "spread-page-right");
-        right.wrapper.classList.remove(
-          "spread-page-single",
-          "spread-page-left",
-        );
-        row.appendChild(right.wrapper);
-      }
-
-      this.spreadContainer.appendChild(row);
-      this.spreadRows.push(row);
-    }
-  }
-
-  #createPagePairs(mode: SpreadMode): PageView[][] {
-    const pairs: PageView[][] = [];
-    if (mode === 1) {
-      for (let i = 0; i < this.pages.length; i += 2) {
-        if (i + 1 < this.pages.length) {
-          pairs.push([this.pages[i], this.pages[i + 1]]);
-        } else {
-          pairs.push([this.pages[i]]);
-        }
-      }
-    } else if (mode === 2) {
-      pairs.push([this.pages[0]]);
-      for (let i = 1; i < this.pages.length; i += 2) {
-        if (i + 1 < this.pages.length) {
-          pairs.push([this.pages[i], this.pages[i + 1]]);
-        } else {
-          pairs.push([this.pages[i]]);
-        }
-      }
-    }
-
-    return pairs;
   }
 
   onDocumentChange(event: DocEventName, data?: Record<string, any>) {
@@ -1436,20 +465,17 @@ export class ViewerPane {
     this.textSelectionManager.clearSelection();
   }
 
-  toggleHandMode() {
-    this.handMode = !this.handMode;
+  setHandMode(on: boolean) {
+    if (this.handMode === on) return;
+    this.handMode = on;
 
-    if (this.handMode) {
+    if (on) {
       // Clear any existing selection
       this.clearSelection();
-      this.scroller.classList.add("hand-mode");
-      this.#setupPanHandler();
+      this.handPan.enable();
     } else {
-      this.scroller.classList.remove("hand-mode", "panning");
-      this.#teardownPanHandler();
+      this.handPan.disable();
     }
-
-    return this.handMode;
   }
 
   // ==================
@@ -1483,116 +509,29 @@ export class ViewerPane {
         ?.classList.remove("visible");
     }
 
-    this.layoutPages(this.scale);
-    this.#renderVisiblePages();
-    this.annotationManager?.refresh();
-  }
-
-  #setupPanHandler() {
-    this._onPanStart = (e: PointerEvent) => {
-      // Only handle left mouse button
-      if (e.button !== 0) return;
-
-      // A drawing or region-select drag outranks the hand: without this both
-      // ran, and the page scrolled out from under the tool's own gesture.
-      if (isPointerToolActive()) return;
-
-      // Ignore clicks on interactive elements
-      if (
-        (e.target as Element).closest(
-          "a, button, .pane-controls, .annotation-toolbar-container",
-        )
-      )
-        return;
-
-      e.preventDefault();
-      // The pan outranks text selection in turn. The hand-mode CSS already
-      // makes the text layer unselectable, but a drag that starts off it can
-      // still arm a selection in WebKit, which no CSS can call back.
-      this._releasePan = beginDragGesture();
-      this.isPanning = true;
-      this.scroller.classList.add("panning");
-
-      this.panStart = {
-        x: e.clientX,
-        y: e.clientY,
-        scrollLeft: this.scroller.scrollLeft,
-        scrollTop: this.scroller.scrollTop,
-      };
-    };
-
-    this._onPanMove = (e: PointerEvent) => {
-      if (!this.isPanning) return;
-
-      const deltaX = e.clientX - this.panStart.x;
-      const deltaY = e.clientY - this.panStart.y;
-
-      this.scroller.scrollLeft = this.panStart.scrollLeft - deltaX;
-      this.scroller.scrollTop = this.panStart.scrollTop - deltaY;
-    };
-
-    this._onPanEnd = () => {
-      if (!this.isPanning) return;
-      this.isPanning = false;
-      this.scroller.classList.remove("panning");
-      this._releasePan?.();
-      this._releasePan = null;
-    };
-
-    this.scroller.addEventListener("pointerdown", this._onPanStart);
-    document.addEventListener("pointermove", this._onPanMove);
-    document.addEventListener("pointerup", this._onPanEnd);
-  }
-
-  #teardownPanHandler() {
-    this._releasePan?.();
-    this._releasePan = null;
-    this.isPanning = false;
-    if (this._onPanStart) {
-      this.scroller.removeEventListener("pointerdown", this._onPanStart);
-      document.removeEventListener("pointermove", this._onPanMove!);
-      document.removeEventListener("pointerup", this._onPanEnd!);
-      this._onPanStart = null;
-      this._onPanMove = null;
-      this._onPanEnd = null;
-    }
+    this.refreshAllPages();
   }
 
   destroy() {
     this.document.unsubscribe(this);
-    this.#unwatchDevicePixelRatio();
-    if (this.observer) {
-      for (const page of this.pages) {
-        this.observer.unobserve(page.wrapper);
-      }
-      this.observer?.disconnect();
-      this.observer = null;
-    }
-    if (this.centerObserver) {
-      this.centerObserver.disconnect();
-      this.centerObserver = null;
-      this.centeredPages.clear();
-    }
-    // Hand mode parks listeners on `document`; without this they outlive the
-    // pane and keep scrolling a detached scroller.
-    this.#teardownPanHandler();
+    this.#unwatchDpr?.();
+    this.#unwatchDpr = null;
+    this.renderScheduler.destroy();
+    this.currentPageTracker.destroy();
+    this.zoomController.destroy();
+    // Hand mode and the off-span selection park listeners on `document`;
+    // without this they outlive the pane.
+    this.handPan.disable();
+    this.nearestSpanSelection?.destroy();
+    this.nearestSpanSelection = null;
     this.controls.destroy();
     this.textSelectionManager.destroy();
     this.annotationManager?.destroy();
-    this.#dismissScrollBackButton(true);
+    this.scrollBack.destroy();
 
     // Clean up spread layout
-    this.#clearSpreadLayout();
+    this.spreadLayout.clear(this.stage);
 
-    if (this.#renderTimer !== null) clearTimeout(this.#renderTimer);
-    this.#renderTimer = null;
-    this.#renderQueue = [];
-    this.scroller.removeEventListener("scroll", this.#scheduleDetailRefresh);
-    if (this.#detailTimer !== null) clearTimeout(this.#detailTimer);
-    this.#detailTimer = null;
-    if (this._zoomRAF !== null) cancelAnimationFrame(this._zoomRAF);
-    this._zoomRAF = null;
-    this._pendingZoom = null;
     for (const page of this.pages) {
       page.release();
     }

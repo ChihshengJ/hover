@@ -10,8 +10,10 @@ import type { CrossReference } from "../analysis/cross_reference_builder.js";
 import type { CitationTarget } from "../analysis/citation_builder.js";
 import { buildLuminanceMap, clearLuminanceMap } from "./page_luminance.js";
 import { TEXT_GAMMA_ENABLED, applyTextGamma } from "./text_gamma.js";
+import { rotateTransform } from "./page_layout.js";
 
 import type { Edges } from "./detail_region.js";
+import type { PageLayout } from "./page_layout.js";
 import type { PagePlacement } from "./text_gamma.js";
 
 let sharedPopup: CitationPopup | null = null;
@@ -85,8 +87,6 @@ export class PageView {
    */
   #renderGeneration = 0;
   scale = 1;
-  /** Set by `resize()`, consumed by the next `render()`. */
-  pendingRenderScale?: number;
 
   _cachedSpans: CachedSpan[] | null = null;
   _lastTextScale: number | null = null;
@@ -209,9 +209,9 @@ export class PageView {
     return endOfContent;
   }
 
-  async render(requestedScale?: number) {
+  async render(scale: number) {
     const generation = ++this.#renderGeneration;
-    this.scale = requestedScale || this.pendingRenderScale || 1;
+    this.scale = scale;
 
     const page = this.#getPage();
     if (!page) {
@@ -769,6 +769,61 @@ export class PageView {
   }
 
   // ============================================
+  // Layout
+  // ============================================
+
+  /**
+   * Size the page's boxes for `layout` and publish the backing-store size it
+   * renders at. It sizes no canvas buffer itself: that follows visibility,
+   * allocated on render and freed on release.
+   */
+  applyLayout(layout: PageLayout, rotation: number) {
+    this.canvasWidth = layout.store.width;
+    this.canvasHeight = layout.store.height;
+    this.fullWidth = layout.fullWidth;
+    this.fullHeight = layout.fullHeight;
+
+    Object.assign(this.canvas.style, {
+      width: `${layout.canvasCssWidth}px`,
+      height: `${layout.canvasCssHeight}px`,
+      transform: "",
+      transformOrigin: "",
+    });
+
+    // The inner box keeps the unrotated page's size and turns inside the
+    // wrapper, whose box is the rotated one.
+    Object.assign(this.rotateInner.style, {
+      width: `${layout.width}px`,
+      height: `${layout.height}px`,
+      transformOrigin: "0 0",
+      transform: rotateTransform(rotation),
+    });
+
+    const { wrapperWidth, wrapperHeight } = layout;
+    Object.assign(this.wrapper.style, {
+      width: `${wrapperWidth}px`,
+      height: `${wrapperHeight}px`,
+      // Placeholder size used while content-visibility:auto skips this page
+      // off-screen. `auto` lets the browser remember the real rendered size
+      // once seen; the lengths are the fallback for not-yet-rendered pages,
+      // matching the explicit box so the scrollbar never jumps.
+      containIntrinsicSize: `auto ${wrapperWidth}px auto ${wrapperHeight}px`,
+    });
+
+    // Overlay layers use the unrotated size (inside rotateInner)
+    const layerStyles = {
+      left: "0px",
+      top: "0px",
+      width: `${layout.width}px`,
+      height: `${layout.height}px`,
+      transform: "",
+      transformOrigin: "",
+    };
+    Object.assign(this.annotationLayer.style, layerStyles);
+    Object.assign(this.textLayer.style, layerStyles);
+  }
+
+  // ============================================
   // Lifecycle
   // ============================================
 
@@ -817,16 +872,6 @@ export class PageView {
     }
     const anchor = sharedPopup?.currentAnchor;
     if (anchor && this.wrapper.contains(anchor)) sharedPopup.hide(true);
-  }
-
-  async resize(scale: number) {
-    this.scale = scale;
-    this.pendingRenderScale = scale;
-  }
-
-  async renderIfNeed() {
-    if (this.canvas.dataset.rendered === "true") return;
-    await this.render();
   }
 
   /**

@@ -18,7 +18,7 @@ export interface PaneControlsOptions {
   getHandMode: () => boolean;
   zoom: (delta: number) => void;
   fit: (mode: number, target: number) => void;
-  toggleHandMode: () => void;
+  setHandMode: (on: boolean) => void;
   scrollToRelative: (delta: number) => void;
 }
 
@@ -87,8 +87,9 @@ export class PaneControls {
 
     this.options.paneEl.appendChild(this.element);
     this.isHidden = true;
-    // Zooms before now had no bar to update.
+    // Zooms and mode changes before now had no bar to update.
     this.updateZoomDisplay();
+    this.#updateModeToggle(this.options.getHandMode());
   }
 
   bindScrollEvents() {
@@ -173,16 +174,12 @@ export class PaneControls {
         this.options.fit(1, 1);
         break;
       case "hand-tool":
-        if (!this.options.getHandMode()) {
-          this.options.toggleHandMode();
-          this.#updateModeToggle(true);
-        }
+        this.options.setHandMode(true);
+        this.#updateModeToggle(true);
         break;
       case "cursor":
-        if (this.options.getHandMode()) {
-          this.options.toggleHandMode();
-          this.#updateModeToggle(false);
-        }
+        this.options.setHandMode(false);
+        this.#updateModeToggle(false);
         break;
     }
   }

@@ -12,7 +12,7 @@
  * Which to call:
  *   custom drag — control, handle, resizer, pan, drawing, region select
  *     -> beginDragGesture(), or onPointerDrag() for the common drag shape
- *   selection we compute in JS (viewpane's nearest-span selection)
+ *   selection we compute in JS (nearest_span_selection.ts)
  *     -> beginCustomSelectionGesture(); the `user-select: none` blanket is
  *        omitted, since it would block our own programmatic ranges
  *   native browser selection (pointerdown on a .textLayer span)

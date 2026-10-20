@@ -43,12 +43,17 @@
    Drawing Canvas Overlay
    =========================================== */
 
+/* Sits inside the page wrapper, so `.page-wrapper canvas` (viewer.css) reaches
+   it too: its white backdrop would hide the page under the live stroke, and
+   night mode's filter would invert the ink the committed SVG then shows as is. */
 .drawing-canvas-overlay {
   position: absolute;
   top: 0;
   left: 0;
   z-index: 100;
   pointer-events: none;
+  background: transparent;
+  filter: none;
 }
 
 /* ===========================================

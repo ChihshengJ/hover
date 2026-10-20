@@ -280,6 +280,26 @@
   background: white;
 }
 
+/* ─── Night Mode ─── */
+
+.night-mode .drawing-bbox-controls {
+  background: rgba(255, 255, 255, 0.3);
+}
+
+.night-mode .drawing-bbox-btn {
+  color: rgba(255, 255, 255, 0.8);
+}
+
+.night-mode .drawing-bbox-btn:hover {
+  background: rgba(255, 255, 255, 0.15);
+  color: white;
+}
+
+.night-mode .drawing-bbox-delete:hover {
+  background: rgba(239, 83, 80, 0.3);
+  color: rgb(255, 60, 60);
+}
+
 /* ===========================================
    SVG Drawing Marks
    =========================================== */

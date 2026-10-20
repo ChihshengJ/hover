@@ -7,6 +7,7 @@ import { Settings } from "../settings/settings.js";
 import { Config } from "../settings/config.js";
 import { requestThrottle } from "./request_throttle.js";
 import { ingestFile } from "../../platform/ingest.js";
+import { openShareModal } from "./share/share_modal.js";
 
 import type { SplitWindowManager } from "../../viewer/window_manager.js";
 const VERSION = __APP_VERSION__;
@@ -16,6 +17,7 @@ export type FileMenuAction =
   | "import"
   | "print"
   | "save"
+  | "share"
   | "cite"
   | "metadata"
   | "tutorial"
@@ -119,6 +121,14 @@ export class FileMenu {
         </svg>
         <span>Save PDF</span>
         <span class="shortcut">⌘S</span>
+      </button>
+      <button class="file-menu-item" data-action="share">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M8 9H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8a2 2 0 0 0-2-2h-2"/>
+          <polyline points="8 6 12 2 16 6"/>
+          <line x1="12" y1="2" x2="12" y2="15"/>
+        </svg>
+        <span>Share</span>
       </button>
       <div class="file-menu-divider"></div>
       <button class="file-menu-item" data-action="cite">
@@ -387,6 +397,9 @@ export class FileMenu {
         break;
       case "save":
         this.#save();
+        break;
+      case "share":
+        openShareModal(this.wm.document, (msg: string) => this.#showToast(msg));
         break;
       case "cite":
         this.#showCitation();

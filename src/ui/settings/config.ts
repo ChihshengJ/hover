@@ -76,6 +76,7 @@ export interface ConfigValues {
   night_mode_last: boolean;
   split_persist: boolean;
   split_state: SplitState | null;
+  share_email_opening: string;
 }
 
 export type ConfigKey = keyof ConfigValues;
@@ -163,6 +164,12 @@ const SCHEMA: { [K in ConfigKey]: SchemaEntry<K> } = {
   split_state: {
     storageKey: "hover_split_state",
     default: null,
+  },
+
+  // Sharing — the line a shared email draft opens with; empty leaves it out.
+  share_email_opening: {
+    storageKey: "hover_share_email_opening",
+    default: "Check this paper out:",
   },
 };
 

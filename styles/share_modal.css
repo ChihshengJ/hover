@@ -1,0 +1,480 @@
+/* ===========================================
+   Share Modal
+   The shell is the file menu's modal (.file-menu-modal*); toggles and
+   selects are borrowed from Settings (.settings-toggle-*, .settings-select*).
+   =========================================== */
+
+.share-modal {
+  max-width: 440px;
+}
+
+.share-modal [hidden] {
+  display: none !important;
+}
+
+/* ---------- Tabs ---------- */
+
+.share-tabs {
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  margin: 16px 20px 0;
+  padding: 3px;
+  background: var(--bg-tertiary);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-inset);
+}
+
+/* The raised pill under the active tab; JS sets its width and offset. */
+.share-tabs-pill {
+  position: absolute;
+  top: 3px;
+  bottom: 3px;
+  left: 0;
+  border-radius: calc(var(--radius-lg) - 3px);
+  background: var(--bg-glass-solid);
+  box-shadow:
+    0 1px 3px rgba(0, 0, 0, 0.14),
+    inset 0 1px 0 rgba(255, 255, 255, 0.9);
+  transition:
+    transform var(--transition-bounce),
+    width var(--transition-bounce);
+}
+
+.night-mode .share-tabs-pill {
+  background: var(--bg-secondary);
+  box-shadow:
+    0 1px 3px rgba(0, 0, 0, 0.4),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08);
+}
+
+.share-tab {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 7px 10px;
+  font-family: inherit;
+  font-size: 13px;
+  color: var(--text-secondary);
+  background: transparent;
+  border: none;
+  border-radius: calc(var(--radius-lg) - 3px);
+  cursor: pointer;
+  transition: color var(--transition-fast);
+}
+
+.share-tab:hover,
+.share-tab.active {
+  color: var(--text-primary);
+}
+
+.share-tab svg {
+  width: 15px;
+  height: 15px;
+  flex-shrink: 0;
+}
+
+/* ---------- Panels ---------- */
+
+.share-panels {
+  max-height: calc(80vh - 130px);
+  overflow-y: auto;
+  transition: height 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.share-panels.animating {
+  overflow: hidden;
+}
+
+.share-panel {
+  padding: 16px 20px 20px;
+  animation: share-panel-in 0.2s ease;
+}
+
+@keyframes share-panel-in {
+  from {
+    opacity: 0;
+  }
+}
+
+.share-panel > :first-child {
+  margin-top: 0;
+}
+
+.share-label {
+  display: block;
+  margin-bottom: 8px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.share-note {
+  margin: 10px 0 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-tertiary);
+}
+
+.share-footer {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 14px;
+}
+
+.share-hint {
+  flex: 1;
+  min-width: 0;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--text-tertiary);
+}
+
+/* ---------- Buttons ---------- */
+
+.share-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  flex-shrink: 0;
+  padding: 7px 14px;
+  font-family: inherit;
+  font-size: 12px;
+  color: var(--text-primary);
+  background: transparent;
+  border: 1px solid var(--border-color-strong);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.share-btn:hover:not(:disabled) {
+  background: var(--bg-hover);
+}
+
+.share-btn:active:not(:disabled) {
+  transform: scale(0.97);
+}
+
+.share-btn:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.share-btn-primary {
+  color: #fff;
+  background: var(--color-accent);
+  border-color: var(--color-accent);
+}
+
+.share-btn-primary:hover:not(:disabled) {
+  background: var(--color-accent-hover);
+  border-color: var(--color-accent-hover);
+}
+
+/* ---------- Link ---------- */
+
+/* One inset well holding the URL and a raised Copy key. */
+.share-link-field {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 4px 4px 12px;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.06);
+  transition:
+    border-color var(--transition-fast),
+    box-shadow var(--transition-fast);
+}
+
+.share-link-field:focus-within {
+  border-color: var(--color-accent-border);
+  box-shadow: 0 0 0 3px var(--color-accent-light);
+}
+
+.share-link-input {
+  flex: 1;
+  min-width: 0;
+  padding: 6px 0;
+  font-family: "SF Mono", "Menlo", monospace;
+  font-size: 12px;
+  color: var(--text-primary);
+  background: transparent;
+  border: none;
+  outline: none;
+}
+
+.share-link-input::placeholder {
+  color: var(--text-muted);
+}
+
+.share-link-copy {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  flex-shrink: 0;
+  padding: 6px 12px;
+  font-family: inherit;
+  font-size: 12px;
+  color: var(--text-primary);
+  background: var(--bg-glass-solid);
+  border: none;
+  border-radius: var(--radius-md);
+  box-shadow:
+    0 1px 3px rgba(0, 0, 0, 0.14),
+    inset 0 1px 0 rgba(255, 255, 255, 0.9);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.night-mode .share-link-copy {
+  background: var(--bg-secondary);
+  box-shadow:
+    0 1px 3px rgba(0, 0, 0, 0.4),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08);
+}
+
+.share-link-copy:active:not(:disabled) {
+  transform: scale(0.96);
+}
+
+.share-link-copy:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.share-link-copy.copied {
+  color: var(--color-success);
+}
+
+.share-link-copy svg {
+  width: 13px;
+  height: 13px;
+}
+
+/* ---------- Email ---------- */
+
+.share-attach-row.locked .settings-toggle-switch {
+  opacity: 0.4;
+  pointer-events: none;
+}
+
+/* The draft reads as a small mail window: subject, rule, body, attachment. */
+.share-compose {
+  margin-top: 12px;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  transition: border-color var(--transition-fast);
+}
+
+.share-compose:focus-within {
+  border-color: var(--border-color-strong);
+}
+
+.share-compose-subject,
+.share-compose-body {
+  display: block;
+  box-sizing: border-box;
+  width: 100%;
+  font-family: inherit;
+  color: var(--text-primary);
+  background: transparent;
+  border: none;
+  outline: none;
+}
+
+.share-compose-subject {
+  padding: 12px 14px 10px;
+  font-size: 14px;
+  font-weight: 500;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.share-compose-body {
+  /* Fits the attachment draft's five lines without a scrollbar. */
+  min-height: 124px;
+  padding: 10px 14px;
+  font-size: 13px;
+  line-height: 1.55;
+  resize: none;
+}
+
+.share-compose-subject::placeholder,
+.share-compose-body::placeholder {
+  color: var(--text-muted);
+}
+
+.share-attachment {
+  padding: 10px 14px 12px;
+  border-top: 1px dashed var(--border-color-strong);
+}
+
+.share-attachment-file {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--text-primary);
+}
+
+.share-attachment-file svg {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+  color: var(--text-secondary);
+}
+
+.share-attachment-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.share-attachment-size {
+  flex-shrink: 0;
+  color: var(--text-tertiary);
+}
+
+/* Tiny sheets of the annotated pages, enough to see the marks are there. */
+.share-attachment-pages {
+  display: flex;
+  align-items: flex-end;
+  gap: 10px;
+  padding: 12px 2px 4px;
+  overflow-x: auto;
+  scrollbar-width: thin;
+}
+
+.share-thumb {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+  flex-shrink: 0;
+  margin: 0;
+}
+
+.share-thumb-sheet {
+  overflow: hidden;
+  background: #fff;
+  border-radius: 2px;
+  box-shadow:
+    0 1px 3px rgba(0, 0, 0, 0.18),
+    0 0 0 0.5px rgba(0, 0, 0, 0.1);
+  animation: share-thumb-wait 1.2s ease-in-out infinite alternate;
+}
+
+.share-thumb-sheet:has(canvas) {
+  animation: none;
+}
+
+@keyframes share-thumb-wait {
+  to {
+    opacity: 0.55;
+  }
+}
+
+.share-thumb-sheet canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  animation: share-panel-in 0.25s ease;
+}
+
+.share-thumb figcaption {
+  font-size: 10px;
+  color: var(--text-tertiary);
+}
+
+.share-thumb-more {
+  flex-shrink: 0;
+  align-self: center;
+  font-size: 11px;
+  color: var(--text-tertiary);
+}
+
+.share-attachment-summary {
+  display: block;
+  margin-top: 6px;
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+
+/* ---------- Zotero ---------- */
+
+.share-zotero-status {
+  gap: 12px;
+}
+
+/* Status light, in the same glow language as the Settings toggles. */
+.share-light {
+  width: 8px;
+  height: 8px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background: #888;
+  transition:
+    background var(--transition-normal),
+    box-shadow var(--transition-normal);
+}
+
+.share-light[data-light="pending"] {
+  background: #f59e0b;
+  box-shadow: 0 0 6px rgba(245, 158, 11, 0.6);
+  animation: share-light-pulse 1.2s ease-in-out infinite alternate;
+}
+
+.share-light[data-light="on"] {
+  background: var(--color-success);
+  box-shadow:
+    0 0 4px rgba(34, 197, 94, 0.7),
+    0 0 10px rgba(34, 197, 94, 0.3);
+}
+
+@keyframes share-light-pulse {
+  to {
+    opacity: 0.45;
+  }
+}
+
+.share-zotero-target .settings-select {
+  max-width: 240px;
+}
+
+.share-zotero-result {
+  margin-top: 8px;
+  padding: 12px 16px;
+  background: var(--color-success-light);
+  border: 1px solid rgba(34, 197, 94, 0.35);
+  border-radius: var(--radius-lg);
+}
+
+.share-zotero-result .share-label {
+  margin-bottom: 4px;
+}
+
+.share-zotero-result-title {
+  display: block;
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1.45;
+  color: var(--text-primary);
+}
+
+.share-zotero-result.unrecognized .share-zotero-result-title {
+  font-weight: 400;
+  color: var(--text-secondary);
+}

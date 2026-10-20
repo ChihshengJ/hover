@@ -174,6 +174,11 @@ export async function openShareModal(
   const movePill = (button: HTMLButtonElement) => {
     pill.style.width = `${button.offsetWidth}px`;
     pill.style.transform = `translateX(${button.offsetLeft}px)`;
+    // An overshoot into an end tab would carry the pill past the rail.
+    pill.classList.toggle(
+      "at-edge",
+      button === tabButtons[0] || button === tabButtons[tabButtons.length - 1],
+    );
   };
 
   const select = (id: TabId) => {
@@ -233,7 +238,14 @@ export async function openShareModal(
   overlay
     .querySelector(".file-menu-modal-close")!
     .addEventListener("click", close);
+  // A click lands on the overlay whenever press and release share no closer
+  // ancestor, e.g. a text selection dragged out of the dialog. Only a press
+  // that also began on the backdrop closes it.
+  let pressedBackdrop = false;
+  overlay.addEventListener("pointerdown", (e) => {
+    pressedBackdrop = e.target === overlay;
+  });
   overlay.addEventListener("click", (e) => {
-    if (e.target === overlay) close();
+    if (pressedBackdrop && e.target === overlay) close();
   });
 }

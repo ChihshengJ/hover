@@ -9,6 +9,8 @@ import {
   summarizeAnnotations,
 } from "./annotated_pages.js";
 
+import { Config } from "../../settings/config.js";
+
 import type { ShareContext, ShareTab } from "./share_modal.js";
 
 /** Most providers cap attachments at 20–25 MB. */
@@ -59,7 +61,6 @@ export function createEmailTab(ctx: ShareContext): ShareTab {
     </div>
 
     <div class="share-compose">
-      <input class="share-compose-subject" type="text" placeholder="Subject" aria-label="Subject">
       <textarea class="share-compose-body" rows="4" placeholder="Message" aria-label="Message"></textarea>
       <div class="share-attachment" hidden>
         <div class="share-attachment-file">
@@ -86,7 +87,6 @@ export function createEmailTab(ctx: ShareContext): ShareTab {
   const toggle = $<HTMLInputElement>(".share-attach-toggle");
   const toggleRow = $<HTMLDivElement>(".share-attach-row");
   const toggleNote = $<HTMLSpanElement>(".settings-toggle-description");
-  const subject = $<HTMLInputElement>(".share-compose-subject");
   const body = $<HTMLTextAreaElement>(".share-compose-body");
   const attachment = $<HTMLDivElement>(".share-attachment");
   const sizeLabel = $<HTMLSpanElement>(".share-attachment-size");
@@ -101,13 +101,20 @@ export function createEmailTab(ctx: ShareContext): ShareTab {
   // A body the user hasn't touched keeps following the link and the toggle.
   let bodyEdited = false;
   const defaultBody = () => {
-    if (!attaching()) return `${ctx.title}\n${ctx.link}`;
-    const lines = [ctx.title, "", "I've attached my annotated copy."];
-    if (hasLink()) lines.push("", `Original: ${ctx.link}`);
-    return lines.join("\n");
+    const paragraphs: string[] = [];
+    const opening = Config.get("share_email_opening").trim();
+    if (opening) paragraphs.push(opening);
+    paragraphs.push(hasLink() ? `${ctx.title}\n${ctx.link}` : ctx.title);
+    if (attaching()) paragraphs.push("I've attached my annotated copy.");
+    return paragraphs.join("\n\n");
   };
 
-  subject.value = ctx.title;
+  /** Grow the sheet with its text, like paper rather than a scroll box. */
+  const fitBody = () => {
+    body.style.height = "auto";
+    body.style.height = `${body.scrollHeight}px`;
+  };
+
   $(".share-attachment-name").textContent = ctx.fileName;
 
   let readyFile: File | null = null;
@@ -120,16 +127,10 @@ export function createEmailTab(ctx: ShareContext): ShareTab {
       return;
     }
     sendBtn.disabled = !readyFile;
-    if (!readyFile) {
-      hint.textContent = "";
-    } else if (readyFile.size > LARGE_ATTACHMENT_BYTES) {
-      hint.textContent =
-        "Large for email. Many providers cap attachments at 25 MB";
-    } else if (navigator.canShare?.({ files: [readyFile] })) {
-      hint.textContent = "Opens the share sheet. Choose Mail to attach it";
-    } else {
-      hint.textContent = "Downloads the PDF for you to attach to the draft";
-    }
+    hint.textContent =
+      readyFile && readyFile.size > LARGE_ATTACHMENT_BYTES
+        ? "Large for email. Many providers cap attachments at 25 MB"
+        : "";
   };
 
   /** Lay out a placeholder per annotated page now, and fill them in as they render. */
@@ -202,6 +203,7 @@ export function createEmailTab(ctx: ShareContext): ShareTab {
         : "Sends the link only";
 
     if (!bodyEdited) body.value = defaultBody();
+    fitBody();
     attachment.hidden = !attaching();
     if (attaching()) {
       buildStrip();
@@ -211,11 +213,16 @@ export function createEmailTab(ctx: ShareContext): ShareTab {
   };
 
   toggle.addEventListener("change", () => ctx.relayout(render));
-  body.addEventListener("input", () => (bodyEdited = true));
+  body.addEventListener("input", () => {
+    bodyEdited = true;
+    fitBody();
+  });
 
   sendBtn.addEventListener("click", async () => {
     if (!attaching()) {
-      openMail(subject.value, body.value);
+      // The share sheet can't take a subject, so neither mode offers one; the
+      // draft is titled after the paper, as its first line already is.
+      openMail(ctx.title, body.value);
       return;
     }
     if (!readyFile) return;
@@ -225,11 +232,10 @@ export function createEmailTab(ctx: ShareContext): ShareTab {
     // download the copy and open a draft for the user to attach it to.
     if (navigator.canShare?.({ files: [readyFile] })) {
       try {
-        await navigator.share({
-          files: [readyFile],
-          title: subject.value,
-          text: body.value,
-        });
+        // No `title`: on macOS neither Chrome nor Safari maps it to Mail's
+        // subject. Chrome adds it to the body as its own line instead, which
+        // repeats the title the draft already opens with.
+        await navigator.share({ files: [readyFile], text: body.value });
         return;
       } catch (error) {
         if (error instanceof DOMException && error.name === "AbortError") {
@@ -239,7 +245,7 @@ export function createEmailTab(ctx: ShareContext): ShareTab {
       }
     }
     download(readyFile);
-    openMail(subject.value, body.value);
+    openMail(ctx.title, body.value);
     ctx.showToast(`Saved "${ctx.fileName}". Attach it to the email`);
   });
 

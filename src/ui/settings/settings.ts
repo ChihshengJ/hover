@@ -335,6 +335,19 @@ export class Settings {
                 </select>
               </div>
             </div>
+
+            <div class="settings-subsection">
+              <div class="settings-subsection-header">
+                <span class="settings-subsection-title">Sharing</span>
+                <span class="settings-subsection-rule"></span>
+              </div>
+              <div class="settings-select-row">
+                <div class="settings-toggle-info">
+                  <span class="settings-toggle-label">Email Opening Line</span>
+                </div>
+                <input type="text" class="settings-text-input share-opening-input" spellcheck="false">
+              </div>
+            </div>
           </div>
 
         </div>
@@ -538,6 +551,17 @@ export class Settings {
             document.body.classList.contains("night-mode"),
           );
         }
+      });
+    }
+
+    // Email opening line for Share › Email
+    const shareOpeningInput = overlay.querySelector<HTMLInputElement>(
+      ".share-opening-input",
+    );
+    if (shareOpeningInput) {
+      shareOpeningInput.value = Config.get("share_email_opening");
+      shareOpeningInput.addEventListener("input", () => {
+        Config.set("share_email_opening", shareOpeningInput.value);
       });
     }
 

@@ -165,7 +165,6 @@ export function createZoteroTab(ctx: ShareContext): ShareTab {
             `file:///${encodeURIComponent(ctx.fileName)}`,
           title: ctx.title,
           targetId,
-          selectedId: targets.selectedId,
         },
         () =>
           setStatus(

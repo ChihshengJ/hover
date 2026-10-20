@@ -23,18 +23,14 @@ export function createLinkTab(ctx: ShareContext): ShareTab {
       <input class="share-link-input" type="url" spellcheck="false" aria-label="Link">
       <button class="share-link-copy">${COPY_ICON}<span>Copy</span></button>
     </div>
-    <p class="share-note">Anyone with the link opens the paper itself, not your annotations.</p>
   `;
 
   const input = el.querySelector(".share-link-input") as HTMLInputElement;
   const copyBtn = el.querySelector(".share-link-copy") as HTMLButtonElement;
-  const note = el.querySelector(".share-note") as HTMLParagraphElement;
 
   input.value = ctx.link;
   if (!ctx.originalUrl) {
-    input.placeholder = "No web link";
-    note.textContent =
-      "This PDF was opened from your computer, so there's no link to share. Email it as a file instead.";
+    input.placeholder = "Opened from your computer, so no web link";
   }
 
   const syncCopy = () => (copyBtn.disabled = !input.value.trim());

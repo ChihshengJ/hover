@@ -27,7 +27,7 @@ export interface ZoteroTarget {
 export interface ZoteroTargets {
   /** Every library and collection a PDF can be saved to, in tree order. */
   targets: ZoteroTarget[];
-  /** What's selected in Zotero right now, which is where a save first lands. */
+  /** What's selected in Zotero right now; a sensible default to offer. */
   selectedId: string;
 }
 
@@ -120,9 +120,12 @@ function asciiJson(value: unknown): string {
  * recognize it (DOI, arXiv ID, …) and builds a parent item from the metadata,
  * the way it does for a PDF dragged into the app.
  *
- * A save always lands in whatever is selected in Zotero, so a different
- * `targetId` is applied afterwards, as the Zotero Connector's own popup does.
- * That waits for recognition, so the move takes the new parent item along.
+ * A save first lands wherever Zotero would put it, and `targetId` is applied
+ * afterwards, as the Zotero Connector's own popup does. The move is sent even
+ * when `targetId` looks like Zotero's selection: with the main window closed
+ * Zotero saves to its remembered last folder instead, which can be a different
+ * collection or the library root. It also waits for recognition, so the move
+ * takes the new parent item along.
  *
  * @param url Where the PDF came from. Zotero requires one and names the
  *   stored file after it.
@@ -133,12 +136,7 @@ function asciiJson(value: unknown): string {
  */
 export async function saveToZotero(
   file: File,
-  {
-    url,
-    title,
-    targetId,
-    selectedId,
-  }: { url: string; title: string; targetId: string; selectedId: string },
+  { url, title, targetId }: { url: string; title: string; targetId: string },
   onIdentifying?: () => void,
 ): Promise<string | null> {
   const sessionID = crypto.randomUUID();
@@ -165,14 +163,12 @@ export async function saveToZotero(
     recognizedTitle = await getRecognizedTitle(sessionID);
   }
 
-  if (targetId !== selectedId) {
-    const moved = await postJson("/connector/updateSession", {
-      sessionID,
-      target: targetId,
-    });
-    if (!moved.ok) {
-      throw new Error(`Zotero couldn't move the item (HTTP ${moved.status})`);
-    }
+  const moved = await postJson("/connector/updateSession", {
+    sessionID,
+    target: targetId,
+  });
+  if (!moved.ok) {
+    throw new Error(`Zotero couldn't file the item (HTTP ${moved.status})`);
   }
 
   return recognizedTitle;

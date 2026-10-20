@@ -17,6 +17,16 @@ export interface ScholarResult {
   scholarUrl: string;
 }
 
+let sharedPopup: CitationPopup | null = null;
+
+/** The one popup every page shares, created on first use. */
+export function getSharedCitationPopup(): CitationPopup {
+  if (!sharedPopup) {
+    sharedPopup = new CitationPopup();
+  }
+  return sharedPopup;
+}
+
 export class CitationPopup {
   popup: HTMLDivElement | null;
   currentAnchor: HTMLElement | null;
@@ -36,6 +46,8 @@ export class CitationPopup {
   findCiteTextCallback:
     ((target: CitationTarget | null) => Promise<string | null>) | null;
   onNavigate: (() => void) | null;
+  /** While set, the popup ignores mouse-leave and outside clicks (onboarding holds it open). */
+  pinned: boolean;
 
   constructor() {
     this.popup = null;
@@ -59,6 +71,7 @@ export class CitationPopup {
     this.currentTargetIndex = 0;
     this.findCiteTextCallback = null;
     this.onNavigate = null;
+    this.pinned = false;
 
     this.init();
   }
@@ -71,6 +84,7 @@ export class CitationPopup {
 
     document.addEventListener("click", (e) => {
       if (
+        !this.pinned &&
         this.popup.style.display !== "none" &&
         !this.popup.contains(e.target as Node) &&
         !this.currentAnchor?.contains(e.target as Node)
@@ -825,6 +839,7 @@ export class CitationPopup {
 
   scheduleClose() {
     this.cancelClose();
+    if (this.pinned) return;
     this.closeTimer = setTimeout(() => {
       if (!this.isMouseOverPopup && !this.isMouseOverAnchor) {
         this.hide();

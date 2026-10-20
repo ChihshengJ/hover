@@ -1,3 +1,4 @@
+import { getSharedCitationPopup } from "../controls/citation_popup.js";
 import type { SplitWindowManager } from "../../viewer/window_manager.js";
 import type { FileMenu } from "../controls/file_menu.js";
 import type { FloatingToolbar } from "../controls/floating_toolbar/index.js";
@@ -139,6 +140,10 @@ export class OnboardingWalkthrough {
   #toolLabels: HTMLElement[] = [];
 
   #circleIndicator: HTMLElement | null = null;
+
+  #circleIndicatorFrame = 0;
+
+  #popupSpotlightCleanup: Function | null = null;
 
   #mutationObserver: MutationObserver | null = null;
 
@@ -440,7 +445,7 @@ export class OnboardingWalkthrough {
           position: "top",
         },
         waitFor: "ballDoubleClicked",
-        onEnter: () => setTimeout(() => this.#onBallDoubleClickEnter(), 300),
+        onEnter: () => this.#onBallDoubleClickEnter(),
         onExit: () => this.#onBallDoubleClickExit(),
       },
 
@@ -572,6 +577,8 @@ export class OnboardingWalkthrough {
 
     this.isActive = true;
     this.currentStepIndex = -1;
+    // Steps cache the spotlight they measured; a rerun must measure afresh.
+    this.steps = this.#defineSteps();
 
     this.#createDOM();
     this.#attachGlobalListeners();
@@ -715,11 +722,16 @@ export class OnboardingWalkthrough {
     const step = this.steps[index];
 
     // Handle overlay visibility
+    // A spotlight step whose target is measured in onEnter keeps the previous
+    // spotlight up until then, so it slides to the new target. Falling back to
+    // the full overlay in between made the spotlight collapse and re-expand,
+    // and the overlay swallowed the pointer, firing mouseleave on whatever was
+    // under it (the citation popup closed itself that way).
     if (step.noOverlay) {
       this.#hideOverlay();
-    } else if (step.type === "message" || !step.spotlight) {
+    } else if (step.type === "message") {
       this.#showFullOverlay();
-    } else {
+    } else if (step.spotlight) {
       this.#showSpotlightOverlay(step.spotlight);
     }
 
@@ -805,6 +817,9 @@ export class OnboardingWalkthrough {
       this.#removeWaitForListener(key);
     });
 
+    this.#releaseCitationPopup();
+    this.#removeCircleIndicator();
+
     // Remove mutation observer
     if (this.#mutationObserver) {
       this.#mutationObserver.disconnect();
@@ -876,7 +891,14 @@ export class OnboardingWalkthrough {
     element: HTMLElement,
     padding: number = 0,
   ): SpotlightConfig {
-    const rect = element.getBoundingClientRect();
+    return this.#getSpotlightFromRect(element.getBoundingClientRect(), padding);
+  }
+
+  /**
+   * Get spotlight config from a viewport rect
+   * @param padding =0]
+   */
+  #getSpotlightFromRect(rect: DOMRect, padding: number = 0): SpotlightConfig {
     return {
       x: rect.left - padding,
       y: rect.top - padding,
@@ -884,6 +906,65 @@ export class OnboardingWalkthrough {
       height: rect.height + padding * 2,
       borderRadius: 8,
     };
+  }
+
+  /**
+   * Viewport rect of `el` with its own transform ignored, i.e. where it will
+   * sit once a scale/slide-in animation finishes. Assumes the offset parent
+   * itself is not transformed.
+   */
+  #getUntransformedRect(el: HTMLElement): DOMRect {
+    const parent = el.offsetParent as HTMLElement | null;
+    let x = el.offsetLeft;
+    let y = el.offsetTop;
+    if (parent && parent !== document.body) {
+      const p = parent.getBoundingClientRect();
+      x += p.left + parent.clientLeft - parent.scrollLeft;
+      y += p.top + parent.clientTop - parent.scrollTop;
+    } else {
+      x -= window.scrollX;
+      y -= window.scrollY;
+    }
+    return new DOMRect(x, y, el.offsetWidth, el.offsetHeight);
+  }
+
+  /**
+   * Resolve once `el` has held still for `frames` consecutive frames (a smooth
+   * scroll or slide has finished), or after `timeout` ms regardless.
+   */
+  #waitForSettle(
+    el: Element,
+    frames: number = 6,
+    timeout: number = 1500,
+  ): Promise<void> {
+    return new Promise((resolve) => {
+      const deadline = performance.now() + timeout;
+      let last = el.getBoundingClientRect();
+      let still = 0;
+      const tick = () => {
+        const rect = el.getBoundingClientRect();
+        const moved =
+          rect.left !== last.left ||
+          rect.top !== last.top ||
+          rect.width !== last.width ||
+          rect.height !== last.height;
+        still = moved ? 0 : still + 1;
+        last = rect;
+        if (still >= frames || performance.now() >= deadline) {
+          resolve();
+        } else {
+          requestAnimationFrame(tick);
+        }
+      };
+      requestAnimationFrame(tick);
+    });
+  }
+
+  /**
+   * Whether the walkthrough is still on `stepIndex` (after an await)
+   */
+  #isOnStep(stepIndex: number): boolean {
+    return this.isActive && this.currentStepIndex === stepIndex;
   }
 
   // Tooltip Management
@@ -957,7 +1038,12 @@ export class OnboardingWalkthrough {
       return;
     }
 
-    const tooltipRect = this.tooltip.getBoundingClientRect();
+    // Layout size, not getBoundingClientRect: a hidden tooltip is scaled to
+    // 0.95 and would measure short, landing it past the clamp once shown.
+    const tooltipRect = {
+      width: this.tooltip.offsetWidth,
+      height: this.tooltip.offsetHeight,
+    };
     const gap = 16;
 
     let x, y;
@@ -987,6 +1073,17 @@ export class OnboardingWalkthrough {
       default:
         x = spotX + spotW / 2 - tooltipRect.width / 2;
         y = spotY + spotH + gap;
+    }
+
+    // Centered above/below a target near a side of the viewport, the tooltip
+    // would overhang it and get clamped flush against that side (the file
+    // menu button in the corner). Line it up with the target's edge instead.
+    if (position !== "left" && position !== "right") {
+      if (x + tooltipRect.width > window.innerWidth - 16) {
+        x = spotX + spotW - tooltipRect.width;
+      } else if (x < 16) {
+        x = spotX;
+      }
     }
 
     // Apply offsets
@@ -1099,10 +1196,13 @@ export class OnboardingWalkthrough {
 
       case "abstractTabClicked": {
         // Watch for abstract tab click
+        // Only the popup's own tab: a textContent match also fired on the
+        // paper's "Abstract" heading, and that click closed the popup.
         const handler = (e: Event) => {
           if (
-            (e.target as Element).closest('[data-tab="abstract"]') ||
-            (e.target as Element).textContent?.includes("Abstract")
+            (e.target as Element).closest(
+              '.citation-popup [data-tab="abstract"]',
+            )
           ) {
             document.removeEventListener("click", handler, true);
             // Small delay to let abstract load
@@ -1326,15 +1426,25 @@ export class OnboardingWalkthrough {
    * Show a pulsing circle indicator on an element
    */
   #showCircleIndicator(element: HTMLElement): HTMLElement {
-    const rect = element.getBoundingClientRect();
+    this.#removeCircleIndicator();
 
     const indicator = document.createElement("div");
     indicator.className = "onboarding-indicator onboarding-circle-indicator";
-    indicator.style.left = `${rect.left + rect.width / 2 - 15}px`;
-    indicator.style.top = `${rect.top + rect.height / 2 - 20}px`;
 
     this.indicatorContainer.appendChild(indicator);
     this.#circleIndicator = indicator;
+
+    // Center on the element using the indicator's real size, and keep
+    // following it: the ball can still be sliding or scaling when this shows.
+    const halfW = indicator.offsetWidth / 2;
+    const halfH = indicator.offsetHeight / 2;
+    const follow = () => {
+      const rect = element.getBoundingClientRect();
+      indicator.style.left = `${rect.left + rect.width / 2 - halfW}px`;
+      indicator.style.top = `${rect.top + rect.height / 2 - halfH}px`;
+      this.#circleIndicatorFrame = requestAnimationFrame(follow);
+    };
+    follow();
 
     return indicator;
   }
@@ -1343,6 +1453,7 @@ export class OnboardingWalkthrough {
    * Remove circle indicator
    */
   #removeCircleIndicator() {
+    cancelAnimationFrame(this.#circleIndicatorFrame);
     if (this.#circleIndicator) {
       this.#circleIndicator.remove();
       this.#circleIndicator = null;
@@ -1457,13 +1568,15 @@ export class OnboardingWalkthrough {
   #onFileMenuExpandedEnter() {
     const container = this.fileMenu.menuList;
     if (container) {
-      // Wait a moment for menu to animate open
-      setTimeout(() => {
-        const config = this.#getSpotlightFromElement(container, 8);
-        this.steps[3].spotlight = config;
-        this.#showSpotlightOverlay(config);
-        this.#updateTooltip(this.steps[3].tooltip, config);
-      }, 150);
+      // The menu is mid scale-in (with overshoot) right now; spotlight the
+      // size it lands at so the spotlight grows with it in one motion.
+      const config = this.#getSpotlightFromRect(
+        this.#getUntransformedRect(container),
+        8,
+      );
+      this.steps[3].spotlight = config;
+      this.#showSpotlightOverlay(config);
+      this.#updateTooltip(this.steps[3].tooltip, config);
     }
   }
   #onFileMenuExpandedExit() {
@@ -1472,19 +1585,23 @@ export class OnboardingWalkthrough {
   }
 
   // --- Step 4: Citation Link ---
-  #onCitationLinkEnter() {
+  async #onCitationLinkEnter() {
     const step = this.steps[4];
-    const link = document.querySelectorAll(
-      "span.citation-rect",
-    )[3] as HTMLElement;
-    console.log(link);
-    // `top` is not a ScrollIntoViewOptions member — it was always ignored.
-    link.scrollIntoView({ block: "center", behavior: "smooth" });
-    step.spotlight = this.#getSpotlightFromElement(link, 4);
-    if (step.spotlight) {
-      this.#showSpotlightOverlay(step.spotlight);
-      this.#updateTooltip(step.tooltip, step.spotlight);
+    const link = document.querySelectorAll<HTMLElement>("span.citation-rect")[3];
+    if (!link) {
+      this.#showFullOverlay();
+      return;
     }
+    link.scrollIntoView({ block: "center", behavior: "smooth" });
+    this.tooltip.classList.remove("visible");
+    // Measure only once the smooth scroll lands. Measuring right away caught
+    // the pre-scroll position, so the spotlight sat as far from the link as
+    // the scroll moved it, in the opposite direction.
+    await this.#waitForSettle(link);
+    if (!this.#isOnStep(4)) return;
+    step.spotlight = this.#getSpotlightFromElement(link, 4);
+    this.#showSpotlightOverlay(step.spotlight);
+    this.#updateTooltip(step.tooltip, step.spotlight);
   }
   #onCitationLinkExit() {
     // Nothing to clean up
@@ -1493,41 +1610,57 @@ export class OnboardingWalkthrough {
   // --- Step 5: Citation Reference Tab ---
   #onCitationReferenceEnter() {
     this.overlayContainer.style.pointerEvents = "none";
-
-    setTimeout(() => {
-      const popup = document.querySelector(".citation-popup") as HTMLElement;
-      if (popup) {
-        const config = this.#getSpotlightFromElement(popup, 10);
-        this.steps[5].spotlight = config;
-        this.#showSpotlightOverlay(config);
-        this.#updateTooltip(this.steps[5].tooltip, config);
-      }
-    }, 200);
+    // Hold the popup open: otherwise it closes as soon as the pointer leaves
+    // it or the citation, leaving the spotlight on an empty spot.
+    getSharedCitationPopup().pinned = true;
+    this.#spotlightCitationPopup(5);
   }
   #onCitationReferenceExit() {
-    // Nothing to clean up
+    this.#popupSpotlightCleanup?.();
+    this.#popupSpotlightCleanup = null;
   }
 
   // --- Step 6: Citation Abstract Tab ---
   #onCitationAbstractEnter() {
     this.overlayContainer.style.pointerEvents = "none";
-
-    setTimeout(() => {
-      const popup = document.querySelector(".citation-popup") as HTMLElement;
-      if (popup) {
-        const config = this.#getSpotlightFromElement(popup, 10);
-        this.steps[6].spotlight = config;
-        this.#showSpotlightOverlay(config);
-        this.#updateTooltip(this.steps[6].tooltip, config);
-      }
-    }, 500);
+    this.#spotlightCitationPopup(6);
   }
   #onCitationAbstractExit() {
-    // Hide citation popup
-    const popup = document.querySelector(".citation-popup") as HTMLElement;
-    if (popup) {
-      popup.style.display = "none";
-    }
+    this.#releaseCitationPopup();
+    getSharedCitationPopup().hide(true);
+  }
+
+  /**
+   * Spotlight the citation popup, re-measuring whenever it resizes (the
+   * reference and the Scholar abstract both load in after it opens)
+   */
+  #spotlightCitationPopup(stepIndex: number) {
+    this.#popupSpotlightCleanup?.();
+    const popup = getSharedCitationPopup().popup;
+    const step = this.steps[stepIndex];
+    const place = () => {
+      if (!this.#isOnStep(stepIndex) || popup.style.display === "none") return;
+      // Untransformed: the popup may still be scaling in.
+      step.spotlight = this.#getSpotlightFromRect(
+        this.#getUntransformedRect(popup),
+        10,
+      );
+      this.#showSpotlightOverlay(step.spotlight);
+      this.#updateTooltip(step.tooltip, step.spotlight);
+    };
+    // Fires once on observe, then on every size change.
+    const observer = new ResizeObserver(place);
+    observer.observe(popup);
+    this.#popupSpotlightCleanup = () => observer.disconnect();
+  }
+
+  /**
+   * Stop tracking the citation popup and let it close normally again
+   */
+  #releaseCitationPopup() {
+    this.#popupSpotlightCleanup?.();
+    this.#popupSpotlightCleanup = null;
+    getSharedCitationPopup().pinned = false;
   }
 
   // --- Step 7: Ball Vertical Drag ---
@@ -1646,11 +1779,16 @@ export class OnboardingWalkthrough {
   }
 
   // --- Step 12: Ball Double Click ---
-  #onBallDoubleClickEnter() {
+  async #onBallDoubleClickEnter() {
     // Show circle indicator on ball
     const ball = this.toolbar.ball;
     if (ball) {
       this.#showCircleIndicator(ball);
+
+      // The ball is still sliding home from the outline; anchor the tooltip
+      // to where it stops.
+      await this.#waitForSettle(ball);
+      if (!this.#isOnStep(12)) return;
 
       const rect = ball.getBoundingClientRect();
       const tooltipConfig = {

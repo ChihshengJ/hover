@@ -1,6 +1,8 @@
-import { CitationPopup } from "../ui/controls/citation_popup.js";
+import {
+  type CitationPopup,
+  getSharedCitationPopup,
+} from "../ui/controls/citation_popup.js";
 import { getSharedImageModal } from "../ui/controls/image_modal.js";
-import { CitationFlags } from "../analysis/lexicon.js";
 
 import type { PdfPageObject } from "@embedpdf/models";
 import type { PDFDocumentModel } from "../model/doc.js";
@@ -15,14 +17,6 @@ import { rotateTransform } from "./page_layout.js";
 import type { Edges } from "./detail_region.js";
 import type { PageLayout } from "./page_layout.js";
 import type { PagePlacement } from "./text_gamma.js";
-
-let sharedPopup: CitationPopup | null = null;
-function getSharedPopup(): CitationPopup {
-  if (!sharedPopup) {
-    sharedPopup = new CitationPopup();
-  }
-  return sharedPopup;
-}
 
 /**
  * The cross-reference an overlay element stands for.
@@ -870,8 +864,9 @@ export class PageView {
       clearTimeout(this._showTimer);
       this._showTimer = null;
     }
-    const anchor = sharedPopup?.currentAnchor;
-    if (anchor && this.wrapper.contains(anchor)) sharedPopup.hide(true);
+    const popup = getSharedCitationPopup();
+    const anchor = popup.currentAnchor;
+    if (anchor && this.wrapper.contains(anchor)) popup.hide(true);
   }
 
   /**
@@ -897,7 +892,7 @@ export class PageView {
 
   #setupAnnotationLayerEvents() {
     if (this._delegatedListenersAttached) return;
-    const citationPopup = getSharedPopup();
+    const citationPopup = getSharedCitationPopup();
 
     this.annotationLayer.addEventListener(
       "mouseenter",

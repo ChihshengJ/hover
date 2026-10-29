@@ -54,7 +54,7 @@ const TABS: { id: TabId; label: string; icon: string }[] = [
   },
 ];
 
-function shareableUrl(): string | null {
+export function shareableUrl(): string | null {
   const url =
     document.documentElement.dataset.hoverOriginalUrl ||
     new URLSearchParams(window.location.search).get("url");

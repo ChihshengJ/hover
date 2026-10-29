@@ -638,3 +638,20 @@
 .settings-text-input:focus {
   border-color: var(--color-accent);
 }
+
+/* The opening line wraps onto more lines as it grows, so the label stays at
+   the top instead of floating to the middle. */
+.share-opening-row {
+  align-items: flex-start;
+}
+
+.share-opening-row .settings-toggle-info {
+  padding-top: 6px;
+}
+
+textarea.settings-text-input {
+  display: block;
+  resize: none;
+  overflow: hidden;
+  line-height: 1.4;
+}

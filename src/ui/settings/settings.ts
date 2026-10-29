@@ -341,11 +341,11 @@ export class Settings {
                 <span class="settings-subsection-title">Sharing</span>
                 <span class="settings-subsection-rule"></span>
               </div>
-              <div class="settings-select-row">
+              <div class="settings-select-row share-opening-row">
                 <div class="settings-toggle-info">
                   <span class="settings-toggle-label">Email Opening Line</span>
                 </div>
-                <input type="text" class="settings-text-input share-opening-input" spellcheck="false">
+                <textarea class="settings-text-input share-opening-input" rows="1" spellcheck="false"></textarea>
               </div>
             </div>
           </div>
@@ -555,13 +555,22 @@ export class Settings {
     }
 
     // Email opening line for Share › Email
-    const shareOpeningInput = overlay.querySelector<HTMLInputElement>(
+    const shareOpeningInput = overlay.querySelector<HTMLTextAreaElement>(
       ".share-opening-input",
     );
     if (shareOpeningInput) {
+      // Grows with its text so a longer greeting stays fully visible.
+      const fitOpening = () => {
+        shareOpeningInput.style.height = "auto";
+        const border =
+          shareOpeningInput.offsetHeight - shareOpeningInput.clientHeight;
+        shareOpeningInput.style.height = `${shareOpeningInput.scrollHeight + border}px`;
+      };
       shareOpeningInput.value = Config.get("share_email_opening");
+      fitOpening();
       shareOpeningInput.addEventListener("input", () => {
         Config.set("share_email_opening", shareOpeningInput.value);
+        fitOpening();
       });
     }
 

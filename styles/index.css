@@ -22,6 +22,7 @@
 @import "./annotations.css" layer(components);
 @import "./progress_bar.css" layer(components);
 @import "./file_menu.css" layer(components);
+@import "./share_modal.css" layer(components);
 @import "./search.css" layer(components);
 @import "./loading_overlay.css" layer(components);
 @import "./image_modal.css" layer(components);

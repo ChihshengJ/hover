@@ -335,6 +335,19 @@ export class Settings {
                 </select>
               </div>
             </div>
+
+            <div class="settings-subsection">
+              <div class="settings-subsection-header">
+                <span class="settings-subsection-title">Sharing</span>
+                <span class="settings-subsection-rule"></span>
+              </div>
+              <div class="settings-select-row share-opening-row">
+                <div class="settings-toggle-info">
+                  <span class="settings-toggle-label">Email Opening Line</span>
+                </div>
+                <textarea class="settings-text-input share-opening-input" rows="1" spellcheck="false"></textarea>
+              </div>
+            </div>
           </div>
 
         </div>
@@ -538,6 +551,26 @@ export class Settings {
             document.body.classList.contains("night-mode"),
           );
         }
+      });
+    }
+
+    // Email opening line for Share › Email
+    const shareOpeningInput = overlay.querySelector<HTMLTextAreaElement>(
+      ".share-opening-input",
+    );
+    if (shareOpeningInput) {
+      // Grows with its text so a longer greeting stays fully visible.
+      const fitOpening = () => {
+        shareOpeningInput.style.height = "auto";
+        const border =
+          shareOpeningInput.offsetHeight - shareOpeningInput.clientHeight;
+        shareOpeningInput.style.height = `${shareOpeningInput.scrollHeight + border}px`;
+      };
+      shareOpeningInput.value = Config.get("share_email_opening");
+      fitOpening();
+      shareOpeningInput.addEventListener("input", () => {
+        Config.set("share_email_opening", shareOpeningInput.value);
+        fitOpening();
       });
     }
 

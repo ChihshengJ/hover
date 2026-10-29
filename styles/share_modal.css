@@ -1,0 +1,507 @@
+/* ===========================================
+   Share Modal
+   The shell is the file menu's modal (.file-menu-modal*); toggles and
+   selects are borrowed from Settings (.settings-toggle-*, .settings-select*).
+   =========================================== */
+
+.share-modal {
+  max-width: 440px;
+}
+
+.share-modal [hidden] {
+  display: none !important;
+}
+
+/* ---------- Tabs ---------- */
+
+.share-tabs {
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  margin: 16px 20px 0;
+  padding: 3px;
+  background: var(--bg-tertiary);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-inset);
+}
+
+/* The raised pill under the active tab; JS sets its width and offset. */
+.share-tabs-pill {
+  position: absolute;
+  top: 3px;
+  bottom: 3px;
+  left: 0;
+  border-radius: calc(var(--radius-lg) - 3px);
+  background: var(--bg-glass-solid);
+  box-shadow:
+    0 1px 3px rgba(0, 0, 0, 0.14),
+    inset 0 1px 0 rgba(255, 255, 255, 0.9);
+  transition:
+    transform var(--transition-bounce),
+    width var(--transition-bounce);
+}
+
+/* Settling into an end tab, the pill stops against the rail's wall instead of
+   bouncing past it. */
+.share-tabs-pill.at-edge {
+  transition-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.night-mode .share-tabs-pill {
+  background: var(--bg-secondary);
+  box-shadow:
+    0 1px 3px rgba(0, 0, 0, 0.4),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08);
+}
+
+.share-tab {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 7px 10px;
+  font-family: inherit;
+  font-size: 13px;
+  color: var(--text-secondary);
+  background: transparent;
+  border: none;
+  border-radius: calc(var(--radius-lg) - 3px);
+  cursor: pointer;
+  transition: color var(--transition-fast);
+}
+
+.share-tab:hover,
+.share-tab.active {
+  color: var(--text-primary);
+}
+
+.share-tab svg {
+  width: 15px;
+  height: 15px;
+  flex-shrink: 0;
+}
+
+/* ---------- Panels ---------- */
+
+.share-panels {
+  max-height: calc(80vh - 130px);
+  overflow-y: auto;
+  transition: height 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.share-panels.animating {
+  overflow: hidden;
+}
+
+.share-panel {
+  padding: 16px 20px 20px;
+  animation: share-panel-in 0.2s ease;
+}
+
+@keyframes share-panel-in {
+  from {
+    opacity: 0;
+  }
+}
+
+.share-panel > :first-child {
+  margin-top: 0;
+}
+
+.share-label {
+  display: block;
+  margin-bottom: 8px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.share-footer {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+  margin-top: 14px;
+}
+
+.share-hint {
+  flex: 1;
+  min-width: 0;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--text-tertiary);
+}
+
+/* ---------- Buttons ---------- */
+
+.share-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  flex-shrink: 0;
+  padding: 7px 14px;
+  font-family: inherit;
+  font-size: 12px;
+  color: var(--text-primary);
+  background: transparent;
+  border: 1px solid var(--border-color-strong);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.share-btn:hover:not(:disabled) {
+  background: var(--bg-hover);
+}
+
+.share-btn:active:not(:disabled) {
+  transform: scale(0.97);
+}
+
+.share-btn:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.share-btn-primary {
+  color: #fff;
+  background: var(--color-accent);
+  border-color: var(--color-accent);
+}
+
+.share-btn-primary:hover:not(:disabled) {
+  background: var(--color-accent-hover);
+  border-color: var(--color-accent-hover);
+}
+
+/* ---------- Link ---------- */
+
+/* One inset well holding the URL and a raised Copy key. */
+.share-link-field {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 4px 4px 12px;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.06);
+  transition:
+    border-color var(--transition-fast),
+    box-shadow var(--transition-fast);
+}
+
+.share-link-field:focus-within {
+  border-color: var(--color-accent-border);
+  box-shadow: 0 0 0 3px var(--color-accent-light);
+}
+
+.share-link-input {
+  flex: 1;
+  min-width: 0;
+  padding: 6px 0;
+  font-family: "SF Mono", "Menlo", monospace;
+  font-size: 12px;
+  color: var(--text-primary);
+  background: transparent;
+  border: none;
+  outline: none;
+}
+
+.share-link-input::placeholder {
+  color: var(--text-muted);
+}
+
+.share-link-copy {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  flex-shrink: 0;
+  padding: 6px 12px;
+  font-family: inherit;
+  font-size: 12px;
+  color: var(--text-primary);
+  background: var(--bg-glass-solid);
+  border: none;
+  border-radius: var(--radius-md);
+  box-shadow:
+    0 1px 3px rgba(0, 0, 0, 0.14),
+    inset 0 1px 0 rgba(255, 255, 255, 0.9);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.night-mode .share-link-copy {
+  background: var(--bg-secondary);
+  box-shadow:
+    0 1px 3px rgba(0, 0, 0, 0.4),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08);
+}
+
+.share-link-copy:active:not(:disabled) {
+  transform: scale(0.96);
+}
+
+.share-link-copy:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.share-link-copy.copied {
+  color: var(--color-success);
+}
+
+.share-link-copy svg {
+  width: 13px;
+  height: 13px;
+}
+
+/* ---------- Email ---------- */
+
+.share-attach-row.locked .settings-toggle-switch {
+  opacity: 0.4;
+  pointer-events: none;
+}
+
+/* The draft is a sheet of letter paper: warm stock, ruled lines, ink-colored
+   Georgia, lifted off the dialog by a soft shadow. The attachment rides along
+   below a dashed fold. */
+.share-compose {
+  --paper: #fdfaf3;
+  --paper-edge: rgba(120, 95, 50, 0.16);
+  --paper-rule: rgba(90, 110, 150, 0.1);
+  --paper-ink: #2a2620;
+  --paper-ink-muted: #8b8272;
+  --paper-line: 24px;
+
+  margin-top: 12px;
+  background:
+    radial-gradient(
+      130% 80% at 50% 0%,
+      rgba(255, 255, 255, 0.7),
+      transparent 70%
+    ),
+    var(--paper);
+  border: 1px solid var(--paper-edge);
+  border-radius: 3px;
+  box-shadow:
+    0 1px 1px rgba(60, 40, 10, 0.05),
+    0 3px 8px -2px rgba(60, 40, 10, 0.12),
+    0 14px 24px -14px rgba(60, 40, 10, 0.25);
+  overflow: hidden;
+}
+
+.night-mode .share-compose {
+  --paper: #2e2c28;
+  --paper-edge: rgba(255, 255, 255, 0.07);
+  --paper-rule: rgba(200, 210, 230, 0.05);
+  --paper-ink: #ece6da;
+  --paper-ink-muted: #9b9488;
+
+  background:
+    radial-gradient(
+      130% 80% at 50% 0%,
+      rgba(255, 255, 255, 0.04),
+      transparent 70%
+    ),
+    var(--paper);
+  box-shadow:
+    0 1px 1px rgba(0, 0, 0, 0.3),
+    0 3px 8px -2px rgba(0, 0, 0, 0.35),
+    0 14px 24px -14px rgba(0, 0, 0, 0.5);
+}
+
+/* Each rule sits under a line of text: the gradient repeats every line box
+   and starts where the text does, below the top padding. Like printed
+   stationery, the rules stop at the text margins rather than the sheet edge. */
+.share-compose-body {
+  display: block;
+  box-sizing: border-box;
+  width: 100%;
+  /* Four ruled lines before the sheet grows with its text. */
+  min-height: calc(4 * var(--paper-line) + 30px);
+  padding: 16px 22px 14px;
+  overflow: hidden;
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: 15px;
+  line-height: var(--paper-line);
+  color: var(--paper-ink);
+  caret-color: var(--paper-ink);
+  background: repeating-linear-gradient(
+      to bottom,
+      transparent 0,
+      transparent calc(var(--paper-line) - 1px),
+      var(--paper-rule) calc(var(--paper-line) - 1px),
+      var(--paper-rule) var(--paper-line)
+    )
+    22px 16px / calc(100% - 44px) 100% no-repeat;
+  border: none;
+  outline: none;
+  resize: none;
+}
+
+.share-compose-body::placeholder {
+  color: var(--paper-ink-muted);
+}
+
+.share-attachment {
+  padding: 10px 22px 14px;
+  border-top: 1px dashed var(--paper-edge);
+}
+
+.share-attachment-file {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--paper-ink);
+}
+
+.share-attachment-file svg {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+  color: var(--paper-ink-muted);
+}
+
+.share-attachment-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.share-attachment-size {
+  flex-shrink: 0;
+  color: var(--paper-ink-muted);
+}
+
+/* Tiny sheets of the annotated pages, enough to see the marks are there. */
+.share-attachment-pages {
+  display: flex;
+  align-items: flex-end;
+  gap: 10px;
+  padding: 12px 2px 4px;
+  overflow-x: auto;
+  scrollbar-width: thin;
+}
+
+.share-thumb {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+  flex-shrink: 0;
+  margin: 0;
+}
+
+.share-thumb-sheet {
+  overflow: hidden;
+  background: #fff;
+  border-radius: 2px;
+  box-shadow:
+    0 1px 3px rgba(0, 0, 0, 0.18),
+    0 0 0 0.5px rgba(0, 0, 0, 0.1);
+  animation: share-thumb-wait 1.2s ease-in-out infinite alternate;
+}
+
+.share-thumb-sheet:has(canvas) {
+  animation: none;
+}
+
+@keyframes share-thumb-wait {
+  to {
+    opacity: 0.55;
+  }
+}
+
+.share-thumb-sheet canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  animation: share-panel-in 0.25s ease;
+}
+
+.share-thumb figcaption {
+  font-size: 10px;
+  color: var(--paper-ink-muted);
+}
+
+.share-thumb-more {
+  flex-shrink: 0;
+  align-self: center;
+  font-size: 11px;
+  color: var(--paper-ink-muted);
+}
+
+/* ---------- Zotero ---------- */
+
+.share-zotero-status {
+  gap: 12px;
+}
+
+/* Status light, in the same glow language as the Settings toggles. */
+.share-light {
+  width: 8px;
+  height: 8px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background: #888;
+  transition:
+    background var(--transition-normal),
+    box-shadow var(--transition-normal);
+}
+
+.share-light[data-light="pending"] {
+  background: #f59e0b;
+  box-shadow: 0 0 6px rgba(245, 158, 11, 0.6);
+  animation: share-light-pulse 1.2s ease-in-out infinite alternate;
+}
+
+.share-light[data-light="on"] {
+  background: var(--color-success);
+  box-shadow:
+    0 0 4px rgba(34, 197, 94, 0.7),
+    0 0 10px rgba(34, 197, 94, 0.3);
+}
+
+@keyframes share-light-pulse {
+  to {
+    opacity: 0.45;
+  }
+}
+
+.share-zotero-target .settings-select {
+  max-width: 240px;
+}
+
+.share-zotero-result {
+  margin-top: 8px;
+  padding: 12px 16px;
+  background: var(--color-success-light);
+  border: 1px solid rgba(34, 197, 94, 0.35);
+  border-radius: var(--radius-lg);
+}
+
+.share-zotero-result .share-label {
+  margin-bottom: 4px;
+}
+
+.share-zotero-result-title {
+  display: block;
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1.45;
+  color: var(--text-primary);
+}
+
+.share-zotero-result.unrecognized .share-zotero-result-title {
+  font-weight: 400;
+  color: var(--text-secondary);
+}

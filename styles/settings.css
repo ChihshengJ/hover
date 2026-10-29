@@ -619,3 +619,39 @@
 .settings-select:focus {
   border-color: var(--color-accent);
 }
+
+/* A free-text value in a select row, sized and styled like .settings-select. */
+.settings-text-input {
+  width: 200px;
+  flex-shrink: 0;
+  padding: 6px 10px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  font-size: 12px;
+  font-family: inherit;
+  outline: none;
+  transition: border-color var(--transition-fast);
+}
+
+.settings-text-input:focus {
+  border-color: var(--color-accent);
+}
+
+/* The opening line wraps onto more lines as it grows, so the label stays at
+   the top instead of floating to the middle. */
+.share-opening-row {
+  align-items: flex-start;
+}
+
+.share-opening-row .settings-toggle-info {
+  padding-top: 6px;
+}
+
+textarea.settings-text-input {
+  display: block;
+  resize: none;
+  overflow: hidden;
+  line-height: 1.4;
+}

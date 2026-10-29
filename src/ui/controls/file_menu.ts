@@ -7,6 +7,7 @@ import { Settings } from "../settings/settings.js";
 import { Config } from "../settings/config.js";
 import { requestThrottle } from "./request_throttle.js";
 import { ingestFile } from "../../platform/ingest.js";
+import { openShareModal, shareableUrl } from "./share/share_modal.js";
 
 import type { SplitWindowManager } from "../../viewer/window_manager.js";
 const VERSION = __APP_VERSION__;
@@ -16,6 +17,8 @@ export type FileMenuAction =
   | "import"
   | "print"
   | "save"
+  | "share"
+  | "copy-link"
   | "cite"
   | "metadata"
   | "tutorial"
@@ -120,6 +123,22 @@ export class FileMenu {
         <span>Save PDF</span>
         <span class="shortcut">⌘S</span>
       </button>
+      <div class="file-menu-row">
+        <button class="file-menu-item" data-action="share">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M8 9H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8a2 2 0 0 0-2-2h-2"/>
+            <polyline points="8 6 12 2 16 6"/>
+            <line x1="12" y1="2" x2="12" y2="15"/>
+          </svg>
+          <span>Share</span>
+        </button>
+        <button class="file-menu-icon-btn" data-action="copy-link" title="Copy link" aria-label="Copy link">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/>
+            <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>
+          </svg>
+        </button>
+      </div>
       <div class="file-menu-divider"></div>
       <button class="file-menu-item" data-action="cite">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
@@ -280,7 +299,9 @@ export class FileMenu {
         return; // Don't close menu
       }
 
-      const item = target.closest(".file-menu-item") as HTMLElement;
+      const item = target.closest(
+        ".file-menu-item, .file-menu-icon-btn",
+      ) as HTMLElement;
       if (item) {
         this.#handleAction(item.dataset.action as FileMenuAction);
       }
@@ -387,6 +408,12 @@ export class FileMenu {
         break;
       case "save":
         this.#save();
+        break;
+      case "share":
+        openShareModal(this.wm.document, (msg: string) => this.#showToast(msg));
+        break;
+      case "copy-link":
+        this.#copyLink();
         break;
       case "cite":
         this.#showCitation();
@@ -546,6 +573,21 @@ export class FileMenu {
 
   #showSettings() {
     this.settings.open();
+  }
+
+  async #copyLink() {
+    const url = shareableUrl();
+    if (!url) {
+      this.#showToast("Opened from your computer, so no web link to copy");
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(url);
+      this.#showToast("Link copied");
+    } catch (error) {
+      console.error("Failed to copy link:", error);
+      this.#showToast("Couldn't copy the link");
+    }
   }
 
   #viewOriginal() {

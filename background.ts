@@ -439,7 +439,13 @@ async function handleFetchTabAsPdf(message: { url: string; tabId: number }) {
   if (url.startsWith("file:") && /\.pdf(?:[?#]|$)/i.test(url)) {
     return (await openLocalPdfInViewer(url, tabId))
       ? { success: true }
-      : { success: false, error: "Enable file access first" };
+      : {
+          success: false,
+          error:
+            __TARGET__ === "firefox"
+              ? "Turn on local file access first"
+              : "Allow access to file URLs first",
+        };
   }
 
   // Page capture first: the content script fetches with the page's own

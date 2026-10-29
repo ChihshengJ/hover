@@ -178,9 +178,19 @@ export async function fetchPdfFromUrl(
   return combined.buffer as ArrayBuffer;
 }
 
+// The local-file switch is named and placed differently in each browser, and
+// Safari may not offer one, so point at the right one or at the file picker.
 export const FILE_ACCESS_MESSAGE =
-  'Could not read this local file. Enable "Allow access to file URLs" for ' +
-  "Hover on the browser's extensions page, then reload.";
+  __TARGET__ === "firefox"
+    ? "Could not read this local file. Turn on " +
+      '"Access local files on your computer" in about:addons → Hover PDF → ' +
+      'Permissions (Firefox 153 or later), then reload, or open it with "Open ' +
+      'Local PDF" from the Hover toolbar button.'
+    : __TARGET__ === "safari"
+      ? 'Could not read this local file. Open it with "Open Local PDF" from ' +
+        "the Hover toolbar button instead."
+      : 'Could not read this local file. Enable "Allow access to file URLs" ' +
+        "for Hover on the browser's extensions page, then reload.";
 
 /**
  * Read a file: URL into a buffer. Local PDFs land here rather than in the

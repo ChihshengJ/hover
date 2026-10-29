@@ -139,8 +139,9 @@ export function createEmailTab(ctx: ShareContext): ShareTab {
     stripBuilt = true;
 
     const { pages, summary } = summarizeAnnotations(ctx.doc);
-    $(".share-attachment-summary").textContent =
-      summary || "No annotations yet. The PDF goes as it is";
+    const summaryLabel = $<HTMLSpanElement>(".share-attachment-summary");
+    summaryLabel.textContent = summary;
+    summaryLabel.hidden = !summary;
     if (pages.length === 0) {
       strip.hidden = true;
       return;
@@ -196,11 +197,9 @@ export function createEmailTab(ctx: ShareContext): ShareTab {
     toggle.checked = attaching();
     toggle.disabled = !hasLink();
     toggleRow.classList.toggle("locked", !hasLink());
-    toggleNote.textContent = !hasLink()
-      ? "This PDF has no web link, so it goes as a file"
-      : toggle.checked
-        ? "Sends your copy with its highlights and comments"
-        : "Sends the link only";
+    toggleNote.textContent = hasLink()
+      ? "Attach the file with your annotations"
+      : "No obtainable link, attachment only.";
 
     if (!bodyEdited) body.value = defaultBody();
     fitBody();

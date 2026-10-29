@@ -40,7 +40,6 @@ export function createZoteroTab(ctx: ShareContext): ShareTab {
     </div>
 
     <div class="share-footer">
-      <span class="share-hint">Saves this PDF with your annotations</span>
       <button class="share-btn share-btn-primary share-zotero-save" disabled>Save to Zotero</button>
     </div>
   `;
@@ -58,7 +57,6 @@ export function createZoteroTab(ctx: ShareContext): ShareTab {
   const targetRow = $<HTMLDivElement>(".share-zotero-target");
   const select = $<HTMLSelectElement>(".settings-select");
   const result = $<HTMLDivElement>(".share-zotero-result");
-  const hint = $<HTMLSpanElement>(".share-hint");
   const saveBtn = $<HTMLButtonElement>(".share-zotero-save");
 
   let targets: ZoteroTargets | null = null;
@@ -129,7 +127,7 @@ export function createZoteroTab(ctx: ShareContext): ShareTab {
     }
 
     fillTargets(found);
-    setStatus("on", "Connected to Zotero", "Ready to save");
+    setStatus("on", "Connected to Zotero", "");
   };
 
   const allow = async () => {
@@ -182,7 +180,6 @@ export function createZoteroTab(ctx: ShareContext): ShareTab {
           title ?? "Zotero couldn't identify the paper, so it's filed as a PDF";
         result.classList.toggle("unrecognized", !title);
         result.hidden = false;
-        hint.textContent = "";
       });
       saveBtn.textContent = "Saved";
       setStatus("on", "Connected to Zotero", "");

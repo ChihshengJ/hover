@@ -4,9 +4,9 @@
  */
 
 import {
+  annotatedPages,
   pageAspect,
   renderThumbnail,
-  summarizeAnnotations,
 } from "./annotated_pages.js";
 
 import { Config } from "../../settings/config.js";
@@ -72,7 +72,6 @@ export function createEmailTab(ctx: ShareContext): ShareTab {
           <span class="share-attachment-size"></span>
         </div>
         <div class="share-attachment-pages"></div>
-        <span class="share-attachment-summary"></span>
       </div>
     </div>
 
@@ -105,7 +104,13 @@ export function createEmailTab(ctx: ShareContext): ShareTab {
     const opening = Config.get("share_email_opening").trim();
     if (opening) paragraphs.push(opening);
     paragraphs.push(hasLink() ? `${ctx.title}\n${ctx.link}` : ctx.title);
-    if (attaching()) paragraphs.push("I've attached my annotated copy.");
+    if (attaching()) {
+      paragraphs.push(
+        annotatedPages(ctx.doc).length > 0
+          ? "I've attached my annotated copy."
+          : "I've attached a copy.",
+      );
+    }
     return paragraphs.join("\n\n");
   };
 
@@ -138,10 +143,7 @@ export function createEmailTab(ctx: ShareContext): ShareTab {
     if (stripBuilt) return;
     stripBuilt = true;
 
-    const { pages, summary } = summarizeAnnotations(ctx.doc);
-    const summaryLabel = $<HTMLSpanElement>(".share-attachment-summary");
-    summaryLabel.textContent = summary;
-    summaryLabel.hidden = !summary;
+    const pages = annotatedPages(ctx.doc);
     if (pages.length === 0) {
       strip.hidden = true;
       return;

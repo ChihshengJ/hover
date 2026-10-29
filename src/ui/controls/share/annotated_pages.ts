@@ -1,42 +1,17 @@
 /**
  * What the Email tab shows of the annotated copy: which pages carry
- * annotations, a one-line tally, and tiny renders of those pages.
+ * annotations, and tiny renders of those pages.
  */
 
 import type { PDFDocumentModel } from "../../../model/doc.js";
-import type { AnnotationType } from "../../../model/annotation_data.js";
 
-const NOUNS: Record<AnnotationType | "comment", [string, string]> = {
-  highlight: ["highlight", "highlights"],
-  underline: ["underline", "underlines"],
-  drawing: ["drawing", "drawings"],
-  comment: ["comment", "comments"],
-};
-
-export function summarizeAnnotations(doc: PDFDocumentModel): {
-  pages: number[];
-  summary: string;
-} {
+/** The pages that carry annotations, in order. */
+export function annotatedPages(doc: PDFDocumentModel): number[] {
   const pages = new Set<number>();
-  const counts = new Map<keyof typeof NOUNS, number>();
-  const bump = (key: keyof typeof NOUNS) =>
-    counts.set(key, (counts.get(key) ?? 0) + 1);
-
   for (const annotation of doc.getAllAnnotations()) {
-    bump(annotation.type);
-    if (annotation.comment) bump("comment");
     for (const range of annotation.pageRanges) pages.add(range.pageNumber);
   }
-
-  const summary = (Object.keys(NOUNS) as (keyof typeof NOUNS)[])
-    .filter((key) => counts.has(key))
-    .map((key) => {
-      const n = counts.get(key)!;
-      return `${n} ${NOUNS[key][n === 1 ? 0 : 1]}`;
-    })
-    .join(" · ");
-
-  return { pages: [...pages].sort((a, b) => a - b), summary };
+  return [...pages].sort((a, b) => a - b);
 }
 
 /** Width over height of a page, for sizing a thumbnail before it renders. */

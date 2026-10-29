@@ -440,13 +440,6 @@
   color: var(--paper-ink-muted);
 }
 
-.share-attachment-summary {
-  display: block;
-  margin-top: 6px;
-  font-size: 11px;
-  color: var(--paper-ink-muted);
-}
-
 /* ---------- Zotero ---------- */
 
 .share-zotero-status {

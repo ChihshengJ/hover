@@ -515,6 +515,39 @@ async function handleToggle(enabled: boolean) {
 }
 
 // ============================================
+// Site Access
+// ============================================
+// Interception needs access to every site. Firefox's webRequest listener only
+// fires for hosts Hover holds, and Chrome/Safari only inject the content script
+// where they're allowed to. Users can take that access back after install
+// (about:addons on Firefox, "Site access" on Chrome, per-site prompts on
+// Safari) and interception then quietly stops. Flag it on the toolbar badge;
+// the popup explains the problem and offers the fix.
+
+const ALL_SITES = { origins: ["<all_urls>"] };
+
+async function refreshSiteAccessBadge() {
+  let granted = true;
+  try {
+    granted = await chrome.permissions.contains(ALL_SITES);
+  } catch {
+    // Can't tell; don't nag.
+  }
+  try {
+    await chrome.action.setBadgeText({ text: granted ? "" : "!" });
+    if (!granted) {
+      await chrome.action.setBadgeBackgroundColor({ color: "#D9822B" });
+    }
+  } catch {
+    // ignore
+  }
+}
+
+chrome.permissions?.onAdded?.addListener(refreshSiteAccessBadge);
+chrome.permissions?.onRemoved?.addListener(refreshSiteAccessBadge);
+refreshSiteAccessBadge();
+
+// ============================================
 // Initialization
 // ============================================
 

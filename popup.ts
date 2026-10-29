@@ -5,6 +5,16 @@ import { ingestFile } from "./src/platform/ingest.js";
 // keep the popup alive, so they can pick inline. Branch on the build target.
 const IS_FIREFOX = __TARGET__ === "firefox";
 
+const ALL_SITES = { origins: ["<all_urls>"] };
+
+// Where to send the user when the browser won't prompt for site access.
+const SITE_ACCESS_HELP =
+  __TARGET__ === "firefox"
+    ? 'Turn on "Access your data for all websites" in about:addons → Hover PDF → Permissions.'
+    : __TARGET__ === "safari"
+      ? 'Open Safari → Settings → Extensions → Hover PDF and set "Other websites" to Allow.'
+      : 'Set "Site access" to "On all sites" on Hover\'s extension page.';
+
 document.addEventListener("DOMContentLoaded", async () => {
   const toggle = document.getElementById("toggle-enabled") as HTMLInputElement;
   const statusText = document.getElementById("status-text");
@@ -52,6 +62,39 @@ document.addEventListener("DOMContentLoaded", async () => {
       return;
     }
     fileInput.click();
+  });
+
+  const accessSection = document.getElementById("access-section");
+  const accessText = document.getElementById("access-text");
+  const grantAccessBtn = document.getElementById(
+    "grant-access-btn",
+  ) as HTMLButtonElement;
+
+  try {
+    accessSection.hidden = await chrome.permissions.contains(ALL_SITES);
+  } catch {
+    // Can't tell; don't nag.
+  }
+
+  grantAccessBtn.addEventListener("click", () => {
+    // Call request() synchronously from the click: browsers only show the
+    // prompt during a user gesture. Firefox may close the popup when the prompt
+    // appears; the grant still lands and the badge clears on its own.
+    chrome.permissions
+      .request(ALL_SITES)
+      .then((granted) => {
+        if (granted) accessSection.hidden = true;
+      })
+      .catch(() => {
+        // Not requestable from here: hand over to the settings page where
+        // the browser has one we can open, written instructions otherwise.
+        accessText.textContent = SITE_ACCESS_HELP;
+        if (__TARGET__ === "chrome") {
+          chrome.runtime.sendMessage({ type: "OPEN_EXTENSION_SETTINGS" });
+        } else {
+          grantAccessBtn.hidden = true;
+        }
+      });
   });
 
   const openTabBtn = document.getElementById(

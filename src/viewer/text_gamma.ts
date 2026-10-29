@@ -3,7 +3,7 @@
  * macOS's native weight. See docs/text_rendering.md §6.
  */
 
-const GAMMA = 1.5;
+const GAMMA = 1.8;
 
 /** Coverage index (0..255) to darkened coverage (0..1). */
 const CURVE = new Float32Array(256);

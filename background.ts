@@ -327,6 +327,29 @@ async function openLocalPdfInViewer(
   return true;
 }
 
+/**
+ * Download an http(s) PDF here in the background, park it, and send the tab to
+ * the viewer. Resolves false, leaving the tab alone, when the URL turns out not
+ * to serve a PDF. This leans on Hover's own host access rather than the page's
+ * cookies, so it is what we use when no content script can capture the bytes.
+ */
+async function parkAndOpenInViewer(
+  url: string,
+  tabId: number,
+): Promise<boolean> {
+  const arrayBuffer = await fetchPdfBuffer(url, tabId);
+  if (!hasPdfMagic(arrayBuffer)) return false;
+
+  await storePendingPdf({
+    data: arrayBuffer,
+    url: url,
+    name: extractFilename(url),
+  });
+
+  await chrome.tabs.update(tabId, { url: viewerUrlFor(url) });
+  return true;
+}
+
 async function handlePdfPageDetected(
   message: { url: string },
   sender: chrome.runtime.MessageSender,
@@ -356,18 +379,9 @@ async function handlePdfPageDetected(
   }
 
   try {
-    const arrayBuffer = await fetchPdfBuffer(url, sender.tab.id);
-    if (!hasPdfMagic(arrayBuffer)) return { action: "content_fetch" };
-
-    await storePendingPdf({
-      data: arrayBuffer,
-      url: url,
-      name: extractFilename(url),
-    });
-
-    await chrome.tabs.update(sender.tab.id, { url: viewerUrlFor(url) });
-
-    return { action: "done" };
+    return (await parkAndOpenInViewer(url, sender.tab.id))
+      ? { action: "done" }
+      : { action: "content_fetch" };
   } catch {
     return { action: "content_fetch" };
   }
@@ -428,31 +442,44 @@ async function handleFetchTabAsPdf(message: { url: string; tabId: number }) {
       : { success: false, error: "Enable file access first" };
   }
 
+  // Page capture first: the content script fetches with the page's own
+  // cookies, so it handles login-gated PDFs and PDFs embedded in a page.
+  let error = "No PDF found on this page";
   try {
     const result = await chrome.tabs.sendMessage(tabId, {
       type: "FETCH_PDF_FROM_PAGE",
     });
 
-    if (result?.error) {
-      return { success: false, error: result.error };
+    if (result?.data) {
+      const arrayBuffer = base64ToArrayBuffer(result.data);
+      await storePendingPdf({
+        data: arrayBuffer,
+        url: url,
+        name: extractFilename(url),
+      });
+
+      await chrome.tabs.update(tabId, { url: viewerUrlFor(url) });
+
+      return { success: true };
     }
-
-    const arrayBuffer = base64ToArrayBuffer(result.data);
-    await storePendingPdf({
-      data: arrayBuffer,
-      url: url,
-      name: extractFilename(url),
-    });
-
-    await chrome.tabs.update(tabId, { url: viewerUrlFor(url) });
-
-    return { success: true };
-  } catch (e) {
-    return {
-      success: false,
-      error: e instanceof Error ? e.message : String(e),
-    };
+    if (result?.error) error = result.error;
+  } catch {
+    // No content script answered. Firefox never injects one into its pdf.js
+    // viewer, and Chrome has none in tabs loaded before Hover was installed or
+    // reloaded, or on sites the user withheld from it. Exactly the tabs the
+    // auto-interception missed, so fall through rather than give up.
   }
+
+  // The tab's own URL is the PDF in every case above, so download it here.
+  if (url.startsWith("http:") || url.startsWith("https:")) {
+    try {
+      if (await parkAndOpenInViewer(url, tabId)) return { success: true };
+    } catch {
+      error = "Couldn't download this PDF";
+    }
+  }
+
+  return { success: false, error };
 }
 
 // ============================================

@@ -151,7 +151,7 @@ offers to fix it.
 | | Websites (needed) | Local PDFs (optional) |
 |---|---|---|
 | **Chrome / Edge / Brave** | Granted on install. Keep _Site access_ on _On all sites_ on Hover's extension page. | Turn on _Allow access to file URLs_ on Hover's extension page. |
-| **Firefox** | Granted on install (Firefox 127+). Keep _Access your data for all websites_ on in about:addons → Hover PDF → Permissions. | Turn on _Access local files on your computer_ in the same place (Firefox 153+). |
+| **Firefox** | Granted on install (Firefox 127+). Keep _Access your data for all websites_ on in about:addons → Hover PDF → Permissions. | Use _Open Local PDF_ from the toolbar button. Firefox doesn't let extensions read local files. |
 | **Safari** | Not granted on install. In Safari → Settings → Extensions → Hover PDF, set _Other websites_ to _Allow_. | Use _Open Local PDF_ from the toolbar button. |
 
 _Open Local PDF_ in the toolbar popup works everywhere without any file

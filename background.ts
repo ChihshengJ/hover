@@ -266,13 +266,10 @@ if (chrome.webRequest?.onHeadersReceived) {
       ).toLowerCase();
       if (!contentType.includes("application/pdf")) return {};
 
-      // Downloads stay downloads — parity with Chrome, where attachment
-      // responses never render and are therefore never intercepted.
-      const disposition = headerValue(
-        details.responseHeaders,
-        "content-disposition",
-      ).toLowerCase();
-      if (disposition.startsWith("attachment")) return {};
+      // Attachment responses are taken over too, unlike on Chrome where they
+      // never render. Firefox by default saves them and then opens the saved
+      // copy in pdf.js from a file: URL, which Hover can't read, so letting
+      // the download through would only strand the reader in pdf.js.
 
       // "Use default viewer" flow
       if (bypassUrls.has(details.url)) {
@@ -317,11 +314,17 @@ function viewerUrlFor(url: string): string {
  * no XMLHttpRequest. The viewer page can (see `fetchPdfFromUrl`), once the
  * user has granted "Allow access to file URLs", so the navigation is the whole
  * hand-off. Returns false when that access is missing.
+ *
+ * Firefox never qualifies: its "Access local files on your computer" switch
+ * (Firefox 153+) only lets content scripts run on file: pages, and they are
+ * never injected into its pdf.js viewer. Extension pages are still refused
+ * file: loads, so the viewer would only show an error.
  */
 async function openLocalPdfInViewer(
   url: string,
   tabId: number,
 ): Promise<boolean> {
+  if (__TARGET__ === "firefox") return false;
   if (!(await hasFileSchemeAccess())) return false;
   await chrome.tabs.update(tabId, { url: viewerUrlFor(url) });
   return true;
@@ -443,7 +446,7 @@ async function handleFetchTabAsPdf(message: { url: string; tabId: number }) {
           success: false,
           error:
             __TARGET__ === "firefox"
-              ? "Turn on local file access first"
+              ? "Use Open Local PDF instead"
               : "Allow access to file URLs first",
         };
   }

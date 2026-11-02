@@ -178,9 +178,15 @@ export async function fetchPdfFromUrl(
   return combined.buffer as ArrayBuffer;
 }
 
+// Only Chrome has a switch that lets the viewer read file: URLs. Firefox's
+// local-file permission covers content scripts alone, and Safari has none, so
+// both go through the file picker.
 export const FILE_ACCESS_MESSAGE =
-  'Could not read this local file. Enable "Allow access to file URLs" for ' +
-  "Hover on the browser's extensions page, then reload.";
+  __TARGET__ === "chrome"
+    ? 'Could not read this local file. Enable "Allow access to file URLs" ' +
+      "for Hover on the browser's extensions page, then reload."
+    : 'Could not read this local file. Open it with "Open Local PDF" from ' +
+      "the Hover toolbar button instead.";
 
 /**
  * Read a file: URL into a buffer. Local PDFs land here rather than in the

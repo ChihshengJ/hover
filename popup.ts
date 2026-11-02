@@ -5,6 +5,17 @@ import { ingestFile } from "./src/platform/ingest.js";
 // keep the popup alive, so they can pick inline. Branch on the build target.
 const IS_FIREFOX = __TARGET__ === "firefox";
 
+// Keep in step with ALL_SITES in background.ts.
+const ALL_SITES = { origins: ["http://*/*", "https://*/*"] };
+
+// Where to send the user when the browser won't prompt for site access.
+const SITE_ACCESS_HELP =
+  __TARGET__ === "firefox"
+    ? 'Turn on "Access your data for all websites" in about:addons → Hover PDF → Permissions.'
+    : __TARGET__ === "safari"
+      ? 'Open Safari → Settings → Extensions → Hover PDF and set "Other websites" to Allow.'
+      : 'Set "Site access" to "On all sites" on Hover\'s extension page.';
+
 document.addEventListener("DOMContentLoaded", async () => {
   const toggle = document.getElementById("toggle-enabled") as HTMLInputElement;
   const statusText = document.getElementById("status-text");
@@ -52,6 +63,54 @@ document.addEventListener("DOMContentLoaded", async () => {
       return;
     }
     fileInput.click();
+  });
+
+  const accessSection = document.getElementById("access-section");
+  const accessText = document.getElementById("access-text");
+  const grantAccessBtn = document.getElementById(
+    "grant-access-btn",
+  ) as HTMLButtonElement;
+
+  try {
+    accessSection.hidden = await chrome.permissions.contains(ALL_SITES);
+  } catch {
+    // Can't tell; don't nag.
+  }
+  chrome.runtime.sendMessage({ type: "REFRESH_SITE_ACCESS" }).catch(() => {});
+
+  // Safari closes the popup when the button calls request() and grants
+  // nothing, so the button looked dead. Give the settings steps instead.
+  if (__TARGET__ === "safari") {
+    accessText.textContent =
+      "Hover only opens PDFs on websites you've allowed. " + SITE_ACCESS_HELP;
+    grantAccessBtn.hidden = true;
+  }
+
+  grantAccessBtn.addEventListener("click", () => {
+    // Call request() synchronously from the click: browsers only show the
+    // prompt during a user gesture. Firefox may close the popup when the prompt
+    // appears; the grant still lands and the badge clears on its own.
+    chrome.permissions
+      .request(ALL_SITES)
+      .then((granted) => {
+        if (granted) {
+          accessSection.hidden = true;
+        } else {
+          // Declined, or no prompt shown at all: say where the switch is.
+          accessText.textContent = SITE_ACCESS_HELP;
+          grantAccessBtn.hidden = true;
+        }
+      })
+      .catch(() => {
+        // Not requestable from here: hand over to the settings page where
+        // the browser has one we can open, written instructions otherwise.
+        accessText.textContent = SITE_ACCESS_HELP;
+        if (__TARGET__ === "chrome") {
+          chrome.runtime.sendMessage({ type: "OPEN_EXTENSION_SETTINGS" });
+        } else {
+          grantAccessBtn.hidden = true;
+        }
+      });
   });
 
   const openTabBtn = document.getElementById(

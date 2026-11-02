@@ -206,6 +206,13 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true;
   }
 
+  if (message.type === "REFRESH_SITE_ACCESS") {
+    // Safari doesn't fire permissions.onAdded/onRemoved for changes made in
+    // its Settings window, so the popup asks for a recheck each time it opens.
+    refreshSiteAccessBadge().then(() => sendResponse({ success: true }));
+    return true;
+  }
+
   if (message.type === "CHECK_FILE_ACCESS") {
     // Chrome-only API — Safari doesn't implement it.
     if (typeof chrome.extension?.isAllowedFileSchemeAccess !== "function") {
@@ -266,13 +273,10 @@ if (chrome.webRequest?.onHeadersReceived) {
       ).toLowerCase();
       if (!contentType.includes("application/pdf")) return {};
 
-      // Downloads stay downloads — parity with Chrome, where attachment
-      // responses never render and are therefore never intercepted.
-      const disposition = headerValue(
-        details.responseHeaders,
-        "content-disposition",
-      ).toLowerCase();
-      if (disposition.startsWith("attachment")) return {};
+      // Attachment responses are taken over too, unlike on Chrome where they
+      // never render. Firefox by default saves them and then opens the saved
+      // copy in pdf.js from a file: URL, which Hover can't read, so letting
+      // the download through would only strand the reader in pdf.js.
 
       // "Use default viewer" flow
       if (bypassUrls.has(details.url)) {
@@ -317,12 +321,41 @@ function viewerUrlFor(url: string): string {
  * no XMLHttpRequest. The viewer page can (see `fetchPdfFromUrl`), once the
  * user has granted "Allow access to file URLs", so the navigation is the whole
  * hand-off. Returns false when that access is missing.
+ *
+ * Firefox never qualifies: its "Access local files on your computer" switch
+ * (Firefox 153+) only lets content scripts run on file: pages, and they are
+ * never injected into its pdf.js viewer. Extension pages are still refused
+ * file: loads, so the viewer would only show an error.
  */
 async function openLocalPdfInViewer(
   url: string,
   tabId: number,
 ): Promise<boolean> {
+  if (__TARGET__ === "firefox") return false;
   if (!(await hasFileSchemeAccess())) return false;
+  await chrome.tabs.update(tabId, { url: viewerUrlFor(url) });
+  return true;
+}
+
+/**
+ * Download an http(s) PDF here in the background, park it, and send the tab to
+ * the viewer. Resolves false, leaving the tab alone, when the URL turns out not
+ * to serve a PDF. This leans on Hover's own host access rather than the page's
+ * cookies, so it is what we use when no content script can capture the bytes.
+ */
+async function parkAndOpenInViewer(
+  url: string,
+  tabId: number,
+): Promise<boolean> {
+  const arrayBuffer = await fetchPdfBuffer(url, tabId);
+  if (!hasPdfMagic(arrayBuffer)) return false;
+
+  await storePendingPdf({
+    data: arrayBuffer,
+    url: url,
+    name: extractFilename(url),
+  });
+
   await chrome.tabs.update(tabId, { url: viewerUrlFor(url) });
   return true;
 }
@@ -356,18 +389,9 @@ async function handlePdfPageDetected(
   }
 
   try {
-    const arrayBuffer = await fetchPdfBuffer(url, sender.tab.id);
-    if (!hasPdfMagic(arrayBuffer)) return { action: "content_fetch" };
-
-    await storePendingPdf({
-      data: arrayBuffer,
-      url: url,
-      name: extractFilename(url),
-    });
-
-    await chrome.tabs.update(sender.tab.id, { url: viewerUrlFor(url) });
-
-    return { action: "done" };
+    return (await parkAndOpenInViewer(url, sender.tab.id))
+      ? { action: "done" }
+      : { action: "content_fetch" };
   } catch {
     return { action: "content_fetch" };
   }
@@ -425,34 +449,53 @@ async function handleFetchTabAsPdf(message: { url: string; tabId: number }) {
   if (url.startsWith("file:") && /\.pdf(?:[?#]|$)/i.test(url)) {
     return (await openLocalPdfInViewer(url, tabId))
       ? { success: true }
-      : { success: false, error: "Enable file access first" };
+      : {
+          success: false,
+          error:
+            __TARGET__ === "firefox"
+              ? "Use Open Local PDF instead"
+              : "Allow access to file URLs first",
+        };
   }
 
+  // Page capture first: the content script fetches with the page's own
+  // cookies, so it handles login-gated PDFs and PDFs embedded in a page.
+  let error = "No PDF found on this page";
   try {
     const result = await chrome.tabs.sendMessage(tabId, {
       type: "FETCH_PDF_FROM_PAGE",
     });
 
-    if (result?.error) {
-      return { success: false, error: result.error };
+    if (result?.data) {
+      const arrayBuffer = base64ToArrayBuffer(result.data);
+      await storePendingPdf({
+        data: arrayBuffer,
+        url: url,
+        name: extractFilename(url),
+      });
+
+      await chrome.tabs.update(tabId, { url: viewerUrlFor(url) });
+
+      return { success: true };
     }
-
-    const arrayBuffer = base64ToArrayBuffer(result.data);
-    await storePendingPdf({
-      data: arrayBuffer,
-      url: url,
-      name: extractFilename(url),
-    });
-
-    await chrome.tabs.update(tabId, { url: viewerUrlFor(url) });
-
-    return { success: true };
-  } catch (e) {
-    return {
-      success: false,
-      error: e instanceof Error ? e.message : String(e),
-    };
+    if (result?.error) error = result.error;
+  } catch {
+    // No content script answered. Firefox never injects one into its pdf.js
+    // viewer, and Chrome has none in tabs loaded before Hover was installed or
+    // reloaded, or on sites the user withheld from it. Exactly the tabs the
+    // auto-interception missed, so fall through rather than give up.
   }
+
+  // The tab's own URL is the PDF in every case above, so download it here.
+  if (url.startsWith("http:") || url.startsWith("https:")) {
+    try {
+      if (await parkAndOpenInViewer(url, tabId)) return { success: true };
+    } catch {
+      error = "Couldn't download this PDF";
+    }
+  }
+
+  return { success: false, error };
 }
 
 // ============================================
@@ -486,6 +529,42 @@ async function handleToggle(enabled: boolean) {
 
   return { success: true, enabled, currentPdfUrl: originalPdfUrl, viewerTabId };
 }
+
+// ============================================
+// Site Access
+// ============================================
+// Interception needs access to every site. Firefox's webRequest listener only
+// fires for hosts Hover holds, and Chrome/Safari only inject the content script
+// where they're allowed to. Users can take that access back after install
+// (about:addons on Firefox, "Site access" on Chrome, per-site prompts on
+// Safari) and interception then quietly stops. Flag it on the toolbar badge;
+// the popup explains the problem and offers the fix.
+
+// The web schemes only: <all_urls> also covers file:, which Safari has no
+// switch for, so it read as missing there even with every website allowed.
+// Local files have their own check (hasFileSchemeAccess).
+const ALL_SITES = { origins: ["http://*/*", "https://*/*"] };
+
+async function refreshSiteAccessBadge() {
+  let granted = true;
+  try {
+    granted = await chrome.permissions.contains(ALL_SITES);
+  } catch {
+    // Can't tell; don't nag.
+  }
+  try {
+    await chrome.action.setBadgeText({ text: granted ? "" : "!" });
+    if (!granted) {
+      await chrome.action.setBadgeBackgroundColor({ color: "#D9822B" });
+    }
+  } catch {
+    // ignore
+  }
+}
+
+chrome.permissions?.onAdded?.addListener(refreshSiteAccessBadge);
+chrome.permissions?.onRemoved?.addListener(refreshSiteAccessBadge);
+refreshSiteAccessBadge();
 
 // ============================================
 // Initialization

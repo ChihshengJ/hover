@@ -30,36 +30,55 @@ xcrun safari-web-extension-converter "$DIST" \
   --no-prompt \
   --force
 
-# --- 1b. Normalize bundle identifiers ---------------------------------------
+XCODEPROJ="$PROJ_ROOT/$APP_NAME/$APP_NAME.xcodeproj"
+if [[ ! -d "$XCODEPROJ" ]]; then
+  echo "error: expected Xcode project at $XCODEPROJ" >&2
+  find "$PROJ_ROOT" -maxdepth 2 -name "*.xcodeproj" >&2
+  exit 1
+fi
+
+# Xcode 27's converter writes project.xcproj, a JSON-style file with
+# "KEY": "value", entries; earlier ones write project.pbxproj with
+# KEY = value; entries. The patches below accept either.
+PBXPROJ="$XCODEPROJ/project.pbxproj"
+[[ -f "$PBXPROJ" ]] || PBXPROJ="$XCODEPROJ/project.xcproj"
+if [[ ! -f "$PBXPROJ" ]]; then
+  echo "error: no project.pbxproj or project.xcproj in $XCODEPROJ" >&2
+  ls "$XCODEPROJ" >&2
+  exit 1
+fi
+
+# --- 1b. Normalize bundle identifiers and deployment target ----------------
 # The converter derives the app target's identifier from the app name and
 # only applies --bundle-identifier to the appex, which makes the embedded
 # binary's id not prefixed by the parent's and fails ValidateEmbeddedBinary.
 # Force: app = $BUNDLE_ID, extension = $BUNDLE_ID.Extension.
-PBXPROJ="$PROJ_ROOT/$APP_NAME/$APP_NAME.xcodeproj/project.pbxproj"
-BUNDLE_ID="$BUNDLE_ID" python3 - "$PBXPROJ" <<'EOF'
+MACOS_MIN="${MACOS_MIN:-15.0}"
+BUNDLE_ID="$BUNDLE_ID" MACOS_MIN="$MACOS_MIN" python3 - "$PBXPROJ" <<'EOF'
 import os, re, sys
 path = sys.argv[1]
-bundle_id = os.environ["BUNDLE_ID"]
+bundle_id, mn = os.environ["BUNDLE_ID"], os.environ["MACOS_MIN"]
 src = open(path).read()
 
-def fix(m):
-    value = m.group(1).strip('"')
-    suffix = ".Extension" if value.endswith(".Extension") else ""
-    return f'PRODUCT_BUNDLE_IDENTIFIER = "{bundle_id}{suffix}"'
+def setting(key):
+    # KEY = value;  or  "KEY": "value",  — optionally KEY[config=Debug]
+    return re.compile(
+        r'(\b%s(?:\[[^\]]*\])?"?\s*[=:]\s*)("?)([^";,\n]+)\2' % key
+    )
 
-src = re.sub(r"PRODUCT_BUNDLE_IDENTIFIER = ([^;]+)", fix, src)
-open(path, "w").write(src)
-print(f"[build_safari] Normalized bundle ids to {bundle_id}(.Extension)")
-EOF
+def fix_bundle_id(m):
+    suffix = ".Extension" if m.group(3).endswith(".Extension") else ""
+    return f'{m.group(1)}"{bundle_id}{suffix}"'
 
-MACOS_MIN="${MACOS_MIN:-15.0}"
-MACOS_MIN="$MACOS_MIN" python3 - "$PBXPROJ" <<'EOF'
-import os, re, sys
-path, mn = sys.argv[1], os.environ["MACOS_MIN"]
-src = open(path).read()
-src = re.sub(r"MACOSX_DEPLOYMENT_TARGET = [^;]+", f"MACOSX_DEPLOYMENT_TARGET = {mn}", src)
+src, ids = setting("PRODUCT_BUNDLE_IDENTIFIER").subn(fix_bundle_id, src)
+src, mins = setting("MACOSX_DEPLOYMENT_TARGET").subn(
+    lambda m: f'{m.group(1)}"{mn}"', src
+)
+if not ids:
+    sys.exit(f"error: no PRODUCT_BUNDLE_IDENTIFIER found in {path}")
 open(path, "w").write(src)
-print(f"[build_safari] Deployment target -> macOS {mn}")
+print(f"[build_safari] Normalized {ids} bundle ids to {bundle_id}(.Extension)")
+print(f"[build_safari] Deployment target -> macOS {mn} ({mins} settings)")
 EOF
 
 # --- 2. Pick a signing team -------------------------------------------------
@@ -76,13 +95,6 @@ if [[ -z "$DEVELOPMENT_TEAM" ]]; then
 fi
 
 # --- 3. Build ---------------------------------------------------------------
-XCODEPROJ="$PROJ_ROOT/$APP_NAME/$APP_NAME.xcodeproj"
-if [[ ! -d "$XCODEPROJ" ]]; then
-  echo "error: expected Xcode project at $XCODEPROJ" >&2
-  find "$PROJ_ROOT" -maxdepth 2 -name "*.xcodeproj" >&2
-  exit 1
-fi
-
 SIGN_ARGS=()
 if [[ -n "$DEVELOPMENT_TEAM" ]]; then
   SIGN_ARGS=(DEVELOPMENT_TEAM="$DEVELOPMENT_TEAM" CODE_SIGN_STYLE=Automatic -allowProvisioningUpdates)

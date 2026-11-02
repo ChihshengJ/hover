@@ -332,11 +332,14 @@ body.ui-dragging * {
    like everything else on screen. Left to `auto`, a page is only painted as
    it reaches the viewport, and if the main thread is busy rendering another
    page then, the compositor scrolls it in unpainted: a dark page for a beat.
-   Same containment as `auto` applies while not skipping, so the canvas's
-   sub-px overhang is still clipped. */
+   The canvas's sub-px overhang is still clipped, by `overflow: clip` rather
+   than the paint containment `auto` applies: Firefox lays out a skipped page
+   again only if its containment changes, so with the same containment as
+   `auto` its canvas stayed zero-size and the page painted blank. */
 .page-wrapper.in-range {
   content-visibility: visible;
-  contain: layout style paint;
+  contain: layout style;
+  overflow: clip;
 }
 
 /* No hover or click on the pages mid-pinch (ViewerPane.beginPinch): a shield

@@ -5,7 +5,8 @@ import { ingestFile } from "./src/platform/ingest.js";
 // keep the popup alive, so they can pick inline. Branch on the build target.
 const IS_FIREFOX = __TARGET__ === "firefox";
 
-const ALL_SITES = { origins: ["<all_urls>"] };
+// Keep in step with ALL_SITES in background.ts.
+const ALL_SITES = { origins: ["http://*/*", "https://*/*"] };
 
 // Where to send the user when the browser won't prompt for site access.
 const SITE_ACCESS_HELP =
@@ -75,6 +76,15 @@ document.addEventListener("DOMContentLoaded", async () => {
   } catch {
     // Can't tell; don't nag.
   }
+  chrome.runtime.sendMessage({ type: "REFRESH_SITE_ACCESS" }).catch(() => {});
+
+  // Safari closes the popup when the button calls request() and grants
+  // nothing, so the button looked dead. Give the settings steps instead.
+  if (__TARGET__ === "safari") {
+    accessText.textContent =
+      "Hover only opens PDFs on websites you've allowed. " + SITE_ACCESS_HELP;
+    grantAccessBtn.hidden = true;
+  }
 
   grantAccessBtn.addEventListener("click", () => {
     // Call request() synchronously from the click: browsers only show the
@@ -83,7 +93,13 @@ document.addEventListener("DOMContentLoaded", async () => {
     chrome.permissions
       .request(ALL_SITES)
       .then((granted) => {
-        if (granted) accessSection.hidden = true;
+        if (granted) {
+          accessSection.hidden = true;
+        } else {
+          // Declined, or no prompt shown at all: say where the switch is.
+          accessText.textContent = SITE_ACCESS_HELP;
+          grantAccessBtn.hidden = true;
+        }
       })
       .catch(() => {
         // Not requestable from here: hand over to the settings page where

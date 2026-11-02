@@ -206,6 +206,13 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true;
   }
 
+  if (message.type === "REFRESH_SITE_ACCESS") {
+    // Safari doesn't fire permissions.onAdded/onRemoved for changes made in
+    // its Settings window, so the popup asks for a recheck each time it opens.
+    refreshSiteAccessBadge().then(() => sendResponse({ success: true }));
+    return true;
+  }
+
   if (message.type === "CHECK_FILE_ACCESS") {
     // Chrome-only API — Safari doesn't implement it.
     if (typeof chrome.extension?.isAllowedFileSchemeAccess !== "function") {
@@ -533,7 +540,10 @@ async function handleToggle(enabled: boolean) {
 // Safari) and interception then quietly stops. Flag it on the toolbar badge;
 // the popup explains the problem and offers the fix.
 
-const ALL_SITES = { origins: ["<all_urls>"] };
+// The web schemes only: <all_urls> also covers file:, which Safari has no
+// switch for, so it read as missing there even with every website allowed.
+// Local files have their own check (hasFileSchemeAccess).
+const ALL_SITES = { origins: ["http://*/*", "https://*/*"] };
 
 async function refreshSiteAccessBadge() {
   let granted = true;

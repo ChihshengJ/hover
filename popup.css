@@ -179,9 +179,17 @@ body {
   flex-direction: column;
   gap: 10px;
   padding: 12px 14px;
-  background: rgba(217, 130, 43, 0.18);
+  background: rgba(220, 53, 53, 0.22);
   border-radius: 12px;
-  border: 1px solid rgba(217, 130, 43, 0.45);
+  border: 1px solid rgba(220, 53, 53, 0.55);
+  box-shadow: 0 3px 10px rgba(220, 53, 53, 0.15);
+  /* Same stack as the onboarding tooltips, so the warning reads apart
+     from the Elms Sans the rest of the popup uses. */
+  font-family:
+    "DM Sans",
+    -apple-system,
+    BlinkMacSystemFont,
+    sans-serif;
 }
 
 .access-section[hidden],
@@ -190,9 +198,21 @@ body {
 }
 
 .access-text {
-  font-size: 11px;
+  font-size: 12px;
+  font-weight: 500;
   line-height: 1.5;
   color: #ffffff;
+}
+
+.access-section .action-btn {
+  font-family: inherit;
+  font-weight: 600;
+  background: rgba(220, 53, 53, 0.35);
+  border-color: rgba(220, 53, 53, 0.6);
+}
+
+.access-section .action-btn:hover {
+  background: rgba(220, 53, 53, 0.5);
 }
 
 /* Actions Section */

@@ -186,6 +186,7 @@ body.ui-dragging * {
 
 .pane-controls {
   position: absolute;
+  font-family: "Elms Sans", monospace;
   top: 12px;
   left: 50%;
   transform: translateX(-50%);
@@ -204,6 +205,14 @@ body.ui-dragging * {
 
 .pane-controls.hidden {
   transform: translateX(-50%) translateY(-70px);
+}
+
+/* Night mode's --bg-glass-solid is translucent (0.85 alpha), so frost
+   the page behind the bar instead of letting it show through sharp.
+   Light mode's background is opaque, so it doesn't need this. */
+.night-mode .pane-controls {
+  backdrop-filter: blur(12px) saturate(150%);
+  -webkit-backdrop-filter: blur(12px) saturate(150%);
 }
 
 .pane-controls-inner {
@@ -295,6 +304,13 @@ body.ui-dragging * {
   min-width: 28px;
   text-align: center;
   font-variant-numeric: tabular-nums;
+}
+
+/* Fixed width so the bar doesn't resize between "75%" and "100%".
+   5ch holds the widest value, "700%" (MAX_SCALE in zoom_anchor.ts). */
+.pane-zoom-level {
+  width: 5ch;
+  white-space: nowrap;
 }
 
 /* ===========================================

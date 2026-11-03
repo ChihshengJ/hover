@@ -1,7 +1,10 @@
 /**
- * The "Include annotations" choice that every exported copy offers, over a
+ * The "Include annotations" choice that every exported copy offers, and the
  * preview of the file it will produce. The choice lives on the context, so
  * every panel showing one of these agrees.
+ *
+ * The two parts are handed back separately: the toggle is a row for the
+ * panel's settings group, the card sits below that group.
  */
 
 import { createFileCard, formatBytes } from "./annotated_pages.js";
@@ -10,15 +13,16 @@ import { Config } from "../../settings/config.js";
 import type { ShareContext } from "./share_modal.js";
 
 export interface CopyOptions {
-  el: HTMLElement;
+  /** A `.share-group-row`, hidden when there are no annotations to leave out. */
+  row: HTMLElement;
+  /** The file on its sheet of paper, annotated pages included. */
+  card: HTMLElement;
+  /** False when the document has no annotations, so there's nothing to choose. */
+  hasChoice: boolean;
   /** Pick up the shared choice and preview it; call from the tab's onShow. */
   sync(): void;
   /** The file the choice describes, or null when it couldn't be exported. */
   file(): Promise<File | null>;
-}
-
-function plural(count: number, noun: string) {
-  return `${count} ${noun}${count === 1 ? "" : "s"}`;
 }
 
 /** Hand a file to the browser's downloads. */
@@ -31,58 +35,56 @@ export function downloadFile(file: File) {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
-export function createCopyOptions(ctx: ShareContext): CopyOptions {
-  const el = document.createElement("div");
-  el.className = "share-copy-options";
-  el.innerHTML = `
-    <div class="settings-toggle-row share-annotations-row">
-      <div class="settings-toggle-info">
-        <span class="settings-toggle-label">Include annotations</span>
-        <span class="settings-toggle-description"></span>
-      </div>
-      <label class="settings-toggle-switch">
-        <input type="checkbox" class="share-annotations-toggle">
-        <span class="settings-toggle-slider"></span>
-        <span class="settings-toggle-knob"></span>
-      </label>
-    </div>
-    <div class="share-compose share-file-card"></div>
-  `;
+/**
+ * A settings group holding just the annotations toggle, then the card: the
+ * whole body of a panel whose only option is that one.
+ */
+export function copyOptionsBody(options: CopyOptions): HTMLElement[] {
+  const group = document.createElement("div");
+  group.className = "share-group";
+  group.hidden = !options.hasChoice;
+  group.appendChild(options.row);
+  return [group, options.card];
+}
 
-  const row = el.querySelector(".share-annotations-row") as HTMLDivElement;
-  const toggle = el.querySelector(
+export function createCopyOptions(ctx: ShareContext): CopyOptions {
+  const row = document.createElement("label");
+  row.className = "share-group-row";
+  row.innerHTML = `
+    <span class="share-group-label">Include annotations</span>
+    <span class="settings-toggle-switch">
+      <input type="checkbox" class="share-annotations-toggle">
+      <span class="settings-toggle-slider"></span>
+      <span class="settings-toggle-knob"></span>
+    </span>
+  `;
+  const toggle = row.querySelector(
     ".share-annotations-toggle",
   ) as HTMLInputElement;
-  const note = el.querySelector(
-    ".settings-toggle-description",
-  ) as HTMLSpanElement;
-  const card = createFileCard(ctx.doc, ctx.fileName);
-  el.querySelector(".share-file-card")!.appendChild(card.el);
 
-  const annotations = ctx.doc.getAllAnnotations();
-  const pageCount = new Set(
-    annotations.flatMap((a) => a.pageRanges.map((r) => r.pageNumber)),
-  ).size;
+  const card = document.createElement("div");
+  card.className = "share-compose share-file-card";
+  const fileCard = createFileCard(ctx.doc, ctx.fileName);
+  card.appendChild(fileCard.el);
+
+  const hasChoice = ctx.doc.hasAnnotations();
+  row.hidden = !hasChoice;
   // With nothing to leave out, the copy is the document as it stands.
-  const annotated = () => annotations.length === 0 || ctx.includeAnnotations;
+  const annotated = () => !hasChoice || ctx.includeAnnotations;
 
   /** Bumped per render, so a slow export can't overwrite a newer choice's size. */
   let request = 0;
 
   const render = () => {
-    // Nothing to leave out, so nothing to choose: just the file.
-    row.hidden = annotations.length === 0;
     toggle.checked = annotated();
-    note.textContent = annotated()
-      ? `${plural(annotations.length, "annotation")} on ${plural(pageCount, "page")}`
-      : "The original file, as it was opened";
-    card.showPages(annotated());
+    // The pages appearing and disappearing is the description of the choice.
+    fileCard.showPages(annotated());
 
     const mine = ++request;
-    card.setSize("Preparing…");
+    fileCard.setSize("Preparing…");
     ctx.getFile(annotated()).then(
-      (file) => mine === request && card.setSize(formatBytes(file.size)),
-      () => mine === request && card.setSize(""),
+      (file) => mine === request && fileCard.setSize(formatBytes(file.size)),
+      () => mine === request && fileCard.setSize(""),
     );
   };
 
@@ -93,7 +95,9 @@ export function createCopyOptions(ctx: ShareContext): CopyOptions {
   });
 
   return {
-    el,
+    row,
+    card,
+    hasChoice,
     sync: render,
     file: async () => {
       try {

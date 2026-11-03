@@ -1,6 +1,10 @@
 /** Save a Copy › This Computer: download the PDF, with or without annotations. */
 
-import { createCopyOptions, downloadFile } from "./copy_options.js";
+import {
+  copyOptionsBody,
+  createCopyOptions,
+  downloadFile,
+} from "./copy_options.js";
 
 import type { ShareContext, ShareTab } from "./share_modal.js";
 
@@ -10,7 +14,7 @@ export function createLocalTab(ctx: ShareContext): ShareTab {
   el.setAttribute("role", "tabpanel");
 
   const options = createCopyOptions(ctx);
-  el.appendChild(options.el);
+  el.append(...copyOptionsBody(options));
 
   const footer = document.createElement("div");
   footer.className = "share-footer";

@@ -262,24 +262,55 @@
   height: 13px;
 }
 
-/* ---------- Include annotations ---------- */
+/* ---------- Settings group ---------- */
+
+/* A panel's options as one inset list: rows share a single rounded card and
+   are parted by hairlines, rather than each sitting in a box of its own. */
+.share-group {
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+}
+
+.share-group-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  min-height: 46px;
+  padding: 8px 10px 8px 14px;
+  box-sizing: border-box;
+}
+
+.share-group-row + .share-group-row {
+  border-top: 1px solid var(--border-color);
+}
+
+/* A toggle row is a <label>: the whole row flips the switch. */
+label.share-group-row {
+  cursor: pointer;
+}
+
+.share-group-label {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.share-group-select {
+  min-width: 0;
+  max-width: 220px;
+}
 
 /* The exported file alone on its sheet, with no draft above to fold from. */
-.share-file-card {
-  margin-top: 4px;
-}
-
-/* Without the toggle above it, the card leads the panel. */
-.share-annotations-row[hidden] + .share-file-card {
-  margin-top: 0;
-}
-
 .share-file-card .share-attachment {
   border-top: none;
 }
 
-.share-zotero-target + .share-copy-options {
-  margin-top: 4px;
+/* With no options to show, the card leads the panel. */
+.share-group[hidden] + .share-file-card {
+  margin-top: 0;
 }
 
 /* ---------- Email ---------- */
@@ -463,14 +494,17 @@
 
 /* ---------- Zotero ---------- */
 
+/* The connection, said quietly beside the button. */
 .share-zotero-status {
-  gap: 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
 /* Status light, in the same glow language as the Settings toggles. */
 .share-light {
-  width: 8px;
-  height: 8px;
+  width: 7px;
+  height: 7px;
   flex-shrink: 0;
   border-radius: 50%;
   background: #888;
@@ -498,20 +532,77 @@
   }
 }
 
-.share-zotero-target .settings-select {
-  max-width: 240px;
-}
-
-.share-zotero-result {
-  margin-top: 8px;
-  padding: 12px 16px;
-  background: var(--color-success-light);
-  border: 1px solid rgba(34, 197, 94, 0.35);
+/* When Zotero can't be reached the form gives way to one centered message
+   and the single thing to do about it. */
+.share-notice {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 26px 24px 22px;
+  text-align: center;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-color);
   border-radius: var(--radius-lg);
 }
 
-.share-zotero-result .share-label {
-  margin-bottom: 4px;
+.share-notice-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.share-notice-body {
+  max-width: 300px;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--text-secondary);
+}
+
+.share-notice-action {
+  margin-top: 12px;
+}
+
+.share-zotero-result {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 14px 16px;
+  background: var(--color-success-light);
+  border: 1px solid rgba(34, 197, 94, 0.35);
+  border-radius: var(--radius-lg);
+  animation: share-panel-in 0.25s ease;
+}
+
+.share-zotero-result-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  color: #fff;
+  background: var(--color-success);
+}
+
+.share-zotero-result-icon svg {
+  width: 13px;
+  height: 13px;
+}
+
+.share-zotero-result-text {
+  min-width: 0;
+}
+
+.share-zotero-result-target {
+  display: block;
+  margin-bottom: 3px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
 }
 
 .share-zotero-result-title {

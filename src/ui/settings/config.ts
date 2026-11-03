@@ -77,6 +77,7 @@ export interface ConfigValues {
   split_persist: boolean;
   split_state: SplitState | null;
   share_email_opening: string;
+  export_include_annotations: boolean;
 }
 
 export type ConfigKey = keyof ConfigValues;
@@ -170,6 +171,13 @@ const SCHEMA: { [K in ConfigKey]: SchemaEntry<K> } = {
   share_email_opening: {
     storageKey: "hover_share_email_opening",
     default: "Check this paper out:",
+  },
+
+  // Exporting — whether a saved or printed copy carries the annotations, as
+  // last chosen in the Save or Print dialog.
+  export_include_annotations: {
+    storageKey: "hover_export_include_annotations",
+    default: true,
   },
 };
 

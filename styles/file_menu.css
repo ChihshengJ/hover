@@ -263,6 +263,24 @@ input[type="file"] {
   opacity: 1;
 }
 
+/* No web link to copy (a file opened from disk): still hoverable, for the
+   tooltip that says why. */
+.file-menu-icon-btn[aria-disabled="true"] {
+  cursor: default;
+}
+
+.file-menu-icon-btn[aria-disabled="true"]:hover {
+  background: transparent;
+}
+
+.file-menu-icon-btn[aria-disabled="true"]:active {
+  transform: translateY(-50%);
+}
+
+.file-menu-icon-btn[aria-disabled="true"] svg {
+  opacity: 0.3;
+}
+
 /* ===========================================
    Inline Toggle (Night Mode)
    =========================================== */

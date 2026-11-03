@@ -1,6 +1,6 @@
 /* ===========================================
-   Share Modal
-   The shell is the file menu's modal (.file-menu-modal*); toggles and
+   Share, Save a Copy and Print dialogs
+   One shell for all three (share_modal.ts). The shell is the file menu's modal (.file-menu-modal*); toggles and
    selects are borrowed from Settings (.settings-toggle-*, .settings-select*).
    =========================================== */
 
@@ -17,7 +17,8 @@
 .share-tabs {
   position: relative;
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-auto-columns: 1fr;
+  grid-auto-flow: column;
   margin: 16px 20px 0;
   padding: 3px;
   background: var(--bg-tertiary);
@@ -259,6 +260,26 @@
 .share-link-copy svg {
   width: 13px;
   height: 13px;
+}
+
+/* ---------- Include annotations ---------- */
+
+/* The exported file alone on its sheet, with no draft above to fold from. */
+.share-file-card {
+  margin-top: 4px;
+}
+
+/* Without the toggle above it, the card leads the panel. */
+.share-annotations-row[hidden] + .share-file-card {
+  margin-top: 0;
+}
+
+.share-file-card .share-attachment {
+  border-top: none;
+}
+
+.share-zotero-target + .share-copy-options {
+  margin-top: 4px;
 }
 
 /* ---------- Email ---------- */

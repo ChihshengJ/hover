@@ -329,20 +329,24 @@ export class PdfiumDocumentHandle {
   #pdfium: WrappedPdfiumModule = null;
   #docPtr: number = null;
   #filePtr: number = null;
+  #fileLength = 0;
   #extractor: PdfiumTextExtractor = null;
 
   /**
    * @param docPtr Document pointer
    * @param filePtr File buffer pointer, freed in close()
+   * @param fileLength Byte length of the file buffer
    */
   constructor(
     pdfiumModule: WrappedPdfiumModule,
     docPtr: number,
     filePtr: number,
+    fileLength: number,
   ) {
     this.#pdfium = pdfiumModule;
     this.#docPtr = docPtr;
     this.#filePtr = filePtr;
+    this.#fileLength = fileLength;
     this.#extractor = new PdfiumTextExtractor(pdfiumModule);
   }
 
@@ -356,6 +360,18 @@ export class PdfiumDocumentHandle {
 
   get extractor() {
     return this.#extractor;
+  }
+
+  /**
+   * A copy of the file this handle was opened from. PDFium only ever reads the
+   * buffer it loads from, so these are the original bytes for as long as the
+   * handle is open.
+   */
+  fileBytes(): Uint8Array {
+    if (!this.#filePtr) throw new Error("Document handle is closed");
+    return this.#extractor.reader.ffi
+      .bytes(this.#filePtr, this.#fileLength)
+      .slice();
   }
 
   /**
@@ -445,6 +461,6 @@ export class PdfiumDocumentFactory {
       throw new Error(`Failed to load PDF: error code ${error}`);
     }
 
-    return new PdfiumDocumentHandle(pdfium, docPtr, filePtr);
+    return new PdfiumDocumentHandle(pdfium, docPtr, filePtr, pdfData.length);
   }
 }

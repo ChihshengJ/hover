@@ -299,7 +299,9 @@ export class PDFDocumentModel {
     return this.pdfDoc.pages[pageNumber - 1] || null;
   }
 
-  getPageDimensions(pageNumber: number): { width: number; height: number } | null {
+  getPageDimensions(
+    pageNumber: number,
+  ): { width: number; height: number } | null {
     return this.pageDimensions[pageNumber - 1] || null;
   }
 
@@ -446,6 +448,14 @@ export class PDFDocumentModel {
       console.error("Error saving document:", error);
       throw error;
     }
+  }
+
+  /** The file as it was opened, before any annotation was added or removed. */
+  saveOriginal(): Uint8Array<ArrayBuffer> {
+    // The text pipeline's handle still holds the file it was opened from, so
+    // the original needs no copy of its own until it's asked for.
+    if (!this.lowLevelHandle) throw new Error("No PDF document loaded");
+    return this.lowLevelHandle.fileBytes() as Uint8Array<ArrayBuffer>;
   }
 
   // ============================================================================

@@ -5,9 +5,10 @@
 
 import {
   annotatedPages,
-  pageAspect,
-  renderThumbnail,
+  createFileCard,
+  formatBytes,
 } from "./annotated_pages.js";
+import { downloadFile } from "./copy_options.js";
 
 import { Config } from "../../settings/config.js";
 
@@ -15,14 +16,6 @@ import type { ShareContext, ShareTab } from "./share_modal.js";
 
 /** Most providers cap attachments at 20–25 MB. */
 const LARGE_ATTACHMENT_BYTES = 20 * 1024 * 1024;
-const THUMB_HEIGHT = 88;
-/** Past this many annotated pages the strip stops and says how many remain. */
-const MAX_THUMBS = 24;
-
-function formatBytes(bytes: number): string {
-  if (bytes < 1024 * 1024) return `${Math.max(1, Math.round(bytes / 1024))} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-}
 
 /** Hand a draft to the system's mail client. */
 function openMail(subject: string, body: string) {
@@ -32,15 +25,6 @@ function openMail(subject: string, body: string) {
     `body=${encodeURIComponent(body.replace(/\r?\n/g, "\r\n"))}`,
   ];
   window.location.href = `mailto:?${params.join("&")}`;
-}
-
-function download(file: File) {
-  const url = URL.createObjectURL(file);
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = file.name;
-  link.click();
-  setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
 export function createEmailTab(ctx: ShareContext): ShareTab {
@@ -62,17 +46,6 @@ export function createEmailTab(ctx: ShareContext): ShareTab {
 
     <div class="share-compose">
       <textarea class="share-compose-body" rows="4" placeholder="Message" aria-label="Message"></textarea>
-      <div class="share-attachment" hidden>
-        <div class="share-attachment-file">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/>
-            <polyline points="14 3 14 8 19 8"/>
-          </svg>
-          <span class="share-attachment-name"></span>
-          <span class="share-attachment-size"></span>
-        </div>
-        <div class="share-attachment-pages"></div>
-      </div>
     </div>
 
     <div class="share-footer">
@@ -87,9 +60,10 @@ export function createEmailTab(ctx: ShareContext): ShareTab {
   const toggleRow = $<HTMLDivElement>(".share-attach-row");
   const toggleNote = $<HTMLSpanElement>(".settings-toggle-description");
   const body = $<HTMLTextAreaElement>(".share-compose-body");
-  const attachment = $<HTMLDivElement>(".share-attachment");
-  const sizeLabel = $<HTMLSpanElement>(".share-attachment-size");
-  const strip = $<HTMLDivElement>(".share-attachment-pages");
+  const card = createFileCard(ctx.doc, ctx.fileName);
+  const attachment = card.el;
+  attachment.hidden = true;
+  $(".share-compose").appendChild(attachment);
   const hint = $<HTMLSpanElement>(".share-hint");
   const sendBtn = $<HTMLButtonElement>(".share-send");
 
@@ -120,10 +94,7 @@ export function createEmailTab(ctx: ShareContext): ShareTab {
     body.style.height = `${body.scrollHeight}px`;
   };
 
-  $(".share-attachment-name").textContent = ctx.fileName;
-
   let readyFile: File | null = null;
-  let stripBuilt = false;
 
   const renderHint = () => {
     if (!attaching()) {
@@ -138,57 +109,15 @@ export function createEmailTab(ctx: ShareContext): ShareTab {
         : "";
   };
 
-  /** Lay out a placeholder per annotated page now, and fill them in as they render. */
-  const buildStrip = () => {
-    if (stripBuilt) return;
-    stripBuilt = true;
-
-    const pages = annotatedPages(ctx.doc);
-    if (pages.length === 0) {
-      strip.hidden = true;
-      return;
-    }
-
-    const shown = pages.slice(0, MAX_THUMBS);
-    const frames = shown.map((pageNumber) => {
-      const frame = document.createElement("figure");
-      frame.className = "share-thumb";
-      frame.innerHTML = `<div class="share-thumb-sheet"></div><figcaption>p. ${pageNumber}</figcaption>`;
-      const sheet = frame.firstElementChild as HTMLDivElement;
-      sheet.style.height = `${THUMB_HEIGHT}px`;
-      sheet.style.width = `${Math.round(THUMB_HEIGHT * pageAspect(ctx.doc, pageNumber))}px`;
-      strip.appendChild(frame);
-      return sheet;
-    });
-    if (pages.length > shown.length) {
-      const more = document.createElement("span");
-      more.className = "share-thumb-more";
-      more.textContent = `+${pages.length - shown.length} more`;
-      strip.appendChild(more);
-    }
-
-    // One at a time, so the viewer's own renders aren't starved.
-    (async () => {
-      for (let i = 0; i < shown.length; i++) {
-        try {
-          const canvas = await renderThumbnail(ctx.doc, shown[i], THUMB_HEIGHT);
-          if (canvas) frames[i].appendChild(canvas);
-        } catch (error) {
-          console.warn(`Thumbnail for page ${shown[i]} failed:`, error);
-        }
-      }
-    })();
-  };
-
   const prepareFile = async () => {
     if (readyFile) return;
-    sizeLabel.textContent = "Preparing…";
+    card.setSize("Preparing…");
     try {
-      readyFile = await ctx.getAnnotatedFile();
-      sizeLabel.textContent = formatBytes(readyFile.size);
+      readyFile = await ctx.getFile(true);
+      card.setSize(formatBytes(readyFile.size));
     } catch (error) {
       console.error("Error exporting annotated PDF:", error);
-      sizeLabel.textContent = "";
+      card.setSize("");
       hint.textContent = "Couldn't export the annotated PDF";
       return;
     }
@@ -207,7 +136,7 @@ export function createEmailTab(ctx: ShareContext): ShareTab {
     fitBody();
     attachment.hidden = !attaching();
     if (attaching()) {
-      buildStrip();
+      card.showPages(true);
       prepareFile();
     }
     renderHint();
@@ -245,7 +174,7 @@ export function createEmailTab(ctx: ShareContext): ShareTab {
         console.warn("Share sheet unavailable, falling back:", error);
       }
     }
-    download(readyFile);
+    downloadFile(readyFile);
     openMail(ctx.title, body.value);
     ctx.showToast(`Saved "${ctx.fileName}". Attach it to the email`);
   });

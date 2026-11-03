@@ -1,6 +1,6 @@
 /**
- * Share › Zotero: save the annotated PDF into a chosen library or collection
- * of the Zotero desktop app.
+ * Save a Copy › Zotero: save the PDF, with or without annotations, into a
+ * chosen library or collection of the Zotero desktop app.
  */
 
 import {
@@ -9,6 +9,7 @@ import {
   requestZoteroAccess,
   saveToZotero,
 } from "../../../platform/zotero.js";
+import { createCopyOptions } from "./copy_options.js";
 
 import type { ZoteroTargets } from "../../../platform/zotero.js";
 import type { ShareContext, ShareTab } from "./share_modal.js";
@@ -34,6 +35,8 @@ export function createZoteroTab(ctx: ShareContext): ShareTab {
       <select class="settings-select" aria-label="Library or collection"></select>
     </div>
 
+    <div class="share-zotero-options"></div>
+
     <div class="share-zotero-result" hidden>
       <span class="share-label">Saved to <span class="share-zotero-result-target"></span></span>
       <span class="share-zotero-result-title"></span>
@@ -58,6 +61,8 @@ export function createZoteroTab(ctx: ShareContext): ShareTab {
   const select = $<HTMLSelectElement>(".settings-select");
   const result = $<HTMLDivElement>(".share-zotero-result");
   const saveBtn = $<HTMLButtonElement>(".share-zotero-save");
+  const options = createCopyOptions(ctx);
+  $(".share-zotero-options").replaceWith(options.el);
 
   let targets: ZoteroTargets | null = null;
   let busy = false;
@@ -79,6 +84,7 @@ export function createZoteroTab(ctx: ShareContext): ShareTab {
       actionBtn.textContent = button?.label ?? "";
       action = button?.run ?? null;
       targetRow.hidden = !targets || saved;
+      options.el.hidden = saved;
       saveBtn.disabled = !targets || busy || saved;
     });
   };
@@ -151,9 +157,14 @@ export function createZoteroTab(ctx: ShareContext): ShareTab {
       targets.targets.find((t) => t.id === targetId)?.name ?? "Zotero";
 
     busy = true;
-    setStatus("on", "Saving to Zotero…", "Exporting your annotated copy");
+    setStatus("on", "Saving to Zotero…", "Exporting your copy");
+    const file = await options.file();
+    if (!file) {
+      busy = false;
+      setStatus("on", "Connected to Zotero", "");
+      return;
+    }
     try {
-      const file = await ctx.getAnnotatedFile();
       const title = await saveToZotero(
         file,
         {
@@ -198,5 +209,11 @@ export function createZoteroTab(ctx: ShareContext): ShareTab {
   actionBtn.addEventListener("click", () => action?.());
   saveBtn.addEventListener("click", save);
 
-  return { el, onShow: refresh };
+  return {
+    el,
+    onShow: () => {
+      options.sync();
+      refresh();
+    },
+  };
 }

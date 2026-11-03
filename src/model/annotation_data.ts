@@ -11,7 +11,17 @@
 import { DocEvent } from "./doc_events.js";
 import { normalizeAnnotationRects } from "../pdf/annotations.js";
 
-import type { PdfAnnotationObject } from "@embedpdf/models";
+import type {
+  PdfAnnotationFlagName,
+  PdfAnnotationObject,
+} from "@embedpdf/models";
+
+/**
+ * The flags Hover's highlights, underlines and drawings carry. Without "print"
+ * a viewer shows an annotation on screen but leaves it off paper, and the
+ * engine only adds that flag by itself for comments.
+ */
+const PRINTABLE: PdfAnnotationFlagName[] = ["print"];
 import type { PDFDocumentModel } from "./doc.js";
 
 /** One colour from the palette the UI offers. */
@@ -574,6 +584,7 @@ export class AnnotationStore {
         segmentRects,
         color: colorNameToHex(annotation.color),
         opacity: annotation.type === "highlight" ? 0.5 : 1.0,
+        flags: PRINTABLE,
         contents: annotation.comment || undefined,
         custom: {
           colorName: annotation.color,
@@ -692,6 +703,7 @@ export class AnnotationStore {
         segmentRects,
         color: colorNameToHex(annotation.color),
         opacity: annotation.type === "highlight" ? 0.5 : 1.0,
+        flags: PRINTABLE,
         contents: annotation.comment || undefined,
         custom: {
           colorName: annotation.color,
@@ -921,6 +933,7 @@ export class AnnotationStore {
       inkList,
       strokeColor: colorNameToHex(annotation.color),
       opacity: 1.0,
+      flags: PRINTABLE,
       strokeWidth: strokeWidthPdf,
       custom: {
         colorName: annotation.color,
@@ -989,6 +1002,7 @@ export class AnnotationStore {
       inkList,
       strokeColor: colorNameToHex(annotation.color),
       opacity: 1.0,
+      flags: PRINTABLE,
       strokeWidth: strokeWidthPdf,
       custom: {
         colorName: annotation.color,

@@ -8,17 +8,23 @@ import { Config } from "../settings/config.js";
 import { requestThrottle } from "./request_throttle.js";
 import { ingestFile } from "../../platform/ingest.js";
 import { parseFetchedHtml } from "../../platform/parse_html.js";
-import { openShareModal, shareableUrl } from "./share/share_modal.js";
+import {
+  openPrintModal,
+  openSaveModal,
+  openShareModal,
+  shareableUrl,
+} from "./share/share_modal.js";
+import { printFile } from "./share/print_panel.js";
 
 import type { SplitWindowManager } from "../../viewer/window_manager.js";
 const VERSION = __APP_VERSION__;
 
 /** The `data-action` of every row in the file menu. */
 export type FileMenuAction =
-  | "import"
-  | "print"
+  | "open"
   | "save"
   | "share"
+  | "print"
   | "copy-link"
   | "cite"
   | "metadata"
@@ -99,29 +105,22 @@ export class FileMenu {
     this.menuList = document.createElement("div");
     this.menuList.className = "file-menu-list";
     this.menuList.innerHTML = `
-      <button class="file-menu-item" data-action="import">
+      <button class="file-menu-item" data-action="open">
         <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-upload" viewBox="0 0 16 16">
           <path d="M.5 9.9a.5.5 0 0 1 .5.5v2.5a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-2.5a.5.5 0 0 1 1 0v2.5a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2v-2.5a.5.5 0 0 1 .5-.5"/>
           <path d="M7.646 1.146a.5.5 0 0 1 .708 0l3 3a.5.5 0 0 1-.708.708L8.5 2.707V11.5a.5.5 0 0 1-1 0V2.707L5.354 4.854a.5.5 0 1 1-.708-.708z"/>
         </svg>
-        <span>Import</span>
+        <span>Open PDF</span>
+        <span class="shortcut">⌘O</span>
       </button>
       <input type="file" id="file-import" accept="application/pdf" hidden>
       <div class="file-menu-divider"></div>
-      <button class="file-menu-item" data-action="print">
-        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-printer" viewBox="0 0 16 16">
-          <path d="M2.5 8a.5.5 0 1 0 0-1 .5.5 0 0 0 0 1"/>
-          <path d="M5 1a2 2 0 0 0-2 2v2H2a2 2 0 0 0-2 2v3a2 2 0 0 0 2 2h1v1a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2v-1h1a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-1V3a2 2 0 0 0-2-2zM4 3a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2H4zm1 5a2 2 0 0 0-2 2v1H2a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h12a1 1 0 0 1 1 1v3a1 1 0 0 1-1 1h-1v-1a2 2 0 0 0-2-2zm7 2v3a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1v-3a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1"/>
-        </svg>
-        <span>Print</span>
-        <span class="shortcut">⌘P</span>
-      </button>
       <button class="file-menu-item" data-action="save">
         <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-download" viewBox="0 0 16 16">
           <path d="M.5 9.9a.5.5 0 0 1 .5.5v2.5a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-2.5a.5.5 0 0 1 1 0v2.5a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2v-2.5a.5.5 0 0 1 .5-.5"/>
           <path d="M7.646 11.854a.5.5 0 0 0 .708 0l3-3a.5.5 0 0 0-.708-.708L8.5 10.293V1.5a.5.5 0 0 0-1 0v8.793L5.354 8.146a.5.5 0 1 0-.708.708z"/>
         </svg>
-        <span>Save PDF</span>
+        <span>Save a Copy</span>
         <span class="shortcut">⌘S</span>
       </button>
       <div class="file-menu-row">
@@ -140,6 +139,14 @@ export class FileMenu {
           </svg>
         </button>
       </div>
+      <button class="file-menu-item" data-action="print">
+        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-printer" viewBox="0 0 16 16">
+          <path d="M2.5 8a.5.5 0 1 0 0-1 .5.5 0 0 0 0 1"/>
+          <path d="M5 1a2 2 0 0 0-2 2v2H2a2 2 0 0 0-2 2v3a2 2 0 0 0 2 2h1v1a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2v-1h1a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-1V3a2 2 0 0 0-2-2zM4 3a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2H4zm1 5a2 2 0 0 0-2 2v1H2a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h12a1 1 0 0 1 1 1v3a1 1 0 0 1-1 1h-1v-1a2 2 0 0 0-2-2zm7 2v3a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1v-3a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1"/>
+        </svg>
+        <span>Print</span>
+        <span class="shortcut">⌘P</span>
+      </button>
       <div class="file-menu-divider"></div>
       <button class="file-menu-item" data-action="cite">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
@@ -303,6 +310,7 @@ export class FileMenu {
       const item = target.closest(
         ".file-menu-item, .file-menu-icon-btn",
       ) as HTMLElement;
+      if (item?.getAttribute("aria-disabled") === "true") return;
       if (item) {
         this.#handleAction(item.dataset.action as FileMenuAction);
       }
@@ -336,6 +344,10 @@ export class FileMenu {
 
     // Keyboard shortcuts
     document.addEventListener("keydown", (e) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === "o") {
+        e.preventDefault();
+        this.#handleAction("open");
+      }
       if ((e.metaKey || e.ctrlKey) && e.key === "p") {
         e.preventDefault();
         this.#handleAction("print");
@@ -381,8 +393,21 @@ export class FileMenu {
       this.menuList.offsetHeight + "px",
     );
 
+    this.#syncCopyLink();
     this.container.classList.add("open");
     this.button.classList.add("open");
+  }
+
+  /** A file opened from disk has no web link, so the quick copy stands down. */
+  #syncCopyLink() {
+    const copyBtn = this.menuList.querySelector(
+      '[data-action="copy-link"]',
+    ) as HTMLButtonElement;
+    const hasLink = !!shareableUrl();
+    copyBtn.setAttribute("aria-disabled", String(!hasLink));
+    copyBtn.title = hasLink
+      ? "Copy link"
+      : "No web link: opened from your computer";
   }
 
   closeMenu() {
@@ -401,14 +426,18 @@ export class FileMenu {
     this.closeMenu();
 
     switch (action) {
-      case "import":
+      case "open":
         this.#triggerFileImport();
+        break;
+      case "save":
+        openSaveModal(
+          this.wm.document,
+          (msg: string) => this.#showToast(msg),
+          "local",
+        );
         break;
       case "print":
         this.#print();
-        break;
-      case "save":
-        this.#save();
         break;
       case "share":
         openShareModal(this.wm.document, (msg: string) => this.#showToast(msg));
@@ -435,7 +464,7 @@ export class FileMenu {
         this.#viewOriginal();
         break;
     }
-    if (!["import"].includes(action)) {
+    if (!["open"].includes(action)) {
       this.closeMenu();
     }
   }
@@ -478,57 +507,24 @@ export class FileMenu {
     }
   }
 
+  /**
+   * With annotations to decide on, ask first; otherwise there's nothing to
+   * choose, so go straight to the browser's print dialog.
+   */
   async #print() {
     const docModel = this.wm.document;
+    if (!docModel?.pdfDoc) return;
 
-    try {
-      const pdfData = await docModel.saveWithAnnotations();
-      const blob = new Blob([pdfData], { type: "application/pdf" });
-      const url = URL.createObjectURL(blob);
-
-      const iframe = document.createElement("iframe");
-      iframe.style.position = "fixed";
-      iframe.style.right = "0";
-      iframe.style.bottom = "0";
-      iframe.style.width = "0";
-      iframe.style.height = "0";
-      iframe.style.border = "none";
-      iframe.src = url;
-
-      iframe.onload = () => {
-        setTimeout(() => {
-          iframe.contentWindow?.focus();
-          iframe.contentWindow?.print();
-
-          setTimeout(() => {
-            document.body.removeChild(iframe);
-            URL.revokeObjectURL(url);
-          }, 1000);
-        }, 100);
-      };
-      document.body.appendChild(iframe);
-    } catch (error) {
-      console.error("Error printing with annotations:", error);
-      window.print();
+    if (docModel.hasAnnotations()) {
+      openPrintModal(docModel, (msg: string) => this.#showToast(msg));
+      return;
     }
-  }
-
-  async #save() {
-    const docModel = this.wm.document;
-
     try {
       const pdfData = await docModel.saveWithAnnotations();
-      const blob = new Blob([pdfData], { type: "application/pdf" });
-      const url = URL.createObjectURL(blob);
-
-      const link = document.createElement("a");
-      link.href = url;
-      link.download = document.title.replace(" - Hover PDF", "") + ".pdf";
-      link.click();
-
-      setTimeout(() => URL.revokeObjectURL(url), 1000);
+      printFile(new File([pdfData], "print.pdf", { type: "application/pdf" }));
     } catch (error) {
-      console.error("Error saving PDF:", error);
+      console.error("Error preparing PDF for print:", error);
+      window.print();
     }
   }
 

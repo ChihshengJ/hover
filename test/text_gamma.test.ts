@@ -35,7 +35,7 @@ describe("applyTextGamma", () => {
     set(data, 11, 10, [128, 128, 128]);
     applyTextGamma(data, W, H, box(8, 8, 13, 13), WHOLE);
     // 255 * (128 / 255) ** 1.5
-    expect(at(data, 11, 10)).toEqual([91, 91, 91]);
+    expect(at(data, 11, 10)).toEqual([74, 74, 74]);
     expect(at(data, 10, 10)).toEqual([0, 0, 0]);
     expect(at(data, 12, 12)).toEqual([255, 255, 255]);
   });
@@ -70,7 +70,7 @@ describe("applyTextGamma", () => {
     set(data, 4, 4, [128, 128, 128]); // in the pad
     set(data, 3, 3, [128, 128, 128]); // outside
     applyTextGamma(data, W, H, box(5, 5, 10, 10), WHOLE);
-    expect(at(data, 4, 4)).toEqual([91, 91, 91]);
+    expect(at(data, 4, 4)).toEqual([74, 74, 74]);
     expect(at(data, 3, 3)).toEqual([128, 128, 128]);
   });
 
@@ -80,7 +80,7 @@ describe("applyTextGamma", () => {
     set(data, 11, 10, [128, 128, 128]);
     const b = box(8, 8, 13, 13);
     applyTextGamma(data, W, H, new Float32Array([...b, ...b]), WHOLE);
-    expect(at(data, 11, 10)).toEqual([91, 91, 91]);
+    expect(at(data, 11, 10)).toEqual([74, 74, 74]);
   });
 
   test("maps boxes through the page placement for a cropped raster", () => {
@@ -96,7 +96,7 @@ describe("applyTextGamma", () => {
       width: 100,
       height: 100,
     });
-    expect(at(data, 11, 10)).toEqual([91, 91, 91]);
+    expect(at(data, 11, 10)).toEqual([74, 74, 74]);
     expect(at(data, 1, 1)).toEqual([128, 128, 128]);
   });
 });

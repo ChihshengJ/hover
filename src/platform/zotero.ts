@@ -11,7 +11,17 @@
  */
 
 const ZOTERO_ORIGIN = "http://127.0.0.1:23119";
-const ZOTERO_PERMISSION = { origins: [`${ZOTERO_ORIGIN}/*`] };
+/**
+ * Safari rejects a port in a match pattern ("not a valid pattern"), so every
+ * permissions call threw there. A port-less host matches any port, so Safari
+ * asks for 127.0.0.1 as a whole. Must match optional_host_permissions in
+ * manifests/safari.json.
+ */
+const ZOTERO_PERMISSION = {
+  origins: [
+    __TARGET__ === "safari" ? "http://127.0.0.1/*" : `${ZOTERO_ORIGIN}/*`,
+  ],
+};
 /** The connector API version this client speaks; Zotero 7–9 report 3. */
 const CONNECTOR_API_VERSION = "3";
 

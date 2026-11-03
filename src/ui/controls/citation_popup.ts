@@ -1,4 +1,5 @@
 import { requestThrottle } from "./request_throttle.js";
+import { parseFetchedHtml } from "../../platform/parse_html.js";
 
 import type {
   Citation,
@@ -793,8 +794,7 @@ export class CitationPopup {
   }
 
   #parseScholarResult(html: string, query: string): ScholarResult | null {
-    const parser = new DOMParser();
-    const doc = parser.parseFromString(html, "text/html");
+    const doc = parseFetchedHtml(html);
 
     // Find first result
     const firstResult = doc.querySelector(".gs_ri");

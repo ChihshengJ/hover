@@ -7,6 +7,7 @@ import { Settings } from "../settings/settings.js";
 import { Config } from "../settings/config.js";
 import { requestThrottle } from "./request_throttle.js";
 import { ingestFile } from "../../platform/ingest.js";
+import { parseFetchedHtml } from "../../platform/parse_html.js";
 import { openShareModal, shareableUrl } from "./share/share_modal.js";
 
 import type { SplitWindowManager } from "../../viewer/window_manager.js";
@@ -656,8 +657,7 @@ export class FileMenu {
    * @param html Search results HTML
    */
   #extractPaperId(html: string): string | null {
-    const parser = new DOMParser();
-    const doc = parser.parseFromString(html, "text/html");
+    const doc = parseFetchedHtml(html);
 
     const firstResult = doc.querySelector(".gs_r[data-cid]");
     if (firstResult) {
@@ -688,8 +688,7 @@ export class FileMenu {
    * @param html Citation popup HTML
    */
   async #parseCitationPage(html: string): Promise<Record<string, any>> {
-    const parser = new DOMParser();
-    const doc = parser.parseFromString(html, "text/html");
+    const doc = parseFetchedHtml(html);
 
     // Extract citation formats (MLA, APA, Chicago, Harvard, Vancouver)
     const formatElements = doc.querySelectorAll(".gs_cith");

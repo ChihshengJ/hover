@@ -1,7 +1,8 @@
 /* ===========================================
    Share, Save a Copy and Print dialogs
-   One shell for all three (share_modal.ts). The shell is the file menu's modal (.file-menu-modal*); toggles and
-   selects are borrowed from Settings (.settings-toggle-*, .settings-select*).
+   One shell for all three (share_modal.ts). The shell is the file menu's
+   modal (.file-menu-modal*), selects are borrowed from Settings
+   (.settings-select*), and switches are the bead switch (bead_switch.css).
    =========================================== */
 
 .share-modal {
@@ -287,11 +288,6 @@
   border-top: 1px solid var(--border-color);
 }
 
-/* A toggle row is a <label>: the whole row flips the switch. */
-label.share-group-row {
-  cursor: pointer;
-}
-
 .share-group-label {
   font-size: 13px;
   font-weight: 500;
@@ -301,11 +297,6 @@ label.share-group-row {
 .share-group-select {
   min-width: 0;
   max-width: 220px;
-}
-
-/* With no options to show, the card leads the panel. */
-.share-group[hidden] + .share-file-card {
-  margin-top: 0;
 }
 
 /* ---------- Email ---------- */
@@ -447,10 +438,7 @@ label.share-group-row {
   overflow-wrap: anywhere;
 }
 
-/* ---------- File card ---------- */
-
-/* The exported file on a sheet of paper: warm stock, lifted off the dialog by
-   a soft shadow. */
+/* The letter's sheet: warm stock, lifted off the dialog by a soft shadow. */
 .share-compose {
   --paper: #fdfaf3;
   --paper-edge: rgba(120, 95, 50, 0.16);
@@ -494,97 +482,15 @@ label.share-group-row {
     0 14px 24px -14px rgba(0, 0, 0, 0.5);
 }
 
-.share-attachment {
-  padding: 10px 22px 14px;
-}
-
-.share-attachment-file {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 12px;
-  color: var(--paper-ink);
-}
-
-.share-attachment-file svg {
-  width: 16px;
-  height: 16px;
-  flex-shrink: 0;
-  color: var(--paper-ink-muted);
-}
-
-.share-attachment-name {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
-}
-
-.share-attachment-size {
-  flex-shrink: 0;
-  color: var(--paper-ink-muted);
-}
-
-/* Tiny sheets of the annotated pages, enough to see the marks are there. */
-.share-attachment-pages {
-  display: flex;
-  align-items: flex-end;
-  gap: 10px;
-  padding: 12px 2px 4px;
-  overflow-x: auto;
-  scrollbar-width: thin;
-}
-
-.share-thumb {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 5px;
-  flex-shrink: 0;
-  margin: 0;
-}
-
-.share-thumb-sheet {
-  overflow: hidden;
-  background: #fff;
-  border-radius: 2px;
-  box-shadow:
-    0 1px 3px rgba(0, 0, 0, 0.18),
-    0 0 0 0.5px rgba(0, 0, 0, 0.1);
-  animation: share-thumb-wait 1.2s ease-in-out infinite alternate;
-}
-
-.share-thumb-sheet:has(canvas) {
-  animation: none;
-}
-
-@keyframes share-thumb-wait {
+@keyframes share-pile-wait {
   to {
     opacity: 0.55;
   }
 }
 
-.share-thumb-sheet canvas {
-  display: block;
-  width: 100%;
-  height: 100%;
-  animation: share-panel-in 0.25s ease;
-}
+/* ---------- The exported file as paper ---------- */
 
-.share-thumb figcaption {
-  font-size: 10px;
-  color: var(--paper-ink-muted);
-}
-
-.share-thumb-more {
-  flex-shrink: 0;
-  align-self: center;
-  font-size: 11px;
-  color: var(--paper-ink-muted);
-}
-
-/* ---------- Email: the attachment as paper ---------- */
+/* Every Save, Print and Email panel shows its copy this way (file_pile.ts). */
 
 /* A tray the pages rest in, then a strip naming the file. */
 .share-pile {
@@ -635,7 +541,7 @@ label.share-group-row {
 }
 
 .share-pile-sheet:not(.under):not(:has(canvas)) {
-  animation: share-thumb-wait 1.2s ease-in-out infinite alternate;
+  animation: share-pile-wait 1.2s ease-in-out infinite alternate;
 }
 
 .share-pile-sheet canvas {
@@ -767,183 +673,15 @@ label.share-group-row {
   color: var(--text-tertiary);
 }
 
-.share-pile-foot .share-group-row {
+/* "Include annotations" and its switch; a <label>, so the text flips it. */
+.share-pile-option {
+  display: flex;
   flex-shrink: 0;
+  align-items: center;
   gap: 10px;
-  min-height: 0;
-  padding: 0;
-}
-
-.share-pile-foot .share-group-label {
   font-size: 12px;
-  font-weight: 400;
   color: var(--text-secondary);
-}
-
-/* Hover's line-and-dot switch, made real: the line is a groove cut into the
-   strip, the dot a glass bead riding in it. Switched on, the bead lights up
-   from within, the glow Hover's flat switch draws, and lights the groove
-   around it. The selectors carry [type="checkbox"] to outrank the
-   Settings rules they restyle, whichever stylesheet loads last. */
-.share-pile-foot .settings-toggle-switch {
-  /* Tuning the light, switched on. The bead's halo is two soft rings: a
-     tight bright one and a wide faint one, each a blur radius and an
-     opacity. The groove catches the light along its whole length, from
-     --groove-light-near beside the bead to --groove-light-far at its end. */
-  --glow-color: 255, 255, 255;
-  --glow-near-blur: 6px;
-  --glow-near-opacity: 0.95;
-  --glow-far-blur: 14px;
-  --glow-far-opacity: 0.55;
-  --groove-light-near: 0.95;
-  --groove-light-far: 0.3;
-
-  width: 40px;
-  height: 22px;
-}
-
-.share-pile-foot .settings-toggle-switch .settings-toggle-slider {
-  left: 5px;
-  right: 5px;
-  top: 50%;
-  height: 4px;
-  margin-top: -2px;
-  border-radius: 2px;
-  background: linear-gradient(
-    to bottom,
-    rgba(70, 50, 20, 0.32),
-    rgba(70, 50, 20, 0.16)
-  );
-  box-shadow:
-    inset 0 1px 1.5px rgba(0, 0, 0, 0.3),
-    0 1px 0 rgba(255, 255, 255, 0.8);
-}
-
-.share-pile-foot .settings-toggle-switch .settings-toggle-knob {
-  left: 0;
-  width: 16px;
-  height: 16px;
-  border: none;
-  background: radial-gradient(
-    circle at 50% 35%,
-    #ffffff,
-    #f1eee8 45%,
-    #cbc5ba 100%
-  );
-  box-shadow:
-    0 1px 1.5px rgba(40, 30, 10, 0.35),
-    0 3px 5px -1px rgba(40, 30, 10, 0.2),
-    inset 0 -1.5px 2px rgba(80, 60, 30, 0.12);
-}
-
-/* The bead's glint, up and to the left, where the light comes from. */
-.share-pile-foot .settings-toggle-switch .settings-toggle-knob::after {
-  content: "";
-  position: absolute;
-  top: 2.5px;
-  left: 4px;
-  width: 6px;
-  height: 4px;
-  border-radius: 50%;
-  background: radial-gradient(rgba(255, 255, 255, 0.95), transparent 70%);
-}
-
-/* The groove doesn't glow itself: switched on, it catches the bead's light
-   end to end, brightest beside the bead and softening away from it. Its own
-   inner shadow keeps it reading as cut into the strip. */
-.share-pile-foot .settings-toggle-switch .settings-toggle-slider::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  border-radius: inherit;
-  background: linear-gradient(
-    to left,
-    rgba(var(--glow-color), var(--groove-light-near)),
-    rgba(
-        var(--glow-color),
-        calc((var(--groove-light-near) + var(--groove-light-far)) / 2)
-      )
-      35%,
-    rgba(var(--glow-color), var(--groove-light-far))
-  );
-  box-shadow: inset 0 1px 1px rgba(0, 0, 0, 0.18);
-  opacity: 0;
-  transition: opacity 0.35s cubic-bezier(0.4, 0, 0.2, 1);
-}
-
-/* Settings' own switched-on rule paints its line white and glowing; the
-   groove stays a groove. */
-.share-pile-foot
-  .settings-toggle-switch
-  input[type="checkbox"]:checked
-  ~ .settings-toggle-slider {
-  background: linear-gradient(
-    to bottom,
-    rgba(70, 50, 20, 0.32),
-    rgba(70, 50, 20, 0.16)
-  );
-  box-shadow:
-    inset 0 1px 1.5px rgba(0, 0, 0, 0.3),
-    0 1px 0 rgba(255, 255, 255, 0.8);
-}
-
-.share-pile-foot
-  .settings-toggle-switch
-  input[type="checkbox"]:checked
-  ~ .settings-toggle-slider::after {
-  opacity: 1;
-}
-
-.share-pile-foot
-  .settings-toggle-switch
-  input[type="checkbox"]:checked
-  ~ .settings-toggle-knob {
-  left: 24px;
-  border: none;
-  background: radial-gradient(
-    circle at 50% 38%,
-    #ffffff,
-    #ffffff 40%,
-    #ebe8e2 100%
-  );
-  box-shadow:
-    0 1px 1.5px rgba(40, 30, 10, 0.3),
-    0 0 var(--glow-near-blur) rgba(var(--glow-color), var(--glow-near-opacity)),
-    0 0 var(--glow-far-blur) rgba(var(--glow-color), var(--glow-far-opacity)),
-    inset 0 -1px 1.5px rgba(80, 60, 30, 0.1);
-}
-
-.share-pile-foot
-  .settings-toggle-switch
-  input[type="checkbox"]:focus-visible
-  ~ .settings-toggle-knob {
-  outline: 2px solid var(--color-accent-border);
-  outline-offset: 2px;
-}
-
-.night-mode .share-pile-foot .settings-toggle-switch .settings-toggle-slider,
-.night-mode
-  .share-pile-foot
-  .settings-toggle-switch
-  input[type="checkbox"]:checked
-  ~ .settings-toggle-slider {
-  background: linear-gradient(
-    to bottom,
-    rgba(0, 0, 0, 0.55),
-    rgba(0, 0, 0, 0.35)
-  );
-  box-shadow:
-    inset 0 1px 1.5px rgba(0, 0, 0, 0.6),
-    0 1px 0 rgba(255, 255, 255, 0.07);
-}
-
-.night-mode .share-pile-foot .settings-toggle-switch .settings-toggle-knob {
-  background: radial-gradient(
-    circle at 50% 35%,
-    #e9e6e0,
-    #bdb8ae 50%,
-    #85807a 100%
-  );
+  cursor: pointer;
 }
 
 @media (prefers-reduced-motion: reduce) {

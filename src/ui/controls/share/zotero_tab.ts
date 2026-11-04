@@ -84,10 +84,8 @@ export function createZoteroTab(ctx: ShareContext): ShareTab {
   const statusText = $<HTMLSpanElement>(".share-zotero-status-text");
   const saveBtn = $<HTMLButtonElement>(".share-zotero-save");
 
-  // The annotations toggle joins Location in the one settings group.
   const options = createCopyOptions(ctx);
-  $(".share-group").appendChild(options.row);
-  form.appendChild(options.card);
+  form.appendChild(options.el);
 
   let targets: ZoteroTargets | null = null;
   /** The user's pick, kept across refreshes; Zotero's own selection until then. */

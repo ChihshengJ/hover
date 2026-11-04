@@ -1,6 +1,6 @@
 /** Print: the annotations choice, then the browser's print dialog. */
 
-import { copyOptionsBody, createCopyOptions } from "./copy_options.js";
+import { createCopyOptions } from "./copy_options.js";
 
 import type { ShareContext, ShareTab } from "./share_modal.js";
 
@@ -36,7 +36,7 @@ export function createPrintPanel(ctx: ShareContext): ShareTab {
   el.setAttribute("role", "tabpanel");
 
   const options = createCopyOptions(ctx);
-  el.append(...copyOptionsBody(options));
+  el.appendChild(options.el);
 
   const footer = document.createElement("div");
   footer.className = "share-footer";

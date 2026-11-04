@@ -1,5 +1,6 @@
 /**
- * Share › Email's attachment, drawn as paper: the document is a stack of
+ * The exported file, drawn as paper, for every Save, Print and Email panel
+ * (through copy_options.ts): the document is a stack of
  * sheets held by a paper clip. With the annotations included, the stack
  * splits: it gives way to the annotated pages alone, fanned out and each
  * flagged with its page number. Left out, they gather back into the stack.
@@ -14,9 +15,16 @@ import {
 } from "./annotated_pages.js";
 
 import type { PDFDocumentModel } from "../../../model/doc.js";
-import type { FileCard } from "./annotated_pages.js";
 
-export type FilePile = FileCard & { addRow(row: HTMLElement): void };
+export interface FilePile {
+  el: HTMLElement;
+  /** Split the stack into its annotated pages, or gather them back in. */
+  showPages(show: boolean): void;
+  /** Beside the page count: the size, or a word like "Preparing…". */
+  setSize(text: string): void;
+  /** Put a row in the strip under the stage, beside the file's name. */
+  addRow(row: HTMLElement): void;
+}
 
 const STACK_HEIGHT = 150;
 const FANNED_HEIGHT = 132;
@@ -36,17 +44,26 @@ const UNDER_SHEETS = [
   { x: 1, y: 5, r: -1.2 },
 ];
 
-const CLIP_SVG = `
+/**
+ * Counts piles, for the clip's gradient id. A dialog builds every panel at
+ * once, so Save a Copy holds two piles; with a shared id, the second clip's
+ * stroke would point at the first's gradient, inside a hidden panel, and
+ * Chrome paints nothing from a hidden panel.
+ */
+let pileCount = 0;
+
+/** A gem clip in brushed steel. */
+const clipSvg = (gradientId: string) => `
   <svg class="share-pile-clip" viewBox="0 0 20 56" aria-hidden="true">
     <defs>
-      <linearGradient id="share-pile-clip-metal" x1="0" x2="1" y1="0" y2="0">
+      <linearGradient id="${gradientId}" x1="0" x2="1" y1="0" y2="0">
         <stop offset="0" stop-color="#7f858d"/>
         <stop offset="0.45" stop-color="#f2f4f6"/>
         <stop offset="1" stop-color="#8d939b"/>
       </linearGradient>
     </defs>
     <path d="M7 18V40a3 3 0 0 0 6 0V9a5.5 5.5 0 0 0-11 0V44a8 8 0 0 0 16 0V16"
-      fill="none" stroke="url(#share-pile-clip-metal)" stroke-width="2" stroke-linecap="round"/>
+      fill="none" stroke="url(#${gradientId})" stroke-width="2" stroke-linecap="round"/>
   </svg>`;
 
 /** A blank sheet `height` tall, shaped like `pageNumber`. */
@@ -70,7 +87,7 @@ export function createFilePile(
   el.className = "share-pile";
   el.innerHTML = `
     <div class="share-pile-stage">
-      <div class="share-pile-stack">${CLIP_SVG}</div>
+      <div class="share-pile-stack">${clipSvg(`share-pile-clip-metal-${++pileCount}`)}</div>
       <div class="share-pile-fan"></div>
     </div>
     <div class="share-pile-foot">

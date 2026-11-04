@@ -13,7 +13,6 @@
  */
 
 import { createCopyOptions, downloadFile } from "./copy_options.js";
-import { createFilePile } from "./file_pile.js";
 import { Config } from "../../settings/config.js";
 
 import type { ShareContext, ShareTab } from "./share_modal.js";
@@ -78,14 +77,13 @@ export function createEmailTab(ctx: ShareContext): ShareTab {
   let ready: File | null = null;
   let failed = false;
   const options = createCopyOptions(ctx, {
-    preview: createFilePile(ctx.doc, ctx.fileName),
     onFile: (file, didFail) => {
       ready = file;
       failed = didFail;
       renderFooter();
     },
   });
-  letter.after(options.card);
+  letter.after(options.el);
 
   const hasLink = () => !!ctx.link;
   let chosen: Mode = hasLink() ? "link" : "file";
@@ -129,7 +127,7 @@ export function createEmailTab(ctx: ShareContext): ShareTab {
     }
 
     letter.hidden = current !== "link";
-    options.card.hidden = current !== "file";
+    options.el.hidden = current !== "file";
     if (current === "link") {
       $(".share-letter-url").textContent = ctx.link;
       fitOpening();

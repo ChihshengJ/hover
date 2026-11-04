@@ -1,30 +1,31 @@
 /**
- * The "Include annotations" choice that every exported copy offers, and the
- * preview of the file it will produce. The choice lives on the context, so
- * every panel showing one of these agrees.
- *
- * The two parts are handed back separately: the toggle is a row for the
- * panel's settings group, the card sits below that group. A panel can bring
- * its own preview instead of the card, and the toggle then rides on it.
+ * The exported copy every Save, Print and Email panel offers: the file drawn
+ * as a stack of paper, with the "Include annotations" switch beneath it. The
+ * choice lives on the context, so every panel showing one of these agrees.
  */
 
-import { createFileCard, formatBytes } from "./annotated_pages.js";
-import type { FileCard } from "./annotated_pages.js";
+import { formatBytes } from "./annotated_pages.js";
+import { createFilePile } from "./file_pile.js";
+import { createBeadSwitch } from "../../components/bead_switch.js";
 import { Config } from "../../settings/config.js";
 
 import type { ShareContext } from "./share_modal.js";
 
 export interface CopyOptions {
-  /** A `.share-group-row`, hidden when there are no annotations to leave out. */
-  row: HTMLElement;
-  /** The file on its sheet of paper, annotated pages included. */
-  card: HTMLElement;
-  /** False when the document has no annotations, so there's nothing to choose. */
-  hasChoice: boolean;
+  /** The file as a stack of paper, the annotations switch beneath it. */
+  el: HTMLElement;
   /** Pick up the shared choice and preview it; call from the tab's onShow. */
   sync(): void;
   /** The file the choice describes, or null when it couldn't be exported. */
   file(): Promise<File | null>;
+}
+
+export interface CopyOptionsSetup {
+  /**
+   * Told the file for the current choice once it's exported, and null while
+   * it's being prepared or, with `failed`, when it couldn't be.
+   */
+  onFile?(file: File | null, failed: boolean): void;
 }
 
 /** Hand a file to the browser's downloads. */
@@ -37,61 +38,19 @@ export function downloadFile(file: File) {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
-/**
- * A settings group holding just the annotations toggle, then the card: the
- * whole body of a panel whose only option is that one.
- */
-export function copyOptionsBody(options: CopyOptions): HTMLElement[] {
-  const group = document.createElement("div");
-  group.className = "share-group";
-  group.hidden = !options.hasChoice;
-  group.appendChild(options.row);
-  return [group, options.card];
-}
-
-export interface CopyOptionsSetup {
-  /**
-   * Told the file for the current choice once it's exported, and null while
-   * it's being prepared or, with `failed`, when it couldn't be.
-   */
-  onFile?(file: File | null, failed: boolean): void;
-  /**
-   * Shown in place of the card; it takes the toggle too, rather than leaving
-   * it for the panel's group.
-   */
-  preview?: FileCard & { addRow(row: HTMLElement): void };
-}
-
 export function createCopyOptions(
   ctx: ShareContext,
-  { onFile, preview }: CopyOptionsSetup = {},
+  { onFile }: CopyOptionsSetup = {},
 ): CopyOptions {
-  const row = document.createElement("label");
-  row.className = "share-group-row";
-  row.innerHTML = `
-    <span class="share-group-label">Include annotations</span>
-    <span class="settings-toggle-switch">
-      <input type="checkbox" class="share-annotations-toggle">
-      <span class="settings-toggle-slider"></span>
-      <span class="settings-toggle-knob"></span>
-    </span>
-  `;
-  const toggle = row.querySelector(
-    ".share-annotations-toggle",
-  ) as HTMLInputElement;
+  const pile = createFilePile(ctx.doc, ctx.fileName);
 
-  let card: HTMLElement;
-  let fileCard: FileCard;
-  if (preview) {
-    fileCard = preview;
-    card = preview.el;
-    preview.addRow(row);
-  } else {
-    card = document.createElement("div");
-    card.className = "share-compose share-file-card";
-    fileCard = createFileCard(ctx.doc, ctx.fileName);
-    card.appendChild(fileCard.el);
-  }
+  // The whole row is a <label>, so its text flips the switch too.
+  const row = document.createElement("label");
+  row.className = "share-pile-option";
+  row.innerHTML = `<span>Include annotations</span>`;
+  const { el: switchEl, input: toggle } = createBeadSwitch();
+  row.appendChild(switchEl);
+  pile.addRow(row);
 
   const hasChoice = ctx.doc.hasAnnotations();
   row.hidden = !hasChoice;
@@ -103,22 +62,22 @@ export function createCopyOptions(
 
   const render = () => {
     toggle.checked = annotated();
-    // The pages appearing and disappearing is the description of the choice.
-    fileCard.showPages(annotated());
+    // The stack splitting into its annotated pages describes the choice.
+    pile.showPages(annotated());
 
     const mine = ++request;
-    fileCard.setSize("Preparing…");
+    pile.setSize("Preparing…");
     onFile?.(null, false);
     ctx.getFile(annotated()).then(
       (file) => {
         if (mine !== request) return;
-        fileCard.setSize(formatBytes(file.size));
+        pile.setSize(formatBytes(file.size));
         onFile?.(file, false);
       },
       (error) => {
         if (mine !== request) return;
         console.error("Error exporting PDF:", error);
-        fileCard.setSize("");
+        pile.setSize("");
         onFile?.(null, true);
       },
     );
@@ -131,9 +90,7 @@ export function createCopyOptions(
   });
 
   return {
-    row,
-    card,
-    hasChoice,
+    el: pile.el,
     sync: render,
     file: async () => {
       try {

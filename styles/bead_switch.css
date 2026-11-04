@@ -1,0 +1,166 @@
+/* ===========================================
+   Bead switch (src/ui/components/bead_switch.ts)
+   Hover's line-and-dot toggle made physical: the line is a groove cut into
+   the surface, the dot a glass bead riding in it. Switched on, the bead
+   lights up from within, the glow Hover's flat switch draws, and lights the
+   groove from end to end.
+   =========================================== */
+
+.bead-switch {
+  /* Tuning the light, switched on. The bead's halo is two soft rings: a
+     tight bright one and a wide faint one, each a blur radius and an
+     opacity. The groove catches the light along its whole length, from
+     --groove-light-near beside the bead to --groove-light-far at its end. */
+  --glow-color: 255, 255, 255;
+  --glow-near-blur: 6px;
+  --glow-near-opacity: 0.95;
+  --glow-far-blur: 14px;
+  --glow-far-opacity: 0.55;
+  --groove-light-near: 0.95;
+  --groove-light-far: 0.3;
+
+  position: relative;
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+  width: 40px;
+  height: 22px;
+  cursor: pointer;
+}
+
+.bead-switch-input {
+  position: absolute;
+  width: 0;
+  height: 0;
+  margin: 0;
+  opacity: 0;
+}
+
+.bead-switch-groove {
+  position: absolute;
+  left: 5px;
+  right: 5px;
+  top: 50%;
+  height: 4px;
+  margin-top: -2px;
+  border-radius: 2px;
+  background: linear-gradient(
+    to bottom,
+    rgba(70, 50, 20, 0.32),
+    rgba(70, 50, 20, 0.16)
+  );
+  box-shadow:
+    inset 0 1px 1.5px rgba(0, 0, 0, 0.3),
+    0 1px 0 rgba(255, 255, 255, 0.8);
+}
+
+/* The groove doesn't glow itself: switched on, it catches the bead's light
+   end to end, brightest beside the bead and softening away from it. Its own
+   inner shadow keeps it reading as cut into the surface. */
+.bead-switch-groove::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: linear-gradient(
+    to left,
+    rgba(var(--glow-color), var(--groove-light-near)),
+    rgba(
+        var(--glow-color),
+        calc((var(--groove-light-near) + var(--groove-light-far)) / 2)
+      )
+      35%,
+    rgba(var(--glow-color), var(--groove-light-far))
+  );
+  box-shadow: inset 0 1px 1px rgba(0, 0, 0, 0.18);
+  opacity: 0;
+  transition: opacity 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.bead-switch-bead {
+  position: absolute;
+  top: 50%;
+  left: 0;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  transform: translateY(-50%);
+  background: radial-gradient(
+    circle at 50% 35%,
+    #ffffff,
+    #f1eee8 45%,
+    #cbc5ba 100%
+  );
+  box-shadow:
+    0 1px 1.5px rgba(40, 30, 10, 0.35),
+    0 3px 5px -1px rgba(40, 30, 10, 0.2),
+    inset 0 -1.5px 2px rgba(80, 60, 30, 0.12);
+  transition: all 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* The bead's glint, up and to the left, where the light comes from. */
+.bead-switch-bead::after {
+  content: "";
+  position: absolute;
+  top: 2.5px;
+  left: 4px;
+  width: 6px;
+  height: 4px;
+  border-radius: 50%;
+  background: radial-gradient(rgba(255, 255, 255, 0.95), transparent 70%);
+}
+
+.bead-switch-input:checked ~ .bead-switch-groove::after {
+  opacity: 1;
+}
+
+.bead-switch-input:checked ~ .bead-switch-bead {
+  left: 24px;
+  background: radial-gradient(
+    circle at 50% 38%,
+    #ffffff,
+    #ffffff 40%,
+    #ebe8e2 100%
+  );
+  box-shadow:
+    0 1px 1.5px rgba(40, 30, 10, 0.3),
+    0 0 var(--glow-near-blur) rgba(var(--glow-color), var(--glow-near-opacity)),
+    0 0 var(--glow-far-blur) rgba(var(--glow-color), var(--glow-far-opacity)),
+    inset 0 -1px 1.5px rgba(80, 60, 30, 0.1);
+}
+
+.bead-switch-input:focus-visible ~ .bead-switch-bead {
+  outline: 2px solid var(--color-accent-border);
+  outline-offset: 2px;
+}
+
+.bead-switch-input:disabled ~ * {
+  opacity: 0.45;
+}
+
+.night-mode .bead-switch-groove {
+  background: linear-gradient(
+    to bottom,
+    rgba(0, 0, 0, 0.55),
+    rgba(0, 0, 0, 0.35)
+  );
+  box-shadow:
+    inset 0 1px 1.5px rgba(0, 0, 0, 0.6),
+    0 1px 0 rgba(255, 255, 255, 0.07);
+}
+
+.night-mode .bead-switch-input:not(:checked) ~ .bead-switch-bead {
+  background: radial-gradient(
+    circle at 50% 35%,
+    #e9e6e0,
+    #bdb8ae 50%,
+    #85807a 100%
+  );
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .bead-switch-bead,
+  .bead-switch-groove::after {
+    transition: none;
+  }
+}

@@ -167,7 +167,8 @@ const SCHEMA: { [K in ConfigKey]: SchemaEntry<K> } = {
     default: null,
   },
 
-  // Sharing — the line a shared email draft opens with; empty leaves it out.
+  // Sharing — the opening line of a shared email, as last written on the
+  // Email tab; empty leaves it out.
   share_email_opening: {
     storageKey: "hover_share_email_opening",
     default: "Check this paper out:",

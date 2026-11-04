@@ -4,10 +4,12 @@
  * every panel showing one of these agrees.
  *
  * The two parts are handed back separately: the toggle is a row for the
- * panel's settings group, the card sits below that group.
+ * panel's settings group, the card sits below that group. A panel can bring
+ * its own preview instead of the card, and the toggle then rides on it.
  */
 
 import { createFileCard, formatBytes } from "./annotated_pages.js";
+import type { FileCard } from "./annotated_pages.js";
 import { Config } from "../../settings/config.js";
 
 import type { ShareContext } from "./share_modal.js";
@@ -47,7 +49,23 @@ export function copyOptionsBody(options: CopyOptions): HTMLElement[] {
   return [group, options.card];
 }
 
-export function createCopyOptions(ctx: ShareContext): CopyOptions {
+export interface CopyOptionsSetup {
+  /**
+   * Told the file for the current choice once it's exported, and null while
+   * it's being prepared or, with `failed`, when it couldn't be.
+   */
+  onFile?(file: File | null, failed: boolean): void;
+  /**
+   * Shown in place of the card; it takes the toggle too, rather than leaving
+   * it for the panel's group.
+   */
+  preview?: FileCard & { addRow(row: HTMLElement): void };
+}
+
+export function createCopyOptions(
+  ctx: ShareContext,
+  { onFile, preview }: CopyOptionsSetup = {},
+): CopyOptions {
   const row = document.createElement("label");
   row.className = "share-group-row";
   row.innerHTML = `
@@ -62,10 +80,18 @@ export function createCopyOptions(ctx: ShareContext): CopyOptions {
     ".share-annotations-toggle",
   ) as HTMLInputElement;
 
-  const card = document.createElement("div");
-  card.className = "share-compose share-file-card";
-  const fileCard = createFileCard(ctx.doc, ctx.fileName);
-  card.appendChild(fileCard.el);
+  let card: HTMLElement;
+  let fileCard: FileCard;
+  if (preview) {
+    fileCard = preview;
+    card = preview.el;
+    preview.addRow(row);
+  } else {
+    card = document.createElement("div");
+    card.className = "share-compose share-file-card";
+    fileCard = createFileCard(ctx.doc, ctx.fileName);
+    card.appendChild(fileCard.el);
+  }
 
   const hasChoice = ctx.doc.hasAnnotations();
   row.hidden = !hasChoice;
@@ -82,9 +108,19 @@ export function createCopyOptions(ctx: ShareContext): CopyOptions {
 
     const mine = ++request;
     fileCard.setSize("Preparing…");
+    onFile?.(null, false);
     ctx.getFile(annotated()).then(
-      (file) => mine === request && fileCard.setSize(formatBytes(file.size)),
-      () => mine === request && fileCard.setSize(""),
+      (file) => {
+        if (mine !== request) return;
+        fileCard.setSize(formatBytes(file.size));
+        onFile?.(file, false);
+      },
+      (error) => {
+        if (mine !== request) return;
+        console.error("Error exporting PDF:", error);
+        fileCard.setSize("");
+        onFile?.(null, true);
+      },
     );
   };
 

@@ -303,11 +303,6 @@ label.share-group-row {
   max-width: 220px;
 }
 
-/* The exported file alone on its sheet, with no draft above to fold from. */
-.share-file-card .share-attachment {
-  border-top: none;
-}
-
 /* With no options to show, the card leads the panel. */
 .share-group[hidden] + .share-file-card {
   margin-top: 0;
@@ -315,22 +310,154 @@ label.share-group-row {
 
 /* ---------- Email ---------- */
 
-.share-attach-row.locked .settings-toggle-switch {
-  opacity: 0.4;
+/* Link or Attachment: a small rail of its own, so it reads as a choice
+   within the tab rather than a second row of tabs. */
+.share-segmented {
+  position: relative;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  width: 220px;
+  margin: 0 auto;
+  padding: 2px;
+  background: var(--bg-tertiary);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-inset);
+}
+
+.share-segmented-pill {
+  position: absolute;
+  top: 2px;
+  bottom: 2px;
+  left: 2px;
+  width: calc(50% - 2px);
+  border-radius: calc(var(--radius-md) - 2px);
+  background: var(--bg-glass-solid);
+  box-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.14),
+    inset 0 1px 0 rgba(255, 255, 255, 0.9);
+  transition: transform 0.3s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.share-segmented[data-mode="file"] .share-segmented-pill {
+  transform: translateX(100%);
+}
+
+.night-mode .share-segmented-pill {
+  background: var(--bg-secondary);
+  box-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.4),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08);
+}
+
+.share-segment {
+  position: relative;
+  z-index: 1;
+  padding: 4px 10px;
+  font-family: inherit;
+  font-size: 12px;
+  color: var(--text-secondary);
+  background: transparent;
+  border: none;
+  border-radius: calc(var(--radius-md) - 2px);
+  cursor: pointer;
+  transition: color var(--transition-fast);
+}
+
+.share-segment:hover:not(:disabled),
+.share-segment[aria-checked="true"] {
+  color: var(--text-primary);
+}
+
+.share-segment:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+/* The letter: ruled stationery in ink-colored Georgia. The opening line is
+   written on it; the paper's title and link follow a blank line, set the way
+   a mail app renders them. Every line, written or set, sits on a rule: the
+   gradient repeats each line box from where the text starts, and stops at the
+   text margins like printed stationery. */
+.share-letter {
+  --paper-rule: rgba(90, 110, 150, 0.1);
+  --paper-line: 24px;
+  --paper-link: #2d5bb0;
+
+  min-height: calc(4 * var(--paper-line) + 30px);
+  padding: 16px 22px 14px;
+  box-sizing: border-box;
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: 15px;
+  line-height: var(--paper-line);
+  color: var(--paper-ink);
+}
+
+.share-letter::before {
+  content: "";
+  position: absolute;
+  inset: 16px 22px 0;
+  background: repeating-linear-gradient(
+    to bottom,
+    transparent 0,
+    transparent calc(var(--paper-line) - 1px),
+    var(--paper-rule) calc(var(--paper-line) - 1px),
+    var(--paper-rule) var(--paper-line)
+  );
   pointer-events: none;
 }
 
-/* The draft is a sheet of letter paper: warm stock, ruled lines, ink-colored
-   Georgia, lifted off the dialog by a soft shadow. The attachment rides along
-   below a dashed fold. */
+.night-mode .share-letter {
+  --paper-rule: rgba(200, 210, 230, 0.05);
+  --paper-link: #93b4ec;
+}
+
+.share-letter-opening {
+  position: relative;
+  display: block;
+  box-sizing: border-box;
+  width: 100%;
+  min-height: var(--paper-line);
+  padding: 0;
+  overflow: hidden;
+  font: inherit;
+  color: inherit;
+  caret-color: var(--paper-ink);
+  background: transparent;
+  border: none;
+  outline: none;
+  resize: none;
+}
+
+.share-letter-opening::placeholder {
+  color: var(--paper-ink-muted);
+}
+
+.share-letter-link {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  margin-top: var(--paper-line);
+}
+
+.share-letter-url {
+  color: var(--paper-link);
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 3px;
+  overflow-wrap: anywhere;
+}
+
+/* ---------- File card ---------- */
+
+/* The exported file on a sheet of paper: warm stock, lifted off the dialog by
+   a soft shadow. */
 .share-compose {
   --paper: #fdfaf3;
   --paper-edge: rgba(120, 95, 50, 0.16);
-  --paper-rule: rgba(90, 110, 150, 0.1);
   --paper-ink: #2a2620;
   --paper-ink-muted: #8b8272;
-  --paper-line: 24px;
 
+  position: relative;
   margin-top: 12px;
   background:
     radial-gradient(
@@ -351,7 +478,6 @@ label.share-group-row {
 .night-mode .share-compose {
   --paper: #2e2c28;
   --paper-edge: rgba(255, 255, 255, 0.07);
-  --paper-rule: rgba(200, 210, 230, 0.05);
   --paper-ink: #ece6da;
   --paper-ink-muted: #9b9488;
 
@@ -368,42 +494,8 @@ label.share-group-row {
     0 14px 24px -14px rgba(0, 0, 0, 0.5);
 }
 
-/* Each rule sits under a line of text: the gradient repeats every line box
-   and starts where the text does, below the top padding. Like printed
-   stationery, the rules stop at the text margins rather than the sheet edge. */
-.share-compose-body {
-  display: block;
-  box-sizing: border-box;
-  width: 100%;
-  /* Four ruled lines before the sheet grows with its text. */
-  min-height: calc(4 * var(--paper-line) + 30px);
-  padding: 16px 22px 14px;
-  overflow: hidden;
-  font-family: Georgia, "Times New Roman", serif;
-  font-size: 15px;
-  line-height: var(--paper-line);
-  color: var(--paper-ink);
-  caret-color: var(--paper-ink);
-  background: repeating-linear-gradient(
-      to bottom,
-      transparent 0,
-      transparent calc(var(--paper-line) - 1px),
-      var(--paper-rule) calc(var(--paper-line) - 1px),
-      var(--paper-rule) var(--paper-line)
-    )
-    22px 16px / calc(100% - 44px) 100% no-repeat;
-  border: none;
-  outline: none;
-  resize: none;
-}
-
-.share-compose-body::placeholder {
-  color: var(--paper-ink-muted);
-}
-
 .share-attachment {
   padding: 10px 22px 14px;
-  border-top: 1px dashed var(--paper-edge);
 }
 
 .share-attachment-file {
@@ -490,6 +582,375 @@ label.share-group-row {
   align-self: center;
   font-size: 11px;
   color: var(--paper-ink-muted);
+}
+
+/* ---------- Email: the attachment as paper ---------- */
+
+/* A tray the pages rest in, then a strip naming the file. */
+.share-pile {
+  margin-top: 12px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+}
+
+/* A warm desk under a soft overhead lamp, for white paper to sit on. */
+.share-pile-stage {
+  position: relative;
+  height: 204px;
+  background: radial-gradient(
+    85% 80% at 50% 28%,
+    #fffdf8,
+    #fbf4e6 55%,
+    #f4e8d0
+  );
+  box-shadow: inset 0 1px 3px rgba(120, 80, 20, 0.08);
+  overflow: hidden;
+}
+
+.night-mode .share-pile-stage {
+  background: radial-gradient(
+    85% 80% at 50% 28%,
+    #5a4e3f,
+    #463c30 55%,
+    #3a3128
+  );
+  box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.3);
+}
+
+.share-pile-sheet {
+  position: relative;
+  box-sizing: border-box;
+  background: #fff;
+  border-radius: 1.5px;
+  box-shadow:
+    0 0 0 0.5px rgba(0, 0, 0, 0.12),
+    0 1px 2px rgba(40, 30, 10, 0.12),
+    0 4px 10px -3px rgba(40, 30, 10, 0.18);
+}
+
+/* Paper stays paper at night, only less glaring. */
+.night-mode .share-pile-sheet {
+  filter: brightness(0.86);
+}
+
+.share-pile-sheet:not(.under):not(:has(canvas)) {
+  animation: share-thumb-wait 1.2s ease-in-out infinite alternate;
+}
+
+.share-pile-sheet canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border-radius: inherit;
+  animation: share-panel-in 0.25s ease;
+}
+
+/* The whole document, clipped together. Split, it gives way to the
+   annotated pages. */
+.share-pile-stack {
+  position: absolute;
+  z-index: 2;
+  top: 28px;
+  left: 50%;
+  transform: translateX(-50%);
+  transition:
+    transform 0.45s cubic-bezier(0.22, 1, 0.36, 1),
+    opacity 0.25s ease;
+}
+
+.share-pile.split .share-pile-stack {
+  transform: translateX(-50%) translateY(8px) scale(0.94);
+  opacity: 0;
+  pointer-events: none;
+}
+
+.share-pile-sheet.under {
+  position: absolute;
+  inset: 0;
+  width: auto !important;
+}
+
+/* A gem clip over the top edge, near the corner, as clipped papers are. */
+.share-pile-clip {
+  position: absolute;
+  top: -17px;
+  left: 16px;
+  width: 15px;
+  height: 42px;
+  filter: drop-shadow(0.5px 1.5px 1px rgba(0, 0, 0, 0.3));
+}
+
+/* The annotated pages, fanned like a hand of cards. Each sheet is placed by
+   --x/--y/--r from the stage's center, and gathered back into the stack (at
+   the center, beneath it) when not split. */
+.share-pile-fan .share-pile-sheet {
+  position: absolute;
+  z-index: 1;
+  top: 46px;
+  left: 50%;
+  transform-origin: 50% 100%;
+  transform: translateY(-8px) scale(0.9);
+  opacity: 0;
+  /* Gathering, they slide under the stack before they go. */
+  transition:
+    transform 0.4s cubic-bezier(0.22, 1, 0.36, 1),
+    opacity 0.15s linear 0.25s;
+}
+
+.share-pile.split .share-pile-fan .share-pile-sheet {
+  transform: translateX(var(--x)) translateY(var(--y)) rotate(var(--r));
+  opacity: 1;
+  transition:
+    transform 0.5s cubic-bezier(0.22, 1, 0.36, 1) calc(var(--i) * 45ms),
+    opacity 0.15s linear;
+}
+
+/* A sticky flag tucked behind the top edge, carrying the page number. */
+.share-pile-flag {
+  position: absolute;
+  top: -9px;
+  right: 7px;
+  z-index: -1;
+  min-width: 14px;
+  padding: 1px 3px 8px;
+  font-size: 9px;
+  font-weight: 600;
+  line-height: 1.2;
+  text-align: center;
+  color: #6b5310;
+  background: linear-gradient(to bottom, #fde68a, #fcd34d);
+  border-radius: 2px 2px 0 0;
+  box-shadow: 0 0 0 0.5px rgba(120, 90, 0, 0.25);
+}
+
+.share-pile-more {
+  position: absolute;
+  right: 6px;
+  bottom: 6px;
+  z-index: 1;
+  padding: 1px 6px;
+  font-size: 10px;
+  font-weight: 600;
+  color: #fff;
+  background: rgba(30, 30, 30, 0.6);
+  border-radius: 999px;
+}
+
+.share-pile-foot {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px 10px 14px;
+  background: var(--bg-tertiary);
+  border-top: 1px solid var(--border-color);
+}
+
+.share-pile-info {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.share-pile-name {
+  overflow: hidden;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-primary);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.share-pile-meta {
+  font-size: 11px;
+  color: var(--text-tertiary);
+}
+
+.share-pile-foot .share-group-row {
+  flex-shrink: 0;
+  gap: 10px;
+  min-height: 0;
+  padding: 0;
+}
+
+.share-pile-foot .share-group-label {
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--text-secondary);
+}
+
+/* Hover's line-and-dot switch, made real: the line is a groove cut into the
+   strip, the dot a glass bead riding in it. Switched on, the bead lights up
+   from within, the glow Hover's flat switch draws, and lights the groove
+   around it. The selectors carry [type="checkbox"] to outrank the
+   Settings rules they restyle, whichever stylesheet loads last. */
+.share-pile-foot .settings-toggle-switch {
+  /* Tuning the light, switched on. The bead's halo is two soft rings: a
+     tight bright one and a wide faint one, each a blur radius and an
+     opacity. The groove catches the light along its whole length, from
+     --groove-light-near beside the bead to --groove-light-far at its end. */
+  --glow-color: 255, 255, 255;
+  --glow-near-blur: 6px;
+  --glow-near-opacity: 0.95;
+  --glow-far-blur: 14px;
+  --glow-far-opacity: 0.55;
+  --groove-light-near: 0.95;
+  --groove-light-far: 0.3;
+
+  width: 40px;
+  height: 22px;
+}
+
+.share-pile-foot .settings-toggle-switch .settings-toggle-slider {
+  left: 5px;
+  right: 5px;
+  top: 50%;
+  height: 4px;
+  margin-top: -2px;
+  border-radius: 2px;
+  background: linear-gradient(
+    to bottom,
+    rgba(70, 50, 20, 0.32),
+    rgba(70, 50, 20, 0.16)
+  );
+  box-shadow:
+    inset 0 1px 1.5px rgba(0, 0, 0, 0.3),
+    0 1px 0 rgba(255, 255, 255, 0.8);
+}
+
+.share-pile-foot .settings-toggle-switch .settings-toggle-knob {
+  left: 0;
+  width: 16px;
+  height: 16px;
+  border: none;
+  background: radial-gradient(
+    circle at 50% 35%,
+    #ffffff,
+    #f1eee8 45%,
+    #cbc5ba 100%
+  );
+  box-shadow:
+    0 1px 1.5px rgba(40, 30, 10, 0.35),
+    0 3px 5px -1px rgba(40, 30, 10, 0.2),
+    inset 0 -1.5px 2px rgba(80, 60, 30, 0.12);
+}
+
+/* The bead's glint, up and to the left, where the light comes from. */
+.share-pile-foot .settings-toggle-switch .settings-toggle-knob::after {
+  content: "";
+  position: absolute;
+  top: 2.5px;
+  left: 4px;
+  width: 6px;
+  height: 4px;
+  border-radius: 50%;
+  background: radial-gradient(rgba(255, 255, 255, 0.95), transparent 70%);
+}
+
+/* The groove doesn't glow itself: switched on, it catches the bead's light
+   end to end, brightest beside the bead and softening away from it. Its own
+   inner shadow keeps it reading as cut into the strip. */
+.share-pile-foot .settings-toggle-switch .settings-toggle-slider::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: linear-gradient(
+    to left,
+    rgba(var(--glow-color), var(--groove-light-near)),
+    rgba(
+        var(--glow-color),
+        calc((var(--groove-light-near) + var(--groove-light-far)) / 2)
+      )
+      35%,
+    rgba(var(--glow-color), var(--groove-light-far))
+  );
+  box-shadow: inset 0 1px 1px rgba(0, 0, 0, 0.18);
+  opacity: 0;
+  transition: opacity 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Settings' own switched-on rule paints its line white and glowing; the
+   groove stays a groove. */
+.share-pile-foot
+  .settings-toggle-switch
+  input[type="checkbox"]:checked
+  ~ .settings-toggle-slider {
+  background: linear-gradient(
+    to bottom,
+    rgba(70, 50, 20, 0.32),
+    rgba(70, 50, 20, 0.16)
+  );
+  box-shadow:
+    inset 0 1px 1.5px rgba(0, 0, 0, 0.3),
+    0 1px 0 rgba(255, 255, 255, 0.8);
+}
+
+.share-pile-foot
+  .settings-toggle-switch
+  input[type="checkbox"]:checked
+  ~ .settings-toggle-slider::after {
+  opacity: 1;
+}
+
+.share-pile-foot
+  .settings-toggle-switch
+  input[type="checkbox"]:checked
+  ~ .settings-toggle-knob {
+  left: 24px;
+  border: none;
+  background: radial-gradient(
+    circle at 50% 38%,
+    #ffffff,
+    #ffffff 40%,
+    #ebe8e2 100%
+  );
+  box-shadow:
+    0 1px 1.5px rgba(40, 30, 10, 0.3),
+    0 0 var(--glow-near-blur) rgba(var(--glow-color), var(--glow-near-opacity)),
+    0 0 var(--glow-far-blur) rgba(var(--glow-color), var(--glow-far-opacity)),
+    inset 0 -1px 1.5px rgba(80, 60, 30, 0.1);
+}
+
+.share-pile-foot
+  .settings-toggle-switch
+  input[type="checkbox"]:focus-visible
+  ~ .settings-toggle-knob {
+  outline: 2px solid var(--color-accent-border);
+  outline-offset: 2px;
+}
+
+.night-mode .share-pile-foot .settings-toggle-switch .settings-toggle-slider,
+.night-mode
+  .share-pile-foot
+  .settings-toggle-switch
+  input[type="checkbox"]:checked
+  ~ .settings-toggle-slider {
+  background: linear-gradient(
+    to bottom,
+    rgba(0, 0, 0, 0.55),
+    rgba(0, 0, 0, 0.35)
+  );
+  box-shadow:
+    inset 0 1px 1.5px rgba(0, 0, 0, 0.6),
+    0 1px 0 rgba(255, 255, 255, 0.07);
+}
+
+.night-mode .share-pile-foot .settings-toggle-switch .settings-toggle-knob {
+  background: radial-gradient(
+    circle at 50% 35%,
+    #e9e6e0,
+    #bdb8ae 50%,
+    #85807a 100%
+  );
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .share-pile-stack,
+  .share-pile-fan .share-pile-sheet {
+    transition: none;
+  }
 }
 
 /* ---------- Zotero ---------- */

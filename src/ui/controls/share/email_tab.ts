@@ -1,29 +1,35 @@
 /**
- * Share › Email: an editable draft, sent with the link or, toggled on, with
- * the annotated PDF attached and previewed page by page.
+ * Share › Email, two ways to send the paper, picked at the top:
+ *
+ *   Link        A letter: an editable opening line, remembered for next
+ *               time, over the paper's title and link, handed to the mail
+ *               app as a mailto: draft.
+ *   Attachment  The PDF alone, with or without annotations, drawn as a stack
+ *               of paper and handed to Mail through the system share sheet.
+ *
+ * They can't be combined. On macOS, neither Safari's share sheet nor
+ * Chrome's offers Mail once any text rides along with a file, and a mailto:
+ * draft can't carry a file.
  */
 
-import {
-  annotatedPages,
-  createFileCard,
-  formatBytes,
-} from "./annotated_pages.js";
-import { downloadFile } from "./copy_options.js";
-
+import { createCopyOptions, downloadFile } from "./copy_options.js";
+import { createFilePile } from "./file_pile.js";
 import { Config } from "../../settings/config.js";
 
 import type { ShareContext, ShareTab } from "./share_modal.js";
+
+type Mode = "link" | "file";
 
 /** Most providers cap attachments at 20–25 MB. */
 const LARGE_ATTACHMENT_BYTES = 20 * 1024 * 1024;
 
 /** Hand a draft to the system's mail client. */
-function openMail(subject: string, body: string) {
+function openMail(subject: string, body = "") {
+  const params = [`subject=${encodeURIComponent(subject)}`];
   // RFC 6068 wants CRLF line breaks inside a mailto body.
-  const params = [
-    `subject=${encodeURIComponent(subject)}`,
-    `body=${encodeURIComponent(body.replace(/\r?\n/g, "\r\n"))}`,
-  ];
+  if (body) {
+    params.push(`body=${encodeURIComponent(body.replace(/\r?\n/g, "\r\n"))}`);
+  }
   window.location.href = `mailto:?${params.join("&")}`;
 }
 
@@ -32,152 +38,159 @@ export function createEmailTab(ctx: ShareContext): ShareTab {
   el.className = "share-panel";
   el.setAttribute("role", "tabpanel");
   el.innerHTML = `
-    <div class="settings-toggle-row share-attach-row">
-      <div class="settings-toggle-info">
-        <span class="settings-toggle-label">Attach annotated PDF</span>
-        <span class="settings-toggle-description"></span>
-      </div>
-      <label class="settings-toggle-switch">
-        <input type="checkbox" class="share-attach-toggle">
-        <span class="settings-toggle-slider"></span>
-        <span class="settings-toggle-knob"></span>
-      </label>
+    <div class="share-segmented" role="radiogroup" aria-label="Send as">
+      <span class="share-segmented-pill"></span>
+      <button class="share-segment" role="radio" data-mode="link">Link</button>
+      <button class="share-segment" role="radio" data-mode="file">Attachment</button>
     </div>
 
-    <div class="share-compose">
-      <textarea class="share-compose-body" rows="4" placeholder="Message" aria-label="Message"></textarea>
+    <div class="share-compose share-letter">
+      <textarea class="share-letter-opening" rows="1" spellcheck="true" placeholder="Add a note" aria-label="Opening line"></textarea>
+      <div class="share-letter-link">
+        <span class="share-letter-title"></span>
+        <span class="share-letter-url"></span>
+      </div>
     </div>
 
     <div class="share-footer">
       <span class="share-hint"></span>
-      <button class="share-btn share-btn-primary share-send">Open in Mail</button>
+      <button class="share-btn share-btn-primary share-send"></button>
     </div>
   `;
 
   const $ = <T extends HTMLElement>(selector: string) =>
     el.querySelector(selector) as T;
-  const toggle = $<HTMLInputElement>(".share-attach-toggle");
-  const toggleRow = $<HTMLDivElement>(".share-attach-row");
-  const toggleNote = $<HTMLSpanElement>(".settings-toggle-description");
-  const body = $<HTMLTextAreaElement>(".share-compose-body");
-  const card = createFileCard(ctx.doc, ctx.fileName);
-  const attachment = card.el;
-  attachment.hidden = true;
-  $(".share-compose").appendChild(attachment);
+  const segmented = $<HTMLDivElement>(".share-segmented");
+  const segments = Array.from(
+    el.querySelectorAll<HTMLButtonElement>(".share-segment"),
+  );
+  const letter = $<HTMLDivElement>(".share-letter");
+  const opening = $<HTMLTextAreaElement>(".share-letter-opening");
   const hint = $<HTMLSpanElement>(".share-hint");
   const sendBtn = $<HTMLButtonElement>(".share-send");
 
-  const hasLink = () => !!ctx.link;
-  // Without a link there's only the file to send.
-  const attaching = () => toggle.checked || !hasLink();
+  // The line as last written, so a greeting kept for every paper stays put.
+  opening.value = Config.get("share_email_opening");
+  $(".share-letter-title").textContent = ctx.title;
 
-  // A body the user hasn't touched keeps following the link and the toggle.
-  let bodyEdited = false;
-  const defaultBody = () => {
-    const paragraphs: string[] = [];
-    const opening = Config.get("share_email_opening").trim();
-    if (opening) paragraphs.push(opening);
-    paragraphs.push(hasLink() ? `${ctx.title}\n${ctx.link}` : ctx.title);
-    if (attaching()) {
-      paragraphs.push(
-        annotatedPages(ctx.doc).length > 0
-          ? "I've attached my annotated copy."
-          : "I've attached a copy.",
-      );
-    }
-    return paragraphs.join("\n\n");
-  };
+  // The sheet only opens straight from a click, so the file is exported ahead
+  // of it and the button waits for that.
+  let ready: File | null = null;
+  let failed = false;
+  const options = createCopyOptions(ctx, {
+    preview: createFilePile(ctx.doc, ctx.fileName),
+    onFile: (file, didFail) => {
+      ready = file;
+      failed = didFail;
+      renderFooter();
+    },
+  });
+  letter.after(options.card);
+
+  const hasLink = () => !!ctx.link;
+  let chosen: Mode = hasLink() ? "link" : "file";
+  // Without a link there's only the file to send.
+  const mode = (): Mode => (hasLink() ? chosen : "file");
 
   /** Grow the sheet with its text, like paper rather than a scroll box. */
-  const fitBody = () => {
-    body.style.height = "auto";
-    body.style.height = `${body.scrollHeight}px`;
+  const fitOpening = () => {
+    opening.style.height = "auto";
+    opening.style.height = `${opening.scrollHeight}px`;
   };
 
-  let readyFile: File | null = null;
-
-  const renderHint = () => {
-    if (!attaching()) {
-      hint.textContent = "";
+  const renderFooter = () => {
+    if (mode() === "link") {
+      sendBtn.textContent = "Open in Mail";
       sendBtn.disabled = false;
+      hint.textContent = "";
       return;
     }
-    sendBtn.disabled = !readyFile;
-    hint.textContent =
-      readyFile && readyFile.size > LARGE_ATTACHMENT_BYTES
+    sendBtn.textContent = "Share to Mail";
+    sendBtn.disabled = !ready;
+    hint.textContent = failed
+      ? "Couldn't export the PDF"
+      : ready && ready.size > LARGE_ATTACHMENT_BYTES
         ? "Large for email. Many providers cap attachments at 25 MB"
-        : "";
-  };
-
-  const prepareFile = async () => {
-    if (readyFile) return;
-    card.setSize("Preparing…");
-    try {
-      readyFile = await ctx.getFile(true);
-      card.setSize(formatBytes(readyFile.size));
-    } catch (error) {
-      console.error("Error exporting annotated PDF:", error);
-      card.setSize("");
-      hint.textContent = "Couldn't export the annotated PDF";
-      return;
-    }
-    renderHint();
+        : hasLink()
+          ? ""
+          : ctx.originalUrl
+            ? "The Link tab's link is empty, so there's no link to send"
+            : "Opened from your computer, so there's no link to send";
   };
 
   const render = () => {
-    toggle.checked = attaching();
-    toggle.disabled = !hasLink();
-    toggleRow.classList.toggle("locked", !hasLink());
-    toggleNote.textContent = hasLink()
-      ? "Attach the file with your annotations"
-      : "No obtainable link, attachment only.";
-
-    if (!bodyEdited) body.value = defaultBody();
-    fitBody();
-    attachment.hidden = !attaching();
-    if (attaching()) {
-      card.showPages(true);
-      prepareFile();
+    const current = mode();
+    segmented.dataset.mode = current;
+    for (const segment of segments) {
+      const on = segment.dataset.mode === current;
+      segment.setAttribute("aria-checked", String(on));
+      segment.tabIndex = on ? 0 : -1;
+      segment.disabled = segment.dataset.mode === "link" && !hasLink();
     }
-    renderHint();
+
+    letter.hidden = current !== "link";
+    options.card.hidden = current !== "file";
+    if (current === "link") {
+      $(".share-letter-url").textContent = ctx.link;
+      fitOpening();
+      renderFooter();
+    } else {
+      // Exports the file, which reports back through onFile.
+      options.sync();
+    }
   };
 
-  toggle.addEventListener("change", () => ctx.relayout(render));
-  body.addEventListener("input", () => {
-    bodyEdited = true;
-    fitBody();
+  const choose = (next: Mode) => {
+    if (next === mode() || (next === "link" && !hasLink())) return;
+    chosen = next;
+    ctx.relayout(render);
+    segments.find((s) => s.dataset.mode === next)?.focus();
+  };
+
+  segments.forEach((segment) =>
+    segment.addEventListener("click", () =>
+      choose(segment.dataset.mode as Mode),
+    ),
+  );
+  segmented.addEventListener("keydown", (e) => {
+    if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
+    e.preventDefault();
+    choose(mode() === "link" ? "file" : "link");
+  });
+  opening.addEventListener("input", () => {
+    Config.set("share_email_opening", opening.value);
+    ctx.relayout(fitOpening);
   });
 
   sendBtn.addEventListener("click", async () => {
-    if (!attaching()) {
-      // The share sheet can't take a subject, so neither mode offers one; the
-      // draft is titled after the paper, as its first line already is.
-      openMail(ctx.title, body.value);
+    if (mode() === "link") {
+      const note = opening.value.trim();
+      const link = `${ctx.title}\n${ctx.link}`;
+      openMail(ctx.title, note ? `${note}\n\n${link}` : link);
       return;
     }
-    if (!readyFile) return;
 
-    // A mailto: draft can't carry an attachment. The share sheet can, so use
-    // it where the browser has one (Safari, Chrome on macOS); otherwise
-    // download the copy and open a draft for the user to attach it to.
-    if (navigator.canShare?.({ files: [readyFile] })) {
+    const file = ready;
+    if (!file) return;
+    if (navigator.canShare?.({ files: [file] })) {
       try {
-        // No `title`: on macOS neither Chrome nor Safari maps it to Mail's
-        // subject. Chrome adds it to the body as its own line instead, which
-        // repeats the title the draft already opens with.
-        await navigator.share({ files: [readyFile], text: body.value });
-        return;
+        await navigator.share({ files: [file] });
       } catch (error) {
-        if (error instanceof DOMException && error.name === "AbortError") {
-          return; // User dismissed the share sheet
+        // AbortError is the user dismissing the sheet.
+        if (!(error instanceof DOMException && error.name === "AbortError")) {
+          console.error("Share sheet failed:", error);
+          ctx.showToast("Couldn't open the share sheet");
         }
-        console.warn("Share sheet unavailable, falling back:", error);
       }
+      return;
     }
-    downloadFile(readyFile);
-    openMail(ctx.title, body.value);
+
+    // No share sheet (Firefox): save the copy and open a draft to attach it to.
+    downloadFile(file);
+    openMail(ctx.title);
     ctx.showToast(`Saved "${ctx.fileName}". Attach it to the email`);
   });
 
+  // The link may have been edited, or cleared, on the Link tab.
   return { el, onShow: render };
 }

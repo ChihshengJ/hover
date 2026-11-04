@@ -6,6 +6,7 @@ import {
   matchCitationToReference,
 } from "../analysis/reference_builder.js";
 import { PdfiumDocumentFactory } from "../pdf/text_extractor.js";
+import { stripEmptyAnnotationNotes } from "../pdf/annotation_export.js";
 import {
   createPdfPageSource,
   createRawPageTextSource,
@@ -443,7 +444,11 @@ export class PDFDocumentModel {
     }
 
     try {
-      return await this.engine.saveAsCopy(this.pdfDoc).toPromise();
+      const bytes = await this.engine.saveAsCopy(this.pdfDoc).toPromise();
+      // Without this, Preview and Skim show a blank note on every highlight.
+      // TODO(embedpdf v3): drop with the move off engines 2.x; see
+      // pdf/annotation_export.ts.
+      return stripEmptyAnnotationNotes(new Uint8Array(bytes));
     } catch (error) {
       console.error("Error saving document:", error);
       throw error;

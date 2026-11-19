@@ -47,7 +47,7 @@
   height: 20px;
 }
 
-.file-menu-filter-wrapper {
+.file-menu-stage {
   position: absolute;
   bottom: 0;
   right: 0;
@@ -56,7 +56,7 @@
   pointer-events: none;
 }
 
-.file-menu-filter-wrapper > * {
+.file-menu-stage > * {
   pointer-events: auto;
 }
 
@@ -65,11 +65,10 @@
   color: var(--text-primary);
 }
 
-/* The menu card is a TRANSPARENT content layer: it only holds the items/text and
-   carries the open/close motion. Its visible background + the unified shadow are
-   drawn by the goo layer's card blob (::after) sitting directly behind it, which
-   shares the exact same anchor/origin/transform so the two move as one shape.
-   Keeping text out of the filtered layer is what keeps it crisp. */
+/* The menu card is a TRANSPARENT content layer: it only holds the items/text.
+   Its visible background and shadow are the goo shape behind it, and its
+   transform/opacity are written per frame by FileMenuGoo (file_menu_goo.ts) so
+   content and background move on one clock. The radius is read from here. */
 .file-menu-list {
   font-family: "Elms Sans", monospace;
   position: absolute;
@@ -80,38 +79,27 @@
   pointer-events: none;
   z-index: 1;
   background: transparent;
+  border-radius: var(--radius-xl);
   opacity: 0;
-  transform: scale(0.85) translate(8px, 16px);
   transform-origin: bottom right;
-  transition:
-    opacity var(--transition-fast),
-    transform var(--transition-bounce);
 }
 
 .file-menu-container.open .file-menu-list {
-  opacity: 1;
-  transform: scale(1) translate(0, 0);
   pointer-events: auto;
 }
 
-/* Single filtered layer holding EVERY visible background mass:
-   ::before = the button pill, ::after = the menu card. The goo filter fuses them
-   into one metaball and the drop-shadow in the same chain lays a single unified
-   shadow under their union — so button + card read as one blob of goo. The
-   text/icons live in the unfiltered button/list stacked on top, so they stay
-   sharp. */
+/* Every visible background mass, under ONE drop-shadow so button + card cast a
+   single shadow: ::before = the button pill on hover, the SVG = the card fused
+   to the button (a smooth-min union traced in JS, not a url() goo filter).
+   Nothing in here may run a compositor animation (transform/opacity
+   transitions): WebKit would lift it onto its own layer, outside the filter. */
 .file-menu-goo-layer {
   position: absolute;
   inset: 0;
   z-index: 0;
   pointer-events: none !important;
-  filter: url(#file-menu-goo-filter) drop-shadow(0 0 5px rgba(0, 0, 0, 0.4))
+  filter: drop-shadow(0 0 5px rgba(0, 0, 0, 0.4))
     drop-shadow(-1px -1px 1px rgba(255, 255, 255, 0.2));
-  /* GPU-promote: forces WebKit to give the filter its own layer so it
-     re-rasterizes on change instead of caching a ghost — clears Safari's stale
-     shadow on close. */
-  transform: translateZ(0);
-  backface-visibility: hidden;
 }
 
 /* Button pill — fades in on hover/active to match the button footprint. */
@@ -127,36 +115,20 @@
   transition: background var(--transition-bounce);
 }
 
-/* Card blob — the menu's visible background. Sized in JS to the real card and
-   anchored identically, with the SAME origin/transform/transition as
-   .file-menu-list so the goo background and the content scale/slide out of the
-   bottom-right corner in lockstep. Animating its transform (not just opacity)
-   also forces Safari to repaint the filter every frame, which is what clears the
-   lingering shadow on close. */
-.file-menu-goo-layer::after {
-  content: "";
-  position: absolute;
-  bottom: 25px;
-  right: 28px;
-  width: var(--menu-w, 200px);
-  height: var(--menu-h, 400px);
-  border-radius: var(--radius-xl);
-  background: var(--bg-secondary);
-  opacity: 0;
-  transform: scale(0.85) translate(8px, 16px);
-  transform-origin: bottom right;
-  transition:
-    opacity var(--transition-fast),
-    transform var(--transition-bounce);
-}
-
 .file-menu-container.active .file-menu-goo-layer::before {
   background: var(--bg-secondary);
 }
 
-.file-menu-container.open .file-menu-goo-layer::after {
-  opacity: 1;
-  transform: scale(1) translate(0, 0);
+.file-menu-goo-shape {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+
+.file-menu-goo-shape path {
+  fill: var(--bg-secondary);
 }
 
 /* ===========================================
@@ -699,6 +671,6 @@ input[type="file"] {
    =========================================== */
 
 .night-mode .file-menu-goo-layer {
-  filter: url(#file-menu-goo-filter) drop-shadow(0 0 3px rgb(0, 0, 0, 0.5))
+  filter: drop-shadow(0 0 3px rgb(0, 0, 0, 0.5))
     drop-shadow(-1px -1px 2px rgb(255, 255, 255, 0.1));
 }

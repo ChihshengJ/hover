@@ -28,18 +28,21 @@ export function circlePath(cx: number, cy: number, r: number): string {
  * Trace the zero isoline of a signed distance field into closed polygon
  * path data (marching squares).
  * @returns One `M … Z` subpath per contour loop.
- * @param sdf Negative inside, CSS px, y-down. Must not touch the scanned square's border.
- * @param size Square extent to scan, px.
+ * @param sdf Negative inside, CSS px, y-down. Must not touch the scanned rectangle's border.
+ * @param size Extent to scan, px (the width, when `height` is given).
  * @param cell Grid pitch, px — accuracy/cost tradeoff. With interpolated crossings the error on blobby shapes stays well under cell / 10, invisible next to the browser's clip anti-aliasing.
+ * @param height Vertical extent to scan, px; defaults to a square.
  */
 export function fieldContourPath(
   sdf: (x: number, y: number) => number,
   size: number,
   cell: number = 2,
+  height: number = size,
 ): string {
   const n = Math.floor(size / cell) + 1;
-  const v = new Float64Array(n * n);
-  for (let j = 0; j < n; j++) {
+  const rows = Math.floor(height / cell) + 1;
+  const v = new Float64Array(n * rows);
+  for (let j = 0; j < rows; j++) {
     for (let i = 0; i < n; i++) {
       v[j * n + i] = sdf(i * cell, j * cell);
     }
@@ -77,7 +80,7 @@ export function fieldContourPath(
     lb.push(ka);
   };
 
-  for (let j = 0; j < n - 1; j++) {
+  for (let j = 0; j < rows - 1; j++) {
     for (let i = 0; i < n - 1; i++) {
       const a = v[j * n + i]; //         a ── b
       const b = v[j * n + i + 1]; //     │    │

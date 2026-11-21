@@ -30,7 +30,7 @@ import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 
 import { PdfiumDocument } from "../src/pdf/document.js";
-import { normalizeAnnotationRects } from "../src/pdf/annotations.js";
+import { readPageAnnotations } from "../src/pdf/annotation_reader.js";
 import {
   createPdfPageSource,
   createRawPageTextSource,
@@ -47,16 +47,8 @@ const PDF_DIR = "marketing/List of Papers";
 const OUT_DIR = "test/fixtures";
 
 async function buildFixture(pdfPath: string): Promise<AnalysisFixture> {
-  const { bindings, engine } = await loadPdfium();
+  const { bindings } = await loadPdfium();
   const pdfData = new Uint8Array(await readFile(pdfPath));
-
-  const pdfDoc = await engine
-    .openDocumentBuffer({
-      id: `fixture-${slugify(pdfPath)}`,
-      content: pdfData.buffer as ArrayBuffer,
-    })
-    .toPromise();
-
   const document = PdfiumDocument.open(bindings, pdfData);
 
   try {
@@ -66,18 +58,12 @@ async function buildFixture(pdfPath: string): Promise<AnalysisFixture> {
     const bookmarks = document.bookmarks();
     const namedDests = collectNamedDestinations(bookmarks);
 
-    const annotationsByPage: [number, unknown[]][] = [];
+    // The links, which is all src/analysis/ reads of a page's annotations.
+    const annotationsByPage: [number, NativeLink[]][] = [];
     for (let pageNum = 1; pageNum <= numPages; pageNum++) {
-      const page = pdfDoc.pages[pageNum - 1];
-      const annotations = await engine
-        .getPageAnnotations(pdfDoc, page)
-        .toPromise();
-      normalizeAnnotationRects(document, pageNum - 1, annotations);
-      // `id` is a UUID the engine mints per run. Nothing in src/analysis/ reads
-      // it, and keeping it would make every regeneration a full-file diff.
       annotationsByPage.push([
         pageNum,
-        annotations.map(({ id: _id, ...rest }) => rest),
+        readPageAnnotations(document, pageNum - 1).links,
       ]);
     }
 
@@ -140,8 +126,6 @@ async function buildFixture(pdfPath: string): Promise<AnalysisFixture> {
     }) as AnalysisFixture;
   } finally {
     document.close();
-    // The engine is shared across fixtures now, so the doc has to go back.
-    await engine.closeDocument(pdfDoc).toPromise();
   }
 }
 

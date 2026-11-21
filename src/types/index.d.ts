@@ -133,3 +133,47 @@ interface PdfBookmark {
   target?: PdfLinkTarget;
   children: PdfBookmark[];
 }
+
+/**
+ * A rect on a page, in PDF units with a top-left origin, in the
+ * `{ origin, size }` shape annotations have always carried
+ * (`rectFromPdfium()` flattens it).
+ */
+interface PdfBox {
+  origin: Point;
+  size: { width: number; height: number };
+}
+
+/** A link annotation (src/pdf/annotation_reader.ts). */
+interface NativeLink {
+  rect: PdfBox;
+  /** Absent when the link has neither a destination nor an action. */
+  target?: PdfLinkTarget;
+}
+
+/** A markup annotation of a kind Hover reads (src/pdf/annotation_reader.ts). */
+interface NativeMarkup {
+  subtype: "highlight" | "underline" | "ink" | "text";
+  /** `/NM`, or null when the annotation has none. */
+  name: string | null;
+  rect: PdfBox;
+  /** Highlight and underline: one box per quad. Otherwise empty. */
+  segments: PdfBox[];
+  /** Ink: one point list per stroke. Otherwise empty. */
+  strokes: Point[][];
+  /** Ink: the line width in PDF units. */
+  strokeWidth: number;
+  /** `#rrggbb`, or null when neither `/C` nor the appearance gives one. */
+  color: string | null;
+  /** `/CA`, 1 when absent. */
+  opacity: number;
+  /** `/Contents`, "" when absent. */
+  contents: string;
+  created: Date | null;
+  modified: Date | null;
+  /**
+   * `/EPDFCustom`, parsed: what Hover saved through `@embedpdf/engines`
+   * (`linkedAnnotationId`, `annotationType`, `rotation`, …). Null when absent.
+   */
+  custom: Record<string, unknown> | null;
+}

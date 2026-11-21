@@ -39,6 +39,21 @@ export interface PdfiumFunctions {
   FPDF_GetPageWidthF(page: number): number;
   FPDF_GetPageHeightF(page: number): number;
   FPDFPage_GetRotation(page: number): number;
+  /** Out-params are four f32. False when the page has no such box. */
+  FPDFPage_GetCropBox(
+    page: number,
+    left: number,
+    bottom: number,
+    right: number,
+    top: number,
+  ): number;
+  FPDFPage_GetMediaBox(
+    page: number,
+    left: number,
+    bottom: number,
+    right: number,
+    top: number,
+  ): number;
   FPDF_PageToDevice(
     page: number,
     startX: number,
@@ -153,6 +168,24 @@ export interface PdfiumFunctions {
     top: number,
   ): number;
   FPDFTextObj_GetTextRenderMode(textObject: number): number;
+  /** Colour out-params are four unsigned ints, 0–255. */
+  FPDFPageObj_GetFillColor(
+    pageObject: number,
+    r: number,
+    g: number,
+    b: number,
+    a: number,
+  ): number;
+  FPDFPageObj_GetStrokeColor(
+    pageObject: number,
+    r: number,
+    g: number,
+    b: number,
+    a: number,
+  ): number;
+  FPDFPageObj_GetStrokeWidth(pageObject: number, width: number): number;
+  /** `fillMode` is an int (0 = no fill); `stroke` an FPDF_BOOL. */
+  FPDFPath_GetDrawMode(path: number, fillMode: number, stroke: number): number;
   FPDFImageObj_GetBitmap(imageObject: number): number;
   FPDFImageObj_GetImagePixelSize(
     imageObject: number,
@@ -194,6 +227,45 @@ export interface PdfiumFunctions {
   FPDFPage_GetAnnot(page: number, index: number): number;
   FPDFPage_CloseAnnot(annot: number): void;
   FPDFAnnot_GetRect(annot: number, rect: number): number;
+  FPDFAnnot_GetSubtype(annot: number): number;
+  FPDFAnnot_GetLink(annot: number): number;
+  /** `key` is a NUL-terminated byte string; the value comes back UTF-16LE. */
+  FPDFAnnot_GetStringValue(
+    annot: number,
+    key: number,
+    buffer: number,
+    bufLen: number,
+  ): number;
+  /** `value` is an f32 out-param. */
+  FPDFAnnot_GetNumberValue(annot: number, key: number, value: number): number;
+  /**
+   * Fails for any annotation with a normal appearance stream, which is most
+   * of them: PDFium treats the stream's colours as the real ones.
+   */
+  FPDFAnnot_GetColor(
+    annot: number,
+    type: number,
+    r: number,
+    g: number,
+    b: number,
+    a: number,
+  ): number;
+  FPDFAnnot_CountAttachmentPoints(annot: number): number;
+  /** `quad` is an `FS_QUADPOINTSF`: eight f32, x1 y1 … x4 y4. */
+  FPDFAnnot_GetAttachmentPoints(annot: number, index: number, quad: number): number;
+  FPDFAnnot_GetInkListCount(annot: number): number;
+  /** `buffer` holds `length` `FS_POINTF`s; returns the point count. */
+  FPDFAnnot_GetInkListPath(
+    annot: number,
+    pathIndex: number,
+    buffer: number,
+    length: number,
+  ): number;
+  /** The objects of the annotation's normal appearance stream. */
+  FPDFAnnot_GetObjectCount(annot: number): number;
+  FPDFAnnot_GetObject(annot: number, index: number): number;
+  FPDFLink_GetDest(doc: number, link: number): number;
+  FPDFLink_GetAction(link: number): number;
 }
 
 /** The Emscripten runtime Hover uses alongside the exports. */
@@ -233,6 +305,8 @@ const FUNCTION_NAMES: Record<keyof PdfiumFunctions, true> = {
   FPDF_GetPageWidthF: true,
   FPDF_GetPageHeightF: true,
   FPDFPage_GetRotation: true,
+  FPDFPage_GetCropBox: true,
+  FPDFPage_GetMediaBox: true,
   FPDF_PageToDevice: true,
   FPDF_RenderPageBitmap: true,
   FPDF_RenderPageBitmapWithMatrix: true,
@@ -264,6 +338,10 @@ const FUNCTION_NAMES: Record<keyof PdfiumFunctions, true> = {
   FPDFPageObj_GetType: true,
   FPDFPageObj_GetBounds: true,
   FPDFTextObj_GetTextRenderMode: true,
+  FPDFPageObj_GetFillColor: true,
+  FPDFPageObj_GetStrokeColor: true,
+  FPDFPageObj_GetStrokeWidth: true,
+  FPDFPath_GetDrawMode: true,
   FPDFImageObj_GetBitmap: true,
   FPDFImageObj_GetImagePixelSize: true,
   FPDFBookmark_GetFirstChild: true,
@@ -282,6 +360,19 @@ const FUNCTION_NAMES: Record<keyof PdfiumFunctions, true> = {
   FPDFPage_GetAnnot: true,
   FPDFPage_CloseAnnot: true,
   FPDFAnnot_GetRect: true,
+  FPDFAnnot_GetSubtype: true,
+  FPDFAnnot_GetLink: true,
+  FPDFAnnot_GetStringValue: true,
+  FPDFAnnot_GetNumberValue: true,
+  FPDFAnnot_GetColor: true,
+  FPDFAnnot_CountAttachmentPoints: true,
+  FPDFAnnot_GetAttachmentPoints: true,
+  FPDFAnnot_GetInkListCount: true,
+  FPDFAnnot_GetInkListPath: true,
+  FPDFAnnot_GetObjectCount: true,
+  FPDFAnnot_GetObject: true,
+  FPDFLink_GetDest: true,
+  FPDFLink_GetAction: true,
 };
 
 /** The Emscripten module object, as far as this file reads it. */

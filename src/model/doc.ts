@@ -21,11 +21,7 @@ import { AnnotationStore } from "./annotation_data.js";
 import { DocEvent } from "./doc_events.js";
 
 import type { PdfEngine, PdfiumNative } from "@embedpdf/engines/pdfium";
-import type {
-  PdfDocumentObject,
-  PdfPageObject,
-  PdfAnnotationObject,
-} from "@embedpdf/models";
+import type { PdfDocumentObject, PdfPageObject } from "@embedpdf/models";
 import type { DocEventName } from "./doc_events.js";
 import type {
   ReferenceAnchor,
@@ -102,7 +98,7 @@ export class PDFDocumentModel {
 
   indexingState: "pending" | "running" | "complete" = "pending";
 
-  get nativeAnnotationsByPage(): Map<number, PdfAnnotationObject[]> {
+  get nativeAnnotationsByPage(): Map<number, NativeLink[]> {
     return this.annotationStore.nativeAnnotationsByPage;
   }
 

@@ -9,7 +9,7 @@
  */
 
 import { DocEvent } from "./doc_events.js";
-import { normalizeAnnotationRects } from "../pdf/annotations.js";
+import { readPageAnnotations } from "../pdf/annotation_reader.js";
 
 import type {
   PdfAnnotationFlagName,
@@ -169,7 +169,8 @@ export class AnnotationStore {
 
   annotationsByPage = new Map<number, Set<string>>();
 
-  nativeAnnotationsByPage = new Map<number, PdfAnnotationObject[]>();
+  /** Each page's links, for the analysis pipeline. */
+  nativeAnnotationsByPage = new Map<number, NativeLink[]>();
 
   constructor(doc: PDFDocumentModel) {
     this.#doc = doc;
@@ -188,7 +189,8 @@ export class AnnotationStore {
   // ============================================
 
   async loadFromDocument() {
-    if (!this.#pdfDoc || !this.#engine) return;
+    const document = this.#doc.document;
+    if (!document || !this.#pdfDoc || !this.#engine) return;
 
     this.annotations.clear();
     this.annotationsByPage.clear();
@@ -203,17 +205,19 @@ export class AnnotationStore {
       if (!page) continue;
 
       try {
+        const { links, markup } = readPageAnnotations(document, pageNum - 1);
+        this.nativeAnnotationsByPage.set(pageNum, links);
+
+        // Markup still loads through the engine: updates and deletes find an
+        // annotation in the engine's document by the `/NM` the engine's own
+        // read assigns, so loading and writing move off it together
+        // (docs/plan_own_pdf_engine.md phase 5).
+        if (markup.length === 0) continue;
         const annotations = await this.#engine
           .getPageAnnotations(this.#pdfDoc, page)
           .toPromise();
 
         const { width: pageWidth, height: pageHeight } = page.size;
-        normalizeAnnotationRects(
-          this.#doc.document,
-          pageNum - 1,
-          annotations,
-        );
-        this.nativeAnnotationsByPage.set(pageNum, annotations);
 
         for (const annot of annotations) {
           if (
@@ -385,7 +389,7 @@ export class AnnotationStore {
       .filter((a): a is Annotation => Boolean(a));
   }
 
-  getNativeAnnotations(pageNumber: number): PdfAnnotationObject[] {
+  getNativeAnnotations(pageNumber: number): NativeLink[] {
     return this.nativeAnnotationsByPage.get(pageNumber) || [];
   }
 

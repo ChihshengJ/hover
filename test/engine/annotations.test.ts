@@ -17,8 +17,16 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { PDFDocumentModel } from "../../src/model/doc.js";
 import { primePdfiumWasm } from "../../src/pdf/pdfium_init.js";
 import type { Annotation, AnnotationInput } from "../../src/model/annotation_data.js";
-import { fixturePdfs, pdfiumWasmBytes, round } from "../support/pdfium.js";
+import { PdfiumDocument } from "../../src/pdf/document.js";
+import { readPageAnnotations } from "../../src/pdf/annotation_reader.js";
+import {
+  fixturePdfs,
+  loadPdfium,
+  pdfiumWasmBytes,
+  round,
+} from "../support/pdfium.js";
 import { annotationDicts } from "../support/pdf_scan.js";
+import { engineMarkup, expectSameMarkup } from "../support/engine_annotations.js";
 
 /** The subtypes Hover writes: highlight, underline, ink, and the comment note. */
 const HOVER_SUBTYPES = ["/Highlight", "/Underline", "/Ink", "/Text"];
@@ -64,6 +72,34 @@ function snapshotSavedFile(bytes: Uint8Array): string {
   return annotationDicts(bytes, HOVER_SUBTYPES)
     .map((summary) => JSON.stringify(summary))
     .join("\n");
+}
+
+/**
+ * Read `bytes` with Hover's annotation reader and with the engine, and expect
+ * every markup annotation to come out the same. Returns how many it compared.
+ */
+async function expectReaderMatchesEngine(bytes: Uint8Array): Promise<number> {
+  const { bindings, engine } = await loadPdfium();
+  const pdfDoc = await engine
+    .openDocumentBuffer({ id: `reader-${open.length}`, content: bytes.slice().buffer })
+    .toPromise();
+  const document = PdfiumDocument.open(bindings, bytes);
+  let compared = 0;
+  try {
+    for (const page of pdfDoc.pages) {
+      const theirs = engineMarkup(
+        await engine.getPageAnnotations(pdfDoc, page).toPromise(),
+      );
+      const ours = readPageAnnotations(document, page.index).markup;
+      expect(ours.length).toBe(theirs.length);
+      theirs.forEach((annot, i) => expectSameMarkup(annot, ours[i]));
+      compared += ours.length;
+    }
+  } finally {
+    document.close();
+    await engine.closeDocument(pdfDoc).toPromise();
+  }
+  return compared;
 }
 
 const HIGHLIGHT: AnnotationInput = {
@@ -184,6 +220,11 @@ describe("papers/arxiv-cvpr-convnext round trip", () => {
   test("edited: saved annotation dicts", () => {
     expect(snapshotSavedFile(edited)).toMatchSnapshot();
   });
+
+  test("Hover's reader reads the saved markup like the engine", async () => {
+    expect(await expectReaderMatchesEngine(created)).toBe(5);
+    expect(await expectReaderMatchesEngine(edited)).toBe(4);
+  });
 });
 
 describe("papers/annotated", () => {
@@ -194,5 +235,9 @@ describe("papers/annotated", () => {
 
   test("Preview's annotation dicts", () => {
     expect(snapshotSavedFile(fixtureBytes("annotated"))).toMatchSnapshot();
+  });
+
+  test("Hover's reader reads Preview's markup like the engine", async () => {
+    expect(await expectReaderMatchesEngine(fixtureBytes("annotated"))).toBe(6);
   });
 });

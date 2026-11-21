@@ -14,8 +14,10 @@
 import { describe, expect, test } from "bun:test";
 
 import { PdfiumDocument, PdfOpenError } from "../../src/pdf/document.js";
+import { readPageAnnotations } from "../../src/pdf/annotation_reader.js";
+import { engineLinks, readerLinks } from "../support/engine_annotations.js";
 import type { PdfiumBindings } from "../../src/pdf/pdfium_module.js";
-import { normalizeAnnotationRects } from "../../src/pdf/annotations.js";
+import { normalizeAnnotationRects } from "../support/engine_annotations.js";
 import { collectNamedDestinations } from "../../src/analysis/outline_builder.js";
 import {
   fixturePdfs,
@@ -168,6 +170,14 @@ async function compareWithEngine(fixture: FixturePdf, password?: string) {
     expect(JSON.stringify(document.bookmarks())).toBe(JSON.stringify(bookmarks));
 
     expect(document.fileBytes()).toEqual(fixture.bytes);
+
+    for (const page of pdfDoc.pages) {
+      const annots = await engine.getPageAnnotations(pdfDoc, page).toPromise();
+      normalizeAnnotationRects(document, page.index, annots);
+      expect(readerLinks(readPageAnnotations(document, page.index).links)).toEqual(
+        engineLinks(annots),
+      );
+    }
   } finally {
     document.close();
     await engine.closeDocument(pdfDoc).toPromise();

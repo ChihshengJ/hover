@@ -60,7 +60,7 @@ const CUSTOM_META_KEYS = ["DOI", "License", "arXivID", "PTEX.Fullbanner"] as con
  * Ported from `@embedpdf/models`' `pdfDateToDate` as it is, offset handling
  * included, so dates read the same as before.
  */
-function pdfDateToDate(raw: string | null): Date | null {
+export function pdfDateToDate(raw: string | null): Date | null {
   if (!raw?.startsWith("D:") || raw.length < 16) return null;
   const field = (from: number, to: number) => +raw.slice(from, to);
   return new Date(

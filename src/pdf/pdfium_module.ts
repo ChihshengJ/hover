@@ -30,10 +30,15 @@ export interface PdfiumFunctions {
   FPDF_CloseDocument(doc: number): void;
   FPDF_GetLastError(): number;
   FPDF_GetPageCount(doc: number): number;
+  /** `size` is an `FS_SIZEF`: two f32, width then height. */
+  FPDF_GetPageSizeByIndexF(doc: number, index: number, size: number): number;
+  /** `tag` is a NUL-terminated byte string; the value comes back UTF-16LE. */
+  FPDF_GetMetaText(doc: number, tag: number, buffer: number, bufLen: number): number;
   FPDF_LoadPage(doc: number, index: number): number;
   FPDF_ClosePage(page: number): void;
   FPDF_GetPageWidthF(page: number): number;
   FPDF_GetPageHeightF(page: number): number;
+  FPDFPage_GetRotation(page: number): number;
   FPDF_PageToDevice(
     page: number,
     startX: number,
@@ -134,6 +139,35 @@ export interface PdfiumFunctions {
     height: number,
   ): number;
 
+  // fpdf_doc.h: outline, destinations, actions
+  FPDFBookmark_GetFirstChild(doc: number, bookmark: number): number;
+  FPDFBookmark_GetNextSibling(doc: number, bookmark: number): number;
+  FPDFBookmark_GetTitle(bookmark: number, buffer: number, bufLen: number): number;
+  FPDFBookmark_GetAction(bookmark: number): number;
+  FPDFBookmark_GetDest(doc: number, bookmark: number): number;
+  FPDFAction_GetType(action: number): number;
+  FPDFAction_GetDest(doc: number, action: number): number;
+  FPDFAction_GetURIPath(
+    doc: number,
+    action: number,
+    buffer: number,
+    bufLen: number,
+  ): number;
+  FPDFAction_GetFilePath(action: number, buffer: number, bufLen: number): number;
+  FPDFDest_GetDestPageIndex(doc: number, dest: number): number;
+  /** `numParams` is an unsigned long; `params` is room for four f32. */
+  FPDFDest_GetView(dest: number, numParams: number, params: number): number;
+  /** The `has*` out-params are `FPDF_BOOL` (i32); the values are f32. */
+  FPDFDest_GetLocationInPage(
+    dest: number,
+    hasX: number,
+    hasY: number,
+    hasZoom: number,
+    x: number,
+    y: number,
+    zoom: number,
+  ): number;
+
   // fpdf_annot.h
   FPDFPage_GetAnnotCount(page: number): number;
   FPDFPage_GetAnnot(page: number, index: number): number;
@@ -171,10 +205,13 @@ const FUNCTION_NAMES: Record<keyof PdfiumFunctions, true> = {
   FPDF_CloseDocument: true,
   FPDF_GetLastError: true,
   FPDF_GetPageCount: true,
+  FPDF_GetPageSizeByIndexF: true,
+  FPDF_GetMetaText: true,
   FPDF_LoadPage: true,
   FPDF_ClosePage: true,
   FPDF_GetPageWidthF: true,
   FPDF_GetPageHeightF: true,
+  FPDFPage_GetRotation: true,
   FPDF_PageToDevice: true,
   FPDF_RenderPageBitmap: true,
   FPDFBitmap_Create: true,
@@ -206,6 +243,18 @@ const FUNCTION_NAMES: Record<keyof PdfiumFunctions, true> = {
   FPDFTextObj_GetTextRenderMode: true,
   FPDFImageObj_GetBitmap: true,
   FPDFImageObj_GetImagePixelSize: true,
+  FPDFBookmark_GetFirstChild: true,
+  FPDFBookmark_GetNextSibling: true,
+  FPDFBookmark_GetTitle: true,
+  FPDFBookmark_GetAction: true,
+  FPDFBookmark_GetDest: true,
+  FPDFAction_GetType: true,
+  FPDFAction_GetDest: true,
+  FPDFAction_GetURIPath: true,
+  FPDFAction_GetFilePath: true,
+  FPDFDest_GetDestPageIndex: true,
+  FPDFDest_GetView: true,
+  FPDFDest_GetLocationInPage: true,
   FPDFPage_GetAnnotCount: true,
   FPDFPage_GetAnnot: true,
   FPDFPage_CloseAnnot: true,

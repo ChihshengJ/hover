@@ -69,3 +69,67 @@ interface PageLocation {
   x: number;
   y: number;
 }
+
+// ---------------------------------------------------------------------------
+// What Hover reads out of a PDF (src/pdf/document.ts). Declared here because
+// src/analysis/ reads bookmarks and may not name src/pdf/.
+// ---------------------------------------------------------------------------
+
+/** One page's geometry, as PDFium reports it. */
+interface PdfPage {
+  /** 0-based. */
+  index: number;
+  /** In PDF units, with the page's `/Rotate` already applied. */
+  size: { width: number; height: number };
+}
+
+/**
+ * The document Info dictionary. Absent and empty entries are both null:
+ * standard PDFium can't tell them apart.
+ */
+interface PdfMetadata {
+  title: string | null;
+  author: string | null;
+  subject: string | null;
+  keywords: string | null;
+  producer: string | null;
+  creator: string | null;
+  creationDate: Date | null;
+  modificationDate: Date | null;
+  /** The non-standard keys the metadata dialog shows, when the file has them. */
+  custom: {
+    DOI?: string;
+    License?: string;
+    arXivID?: string;
+    "PTEX.Fullbanner"?: string;
+  };
+}
+
+/**
+ * A destination. `zoom.mode` is PDFium's `PDFDEST_VIEW_*`; `params` is there
+ * only for `/XYZ` (mode 1). `view` holds the raw `/Dest` array numbers.
+ */
+interface PdfDestination {
+  pageIndex: number;
+  zoom: { mode: number; params?: { x: number; y: number; zoom: number } };
+  view: number[];
+}
+
+/** PDFium's `PDFACTION_*`, for the action types Hover reads. */
+type PdfAction =
+  | { type: 0 } // unsupported, remote go-to, or a go-to with no destination
+  | { type: 1; destination: PdfDestination } // go-to
+  | { type: 3; uri: string }
+  | { type: 4; path: string }; // launch
+
+/** Where a bookmark or a link goes. */
+type PdfLinkTarget =
+  | { type: "action"; action: PdfAction | undefined }
+  | { type: "destination"; destination: PdfDestination };
+
+interface PdfBookmark {
+  title: string;
+  /** Absent when the bookmark has neither an action nor a destination. */
+  target?: PdfLinkTarget;
+  children: PdfBookmark[];
+}

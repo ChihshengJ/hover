@@ -40,7 +40,7 @@ export async function renderThumbnail(
   cssHeight: number,
   withAnnotations = true,
 ): Promise<HTMLCanvasElement | null> {
-  const page = doc.getPage(pageNumber);
+  const page = doc.enginePage(pageNumber);
   const { native, pdfDoc } = doc;
   if (!page || !native || !pdfDoc) return null;
 

@@ -162,7 +162,7 @@ export class PageView {
 
   #getPage() {
     if (!this.page) {
-      this.page = this.doc.getPage(this.pageNumber);
+      this.page = this.doc.enginePage(this.pageNumber);
     }
     return this.page;
   }

@@ -29,7 +29,7 @@ import { gzipSync } from "node:zlib";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 
-import { PdfiumDocumentFactory } from "../src/pdf/text_extractor.js";
+import { PdfiumDocument } from "../src/pdf/document.js";
 import { normalizeAnnotationRects } from "../src/pdf/annotations.js";
 import {
   createPdfPageSource,
@@ -47,7 +47,7 @@ const PDF_DIR = "marketing/List of Papers";
 const OUT_DIR = "test/fixtures";
 
 async function buildFixture(pdfPath: string): Promise<AnalysisFixture> {
-  const { bindings, native, engine } = await loadPdfium();
+  const { bindings, engine } = await loadPdfium();
   const pdfData = new Uint8Array(await readFile(pdfPath));
 
   const pdfDoc = await engine
@@ -57,15 +57,13 @@ async function buildFixture(pdfPath: string): Promise<AnalysisFixture> {
     })
     .toPromise();
 
-  const factory = new PdfiumDocumentFactory(bindings);
-  const handle = factory.loadFromBuffer(pdfData);
+  const document = PdfiumDocument.open(bindings, pdfData);
 
   try {
-    const numPages = pdfDoc.pages.length;
+    const numPages = document.pageCount;
 
     // --- what model/doc.js#load() gathers ---------------------------------
-    const bookmarkTree = await native.getBookmarks(pdfDoc).toPromise();
-    const bookmarks = bookmarkTree.bookmarks || [];
+    const bookmarks = document.bookmarks();
     const namedDests = collectNamedDestinations(bookmarks);
 
     const annotationsByPage: [number, unknown[]][] = [];
@@ -74,7 +72,7 @@ async function buildFixture(pdfPath: string): Promise<AnalysisFixture> {
       const annotations = await engine
         .getPageAnnotations(pdfDoc, page)
         .toPromise();
-      normalizeAnnotationRects(handle, pageNum - 1, annotations);
+      normalizeAnnotationRects(document, pageNum - 1, annotations);
       // `id` is a UUID the engine mints per run. Nothing in src/analysis/ reads
       // it, and keeping it would make every regeneration a full-file diff.
       annotationsByPage.push([
@@ -84,11 +82,7 @@ async function buildFixture(pdfPath: string): Promise<AnalysisFixture> {
     }
 
     // --- what DocumentTextIndex asks its PageSource for --------------------
-    const pageSource = createPdfPageSource({
-      pdfDoc,
-      native,
-      lowLevelHandle: handle,
-    });
+    const pageSource = createPdfPageSource({ document });
     const pages: RecordedPage[] = [];
     for (let pageNum = 1; pageNum <= numPages; pageNum++) {
       const size = pageSource.getPageSize(pageNum);
@@ -102,7 +96,7 @@ async function buildFixture(pdfPath: string): Promise<AnalysisFixture> {
     // --- what InlineExtractor asks its RawPageTextSource for ---------------
     // Replay the real pipeline against a recording proxy; whatever it asks for
     // is what the test will ask for.
-    const live = createRawPageTextSource(handle);
+    const live = createRawPageTextSource(document);
     const fullText: Record<number, ReturnType<typeof live.getPageFullText>> = {};
     const charRanges: Record<string, Rect[]> = {};
     const recorder: RawPageTextSource = {
@@ -145,7 +139,7 @@ async function buildFixture(pdfPath: string): Promise<AnalysisFixture> {
       rawText: { fullText, charRanges },
     }) as AnalysisFixture;
   } finally {
-    handle.close();
+    document.close();
     // The engine is shared across fixtures now, so the doc has to go back.
     await engine.closeDocument(pdfDoc).toPromise();
   }

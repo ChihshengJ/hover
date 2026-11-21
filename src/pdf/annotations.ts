@@ -9,7 +9,7 @@
  * produce the same annotation shape the model does.
  */
 
-import type { PdfiumDocumentHandle } from "./text_extractor.js";
+import type { PdfiumDocument } from "./document.js";
 
 /** The slice of an engine annotation object this file touches. */
 export interface NormalizableAnnotation {
@@ -33,17 +33,17 @@ export interface NormalizableAnnotation {
  * @param pageIndex 0-based
  */
 export function normalizeAnnotationRects(
-  handle: PdfiumDocumentHandle | null,
+  document: PdfiumDocument | null,
   pageIndex: number,
   annotations: NormalizableAnnotation[],
 ) {
   if (!annotations || annotations.length === 0) return;
-  if (!handle) return;
+  if (!document) return;
 
-  const pdfium = handle.pdfium;
-  const ffi = handle.extractor.reader.ffi;
+  const pdfium = document.pdfium;
+  const ffi = document.ffi;
 
-  const pagePtr = pdfium.FPDF_LoadPage(handle.docPtr, pageIndex);
+  const pagePtr = pdfium.FPDF_LoadPage(document.docPtr, pageIndex);
   if (!pagePtr) return;
 
   try {

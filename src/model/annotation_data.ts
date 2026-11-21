@@ -199,7 +199,7 @@ export class AnnotationStore {
     const textAnnotations = [];
 
     for (let pageNum = 1; pageNum <= this.#doc.numPages; pageNum++) {
-      const page = this.#doc.getPage(pageNum);
+      const page = this.#doc.enginePage(pageNum);
       if (!page) continue;
 
       try {
@@ -209,7 +209,7 @@ export class AnnotationStore {
 
         const { width: pageWidth, height: pageHeight } = page.size;
         normalizeAnnotationRects(
-          this.#doc.lowLevelHandle,
+          this.#doc.document,
           pageNum - 1,
           annotations,
         );
@@ -566,7 +566,7 @@ export class AnnotationStore {
     }
 
     for (const pr of annotation.pageRanges) {
-      const page = this.#doc.getPage(pr.pageNumber);
+      const page = this.#doc.enginePage(pr.pageNumber);
       if (!page) continue;
 
       const { width: pw, height: ph } = page.size;
@@ -618,7 +618,7 @@ export class AnnotationStore {
     const firstPr = annotation.pageRanges[0];
     if (!firstPr || firstPr.rects.length === 0) return;
 
-    const page = this.#doc.getPage(firstPr.pageNumber);
+    const page = this.#doc.enginePage(firstPr.pageNumber);
     if (!page) return;
 
     const { width: pw, height: ph } = page.size;
@@ -685,7 +685,7 @@ export class AnnotationStore {
     const pdfId = this.#annotationIdToPdfId.get(annotation.id);
 
     for (const pr of annotation.pageRanges) {
-      const page = this.#doc.getPage(pr.pageNumber);
+      const page = this.#doc.enginePage(pr.pageNumber);
       if (!page) continue;
 
       const { width: pw, height: ph } = page.size;
@@ -738,7 +738,7 @@ export class AnnotationStore {
       const firstPr = annotation.pageRanges[0];
       if (!firstPr) return;
 
-      const page = this.#doc.getPage(firstPr.pageNumber);
+      const page = this.#doc.enginePage(firstPr.pageNumber);
       if (!page) return;
 
       try {
@@ -780,7 +780,7 @@ export class AnnotationStore {
     const firstPr = annotation.pageRanges[0];
     if (!firstPr) return;
 
-    const page = this.#doc.getPage(firstPr.pageNumber);
+    const page = this.#doc.enginePage(firstPr.pageNumber);
     if (!page) return;
 
     try {
@@ -812,7 +812,7 @@ export class AnnotationStore {
       pages || annotation.pageRanges.map((pr) => pr.pageNumber);
 
     for (const pageNumber of pageNumbers) {
-      const page = this.#doc.getPage(pageNumber);
+      const page = this.#doc.enginePage(pageNumber);
       if (!page) continue;
 
       try {
@@ -893,7 +893,7 @@ export class AnnotationStore {
     const pr = annotation.pageRanges[0];
     if (!pr) return;
 
-    const page = this.#doc.getPage(pr.pageNumber);
+    const page = this.#doc.enginePage(pr.pageNumber);
     if (!page) return;
 
     const { width: pw, height: ph } = page.size;
@@ -963,7 +963,7 @@ export class AnnotationStore {
     const pr = annotation.pageRanges[0];
     if (!pr) return;
 
-    const page = this.#doc.getPage(pr.pageNumber);
+    const page = this.#doc.enginePage(pr.pageNumber);
     if (!page) return;
 
     const { width: pw, height: ph } = page.size;

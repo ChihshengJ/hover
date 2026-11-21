@@ -279,14 +279,14 @@ export class RegionSelectController {
     pane: ViewerPane,
   ): ImageData | null {
     const doc = pane.document;
-    const handle = doc.lowLevelHandle;
-    if (!handle) {
-      console.warn("[RegionSelect] Low-level handle unavailable");
+    const pdf = doc.document;
+    if (!pdf) {
+      console.warn("[RegionSelect] No document open");
       return null;
     }
 
-    const pdfium = handle.pdfium;
-    const docPtr = handle.docPtr;
+    const pdfium = pdf.pdfium;
+    const docPtr = pdf.docPtr;
     const pageIndex = pageView.pageNumber - 1;
     const dims = doc.pageDimensions[pageIndex];
     if (!dims) return null;

@@ -274,6 +274,16 @@ the saved bytes must come from the document that holds the edits.
   - **(b)** Write the appearance stream yourself with `FPDFAnnot_SetAP`.
   - **(c)** Keep one byte-level patch at save time. The Phase 0 code proves
     this works, but it's the kind of workaround this plan exists to remove.
+  - **Decided in phase 5: (b), `SetAP`.** Two findings changed the picture.
+    `/CA` *can* be written: `FPDFAnnot_SetColor` sets it from its alpha
+    (128 → 0.502, as before). And PDFium only generates appearances when it
+    builds a page's whole annotation list (a render with `FPDF_ANNOT`), which
+    stamps its private `/PDFIUM_HasGeneratedAP` on every annotation on the
+    page, the file's own links included. Hover only touches annotations it
+    writes, so it writes its own appearance with `SetAP`. Its graphics state
+    is fixed at a Normal blend, so highlights show at 50% Normal rather than
+    Multiply in other viewers. Hover's own viewer draws highlights itself
+    and is unchanged.
 - [ ] **Appearance streams.** Check that the saved file has `/AP` for every
       created annotation, in Preview, Acrobat and Chrome. If PDFium doesn't
       generate one on save for some type, generate it with `FPDFAnnot_SetAP`

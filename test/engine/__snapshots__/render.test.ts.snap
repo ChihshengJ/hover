@@ -629,3 +629,33 @@ exports[`marketing/rotate-example renders 1`] = `
   },
 }
 `;
+
+exports[`papers/hover-0-10-annotated renders 1`] = `
+{
+  "p0-rect@4": {
+    "height": 1056,
+    "sha256": "5ca88953b18b04cfb9274e981ace7ce031b332ec9289f03665306303730902e0",
+    "width": 816,
+  },
+  "p0@1": {
+    "height": 792,
+    "sha256": "7615f70fc526f63830f44f76327515f7f06f5b560492f6736ac60b1d36e7a880",
+    "width": 612,
+  },
+  "p0@2.5": {
+    "height": 1980,
+    "sha256": "c6d8c1ec266fb8508900dc266cce35a28593f9abc6e5acbbde871642051e4d6d",
+    "width": 1530,
+  },
+  "p1@1": {
+    "height": 792,
+    "sha256": "494a537ac1f7d65393a8ba828117b8087efbee50b3300e14df31c5852280732e",
+    "width": 612,
+  },
+  "p1@2.5": {
+    "height": 1980,
+    "sha256": "5243a8da674e5756a2af0e5e7b52a34455cc60d2f0823678fdf1b9b76005c697",
+    "width": 1530,
+  },
+}
+`;

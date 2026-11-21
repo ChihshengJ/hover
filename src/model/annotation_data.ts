@@ -1,27 +1,28 @@
 /**
  * The annotation store: the app's own annotation model, and the two-way
- * translation between it and the engine's.
+ * translation between it and the PDF's.
  *
  * The two vocabularies differ on purpose. The app stores geometry as
  * page-relative ratios so an annotation survives a zoom or a re-render, and
- * names its colours; the engine wants PDF units and hex. Everything below the
- * "Engine Operations" divider is that translation.
+ * names its colours; the PDF wants page points and hex. Everything below the
+ * "PDF translation" divider is that translation, read through
+ * `pdf/annotation_reader.ts` and written through `pdf/annotation_writer.ts`.
+ *
+ * In the file, an annotation is one PDF annotation per page it covers, each
+ * with the app's id as its `/NM`. Its comment is the first one's `/Contents`.
  */
 
 import { DocEvent } from "./doc_events.js";
 import { readPageAnnotations } from "../pdf/annotation_reader.js";
-
+import {
+  createAnnotation,
+  removeAnnotation,
+  updateAnnotation,
+} from "../pdf/annotation_writer.js";
 import type {
-  PdfAnnotationFlagName,
-  PdfAnnotationObject,
-} from "@embedpdf/models";
-
-/**
- * The flags Hover's highlights, underlines and drawings carry. Without "print"
- * a viewer shows an annotation on screen but leaves it off paper, and the
- * engine only adds that flag by itself for comments.
- */
-const PRINTABLE: PdfAnnotationFlagName[] = ["print"];
+  MarkupWrite,
+  UnnamedLocator,
+} from "../pdf/annotation_writer.js";
 import type { PDFDocumentModel } from "./doc.js";
 
 /** One colour from the palette the UI offers. */
@@ -80,12 +81,6 @@ export interface AnnotationInput {
   strokes?: DrawingStroke[] | null;
   rotation?: number;
   comment?: string | null;
-}
-
-/** A rect in PDF units, as the engine wants it. */
-interface EngineRect {
-  origin: { x: number; y: number };
-  size: { width: number; height: number };
 }
 
 const COLOR_NAME_TO_HEX: Record<AnnotationColorName, string> = {
@@ -147,23 +142,61 @@ function samePages(a: number[], b: number[]): boolean {
   return a.length === b.length && a.every((page, i) => page === b[i]);
 }
 
-const PdfAnnotationSubtype = {
-  HIGHLIGHT: 9,
-  UNDERLINE: 10,
-  SQUIGGLY: 11,
-  STRIKEOUT: 12,
-  TEXT: 1,
-  INK: 15,
-};
+/** A page-ratio rect as a box in page points. */
+function toBox(rect: RatioRect, width: number, height: number): PdfBox {
+  return {
+    origin: { x: rect.leftRatio * width, y: rect.topRatio * height },
+    size: { width: rect.widthRatio * width, height: rect.heightRatio * height },
+  };
+}
+
+/**
+ * Turn `points` by `degrees` around the centre of their bounding box,
+ * clockwise in top-left space: what the viewer's `rotate()` shows. The file
+ * gets the turned points, so other viewers show the drawing as Hover does.
+ */
+function rotatePoints(points: Point[][], degrees: number): Point[][] {
+  if (!degrees) return points;
+  const all = points.flat();
+  if (all.length === 0) return points;
+  const xs = all.map((p) => p.x);
+  const ys = all.map((p) => p.y);
+  const cx = (Math.min(...xs) + Math.max(...xs)) / 2;
+  const cy = (Math.min(...ys) + Math.max(...ys)) / 2;
+  const angle = (degrees * Math.PI) / 180;
+  const cos = Math.cos(angle);
+  const sin = Math.sin(angle);
+  return points.map((stroke) =>
+    stroke.map((p) => ({
+      x: cx + (p.x - cx) * cos - (p.y - cy) * sin,
+      y: cy + (p.x - cx) * sin + (p.y - cy) * cos,
+    })),
+  );
+}
+
+/** Where an annotation that came without `/NM` is, until Hover names it. */
+interface Unnamed {
+  /** 0-based. */
+  pageIndex: number;
+  locator: UnnamedLocator;
+}
 
 export class AnnotationStore {
   #doc: PDFDocumentModel;
 
-  /** App id → the id the engine gave the object it created. */
-  #annotationIdToPdfId = new Map<string, string>();
+  /**
+   * App id → where to find the annotation in the file while it has no `/NM`
+   * (it came with the file). Dropped once a write gives it one.
+   */
+  #unnamed = new Map<string, Unnamed>();
 
-  /** App id → the id of the separate TEXT annotation carrying its comment. */
-  #linkedComments = new Map<string, string>();
+  /**
+   * App id → the sticky note its comment was loaded from: one Hover wrote
+   * before comments moved into `/Contents`, or a note found next to it. It is
+   * removed when the comment changes, since the comment now lives in the
+   * markup's own `/Contents`.
+   */
+  #linkedNotes = new Map<string, { pageIndex: number; name: string | null; rect: PdfBox }>();
 
   annotations = new Map<string, Annotation>();
 
@@ -176,96 +209,69 @@ export class AnnotationStore {
     this.#doc = doc;
   }
 
-  get #engine() {
-    return this.#doc.engine;
-  }
-
-  get #pdfDoc() {
-    return this.#doc.pdfDoc;
-  }
-
   // ============================================
   // Loading
   // ============================================
 
   async loadFromDocument() {
     const document = this.#doc.document;
-    if (!document || !this.#pdfDoc || !this.#engine) return;
+    if (!document) return;
 
-    this.annotations.clear();
-    this.annotationsByPage.clear();
-    this.#annotationIdToPdfId.clear();
-    this.#linkedComments.clear();
-    this.nativeAnnotationsByPage.clear();
-
-    const textAnnotations = [];
+    this.clear();
+    const notes: Array<{ note: NativeMarkup; pageNum: number }> = [];
 
     for (let pageNum = 1; pageNum <= this.#doc.numPages; pageNum++) {
-      const page = this.#doc.enginePage(pageNum);
+      const page = this.#doc.getPage(pageNum);
       if (!page) continue;
 
       try {
         const { links, markup } = readPageAnnotations(document, pageNum - 1);
         this.nativeAnnotationsByPage.set(pageNum, links);
 
-        // Markup still loads through the engine: updates and deletes find an
-        // annotation in the engine's document by the `/NM` the engine's own
-        // read assigns, so loading and writing move off it together
-        // (docs/plan_own_pdf_engine.md phase 5).
-        if (markup.length === 0) continue;
-        const annotations = await this.#engine
-          .getPageAnnotations(this.#pdfDoc, page)
-          .toPromise();
-
         const { width: pageWidth, height: pageHeight } = page.size;
-
-        for (const annot of annotations) {
-          if (
-            annot.type === PdfAnnotationSubtype.HIGHLIGHT ||
-            annot.type === PdfAnnotationSubtype.UNDERLINE
-          ) {
-            const converted = this.#convertPdfAnnotation(
-              annot,
-              pageNum,
-              pageWidth,
-              pageHeight,
-            );
-            if (converted) {
-              this.annotations.set(converted.id, converted);
-              this.#addToPageIndex(converted.id, pageNum);
-              this.#annotationIdToPdfId.set(converted.id, annot.id);
-            }
-          } else if (annot.type === PdfAnnotationSubtype.INK) {
-            const converted = this.#convertInkAnnotation(
-              annot,
-              pageNum,
-              pageWidth,
-              pageHeight,
-            );
-            if (converted) {
-              this.annotations.set(converted.id, converted);
-              this.#addToPageIndex(converted.id, pageNum);
-              this.#annotationIdToPdfId.set(converted.id, annot.id);
-            }
-          } else if (annot.type === PdfAnnotationSubtype.TEXT) {
-            textAnnotations.push({
-              pdfAnnot: annot,
-              pageNum,
-              pageWidth,
-              pageHeight,
-            });
+        for (const annot of markup) {
+          if (annot.subtype === "text") {
+            notes.push({ note: annot, pageNum });
+            continue;
           }
+          const converted =
+            annot.subtype === "ink"
+              ? this.#convertInk(annot, pageNum, pageWidth, pageHeight)
+              : this.#convertMarkup(annot, pageNum, pageWidth, pageHeight);
+          if (converted) this.#addLoaded(converted, annot, pageNum);
         }
       } catch (error) {
         console.warn(`[AnnotationStore] Error loading page ${pageNum}:`, error);
       }
     }
 
-    this.#linkTextAnnotationsToMarkup(textAnnotations);
+    this.#linkNotesToMarkup(notes);
 
     if (this.annotations.size > 0) {
       this.#doc.notify(DocEvent.ANNOTATIONS_IMPORTED, {
         count: this.annotations.size,
+      });
+    }
+  }
+
+  /**
+   * Add one loaded PDF annotation. Hover writes an annotation that spans
+   * pages as one PDF annotation per page, all with the same `/NM`; those are
+   * put back together here.
+   */
+  #addLoaded(converted: Annotation, annot: NativeMarkup, pageNum: number) {
+    const existing = this.annotations.get(converted.id);
+    if (existing) {
+      existing.pageRanges.push(...converted.pageRanges);
+      existing.comment ??= converted.comment;
+    } else {
+      this.annotations.set(converted.id, converted);
+    }
+    this.#addToPageIndex(converted.id, pageNum);
+    if (!annot.name) {
+      this.#unnamed.set(converted.id, {
+        pageIndex: pageNum - 1,
+        locator: { subtype: annot.subtype, rect: annot.rect },
       });
     }
   }
@@ -294,7 +300,7 @@ export class AnnotationStore {
     for (const pr of annotation.pageRanges) {
       this.#addToPageIndex(id, pr.pageNumber);
     }
-    await this.#createInEngine(annotation);
+    this.#create(annotation);
 
     this.#doc.notify(DocEvent.ANNOTATION_ADDED, { annotation });
     return annotation;
@@ -320,7 +326,7 @@ export class AnnotationStore {
     annotation.updatedAt = new Date().toISOString();
 
     // A drawing dragged across a page boundary changes pages. The page index
-    // and the engine both key off the page, so neither can be updated in place.
+    // and the file both key off the page, so neither can be updated in place.
     const newPages = annotation.pageRanges.map((pr) => pr.pageNumber);
     const movedPages = !samePages(oldPages, newPages);
     if (movedPages) {
@@ -332,12 +338,10 @@ export class AnnotationStore {
       }
     }
 
-    const typeChanged = oldType !== annotation.type;
-    await this.#updateInEngine(
+    if (annotation.comment !== oldComment) this.#removeLinkedNote(id);
+    this.#update(
       annotation,
-      oldComment,
-      typeChanged,
-      movedPages ? oldPages : null,
+      oldType !== annotation.type || movedPages ? oldPages : null,
     );
     this.#doc.notify(DocEvent.ANNOTATION_UPDATED, { annotation });
     return annotation;
@@ -347,13 +351,13 @@ export class AnnotationStore {
     const annotation = this.annotations.get(id);
     if (!annotation) return false;
 
-    await this.#deleteFromEngine(annotation);
+    this.#remove(annotation, annotation.pageRanges.map((pr) => pr.pageNumber));
+    this.#removeLinkedNote(id);
 
     for (const pr of annotation.pageRanges) {
       this.#removeFromPageIndex(id, pr.pageNumber);
     }
     this.annotations.delete(id);
-    this.#annotationIdToPdfId.delete(id);
 
     this.#doc.notify(DocEvent.ANNOTATION_DELETED, { annotationId: id });
     return true;
@@ -366,8 +370,8 @@ export class AnnotationStore {
     annotation.comment = null;
     annotation.updatedAt = new Date().toISOString();
 
-    await this.#removeCommentAnnotation(id);
-    await this.#updateInEngine(annotation, annotation.comment);
+    this.#removeLinkedNote(id);
+    this.#update(annotation, null);
 
     this.#doc.notify(DocEvent.ANNOTATION_UPDATED, { annotation });
     return true;
@@ -409,8 +413,8 @@ export class AnnotationStore {
     this.annotations.clear();
     this.annotationsByPage.clear();
     this.nativeAnnotationsByPage.clear();
-    this.#annotationIdToPdfId.clear();
-    this.#linkedComments.clear();
+    this.#unnamed.clear();
+    this.#linkedNotes.clear();
   }
 
   // ============================================
@@ -429,108 +433,128 @@ export class AnnotationStore {
   }
 
   // ============================================
-  // PDF Annotation Conversion
+  // PDF translation: reading
   // ============================================
 
-  #convertPdfAnnotation(
-    annot: any,
+  #convertMarkup(
+    annot: NativeMarkup,
     pageNum: number,
     pageWidth: number,
     pageHeight: number,
   ): Annotation | null {
-    const rects: RatioRect[] = [];
-
-    if (annot.segmentRects?.length > 0) {
-      for (const seg of annot.segmentRects) {
-        rects.push({
-          leftRatio: (seg.origin?.x ?? 0) / pageWidth,
-          topRatio: (seg.origin?.y ?? 0) / pageHeight,
-          widthRatio: (seg.size?.width ?? 0) / pageWidth,
-          heightRatio: (seg.size?.height ?? 0) / pageHeight,
-        });
-      }
-    } else if (annot.rect) {
-      rects.push({
-        leftRatio: (annot.rect.origin?.x ?? 0) / pageWidth,
-        topRatio: (annot.rect.origin?.y ?? 0) / pageHeight,
-        widthRatio: (annot.rect.size?.width ?? 0) / pageWidth,
-        heightRatio: (annot.rect.size?.height ?? 0) / pageHeight,
-      });
-    }
-
+    const boxes = annot.segments.length > 0 ? annot.segments : [annot.rect];
+    const rects: RatioRect[] = boxes.map((box) => ({
+      leftRatio: box.origin.x / pageWidth,
+      topRatio: box.origin.y / pageHeight,
+      widthRatio: box.size.width / pageWidth,
+      heightRatio: box.size.height / pageHeight,
+    }));
     if (rects.length === 0) return null;
 
-    // Determine type: prefer engine type, fall back to custom field
-    let annotationType: AnnotationType;
-    if (annot.type === PdfAnnotationSubtype.UNDERLINE) {
-      annotationType = "underline";
-    } else if (
-      annot.custom?.annotationType === "underline" ||
-      annot.custom?.annotationType === "highlight"
-    ) {
-      annotationType = annot.custom.annotationType;
-    } else {
-      annotationType = "highlight";
-    }
+    // The subtype decides, except that files Hover saved through
+    // @embedpdf/engines say what a highlight really was.
+    const stored = annot.custom?.annotationType;
+    const type: AnnotationType =
+      annot.subtype === "underline"
+        ? "underline"
+        : stored === "underline" || stored === "highlight"
+          ? stored
+          : "highlight";
 
     return {
-      id: annot.id || crypto.randomUUID(),
-      type: annotationType,
+      id: annot.name || crypto.randomUUID(),
+      type,
       color: hexToColorName(annot.color),
       pageRanges: [{ pageNumber: pageNum, rects, text: "" }],
-      comment: annot.contents?.trim() || null,
+      comment: annot.contents.trim() || null,
       createdAt: annot.created?.toISOString() || new Date().toISOString(),
       updatedAt: annot.modified?.toISOString() || new Date().toISOString(),
     };
   }
 
-  // ============================================
-  // Comment Linking
-  // ============================================
+  #convertInk(
+    annot: NativeMarkup,
+    pageNum: number,
+    pageWidth: number,
+    pageHeight: number,
+  ): Annotation | null {
+    if (annot.strokes.length === 0) return null;
 
-  #linkTextAnnotationsToMarkup(
-    textAnnotations: Array<{
-      pdfAnnot: any;
-      pageNum: number;
-      pageWidth: number;
-      pageHeight: number;
-    }>,
-  ) {
-    for (const { pdfAnnot, pageNum } of textAnnotations) {
-      const linkedId = pdfAnnot.custom?.linkedAnnotationId;
-      const storedType = pdfAnnot.custom?.annotationType;
+    const strokes: DrawingStroke[] = annot.strokes.map((points) => ({
+      points: points.map((p) => ({ x: p.x / pageWidth, y: p.y / pageHeight })),
+      strokeWidth: (annot.strokeWidth || 2) / pageWidth,
+    }));
 
-      if (linkedId && this.annotations.has(linkedId)) {
-        const markup = this.annotations.get(linkedId);
-        if (markup && pdfAnnot.contents) {
-          markup.comment = pdfAnnot.contents.trim();
-          if (
-            storedType &&
-            (storedType === "highlight" || storedType === "underline")
-          ) {
-            markup.type = storedType;
-          }
-          this.#linkedComments.set(linkedId, pdfAnnot.id);
-        }
-      } else if (pdfAnnot.contents) {
-        const nearby = this.#findNearbyMarkup(pdfAnnot, pageNum);
-        if (nearby) {
-          nearby.comment = pdfAnnot.contents.trim();
-          if (
-            storedType &&
-            (storedType === "highlight" || storedType === "underline")
-          ) {
-            nearby.type = storedType;
-          }
-          this.#linkedComments.set(nearby.id, pdfAnnot.id);
-        }
+    let minX = Infinity, minY = Infinity;
+    let maxX = -Infinity, maxY = -Infinity;
+    for (const stroke of strokes) {
+      for (const p of stroke.points) {
+        minX = Math.min(minX, p.x);
+        minY = Math.min(minY, p.y);
+        maxX = Math.max(maxX, p.x);
+        maxY = Math.max(maxY, p.y);
       }
+    }
+    if (!isFinite(minX)) return null;
+
+    // Hover now saves a turned drawing as turned points, so it loads at 0.
+    // Hover 0.10 put the angle in `/EPDFCustom`, but @embedpdf/engines
+    // dropped it on write; read it in case a file has it anyway.
+    const rotation = annot.custom?.rotation;
+
+    return {
+      id: annot.name || crypto.randomUUID(),
+      type: "drawing",
+      color: hexToColorName(annot.color),
+      pageRanges: [{
+        pageNumber: pageNum,
+        rects: [{
+          leftRatio: minX,
+          topRatio: minY,
+          widthRatio: maxX - minX,
+          heightRatio: maxY - minY,
+        }],
+        text: "",
+      }],
+      strokes,
+      rotation: typeof rotation === "number" ? rotation : 0,
+      comment: annot.contents.trim() || null,
+      createdAt: annot.created?.toISOString() || new Date().toISOString(),
+      updatedAt: annot.modified?.toISOString() || new Date().toISOString(),
+    };
+  }
+
+  /**
+   * Attach sticky notes to the markup they comment on: the one a note
+   * Hover wrote names in its `/EPDFCustom` (files saved through
+   * @embedpdf/engines), or else the nearest uncommented markup.
+   */
+  #linkNotesToMarkup(notes: Array<{ note: NativeMarkup; pageNum: number }>) {
+    for (const { note, pageNum } of notes) {
+      if (!note.contents) continue;
+      const linkedId = note.custom?.linkedAnnotationId;
+      const markup =
+        typeof linkedId === "string" && this.annotations.has(linkedId)
+          ? this.annotations.get(linkedId)!
+          : this.#findNearbyMarkup(note, pageNum);
+      if (!markup) continue;
+
+      markup.comment = note.contents.trim();
+      const storedType = note.custom?.annotationType;
+      if (storedType === "highlight" || storedType === "underline") {
+        markup.type = storedType;
+      }
+      this.#linkedNotes.set(markup.id, {
+        pageIndex: pageNum - 1,
+        name: note.name,
+        rect: note.rect,
+      });
     }
   }
 
-  #findNearbyMarkup(textAnnot: any, pageNum: number): Annotation | null {
-    const textX = textAnnot.rect?.origin?.x ?? 0;
-    const textY = textAnnot.rect?.origin?.y ?? 0;
+  #findNearbyMarkup(note: NativeMarkup, pageNum: number): Annotation | null {
+    const textX = note.rect.origin.x;
+    const textY = note.rect.origin.y;
     const pageDims = this.#doc.getPageDimensions(pageNum);
     if (!pageDims) return null;
 
@@ -558,513 +582,140 @@ export class AnnotationStore {
   }
 
   // ============================================
-  // Engine Operations
+  // PDF translation: writing
   // ============================================
 
-  async #createInEngine(annotation: Annotation) {
-    if (!this.#pdfDoc || !this.#engine) return;
+  /** What to write for each page the annotation covers, by 0-based page. */
+  #writesFor(annotation: Annotation): Array<[number, MarkupWrite]> {
+    const writes: Array<[number, MarkupWrite]> = [];
+    const common = {
+      name: annotation.id,
+      color: colorNameToHex(annotation.color).toLowerCase(),
+      modified: new Date(annotation.updatedAt),
+    };
 
     if (annotation.type === "drawing") {
-      await this.#createDrawingInEngine(annotation);
-      return;
+      const pr = annotation.pageRanges[0];
+      const page = pr && this.#doc.getPage(pr.pageNumber);
+      const strokes = annotation.strokes ?? [];
+      if (!page || strokes.length === 0) return writes;
+      const { width: pw, height: ph } = page.size;
+      writes.push([
+        pr.pageNumber - 1,
+        {
+          ...common,
+          subtype: "ink",
+          opacity: 1,
+          segments: [],
+          strokes: rotatePoints(
+            strokes.map((s) => s.points.map((p) => ({ x: p.x * pw, y: p.y * ph }))),
+            annotation.rotation ?? 0,
+          ),
+          strokeWidth: (strokes[0]?.strokeWidth || 0.003) * pw,
+          contents: annotation.comment,
+        },
+      ]);
+      return writes;
     }
 
-    for (const pr of annotation.pageRanges) {
-      const page = this.#doc.enginePage(pr.pageNumber);
-      if (!page) continue;
-
+    annotation.pageRanges.forEach((pr, i) => {
+      const page = this.#doc.getPage(pr.pageNumber);
+      if (!page || pr.rects.length === 0) return;
       const { width: pw, height: ph } = page.size;
-      const segmentRects = pr.rects.map((r) => this.#toEngineRect(r, pw, ph));
-      const boundingRect = this.#boundingRect(segmentRects);
-
-      const pdfAnnotation = {
-        id: annotation.id,
-        type:
-          annotation.type === "underline"
-            ? PdfAnnotationSubtype.UNDERLINE
-            : PdfAnnotationSubtype.HIGHLIGHT,
-        pageIndex: pr.pageNumber - 1,
-        rect: boundingRect,
-        segmentRects,
-        color: colorNameToHex(annotation.color),
-        opacity: annotation.type === "highlight" ? 0.5 : 1.0,
-        flags: PRINTABLE,
-        contents: annotation.comment || undefined,
-        custom: {
-          colorName: annotation.color,
-          annotationType: annotation.type,
-          text: pr.text || "",
+      writes.push([
+        pr.pageNumber - 1,
+        {
+          ...common,
+          subtype: annotation.type === "underline" ? "underline" : "highlight",
+          opacity: annotation.type === "highlight" ? 0.5 : 1,
+          segments: pr.rects.map((r) => toBox(r, pw, ph)),
+          strokes: [],
+          strokeWidth: 0,
+          // The comment goes on the first page's part only, so a viewer
+          // shows it once.
+          contents: i === 0 ? annotation.comment : null,
         },
-      };
+      ]);
+    });
+    return writes;
+  }
 
+  /** The locator for `id` on a page, while it still has no `/NM`. */
+  #locatorFor(id: string, pageIndex: number): UnnamedLocator | null {
+    const unnamed = this.#unnamed.get(id);
+    return unnamed?.pageIndex === pageIndex ? unnamed.locator : null;
+  }
+
+  #create(annotation: Annotation) {
+    const document = this.#doc.document;
+    if (!document) return;
+    for (const [pageIndex, write] of this.#writesFor(annotation)) {
       try {
-        const resultId = await this.#engine
-          .createPageAnnotation(this.#pdfDoc, page, pdfAnnotation)
-          .toPromise();
+        createAnnotation(document, pageIndex, write);
+      } catch (error) {
+        console.warn("[AnnotationStore] Error writing annotation:", error);
+      }
+    }
+  }
 
-        this.#annotationIdToPdfId.set(
+  /**
+   * Bring the file in line with `annotation`. When it changed type or pages
+   * (`oldPages`), its old parts are removed and new ones written.
+   */
+  #update(annotation: Annotation, oldPages: number[] | null) {
+    const document = this.#doc.document;
+    if (!document) return;
+    if (oldPages) {
+      this.#remove(annotation, oldPages);
+      this.#create(annotation);
+      return;
+    }
+    for (const [pageIndex, write] of this.#writesFor(annotation)) {
+      try {
+        const locator = this.#locatorFor(annotation.id, pageIndex);
+        if (!updateAnnotation(document, pageIndex, write, locator)) {
+          createAnnotation(document, pageIndex, write);
+        }
+        if (locator) this.#unnamed.delete(annotation.id);
+      } catch (error) {
+        console.warn("[AnnotationStore] Error updating annotation:", error);
+      }
+    }
+  }
+
+  /** Remove the annotation's parts on `pages` (1-based) from the file. */
+  #remove(annotation: Annotation, pages: number[]) {
+    const document = this.#doc.document;
+    if (!document) return;
+    for (const pageNumber of pages) {
+      try {
+        removeAnnotation(
+          document,
+          pageNumber - 1,
           annotation.id,
-          resultId && resultId !== annotation.id ? resultId : annotation.id,
+          this.#locatorFor(annotation.id, pageNumber - 1),
         );
       } catch (error) {
-        console.warn("[AnnotationStore] Error creating in engine:", error);
+        console.warn("[AnnotationStore] Error removing annotation:", error);
       }
     }
-
-    if (annotation.comment) {
-      await this.#createCommentAnnotation(annotation);
-    }
+    this.#unnamed.delete(annotation.id);
   }
 
-  async #createCommentAnnotation(annotation: Annotation) {
-    if (!this.#pdfDoc || !this.#engine || !annotation.comment) return;
-
-    const firstPr = annotation.pageRanges[0];
-    if (!firstPr || firstPr.rects.length === 0) return;
-
-    const page = this.#doc.enginePage(firstPr.pageNumber);
-    if (!page) return;
-
-    const { width: pw, height: ph } = page.size;
-    const firstRect = firstPr.rects[0];
-    const highlightRight = (firstRect.leftRatio + firstRect.widthRatio) * pw;
-    const highlightTop = firstRect.topRatio * ph;
-    const noteSize = 20;
-    const noteX = Math.min(highlightRight + 5, pw - noteSize - 5);
-    const noteY = highlightTop - noteSize / 2;
-
-    const commentId = crypto.randomUUID();
-    const commentAnnotation = {
-      id: commentId,
-      type: PdfAnnotationSubtype.TEXT,
-      pageIndex: firstPr.pageNumber - 1,
-      rect: {
-        origin: { x: noteX, y: Math.max(5, noteY) },
-        size: { width: noteSize, height: noteSize },
-      },
-      contents: annotation.comment,
-      color: colorNameToHex(annotation.color),
-      opacity: 1.0,
-      icon: "Comment",
-      custom: {
-        linkedAnnotationId: annotation.id,
-        annotationType: annotation.type,
-      },
-    };
-
+  #removeLinkedNote(id: string) {
+    const note = this.#linkedNotes.get(id);
+    const document = this.#doc.document;
+    if (!note || !document) return;
+    this.#linkedNotes.delete(id);
     try {
-      const resultId = await this.#engine
-        .createPageAnnotation(this.#pdfDoc, page, commentAnnotation)
-        .toPromise();
-      this.#linkedComments.set(annotation.id, resultId || commentId);
-    } catch (error) {
-      console.warn("[AnnotationStore] Error creating comment:", error);
-    }
-  }
-
-  /**
-   * @param oldPages Pages the annotation occupied before this update, when it
-   *   has since moved to different ones. The engine object is owned by its
-   *   page, so it has to be recreated rather than updated.
-   */
-  async #updateInEngine(
-    annotation: Annotation,
-    oldComment: string | null,
-    typeChanged = false,
-    oldPages: number[] | null = null,
-  ) {
-    if (!this.#pdfDoc || !this.#engine) return;
-
-    if (typeChanged || oldPages) {
-      await this.#deleteFromEngine(annotation, oldPages);
-      await this.#createInEngine(annotation);
-      return;
-    }
-
-    if (annotation.type === "drawing") {
-      await this.#updateDrawingInEngine(annotation);
-      return;
-    }
-
-    const pdfId = this.#annotationIdToPdfId.get(annotation.id);
-
-    for (const pr of annotation.pageRanges) {
-      const page = this.#doc.enginePage(pr.pageNumber);
-      if (!page) continue;
-
-      const { width: pw, height: ph } = page.size;
-      const segmentRects = pr.rects.map((r) => this.#toEngineRect(r, pw, ph));
-      const boundingRect = this.#boundingRect(segmentRects);
-
-      const pdfAnnotation = {
-        id: pdfId || annotation.id,
-        type:
-          annotation.type === "underline"
-            ? PdfAnnotationSubtype.UNDERLINE
-            : PdfAnnotationSubtype.HIGHLIGHT,
-        pageIndex: pr.pageNumber - 1,
-        rect: boundingRect,
-        segmentRects,
-        color: colorNameToHex(annotation.color),
-        opacity: annotation.type === "highlight" ? 0.5 : 1.0,
-        flags: PRINTABLE,
-        contents: annotation.comment || undefined,
-        custom: {
-          colorName: annotation.color,
-          annotationType: annotation.type,
-          text: pr.text || "",
-        },
-      };
-
-      try {
-        await this.#engine
-          .updatePageAnnotation(this.#pdfDoc, page, pdfAnnotation)
-          .toPromise();
-      } catch (error) {
-        console.warn("[AnnotationStore] Error updating in engine:", error);
-      }
-    }
-
-    await this.#syncCommentAnnotation(annotation, oldComment);
-  }
-
-  async #syncCommentAnnotation(
-    annotation: Annotation,
-    oldComment: string | null,
-  ) {
-    const existingId = this.#linkedComments.get(annotation.id);
-
-    if (annotation.comment && !existingId) {
-      await this.#createCommentAnnotation(annotation);
-    } else if (!annotation.comment && existingId) {
-      await this.#removeCommentAnnotation(annotation.id);
-    } else if (annotation.comment && existingId) {
-      const firstPr = annotation.pageRanges[0];
-      if (!firstPr) return;
-
-      const page = this.#doc.enginePage(firstPr.pageNumber);
-      if (!page) return;
-
-      try {
-        const annotations = await this.#engine
-          .getPageAnnotations(this.#pdfDoc, page)
-          .toPromise();
-
-        const existing = annotations.find((a) => a.id === existingId);
-        if (existing) {
-          await this.#engine
-            // The spread widens `existing` to the whole annotation union,
-            // whose fallback member has no `color`. This is always the TEXT
-            // annotation this store created for the comment, which does.
-            .updatePageAnnotation(this.#pdfDoc, page, {
-              ...existing,
-              contents: annotation.comment,
-              color: colorNameToHex(annotation.color),
-              custom: {
-                ...(existing.custom || {}),
-                linkedAnnotationId: annotation.id,
-                annotationType: annotation.type,
-              },
-            } as PdfAnnotationObject)
-            .toPromise();
-        }
-      } catch (error) {
-        console.warn("[AnnotationStore] Error updating comment:", error);
-      }
-    }
-  }
-
-  async #removeCommentAnnotation(annotationId: string) {
-    const commentId = this.#linkedComments.get(annotationId);
-    if (!commentId) return;
-
-    const annotation = this.annotations.get(annotationId);
-    if (!annotation) return;
-
-    const firstPr = annotation.pageRanges[0];
-    if (!firstPr) return;
-
-    const page = this.#doc.enginePage(firstPr.pageNumber);
-    if (!page) return;
-
-    try {
-      await this.#engine
-        // Removal keys off the id alone, but the parameter is typed as a
-        // whole annotation.
-        .removePageAnnotation(this.#pdfDoc, page, {
-          id: commentId,
-        } as PdfAnnotationObject)
-        .toPromise();
-      this.#linkedComments.delete(annotationId);
-    } catch (error) {
-      console.warn("[AnnotationStore] Error removing comment:", error);
-    }
-  }
-
-  /**
-   * @param pages Pages to remove from, when they differ from the annotation's
-   *   current ones (i.e. it has just been moved).
-   */
-  async #deleteFromEngine(
-    annotation: Annotation,
-    pages: number[] | null = null,
-  ) {
-    if (!this.#pdfDoc || !this.#engine) return;
-
-    const pdfId = this.#annotationIdToPdfId.get(annotation.id);
-    const pageNumbers =
-      pages || annotation.pageRanges.map((pr) => pr.pageNumber);
-
-    for (const pageNumber of pageNumbers) {
-      const page = this.#doc.enginePage(pageNumber);
-      if (!page) continue;
-
-      try {
-        await this.#engine
-          .removePageAnnotation(this.#pdfDoc, page, {
-            id: pdfId || annotation.id,
-          } as PdfAnnotationObject)
-          .toPromise();
-      } catch (error) {
-        console.warn("[AnnotationStore] Error deleting from engine:", error);
-      }
-    }
-
-    await this.#removeCommentAnnotation(annotation.id);
-  }
-
-  // ============================================
-  // Drawing / INK Annotation Support
-  // ============================================
-
-  #convertInkAnnotation(
-    annot: any,
-    pageNum: number,
-    pageWidth: number,
-    pageHeight: number,
-  ): Annotation | null {
-    if (!annot.inkList || annot.inkList.length === 0) return null;
-
-    const strokes: DrawingStroke[] = annot.inkList.map((ink: any) => ({
-      points: (ink.points || []).map((p: { x: number; y: number }) => ({
-        x: p.x / pageWidth,
-        y: p.y / pageHeight,
-      })),
-      strokeWidth: (annot.strokeWidth || 2) / pageWidth,
-    }));
-
-    // Compute bounding rect from all stroke points
-    let minX = Infinity, minY = Infinity;
-    let maxX = -Infinity, maxY = -Infinity;
-    for (const stroke of strokes) {
-      for (const p of stroke.points) {
-        minX = Math.min(minX, p.x);
-        minY = Math.min(minY, p.y);
-        maxX = Math.max(maxX, p.x);
-        maxY = Math.max(maxY, p.y);
-      }
-    }
-
-    if (!isFinite(minX)) return null;
-
-    const colorHex = annot.strokeColor || annot.color;
-
-    return {
-      id: annot.id || crypto.randomUUID(),
-      type: "drawing",
-      color: hexToColorName(colorHex),
-      pageRanges: [{
-        pageNumber: pageNum,
-        rects: [{
-          leftRatio: minX,
-          topRatio: minY,
-          widthRatio: maxX - minX,
-          heightRatio: maxY - minY,
-        }],
-        text: "",
-      }],
-      strokes,
-      rotation: annot.custom?.rotation ?? 0,
-      comment: annot.contents?.trim() || null,
-      createdAt: annot.created?.toISOString() || new Date().toISOString(),
-      updatedAt: annot.modified?.toISOString() || new Date().toISOString(),
-    };
-  }
-
-  async #createDrawingInEngine(annotation: Annotation) {
-    if (!annotation.strokes || annotation.strokes.length === 0) return;
-
-    const pr = annotation.pageRanges[0];
-    if (!pr) return;
-
-    const page = this.#doc.enginePage(pr.pageNumber);
-    if (!page) return;
-
-    const { width: pw, height: ph } = page.size;
-
-    const inkList = annotation.strokes.map((stroke) => ({
-      points: stroke.points.map((p) => ({
-        x: p.x * pw,
-        y: p.y * ph,
-      })),
-    }));
-
-    // Compute bounding rect in PDF units
-    let minX = Infinity, minY = Infinity;
-    let maxX = -Infinity, maxY = -Infinity;
-    for (const ink of inkList) {
-      for (const p of ink.points) {
-        minX = Math.min(minX, p.x);
-        minY = Math.min(minY, p.y);
-        maxX = Math.max(maxX, p.x);
-        maxY = Math.max(maxY, p.y);
-      }
-    }
-
-    const strokeWidthPdf = (annotation.strokes[0]?.strokeWidth || 0.003) * pw;
-
-    const pdfAnnotation = {
-      id: annotation.id,
-      type: PdfAnnotationSubtype.INK,
-      pageIndex: pr.pageNumber - 1,
-      rect: {
-        origin: { x: minX - strokeWidthPdf, y: minY - strokeWidthPdf },
-        size: {
-          width: maxX - minX + strokeWidthPdf * 2,
-          height: maxY - minY + strokeWidthPdf * 2,
-        },
-      },
-      inkList,
-      strokeColor: colorNameToHex(annotation.color),
-      opacity: 1.0,
-      flags: PRINTABLE,
-      strokeWidth: strokeWidthPdf,
-      custom: {
-        colorName: annotation.color,
-        annotationType: "drawing",
-        rotation: annotation.rotation || 0,
-      },
-    };
-
-    try {
-      const resultId = await this.#engine
-        .createPageAnnotation(this.#pdfDoc, page, pdfAnnotation)
-        .toPromise();
-
-      this.#annotationIdToPdfId.set(
-        annotation.id,
-        resultId && resultId !== annotation.id ? resultId : annotation.id,
+      removeAnnotation(
+        document,
+        note.pageIndex,
+        note.name ?? "",
+        note.name ? null : { subtype: "text", rect: note.rect },
       );
     } catch (error) {
-      console.warn("[AnnotationStore] Error creating drawing in engine:", error);
+      console.warn("[AnnotationStore] Error removing comment note:", error);
     }
-  }
-
-  async #updateDrawingInEngine(annotation: Annotation) {
-    if (!annotation.strokes || annotation.strokes.length === 0) return;
-
-    const pdfId = this.#annotationIdToPdfId.get(annotation.id);
-    const pr = annotation.pageRanges[0];
-    if (!pr) return;
-
-    const page = this.#doc.enginePage(pr.pageNumber);
-    if (!page) return;
-
-    const { width: pw, height: ph } = page.size;
-
-    const inkList = annotation.strokes.map((stroke) => ({
-      points: stroke.points.map((p) => ({
-        x: p.x * pw,
-        y: p.y * ph,
-      })),
-    }));
-
-    let minX = Infinity, minY = Infinity;
-    let maxX = -Infinity, maxY = -Infinity;
-    for (const ink of inkList) {
-      for (const p of ink.points) {
-        minX = Math.min(minX, p.x);
-        minY = Math.min(minY, p.y);
-        maxX = Math.max(maxX, p.x);
-        maxY = Math.max(maxY, p.y);
-      }
-    }
-
-    const strokeWidthPdf = (annotation.strokes[0]?.strokeWidth || 0.003) * pw;
-
-    const pdfAnnotation = {
-      id: pdfId || annotation.id,
-      type: PdfAnnotationSubtype.INK,
-      pageIndex: pr.pageNumber - 1,
-      rect: {
-        origin: { x: minX - strokeWidthPdf, y: minY - strokeWidthPdf },
-        size: {
-          width: maxX - minX + strokeWidthPdf * 2,
-          height: maxY - minY + strokeWidthPdf * 2,
-        },
-      },
-      inkList,
-      strokeColor: colorNameToHex(annotation.color),
-      opacity: 1.0,
-      flags: PRINTABLE,
-      strokeWidth: strokeWidthPdf,
-      custom: {
-        colorName: annotation.color,
-        annotationType: "drawing",
-        rotation: annotation.rotation || 0,
-      },
-    };
-
-    try {
-      await this.#engine
-        .updatePageAnnotation(this.#pdfDoc, page, pdfAnnotation)
-        .toPromise();
-    } catch (error) {
-      console.warn("[AnnotationStore] Error updating drawing in engine:", error);
-    }
-  }
-
-  // ============================================
-  // Coordinate Conversion
-  // ============================================
-
-  #toEngineRect(
-    uiRect: RatioRect,
-    pageWidth: number,
-    pageHeight: number,
-  ): EngineRect {
-    return {
-      origin: {
-        x: uiRect.leftRatio * pageWidth,
-        y: uiRect.topRatio * pageHeight,
-      },
-      size: {
-        width: uiRect.widthRatio * pageWidth,
-        height: uiRect.heightRatio * pageHeight,
-      },
-    };
-  }
-
-  #boundingRect(rects: EngineRect[]): EngineRect {
-    if (rects.length === 0) {
-      return { origin: { x: 0, y: 0 }, size: { width: 0, height: 0 } };
-    }
-
-    let minX = Infinity,
-      minY = Infinity;
-    let maxX = -Infinity,
-      maxY = -Infinity;
-
-    for (const r of rects) {
-      minX = Math.min(minX, r.origin.x);
-      minY = Math.min(minY, r.origin.y);
-      maxX = Math.max(maxX, r.origin.x + r.size.width);
-      maxY = Math.max(maxY, r.origin.y + r.size.height);
-    }
-
-    return {
-      origin: { x: minX, y: minY },
-      size: { width: maxX - minX, height: maxY - minY },
-    };
   }
 }

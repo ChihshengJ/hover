@@ -221,11 +221,31 @@ export interface AnnotationDictSummary {
   apMultiply: boolean;
   /** `/CA`, when present. */
   ca?: number;
+  /**
+   * Set when the dict sits directly inside `/Annots` rather than being an
+   * object of its own, as PDFium's `FPDFPage_CreateAnnot` writes it. Absent
+   * for an indirect one.
+   */
+  direct?: true;
+}
+
+/**
+ * Every dict in `value`, depth first, without following references: the
+ * annotation dicts written directly inside an `/Annots` array.
+ */
+function nestedDicts(value: PdfValue | undefined, out: PdfDict[]) {
+  if (Array.isArray(value)) {
+    for (const item of value) nestedDicts(item, out);
+  } else if (isDict(value)) {
+    out.push(value);
+    for (const item of value.values()) nestedDicts(item, out);
+  }
 }
 
 /**
  * One summary per annotation dict of the given subtypes, in object-number
- * order (stable for a given save).
+ * order, with dicts written inline in `/Annots` after the object holding
+ * them (stable for a given save).
  */
 export function annotationDicts(
   bytes: Uint8Array,
@@ -234,9 +254,18 @@ export function annotationDicts(
   const objects = scanObjects(bytes);
   const out: AnnotationDictSummary[] = [];
   const numbers = [...objects.keys()].sort((a, b) => a - b);
+  const candidates: [PdfDict, boolean][] = [];
   for (const n of numbers) {
-    const dict = objects.get(n);
-    if (!isDict(dict)) continue;
+    const value = objects.get(n);
+    if (isDict(value)) candidates.push([value, false]);
+    // Annotation dicts written inline in a page's (or an array object's)
+    // `/Annots`.
+    const annots = isDict(value) ? value.get("/Annots") : Array.isArray(value) ? value : undefined;
+    const inline: PdfDict[] = [];
+    nestedDicts(annots, inline);
+    for (const dict of inline) candidates.push([dict, true]);
+  }
+  for (const [dict, direct] of candidates) {
     const subtype = nameOf(dict.get("/Subtype"));
     if (!subtype || !subtypes.includes(subtype)) continue;
     if (nameOf(dict.get("/Type")) !== "/Annot" && !dict.has("/Rect")) continue;
@@ -256,6 +285,7 @@ export function annotationDicts(
     };
     const ca = resolve(objects, dict.get("/CA"));
     if (typeof ca === "number") summary.ca = ca;
+    if (direct) summary.direct = true;
     out.push(summary);
   }
   return out;

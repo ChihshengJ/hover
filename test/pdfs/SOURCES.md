@@ -20,6 +20,7 @@ one, give its source, licence and SHA-256 here.
 | `jnlp-llama-mimi-ja.pdf` | 杉浦 一瑳 (Issa Sugiura). *Llama-Mimiが生まれるまで：はじめての音声言語モデル研究.* 自然言語処理 (Journal of Natural Language Processing) 33(3), 1731–1738 (2026). | [doi:10.5715/jnlp.33.1731](https://doi.org/10.5715/jnlp.33.1731) (J-STAGE) | [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) |
 | `naca-tn-3241-scan.pdf` | Laurence K. Loftin, Jr. *Airfoil Section Characteristics at High Angles of Attack.* NACA Technical Note 3241 (1954). | [NTRS 19930083920](https://ntrs.nasa.gov/citations/19930083920) | Public domain: a US Government work. NTRS: "public use permitted" |
 | `annotated.pdf` | `arxiv-cvpr-convnext.pdf` annotated by hand in macOS Preview (2026-11-20). | As for that paper | [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/). The annotations are a change to the original |
+| `hover-0.10-annotated.pdf` | `arxiv-cvpr-convnext.pdf` annotated and saved by Hover 0.10 (commit `578fbad`, through `@embedpdf/engines`), 2026-11-21. | As for that paper | [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/). The annotations are a change to the original |
 
 Elsevier blocks scripted downloads, so the two Elsevier files were saved
 from a browser using "View PDF". Crossref lists CC BY 4.0 as the licence of
@@ -64,6 +65,14 @@ Notes on file structure, from pypdf and the current engine (`@embedpdf/pdfium`
 
   Preview stores the **selected text** in a highlight's and an underline's
   `/Contents`. Hover reads `/Contents` as the comment.
+- **`hover-0.10-annotated.pdf`**: what files saved by Hover before it owned
+  its PDFium layer look like. Every annotation carries the engine's private
+  `/EPDFCustom` and an `/NM`. A yellow highlight on p1 has the comment "Saved
+  by Hover 0.10" in its `/Contents` and in a separate `/Text` note linked to
+  it only through `/EPDFCustom`. Also on p1: a green underline. On p2: a red
+  ink drawing that was turned 30° in Hover; the engine dropped the angle on
+  write, so the file holds the unturned points and no angle. On p3 to p4: one
+  blue highlight saved as two annotations with the same `/NM`.
 - **`jnlp-llama-mimi-ja.pdf`**: 8 pages, dvipdfmx (pLaTeX). Mixes Japanese,
   Latin and maths. CID-keyed Ryumin and Gothic BBB fonts (`Identity-H`)
   **without** ToUnicode, so text comes from the Adobe-Japan1 ordering. It is
@@ -103,6 +112,7 @@ pointing to the unrotated top. No third-party content.
 
 ```
 d65990b220d8a870adfbecb658b3f2c6f7a0ffe70a0d7ba6b9dc6b23a71769d2  papers/annotated.pdf
+475016e21d73ca7b0d4530eadc3f39d7a515e68d4e7dbd87e42814a031faf631  papers/hover-0.10-annotated.pdf
 6de64bcf9b199ae034a09f7e3c407ee6eb0af2bb866335a33445cee95ba1ac38  papers/arxiv-acl-adaptive-retrieval.pdf
 1fde2340370d0eb8045bda97fc94da7adb2a7abe8e6ded1a473d22475b945e1a  papers/arxiv-cvpr-convnext.pdf
 64242d9054a33af7cf6fbc52cf35ca53c9037120a47279fe789ed8558b1f733b  papers/elsevier-anbehav-wolves-dogs.pdf

@@ -13,6 +13,7 @@ import {
   applyTextGamma,
 } from "../../viewer/text_gamma.js";
 import { PaneToolBinding } from "./pane_tool_binding.js";
+import { renderRect } from "../../pdf/renderer.js";
 
 import type { PageView } from "../../viewer/page.js";
 import type { ViewerPane } from "../../viewer/viewpane.js";
@@ -285,8 +286,6 @@ export class RegionSelectController {
       return null;
     }
 
-    const pdfium = pdf.pdfium;
-    const docPtr = pdf.docPtr;
     const pageIndex = pageView.pageNumber - 1;
     const dims = doc.pageDimensions[pageIndex];
     if (!dims) return null;
@@ -299,97 +298,50 @@ export class RegionSelectController {
     const textScale = cssWidth / pageWidthPdf;
 
     // Convert CSS pixel rect to PDF units (screen-oriented, Y-down)
-    const regionLeftPdf = rect.left / textScale;
-    const regionTopPdf = rect.top / textScale;
-    const regionWidthPdf = rect.width / textScale;
-    const regionHeightPdf = rect.height / textScale;
+    const region = {
+      x: rect.left / textScale,
+      y: rect.top / textScale,
+      width: rect.width / textScale,
+      height: rect.height / textScale,
+    };
 
     // Compute render scale, capping bitmap dimensions
     let S = RENDER_SCALE_FACTOR * textScale;
-    if (regionWidthPdf * S > MAX_BITMAP_DIM) {
-      S = MAX_BITMAP_DIM / regionWidthPdf;
+    if (region.width * S > MAX_BITMAP_DIM) {
+      S = MAX_BITMAP_DIM / region.width;
     }
-    if (regionHeightPdf * S > MAX_BITMAP_DIM) {
-      S = MAX_BITMAP_DIM / regionHeightPdf;
+    if (region.height * S > MAX_BITMAP_DIM) {
+      S = MAX_BITMAP_DIM / region.height;
     }
 
-    const bitmapW = Math.max(1, Math.ceil(regionWidthPdf * S));
-    const bitmapH = Math.max(1, Math.ceil(regionHeightPdf * S));
-
-    // The whole page at scale S, shifted so the region lands at the origin.
-    const sizeX = Math.ceil(pageWidthPdf * S);
-    const sizeY = Math.ceil(pageHeightPdf * S);
-    const startX = Math.round(-regionLeftPdf * S);
-    const startY = Math.round(-regionTopPdf * S);
-
-    const bitmapPtr = pdfium.FPDFBitmap_Create(bitmapW, bitmapH, 0);
-    if (!bitmapPtr) {
-      console.warn("[RegionSelect] Failed to create bitmap");
+    // The viewer's renderer, so the crop matches the page on screen. Not
+    // PDFium's annotation pass (FPDF_ANNOT): building a page's annotation
+    // list makes PDFium stamp its private /PDFIUM_HasGeneratedAP on every
+    // annotation there, and this document is the one that gets saved.
+    let pixels;
+    try {
+      pixels = renderRect(pdf, pageIndex, S, region);
+    } catch (error) {
+      console.warn("[RegionSelect] Render failed:", error);
       return null;
     }
+    const { data, width, height } = pixels;
 
-    try {
-      // White background
-      pdfium.FPDFBitmap_FillRect(bitmapPtr, 0, 0, bitmapW, bitmapH, 0xffffffff);
-
-      const pagePtr = pdfium.FPDF_LoadPage(docPtr, pageIndex);
-      if (!pagePtr) return null;
-
-      try {
-        // flags: FPDF_ANNOT (0x01) | FPDF_PRINTING (0x800)
-        pdfium.FPDF_RenderPageBitmap(
-          bitmapPtr,
-          pagePtr,
-          startX,
-          startY,
-          sizeX,
-          sizeY,
-          0,
-          0x01 | 0x800,
-        );
-      } finally {
-        pdfium.FPDF_ClosePage(pagePtr);
+    // Match the on-screen text weight.
+    if (TEXT_GAMMA_ENABLED) {
+      const boxes = doc.getPageTextBoxes(pageIndex);
+      if (boxes) {
+        const sx = width / region.width;
+        const sy = height / region.height;
+        applyTextGamma(data, width, height, boxes, {
+          x: -region.x * sx,
+          y: -region.y * sy,
+          width: pageWidthPdf * sx,
+          height: pageHeightPdf * sy,
+        });
       }
-
-      // Read BGRA pixels and convert to RGBA
-      const stride = pdfium.FPDFBitmap_GetStride(bitmapPtr);
-      const bufferPtr = pdfium.FPDFBitmap_GetBuffer(bitmapPtr);
-      if (!bufferPtr) return null;
-
-      const src = pdfium.HEAPU8.subarray(
-        bufferPtr,
-        bufferPtr + bitmapH * stride,
-      );
-      const rgba = new Uint8ClampedArray(bitmapW * bitmapH * 4);
-
-      for (let row = 0; row < bitmapH; row++) {
-        const rowOff = row * stride;
-        for (let col = 0; col < bitmapW; col++) {
-          const s = rowOff + col * 4;
-          const dst = (row * bitmapW + col) * 4;
-          rgba[dst] = src[s + 2]; // R <- B
-          rgba[dst + 1] = src[s + 1]; // G
-          rgba[dst + 2] = src[s]; // B <- R
-          rgba[dst + 3] = 255; // A (opaque, bitmap has no alpha)
-        }
-      }
-
-      // Match the on-screen text weight.
-      if (TEXT_GAMMA_ENABLED) {
-        const boxes = doc.getPageTextBoxes(pageIndex);
-        if (boxes) {
-          applyTextGamma(rgba, bitmapW, bitmapH, boxes, {
-            x: startX,
-            y: startY,
-            width: sizeX,
-            height: sizeY,
-          });
-        }
-      }
-
-      return new ImageData(rgba, bitmapW, bitmapH);
-    } finally {
-      pdfium.FPDFBitmap_Destroy(bitmapPtr);
     }
+
+    return new ImageData(data, width, height);
   }
 }

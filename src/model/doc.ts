@@ -6,7 +6,6 @@ import {
   matchCitationToReference,
 } from "../analysis/reference_builder.js";
 import { PdfiumDocument } from "../pdf/document.js";
-import { stripEmptyAnnotationNotes } from "../pdf/annotation_export.js";
 import {
   createPdfPageSource,
   createRawPageTextSource,
@@ -21,7 +20,7 @@ import { AnnotationStore } from "./annotation_data.js";
 import { DocEvent } from "./doc_events.js";
 
 import type { PdfEngine, PdfiumNative } from "@embedpdf/engines/pdfium";
-import type { PdfDocumentObject, PdfPageObject } from "@embedpdf/models";
+import type { PdfDocumentObject } from "@embedpdf/models";
 import type { DocEventName } from "./doc_events.js";
 import type {
   ReferenceAnchor,
@@ -274,16 +273,6 @@ export class PDFDocumentModel {
     return this.document?.page(pageNumber - 1) ?? null;
   }
 
-  /**
-   * The engine's page object, for the calls that still go to the engine:
-   * rendering, and annotation reads and writes.
-   * TODO(own-pdf-engine): gone once rendering and annotations have moved
-   * (docs/plan_own_pdf_engine.md phases 3–5).
-   */
-  enginePage(pageNumber: number): PdfPageObject | null {
-    return this.pdfDoc?.pages?.[pageNumber - 1] ?? null;
-  }
-
   getPageDimensions(
     pageNumber: number,
   ): { width: number; height: number } | null {
@@ -422,17 +411,11 @@ export class PDFDocumentModel {
   // Document Saving
   // ============================================================================
 
-  async saveWithAnnotations() {
-    if (!this.pdfDoc || !this.engine) {
-      throw new Error("No PDF document loaded");
-    }
-
+  /** The file with the user's annotations in it, as a whole new PDF. */
+  async saveWithAnnotations(): Promise<Uint8Array<ArrayBuffer>> {
+    if (!this.document) throw new Error("No PDF document loaded");
     try {
-      const bytes = await this.engine.saveAsCopy(this.pdfDoc).toPromise();
-      // Without this, Preview and Skim show a blank note on every highlight.
-      // TODO(embedpdf v3): drop with the move off engines 2.x; see
-      // pdf/annotation_export.ts.
-      return stripEmptyAnnotationNotes(new Uint8Array(bytes));
+      return this.document.save();
     } catch (error) {
       console.error("Error saving document:", error);
       throw error;

@@ -165,6 +165,24 @@ export class PdfiumFFI {
     });
   }
 
+  /**
+   * Run `fn` with `text` as a NUL-terminated UTF-16LE string on the heap
+   * (PDFium's `FPDF_WIDESTRING`), and free it after.
+   */
+  withWideString<T>(text: string, fn: (ptr: number) => T): T {
+    return this.withBuffer((text.length + 1) * 2, (ptr) => {
+      const heap = this.#pdfium.HEAPU8;
+      for (let i = 0; i < text.length; i++) {
+        const unit = text.charCodeAt(i);
+        heap[ptr + i * 2] = unit & 0xff;
+        heap[ptr + i * 2 + 1] = unit >> 8;
+      }
+      heap[ptr + text.length * 2] = 0;
+      heap[ptr + text.length * 2 + 1] = 0;
+      return fn(ptr);
+    });
+  }
+
   // ==========================================================================
   // Out-parameter scratch frames
   // ==========================================================================

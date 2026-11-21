@@ -22,6 +22,8 @@
 
 import { readAction, readDestination } from "./destinations.js";
 import { pdfDateToDate } from "./document.js";
+import { boxAround, readFrame, readRect, toDisplay } from "./page_frame.js";
+import type { PageFrame } from "./page_frame.js";
 import type { PdfiumDocument } from "./document.js";
 import type { PdfiumFFI } from "./pdfium_ffi.js";
 
@@ -48,85 +50,6 @@ const FORM_OBJECT = 5;
 export interface PageAnnotations {
   links: NativeLink[];
   markup: NativeMarkup[];
-}
-
-/** Page space → top-left display space, as the engine maps it. */
-interface PageFrame {
-  width: number;
-  height: number;
-  rotation: number;
-  originX: number;
-  originY: number;
-}
-
-function toDisplay(frame: PageFrame, x: number, y: number): Point {
-  const px = x - frame.originX;
-  const py = y - frame.originY;
-  switch (frame.rotation & 3) {
-    case 0:
-      return { x: px, y: frame.height - py };
-    case 1:
-      return { x: py, y: px };
-    case 2:
-      return { x: frame.width - px, y: py };
-    default:
-      return { x: frame.width - py, y: frame.height - px };
-  }
-}
-
-/** The bounding box of some display-space points. */
-function boxAround(points: Point[]): PdfBox {
-  const xs = points.map((p) => p.x);
-  const ys = points.map((p) => p.y);
-  const x = Math.min(...xs);
-  const y = Math.min(...ys);
-  return {
-    origin: { x, y },
-    size: { width: Math.max(...xs) - x, height: Math.max(...ys) - y },
-  };
-}
-
-function readFrame(
-  document: PdfiumDocument,
-  pagePtr: number,
-  index: number,
-): PageFrame {
-  const pdfium = document.pdfium;
-  const ffi = document.ffi;
-  const box =
-    ffi.readF32Out(4, (l, b, r, t) =>
-      pdfium.FPDFPage_GetCropBox(pagePtr, l, b, r, t),
-    ) ??
-    ffi.readF32Out(4, (l, b, r, t) =>
-      pdfium.FPDFPage_GetMediaBox(pagePtr, l, b, r, t),
-    );
-  const { width, height } = document.page(index)!.size;
-  return {
-    width,
-    height,
-    rotation: pdfium.FPDFPage_GetRotation(pagePtr),
-    originX: box?.[0] ?? 0,
-    originY: box?.[1] ?? 0,
-  };
-}
-
-/**
- * `/Rect` in display space. The engine places the origin at the rect's left
- * and top as written and takes absolute sizes; this does the same after
- * putting the edges in order.
- */
-function readRect(ffi: PdfiumFFI, frame: PageFrame, annot: number): PdfBox {
-  const edges = ffi.readF32Out(4, (rect) =>
-    ffi.pdfium.FPDFAnnot_GetRect(annot, rect),
-  );
-  if (!edges) return { origin: { x: 0, y: 0 }, size: { width: 0, height: 0 } };
-  const [l, t, r, b] = edges;
-  const left = Math.min(l, r);
-  const top = Math.max(t, b);
-  return {
-    origin: toDisplay(frame, left, top),
-    size: { width: Math.abs(r - l), height: Math.abs(t - b) },
-  };
 }
 
 /**

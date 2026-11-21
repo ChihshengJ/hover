@@ -52,6 +52,9 @@ export class PdfOpenError extends Error {
  */
 const LOADED_PAGE_LIMIT = 10;
 
+/** `FPDF_NO_INCREMENTAL`: write the whole file, not an update appended to it. */
+const SAVE_FULL_REWRITE = 2;
+
 /** The Info keys `PdfMetadata` carries beyond the standard ones. */
 const CUSTOM_META_KEYS = ["DOI", "License", "arXivID", "PTEX.Fullbanner"] as const;
 
@@ -277,6 +280,42 @@ export class PdfiumDocument {
   /** The document outline, empty when it has none. */
   bookmarks(): PdfBookmark[] {
     return readBookmarks(this.ffi, this.#docPtr);
+  }
+
+  /**
+   * The document as it is now, edits included, written out as a whole new
+   * file (`FPDF_SaveAsCopy`, not incremental).
+   */
+  save(): Uint8Array<ArrayBuffer> {
+    const pdfium = this.#pdfium;
+    const ffi = this.ffi;
+    const chunks: Uint8Array[] = [];
+    // `WriteBlock(pThis, data, size)`: copy each block out of the heap as it
+    // comes, since PDFium reuses the buffer.
+    const writeBlock = pdfium.addFunction((_self, data, size) => {
+      chunks.push(pdfium.HEAPU8.slice(data, data + size));
+      return 1;
+    }, "iiii");
+    try {
+      const ok = ffi.withBuffer(8, (writer) => {
+        pdfium.HEAP32[writer >> 2] = 1; // version
+        pdfium.HEAP32[(writer >> 2) + 1] = writeBlock;
+        return pdfium.FPDF_SaveAsCopy(this.#docPtr, writer, SAVE_FULL_REWRITE);
+      });
+      if (!ok) throw new Error("PDFium could not save the document");
+    } finally {
+      pdfium.removeFunction(writeBlock);
+    }
+
+    let length = 0;
+    for (const chunk of chunks) length += chunk.length;
+    const bytes = new Uint8Array(length);
+    let offset = 0;
+    for (const chunk of chunks) {
+      bytes.set(chunk, offset);
+      offset += chunk.length;
+    }
+    return bytes;
   }
 
   /**

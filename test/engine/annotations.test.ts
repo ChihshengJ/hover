@@ -221,9 +221,79 @@ describe("papers/arxiv-cvpr-convnext round trip", () => {
     expect(snapshotSavedFile(edited)).toMatchSnapshot();
   });
 
-  test("Hover's reader reads the saved markup like the engine", async () => {
-    expect(await expectReaderMatchesEngine(created)).toBe(5);
-    expect(await expectReaderMatchesEngine(edited)).toBe(4);
+  test("only Hover's own annotations, with no private keys", () => {
+    for (const bytes of [created, edited]) {
+      const text = Buffer.from(bytes).toString("latin1");
+      expect(text).not.toContain("PDFIUM_HasGeneratedAP");
+      expect(text).not.toContain("EPDF");
+    }
+  });
+});
+
+/**
+ * A file saved by Hover 0.10 (commit 578fbad), through @embedpdf/engines:
+ * a commented highlight with its separate sticky note, an underline, a
+ * drawing turned 30°, and a highlight across pages 3–4. Everything about
+ * Hover's own annotations was in `/EPDFCustom`.
+ */
+describe("papers/hover-0.10-annotated", () => {
+  const legacy = () => fixtureBytes("hover-0-10-annotated");
+
+  test("Hover's reader reads the engine's markup like the engine", async () => {
+    // Highlight, its note, underline, ink, and the two halves of the last one.
+    expect(await expectReaderMatchesEngine(legacy())).toBe(6);
+  });
+
+  test("loads as it was saved: comment, rotation, the two-page highlight", async () => {
+    expect(snapshotModel(await load(legacy()))).toMatchSnapshot();
+  });
+
+  test("a changed comment moves into /Contents and the old note goes", async () => {
+    const doc = await load(legacy());
+    const commented = doc.getAllAnnotations().find((a) => a.comment)!;
+    expect(commented.comment).toBe("Saved by Hover 0.10");
+    await doc.updateAnnotation(commented.id, { comment: "Edited in Hover" });
+    const saved = await doc.saveWithAnnotations();
+
+    expect(annotationDicts(saved, ["/Text"])).toEqual([]);
+    const reloaded = await load(saved);
+    expect(reloaded.getAnnotation(commented.id)?.comment).toBe("Edited in Hover");
+    expect(reloaded.getAllAnnotations().filter((a) => a.comment).length).toBe(1);
+  });
+
+  test("its drawing's 30° never reached the file", async () => {
+    // Hover 0.10 passed the angle in `/EPDFCustom`, and the engine dropped it
+    // on write (it treats `rotation` there as its own). So the drawing always
+    // came back unturned; it still does.
+    const doc = await load(legacy());
+    expect(doc.getAllAnnotations().find((a) => a.type === "drawing")!.rotation).toBe(0);
+  });
+});
+
+describe("drawing rotation", () => {
+  test("is saved as turned points, and reloads at rotation 0 looking the same", async () => {
+    const doc = await load(fixtureBytes("arxiv-cvpr-convnext"));
+    const drawing = await doc.addAnnotation({ ...structuredClone(INK), rotation: 30 });
+    const reloaded = (await load(await doc.saveWithAnnotations())).getAnnotation(drawing.id)!;
+    expect(reloaded.rotation).toBe(0);
+
+    // The old points turned 30° clockwise about their box's centre, in page
+    // points (the page isn't square, so not in ratios).
+    const page = doc.getPage(drawing.pageRanges[0].pageNumber)!.size;
+    const pts = drawing.strokes![0].points.map((p) => ({
+      x: p.x * page.width,
+      y: p.y * page.height,
+    }));
+    const xs = pts.map((p) => p.x);
+    const ys = pts.map((p) => p.y);
+    const cx = (Math.min(...xs) + Math.max(...xs)) / 2;
+    const cy = (Math.min(...ys) + Math.max(...ys)) / 2;
+    const a = Math.PI / 6;
+    const turned = pts.map((p) => ({
+      x: (cx + (p.x - cx) * Math.cos(a) - (p.y - cy) * Math.sin(a)) / page.width,
+      y: (cy + (p.x - cx) * Math.sin(a) + (p.y - cy) * Math.cos(a)) / page.height,
+    }));
+    expect(round(reloaded.strokes![0].points)).toEqual(round(turned));
   });
 });
 

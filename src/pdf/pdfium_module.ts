@@ -32,6 +32,11 @@ export interface PdfiumFunctions {
   FPDF_GetPageCount(doc: number): number;
   /** `size` is an `FS_SIZEF`: two f32, width then height. */
   FPDF_GetPageSizeByIndexF(doc: number, index: number, size: number): number;
+  /**
+   * `writer` is an `FPDF_FILEWRITE`: `{ int version; WriteBlock* }`, where
+   * `WriteBlock(pThis, data, size)` returns nonzero on success.
+   */
+  FPDF_SaveAsCopy(doc: number, writer: number, flags: number): number;
   /** `tag` is a NUL-terminated byte string; the value comes back UTF-16LE. */
   FPDF_GetMetaText(doc: number, tag: number, buffer: number, bufLen: number): number;
   FPDF_LoadPage(doc: number, index: number): number;
@@ -66,16 +71,6 @@ export interface PdfiumFunctions {
     deviceX: number,
     deviceY: number,
   ): number;
-  FPDF_RenderPageBitmap(
-    bitmap: number,
-    page: number,
-    startX: number,
-    startY: number,
-    sizeX: number,
-    sizeY: number,
-    rotate: number,
-    flags: number,
-  ): void;
 
   /**
    * `matrix` is an `FS_MATRIX` (six f32: a b c d e f) applied after the
@@ -91,7 +86,6 @@ export interface PdfiumFunctions {
   ): void;
 
   // fpdfview.h: bitmaps
-  FPDFBitmap_Create(width: number, height: number, alpha: number): number;
   /** Wraps `firstScan` (caller-owned) rather than allocating. */
   FPDFBitmap_CreateEx(
     width: number,
@@ -264,6 +258,44 @@ export interface PdfiumFunctions {
   /** The objects of the annotation's normal appearance stream. */
   FPDFAnnot_GetObjectCount(annot: number): number;
   FPDFAnnot_GetObject(annot: number, index: number): number;
+  FPDFPage_CreateAnnot(page: number, subtype: number): number;
+  FPDFPage_RemoveAnnot(page: number, index: number): number;
+  /** `rect` is an `FS_RECTF`: four f32, left top right bottom. */
+  FPDFAnnot_SetRect(annot: number, rect: number): number;
+  FPDFAnnot_AppendAttachmentPoints(annot: number, quad: number): number;
+  FPDFAnnot_SetAttachmentPoints(annot: number, index: number, quad: number): number;
+  /** `points` holds `count` `FS_POINTF`s; returns the stroke's index, or -1. */
+  FPDFAnnot_AddInkStroke(annot: number, points: number, count: number): number;
+  FPDFAnnot_RemoveInkList(annot: number): number;
+  /**
+   * Sets `/C`, and `/CA` from `a / 255`. Fails while the annotation has an
+   * appearance stream, so call it before `FPDFAnnot_SetAP`.
+   */
+  FPDFAnnot_SetColor(
+    annot: number,
+    type: number,
+    r: number,
+    g: number,
+    b: number,
+    a: number,
+  ): number;
+  FPDFAnnot_SetFlags(annot: number, flags: number): number;
+  /** Writes `/Border [h v width]`. */
+  FPDFAnnot_SetBorder(
+    annot: number,
+    horizontalRadius: number,
+    verticalRadius: number,
+    width: number,
+  ): number;
+  /** `key` is a byte string; `value` NUL-terminated UTF-16LE. */
+  FPDFAnnot_SetStringValue(annot: number, key: number, value: number): number;
+  /**
+   * Replace the appearance stream for `mode` with content `value` (UTF-16LE),
+   * its `/BBox` the annotation's `/Rect`. When `/CA` < 1 the stream gets an
+   * ExtGState `/GS` (Normal blend, that opacity) for the content to use. A
+   * null `value` removes the stream.
+   */
+  FPDFAnnot_SetAP(annot: number, mode: number, value: number): number;
   FPDFLink_GetDest(doc: number, link: number): number;
   FPDFLink_GetAction(link: number): number;
 }
@@ -300,6 +332,7 @@ const FUNCTION_NAMES: Record<keyof PdfiumFunctions, true> = {
   FPDF_GetPageCount: true,
   FPDF_GetPageSizeByIndexF: true,
   FPDF_GetMetaText: true,
+  FPDF_SaveAsCopy: true,
   FPDF_LoadPage: true,
   FPDF_ClosePage: true,
   FPDF_GetPageWidthF: true,
@@ -308,9 +341,7 @@ const FUNCTION_NAMES: Record<keyof PdfiumFunctions, true> = {
   FPDFPage_GetCropBox: true,
   FPDFPage_GetMediaBox: true,
   FPDF_PageToDevice: true,
-  FPDF_RenderPageBitmap: true,
   FPDF_RenderPageBitmapWithMatrix: true,
-  FPDFBitmap_Create: true,
   FPDFBitmap_CreateEx: true,
   FPDFBitmap_Destroy: true,
   FPDFBitmap_FillRect: true,
@@ -371,6 +402,18 @@ const FUNCTION_NAMES: Record<keyof PdfiumFunctions, true> = {
   FPDFAnnot_GetInkListPath: true,
   FPDFAnnot_GetObjectCount: true,
   FPDFAnnot_GetObject: true,
+  FPDFPage_CreateAnnot: true,
+  FPDFPage_RemoveAnnot: true,
+  FPDFAnnot_SetRect: true,
+  FPDFAnnot_AppendAttachmentPoints: true,
+  FPDFAnnot_SetAttachmentPoints: true,
+  FPDFAnnot_AddInkStroke: true,
+  FPDFAnnot_RemoveInkList: true,
+  FPDFAnnot_SetColor: true,
+  FPDFAnnot_SetFlags: true,
+  FPDFAnnot_SetBorder: true,
+  FPDFAnnot_SetStringValue: true,
+  FPDFAnnot_SetAP: true,
   FPDFLink_GetDest: true,
   FPDFLink_GetAction: true,
 };

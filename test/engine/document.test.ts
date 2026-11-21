@@ -185,6 +185,45 @@ async function compareWithEngine(fixture: FixturePdf, password?: string) {
 }
 
 /**
+ * Fixtures whose Info dictionary PDFium drops on save. It rebuilt their
+ * cross-reference table by scanning, and the rebuilt trailer has no `/Info`.
+ * The engine's save drops it too (same output, byte for byte in length).
+ */
+const SAVE_LOSES_INFO = new Set(["bad-startxref"]);
+
+/** Everything Hover reads from a document, as one comparable value. */
+function readAll(document: PdfiumDocument, withMetadata = true): string {
+  return JSON.stringify({
+    pages: document.pages.map((p) => ({
+      size: p.size,
+      rotation: document.pageRotation(p.index),
+    })),
+    metadata: withMetadata ? document.metadata() : null,
+    bookmarks: document.bookmarks(),
+    annotations: document.pages.map((p) => readPageAnnotations(document, p.index)),
+  });
+}
+
+/** Save `fixture` untouched and expect the copy to read the same. */
+async function expectUntouchedSaveReadsTheSame(fixture: FixturePdf, password?: string) {
+  const { bindings } = await loadPdfium();
+  const original = PdfiumDocument.open(bindings, fixture.bytes, password);
+  try {
+    const saved = original.save();
+    expect(saved.length).toBeGreaterThan(0);
+    const copy = PdfiumDocument.open(bindings, saved, password);
+    try {
+      const withMetadata = !SAVE_LOSES_INFO.has(fixture.slug);
+      expect(readAll(copy, withMetadata)).toBe(readAll(original, withMetadata));
+    } finally {
+      copy.close();
+    }
+  } finally {
+    original.close();
+  }
+}
+
+/**
  * `bindings` with its heap allocations counted, to check that a document
  * gives back everything it took.
  */
@@ -245,6 +284,9 @@ for (const fixture of fixturePdfs()) {
     test("PdfiumDocument reads what the engine reads", async () => {
       await compareWithEngine(fixture);
     });
+    test("PdfiumDocument saves an untouched copy that reads the same", async () => {
+      await expectUntouchedSaveReadsTheSame(fixture);
+    });
   });
 }
 
@@ -261,6 +303,13 @@ describe("generated/encrypted-user-password", () => {
       (f) => f.slug === "encrypted-user-password",
     )!;
     await compareWithEngine(fixture, "hover-user");
+  });
+
+  test("PdfiumDocument saves an untouched copy that reads the same", async () => {
+    const fixture = fixturePdfs().find(
+      (f) => f.slug === "encrypted-user-password",
+    )!;
+    await expectUntouchedSaveReadsTheSame(fixture, "hover-user");
   });
 
   test("PdfiumDocument gives back every allocation on close", async () => {

@@ -65,10 +65,7 @@
   color: var(--text-primary);
 }
 
-/* The menu card is a TRANSPARENT content layer: it only holds the items/text.
-   Its visible background and shadow are the goo shape behind it, and its
-   transform/opacity are written per frame by FileMenuGoo (file_menu_goo.ts) so
-   content and background move on one clock. The radius is read from here. */
+/* Content only; background, transform and opacity come from FileMenuGoo. */
 .file-menu-list {
   font-family: "Elms Sans", monospace;
   position: absolute;
@@ -88,11 +85,7 @@
   pointer-events: auto;
 }
 
-/* Every visible background mass: hover pill and card as one metaball, traced
-   in JS from the same blur-threshold field a url() goo filter computes, and
-   painted with its shadows into a canvas (see file_menu_goo.ts for why not
-   CSS filters). The canvas reads its look from these properties; each shadow
-   is `<x> <y> <blur> <color>`, the first painted on top as in a filter chain. */
+/* Goo look, read by FileMenuGoo. Shadows: `<x> <y> <blur> <color>`, first on top. */
 .file-menu-goo-layer {
   position: absolute;
   inset: 0;

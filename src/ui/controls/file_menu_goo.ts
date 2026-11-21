@@ -1,54 +1,24 @@
-/**
- * The file menu's goo: button pill and menu card painted as ONE shape, traced
- * per animation frame from the same metaball field the old SVG filter drew,
- * and drawn with its shadows into a canvas.
- *
- * The look is a blur-threshold: each blob is Gaussian-blurred (σ = 3px), the
- * blurred alphas SUM, and everything above a threshold is solid. That sum is
- * what makes it goo — while the card fades in, its weak field adds to the
- * button's, so the button swells toward the card first and the card then
- * pops in already fused. A blurred edge is exactly Φ(-distance / σ), so the
- * field is computed analytically from each box's signed distance, weighted
- * by the blob's alpha, and its threshold contour traced into path data.
- *
- * Why not keep `filter: url(#goo)`: WebKit runs transform/opacity transitions
- * on the compositor, which lifts the animating card onto its own layer, and
- * a layer is outside the parent's url() filter (rendered on the CPU into the
- * parent's own backing store). So in Safari the card slid in unfused and only
- * joined the button once the transition ended. The menu content now rides
- * the same JS clock as the goo, so nothing animates on the compositor.
- *
- * Why a canvas and not an SVG path under a CSS drop-shadow(): when the path
- * changes, WebKit repaints only the path's old and new bounds, not the
- * filter's outsets around them, so the shadow of a shape that has shrunk or
- * gone stays on screen. A canvas is cleared and redrawn whole every frame,
- * shadows included, so there are no stale pixels to leave behind.
- */
+/** Gooey file menu background. See docs/gooey_effect.md. */
 import { fieldContourPath } from "./floating_toolbar/liquid_glass/metaball_path.js";
 
-/** Canvas overhang past the stage on every side, px, so shadows of blobs
- *  touching the stage edge (the button sits in its corner) aren't clipped. */
+/** Canvas overhang past the stage on every side, px. */
 const BLEED = 16;
 
-/** Closed pose of the card, about its bottom-right corner:
- *  `scale(0.85) translate(8px, 16px)`. */
+/** Closed pose of the card, about its bottom-right corner. */
 const CLOSED_SCALE = 0.85;
 const CLOSED_DX = 8;
 const CLOSED_DY = 16;
 
-/** Blur radius of the goo, px (the old feGaussianBlur stdDeviation). Larger
- *  means a fatter bridge that reaches further before the card pops in. */
+/** Blur radius of the goo field, px. */
 const GOO_SIGMA = 2;
-/** Summed blurred alpha above which the goo is solid. The old color matrix
- *  mapped alpha to 20a − 15, whose half-opaque edge sits at a = 0.775. */
+/** Summed blurred alpha above which the goo is solid. */
 const GOO_THRESHOLD = 0.775;
 /** Marching-squares pitch, px. */
 const CELL = 2;
-/** Scan margin around the blobs, px. The summed field can't reach the
- *  threshold further than ~σ / 3 outside a box; keep a few cells spare. */
+/** Scan margin around the blobs, px. */
 const PAD = 3 * CELL + GOO_SIGMA;
 
-/** Same timings as --transition-bounce and --transition-fast. */
+/** Mirror --transition-bounce and --transition-fast. */
 const MOVE_MS = 300;
 const FADE_MS = 150;
 const bounce = cubicBezier(0.34, 1.56, 0.64, 1);
@@ -96,14 +66,13 @@ export class FileMenuGoo {
   #button: HTMLElement;
   #canvas: HTMLCanvasElement;
   #ctx: CanvasRenderingContext2D;
-  /** Last traced shape, kept so a theme change can repaint without a retrace. */
+  /** Last traced shape, in stage coordinates. */
   #goo: { path: Path2D; x: number; y: number } | null = null;
   #reduceMotion = matchMedia("(prefers-reduced-motion: reduce)");
 
-  /** Button pill alpha (hover). Bounce-timed like the old background fade;
-   *  the overshoot is clamped, as a color channel would be. */
+  /** Button pill alpha. */
   #pill = channel(MOVE_MS, bounce);
-  /** Card motion: 0 closed pose, 1 open; overshoots with the bounce. */
+  /** Card pose: 0 closed, 1 open. */
   #grow = channel(MOVE_MS, bounce);
   /** Card alpha, shared by the goo blob and the menu content. */
   #fade = channel(FADE_MS, ease);
@@ -129,8 +98,6 @@ export class FileMenuGoo {
     this.#ctx = this.#canvas.getContext("2d")!;
     layer.appendChild(this.#canvas);
 
-    // Fill and shadows come from CSS, and the night-mode switch lives inside
-    // the open menu, so repaint when the body's theme class flips.
     new MutationObserver(() => this.#paint()).observe(document.body, {
       attributes: true,
       attributeFilter: ["class"],
@@ -170,20 +137,16 @@ export class FileMenuGoo {
     }
     if (!changed) return;
 
-    // Measured per transition: sizes only change between opens, and offset*
-    // ignores the transform written below.
     this.#cardRest = boxOf(this.#card);
     this.#buttonRest = boxOf(this.#button);
 
     cancelAnimationFrame(this.#raf);
-    // First frame synchronously, so the triggering event's frame shows it.
     this.#step(now);
   }
 
   #step = (now: number) => {
     let running = false;
     for (const c of [this.#pill, this.#grow, this.#fade]) {
-      // rAF timestamps are frame start times and can predate t0.
       const p = Math.max(0, now - c.t0) / c.ms;
       c.value = c.from + (c.to - c.from) * c.curve(p);
       if (p < 1) running = true;
@@ -232,7 +195,6 @@ export class FileMenuGoo {
   #paint() {
     const canvas = this.#canvas;
     if (!this.#goo) {
-      // Nothing to show: drop the backing store (a zero-size canvas is blank).
       if (canvas.width) canvas.width = canvas.height = 0;
       return;
     }
@@ -265,9 +227,6 @@ export class FileMenuGoo {
     const { path, x, y } = this.#goo;
     ctx.setTransform(dpr, 0, 0, dpr, (x + BLEED) * dpr, (y + BLEED) * dpr);
     ctx.fillStyle = read("--file-menu-goo-fill") || "#f0f0f0";
-    // Shadow offsets and blur ignore the transform: give them device pixels.
-    // Painted last-listed first, so the first sits on top, as in a CSS
-    // filter chain.
     for (const sh of shadows.reverse()) {
       ctx.shadowOffsetX = sh.x * dpr;
       ctx.shadowOffsetY = sh.y * dpr;
@@ -297,7 +256,6 @@ function parseShadow(value: string): Shadow | null {
 export function traceGoo(
   blobs: Blob[],
 ): { d: string; x: number; y: number } | null {
-  // The field can't exceed the summed weights; below threshold, no goo.
   const live = blobs.filter((b) => b.weight > 0);
   if (live.reduce((sum, b) => sum + b.weight, 0) < GOO_THRESHOLD) return null;
 
@@ -350,17 +308,11 @@ function roundedBoxSdf(b: Box): (x: number, y: number) => number {
     const qy = Math.abs(y - cy) - hy;
     const ox = Math.max(qx, 0);
     const oy = Math.max(qy, 0);
-    // sqrt, not Math.hypot: this runs ~25k times a frame and hypot is far
-    // slower in JavaScriptCore.
     return Math.sqrt(ox * ox + oy * oy) + Math.min(Math.max(qx, qy), 0) - b.r;
   };
 }
 
-/**
- * Alpha of a Gaussian-blurred solid edge at signed distance d: Φ(−d / σ).
- * Exact for straight edges, and the boxes' 16px corners are gentle enough
- * next to σ = 3 that the error there is invisible.
- */
+/** Alpha of a Gaussian-blurred solid edge at signed distance d: Φ(−d / σ). */
 function blurredEdge(d: number): number {
   const z = -d / GOO_SIGMA;
   if (z > 4) return 1;
@@ -399,7 +351,6 @@ function cubicBezier(
   return (x) => {
     if (x <= 0) return 0;
     if (x >= 1) return 1;
-    // x(t) is monotonic for x1, x2 in [0, 1], so bisection always converges.
     let lo = 0;
     let hi = 1;
     for (let i = 0; i < 24; i++) {

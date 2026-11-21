@@ -15,6 +15,7 @@ import {
   shareableUrl,
 } from "./share/share_modal.js";
 import { printFile } from "./share/print_panel.js";
+import { FileMenuGoo } from "./file_menu_goo.js";
 
 import type { SplitWindowManager } from "../../viewer/window_manager.js";
 const VERSION = __APP_VERSION__;
@@ -47,8 +48,9 @@ export class FileMenu {
   container: HTMLDivElement;
   button: HTMLButtonElement;
   menuList: HTMLDivElement;
-  filterWrapper: HTMLDivElement;
+  stage: HTMLDivElement;
   gooLayer: HTMLDivElement;
+  goo: FileMenuGoo;
 
   constructor(wm: SplitWindowManager) {
     this.wm = wm;
@@ -206,55 +208,23 @@ export class FileMenu {
         <span>About</span>
       </button>
     `;
-    this.filterWrapper = document.createElement("div");
-    this.filterWrapper.className = "file-menu-filter-wrapper";
+    this.stage = document.createElement("div");
+    this.stage.className = "file-menu-stage";
 
     this.gooLayer = document.createElement("div");
     this.gooLayer.className = "file-menu-goo-layer";
 
-    this.filterWrapper.appendChild(this.gooLayer);
-    this.filterWrapper.appendChild(this.button);
-    this.filterWrapper.appendChild(this.menuList);
+    this.stage.appendChild(this.gooLayer);
+    this.stage.appendChild(this.button);
+    this.stage.appendChild(this.menuList);
 
-    this.container.appendChild(this.filterWrapper);
+    this.container.appendChild(this.stage);
 
     document.body.appendChild(this.hitArea);
     document.body.appendChild(this.container);
 
     this.fileInput = document.getElementById("file-import") as HTMLInputElement;
-    this.#createGooFilter();
-  }
-
-  #createGooFilter() {
-    const existingFilter = document.getElementById("file-menu-goo-filter");
-    if (existingFilter) return;
-
-    const svgFilter = document.createElementNS(
-      "http://www.w3.org/2000/svg",
-      "svg",
-    );
-    svgFilter.setAttribute("width", "0");
-    svgFilter.setAttribute("height", "0");
-    svgFilter.style.position = "absolute";
-    svgFilter.innerHTML = `
-      <defs>
-        <!-- Region kept tight (just enough margin for the 3px blur). Safari
-             rasterizes url() filters on the CPU, so an oversized region (the
-             old 350% ≈ 980x1750px canvas) is re-blurred on every frame the
-             source changes, which is what made the menu's goo lag on open.
-             ~120% (≈336x600px) is ~8x less area to rasterize per frame. -->
-        <filter id="file-menu-goo-filter" x="-10%" y="-10%" width="120%" height="120%">
-          <feGaussianBlur in="SourceGraphic" stdDeviation="3" result="blur" />
-          <feColorMatrix in="blur" mode="matrix" 
-            values="1 0 0 0 0  
-                    0 1 0 0 0  
-                    0 0 1 0 0  
-                    0 0 0 20 -15" result="goo" />
-          <feComposite in="SourceGraphic" in2="goo" operator="atop" />
-        </filter>
-      </defs>
-    `;
-    document.body.appendChild(svgFilter);
+    this.goo = new FileMenuGoo(this.gooLayer, this.menuList, this.button);
   }
 
   #setupEventListeners() {
@@ -361,10 +331,12 @@ export class FileMenu {
 
   #activateButton() {
     this.container.classList.add("active");
+    this.goo.setActive(true);
   }
 
   #deactivateButton() {
     this.container.classList.remove("active");
+    this.goo.setActive(false);
   }
 
   #toggleMenu() {
@@ -379,23 +351,10 @@ export class FileMenu {
     if (this.isOpen) return;
     this.isOpen = true;
 
-    // Size the goo layer's card blob (::after) to the real menu card so the
-    // filtered background mass matches the content exactly. They share the same
-    // anchor/origin/transform in CSS, so once sized they scale/slide in as one
-    // gooey shape fused with the button blob. Measured synchronously (offsetWidth
-    // ignores the closed-state transform) so it's right on the first open frame.
-    this.gooLayer.style.setProperty(
-      "--menu-w",
-      this.menuList.offsetWidth + "px",
-    );
-    this.gooLayer.style.setProperty(
-      "--menu-h",
-      this.menuList.offsetHeight + "px",
-    );
-
     this.#syncCopyLink();
     this.container.classList.add("open");
     this.button.classList.add("open");
+    this.goo.open();
   }
 
   /** A file opened from disk has no web link, so the quick copy stands down. */
@@ -416,6 +375,7 @@ export class FileMenu {
 
     this.container.classList.remove("open");
     this.button.classList.remove("open");
+    this.goo.close();
 
     if (!this.isHovered && !this.isNearHitBox) {
       this.#deactivateButton();

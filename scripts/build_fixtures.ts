@@ -27,10 +27,7 @@
 import { readdirSync, mkdirSync, writeFileSync } from "node:fs";
 import { gzipSync } from "node:zlib";
 import { readFile } from "node:fs/promises";
-import { join, basename, extname } from "node:path";
-
-import { init } from "@embedpdf/pdfium";
-import { PdfiumNative, PdfEngine } from "@embedpdf/engines/pdfium";
+import { join } from "node:path";
 
 import { PdfiumDocumentFactory } from "../src/pdf/text_extractor.js";
 import { normalizeAnnotationRects } from "../src/pdf/annotations.js";
@@ -44,56 +41,13 @@ import { analyzeDocument } from "../src/analysis/pipeline.js";
 import type { RawPageTextSource } from "../src/analysis/inline_extractor.js";
 import type { AnalysisFixture, RecordedPage } from "../test/support/fixture.js";
 import { charRangeKey } from "../test/support/fixture.js";
+import { loadPdfium, round, slugify } from "../test/support/pdfium.js";
 
 const PDF_DIR = "marketing/List of Papers";
 const OUT_DIR = "test/fixtures";
-// The package's own copy, not `public/pdfium.wasm` — that one is gitignored and
-// only appears once Vite has run.
-const WASM_PATH = "node_modules/@embedpdf/pdfium/dist/pdfium.wasm";
-
-/** `Nature paper example.pdf` → `nature-paper-example`. */
-function slugify(name: string): string {
-  return basename(name, extname(name))
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-|-$/g, "");
-}
-
-/**
- * Round to a fixed number of decimals so a fixture rebuilt on another machine
- * produces the same bytes. Float noise in the last places is not signal here,
- * and it would make every regeneration a diff.
- */
-function round(value: unknown): unknown {
-  if (typeof value === "number" && Number.isFinite(value)) {
-    return Math.round(value * 1e4) / 1e4;
-  }
-  if (Array.isArray(value)) return value.map(round);
-  if (value && typeof value === "object") {
-    const out: Record<string, unknown> = {};
-    for (const [k, v] of Object.entries(value)) out[k] = round(v);
-    return out;
-  }
-  return value;
-}
-
-async function loadEngine() {
-  const wasmBinary = await readFile(WASM_PATH);
-  const pdfiumModule = await init({ wasmBinary });
-  pdfiumModule.PDFiumExt_Init();
-  const native = new PdfiumNative(pdfiumModule);
-  // Nothing here rasterises, and the browser converter wants a DOM — but the
-  // option is required, so it is a stub that says so if anything reaches it.
-  const engine = new PdfEngine(native, {
-    imageConverter: () => {
-      throw new Error("build_fixtures does not render pages");
-    },
-  });
-  return { pdfiumModule, native, engine };
-}
 
 async function buildFixture(pdfPath: string): Promise<AnalysisFixture> {
-  const { pdfiumModule, native, engine } = await loadEngine();
+  const { pdfiumModule, native, engine } = await loadPdfium();
   const pdfData = new Uint8Array(await readFile(pdfPath));
 
   const pdfDoc = await engine
@@ -192,6 +146,8 @@ async function buildFixture(pdfPath: string): Promise<AnalysisFixture> {
     }) as AnalysisFixture;
   } finally {
     handle.close();
+    // The engine is shared across fixtures now, so the doc has to go back.
+    await engine.closeDocument(pdfDoc).toPromise();
   }
 }
 

@@ -14,7 +14,7 @@ import {
   groupCharsIntoRuns,
   isRuleLikeBounds,
 } from "../analysis/layout_heuristics.js";
-import type { WrappedPdfiumModule } from "@embedpdf/pdfium";
+import type { PdfiumBindings } from "./pdfium_module.js";
 
 /** One text run with its geometry and font, as DocumentTextIndex consumes it. */
 export interface TextSlice {
@@ -55,8 +55,8 @@ export interface PagePathsResult {
 export class PdfiumTextExtractor {
   #reader: PdfiumPageReader = null;
 
-  constructor(pdfiumModule: WrappedPdfiumModule) {
-    this.#reader = new PdfiumPageReader(pdfiumModule);
+  constructor(pdfium: PdfiumBindings) {
+    this.#reader = new PdfiumPageReader(pdfium);
   }
 
   get reader(): PdfiumPageReader {
@@ -326,7 +326,7 @@ export class PdfiumTextExtractor {
 }
 
 export class PdfiumDocumentHandle {
-  #pdfium: WrappedPdfiumModule = null;
+  #pdfium: PdfiumBindings = null;
   #docPtr: number = null;
   #filePtr: number = null;
   #fileLength = 0;
@@ -338,16 +338,16 @@ export class PdfiumDocumentHandle {
    * @param fileLength Byte length of the file buffer
    */
   constructor(
-    pdfiumModule: WrappedPdfiumModule,
+    pdfium: PdfiumBindings,
     docPtr: number,
     filePtr: number,
     fileLength: number,
   ) {
-    this.#pdfium = pdfiumModule;
+    this.#pdfium = pdfium;
     this.#docPtr = docPtr;
     this.#filePtr = filePtr;
     this.#fileLength = fileLength;
-    this.#extractor = new PdfiumTextExtractor(pdfiumModule);
+    this.#extractor = new PdfiumTextExtractor(pdfium);
   }
 
   get pdfium() {
@@ -420,20 +420,20 @@ export class PdfiumDocumentHandle {
  * Factory to create low-level document handles from PDF data
  *
  * Usage:
- *   const factory = new PdfiumDocumentFactory(pdfiumModule);
+ *   const factory = new PdfiumDocumentFactory(bindings);
  *   const handle = factory.loadFromBuffer(pdfData);
  *   const text = handle.extractPageText(0);
  *   handle.close();
  */
 export class PdfiumDocumentFactory {
-  #pdfium: WrappedPdfiumModule = null;
+  #pdfium: PdfiumBindings = null;
 
   /** Owns the file buffer allocation, which happens before a handle exists. */
   #ffi: PdfiumFFI = null;
 
-  constructor(pdfiumModule: WrappedPdfiumModule) {
-    this.#pdfium = pdfiumModule;
-    this.#ffi = new PdfiumFFI(pdfiumModule);
+  constructor(pdfium: PdfiumBindings) {
+    this.#pdfium = pdfium;
+    this.#ffi = new PdfiumFFI(pdfium);
   }
 
   /** Load document from a Uint8Array buffer. */
@@ -447,12 +447,9 @@ export class PdfiumDocumentFactory {
     // is owned by the handle and freed in close() rather than here.
     const filePtr = this.#ffi.allocBytes(pdfData);
 
-    // PDFium takes a NUL pointer for "no password"; the binding types the
-    // parameter as string, so the 0 has to be cast rather than passed through.
-    const docPtr = pdfium.FPDF_LoadMemDocument(
-      filePtr,
-      pdfData.length,
-      password ? password : (0 as unknown as string),
+    // A null pointer, not an empty string, means "no password".
+    const docPtr = this.#ffi.withCString(password || null, (passwordPtr) =>
+      pdfium.FPDF_LoadMemDocument(filePtr, pdfData.length, passwordPtr),
     );
 
     if (!docPtr) {

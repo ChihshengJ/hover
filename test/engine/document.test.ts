@@ -69,14 +69,14 @@ function toLines(record: Record<string, unknown>): string {
 }
 
 async function recordDocument(fixture: FixturePdf, password?: string) {
-  const { pdfiumModule, native, engine } = await loadPdfium();
+  const { bindings, native, engine } = await loadPdfium();
   const pdfDoc = await engine
     .openDocumentBuffer(
       { id: `doc-${fixture.slug}`, content: fixture.bytes.slice().buffer },
       password ? { password } : undefined,
     )
     .toPromise();
-  const handle = new PdfiumDocumentFactory(pdfiumModule).loadFromBuffer(
+  const handle = new PdfiumDocumentFactory(bindings).loadFromBuffer(
     fixture.bytes,
     password,
   );

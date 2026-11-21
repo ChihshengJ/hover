@@ -7,7 +7,7 @@
  */
 
 import { PAGEOBJ, PdfiumFFI } from "./pdfium_ffi.js";
-import type { WrappedPdfiumModule } from "@embedpdf/pdfium";
+import type { PdfiumBindings } from "./pdfium_module.js";
 import type {
   CharBox,
   CharRecord,
@@ -22,17 +22,17 @@ export interface ObjectBounds {
 }
 
 export class PdfiumPageReader {
-  #pdfium: WrappedPdfiumModule;
+  #pdfium: PdfiumBindings;
   #ffi: PdfiumFFI;
 
   /**
    * @param ffi share one when several readers use a module
    */
   constructor(
-    pdfiumModule: WrappedPdfiumModule,
-    ffi: PdfiumFFI = new PdfiumFFI(pdfiumModule),
+    pdfium: PdfiumBindings,
+    ffi: PdfiumFFI = new PdfiumFFI(pdfium),
   ) {
-    this.#pdfium = pdfiumModule;
+    this.#pdfium = pdfium;
     this.#ffi = ffi;
   }
 

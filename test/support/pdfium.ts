@@ -10,8 +10,10 @@
 import { readFileSync, readdirSync } from "node:fs";
 import { basename, extname, join, relative } from "node:path";
 
-import { init } from "@embedpdf/pdfium";
 import { PdfiumNative, PdfEngine } from "@embedpdf/engines/pdfium";
+
+import { loadPdfiumModule } from "../../src/pdf/pdfium_module.js";
+import type { PdfiumBindings } from "../../src/pdf/pdfium_module.js";
 
 const REPO_ROOT = join(import.meta.dir, "..", "..");
 
@@ -22,10 +24,8 @@ const WASM_PATH = join(
   "node_modules/@embedpdf/pdfium/dist/pdfium.wasm",
 );
 
-type PdfiumModule = Awaited<ReturnType<typeof init>>;
-
 export interface PdfiumForTests {
-  pdfiumModule: PdfiumModule;
+  bindings: PdfiumBindings;
   native: PdfiumNative;
   engine: PdfEngine;
 }
@@ -44,9 +44,9 @@ export function pdfiumWasmBytes(): Uint8Array {
  */
 export function loadPdfium(): Promise<PdfiumForTests> {
   loading ??= (async () => {
-    const pdfiumModule = await init({ wasmBinary: pdfiumWasmBytes() });
-    pdfiumModule.PDFiumExt_Init();
-    const native = new PdfiumNative(pdfiumModule);
+    // The same path the app takes (pdf/pdfium_init.ts), minus the fetch.
+    const { bindings, engineModule } = await loadPdfiumModule(pdfiumWasmBytes());
+    const native = new PdfiumNative(engineModule);
     // `renderPageRaw` hands back raw pixels and never reaches the converter,
     // and the browser converter wants a DOM. The option is required, so it is
     // a stub that says so if anything does reach it.
@@ -55,7 +55,7 @@ export function loadPdfium(): Promise<PdfiumForTests> {
         throw new Error("test PDFium has no image converter");
       },
     });
-    return { pdfiumModule, native, engine };
+    return { bindings, native, engine };
   })();
   return loading;
 }

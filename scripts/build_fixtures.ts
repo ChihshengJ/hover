@@ -47,7 +47,7 @@ const PDF_DIR = "marketing/List of Papers";
 const OUT_DIR = "test/fixtures";
 
 async function buildFixture(pdfPath: string): Promise<AnalysisFixture> {
-  const { pdfiumModule, native, engine } = await loadPdfium();
+  const { bindings, native, engine } = await loadPdfium();
   const pdfData = new Uint8Array(await readFile(pdfPath));
 
   const pdfDoc = await engine
@@ -57,7 +57,7 @@ async function buildFixture(pdfPath: string): Promise<AnalysisFixture> {
     })
     .toPromise();
 
-  const factory = new PdfiumDocumentFactory(pdfiumModule);
+  const factory = new PdfiumDocumentFactory(bindings);
   const handle = factory.loadFromBuffer(pdfData);
 
   try {

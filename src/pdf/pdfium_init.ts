@@ -1,25 +1,24 @@
 /**
  * PDFium Engine Initialization
  *
- * Initializes the @embedpdf/engines PDFium WASM module.
- * This module is loaded once and shared across the application.
+ * Loads the PDFium wasm once (`pdfium_module.ts`) and builds the
+ * `@embedpdf/engines` engine over it. Shared across the application.
  */
 
-import { init } from "@embedpdf/pdfium";
 import { PdfiumNative, PdfEngine } from "@embedpdf/engines/pdfium";
 import { browserImageDataToBlobConverter } from "@embedpdf/engines/converters";
-import type { WrappedPdfiumModule } from "@embedpdf/pdfium";
+import { fetchPdfiumWasm, loadPdfiumModule } from "./pdfium_module.js";
+import type { PdfiumBindings } from "./pdfium_module.js";
 
 export interface EngineInstances {
   engine: PdfEngine;
   native: PdfiumNative;
-  pdfiumModule: WrappedPdfiumModule;
+  /** Hover's own calls into the same wasm instance the engine uses. */
+  bindings: PdfiumBindings;
 }
 
-let engineInstance: PdfEngine | null = null;
-let nativeInstance: PdfiumNative | null = null;
-let pdfiumModule: WrappedPdfiumModule | null = null;
-let initPromise: Promise<void> | null = null;
+let instances: EngineInstances | null = null;
+let initPromise: Promise<EngineInstances> | null = null;
 let primedWasm: ArrayBuffer | Uint8Array | null = null;
 
 /**
@@ -37,41 +36,28 @@ export function primePdfiumWasm(bytes: ArrayBuffer | Uint8Array) {
 export async function initPdfiumEngine(
   onProgress?: (progress: { percent: number; phase: string }) => void,
 ): Promise<EngineInstances> {
-  if (engineInstance && nativeInstance && pdfiumModule) {
-    return {
-      engine: engineInstance,
-      native: nativeInstance,
-      pdfiumModule: pdfiumModule,
-    };
-  }
+  if (instances) return instances;
 
-  if (initPromise) {
-    await initPromise;
-    return {
-      engine: engineInstance,
-      native: nativeInstance,
-      pdfiumModule: pdfiumModule,
-    };
-  }
-
-  initPromise = (async () => {
+  initPromise ??= (async () => {
     try {
-      const wasmBinary = primedWasm ?? (await fetchWasm(onProgress));
+      const wasmBinary = primedWasm ?? (await fetchPdfiumWasm(onProgress));
 
       onProgress?.({ percent: 50, phase: "initializing-pdfium" });
-
-      pdfiumModule = await init({ wasmBinary });
-      pdfiumModule.PDFiumExt_Init();
+      const { bindings, engineModule } = await loadPdfiumModule(wasmBinary);
 
       onProgress?.({ percent: 70, phase: "creating-engine" });
-      nativeInstance = new PdfiumNative(pdfiumModule);
-      engineInstance = new PdfEngine(nativeInstance, {
+      // The engine runs `PDFiumExt_Init()` in its constructor. The library is
+      // already initialised by then, and PDFium ignores a second init.
+      const native = new PdfiumNative(engineModule);
+      const engine = new PdfEngine(native, {
         imageConverter: browserImageDataToBlobConverter,
       });
 
       onProgress?.({ percent: 100, phase: "ready" });
-
       console.log("[PDFium] Engine initialized successfully");
+
+      instances = { engine, native, bindings };
+      return instances;
     } catch (error) {
       console.error("[PDFium] Failed to initialize engine:", error);
       initPromise = null;
@@ -79,46 +65,7 @@ export async function initPdfiumEngine(
     }
   })();
 
-  await initPromise;
-  return {
-    engine: engineInstance,
-    native: nativeInstance,
-    pdfiumModule: pdfiumModule,
-  };
-}
-
-/** Resolve the wasm URL, bundled copy first, and download it. */
-async function fetchWasm(
-  onProgress?: (progress: { percent: number; phase: string }) => void,
-): Promise<ArrayBuffer> {
-  onProgress?.({ percent: 5, phase: "loading-wasm" });
-  let wasmUrl: string | undefined;
-  if (typeof chrome !== "undefined" && chrome.runtime?.getURL) {
-    try {
-      wasmUrl = chrome.runtime.getURL("pdfium.wasm");
-    } catch {
-      // Not a packaged extension context — fall through to the CDN URL.
-    }
-  }
-  if (!wasmUrl) {
-    if (__LOCAL_WASM_ONLY__) {
-      throw new Error(
-        "[PDFium] Local pdfium.wasm not resolvable; STORE_BUILD requires the bundled asset",
-      );
-    }
-    const { DEFAULT_PDFIUM_WASM_URL } = await import("@embedpdf/pdfium");
-    wasmUrl = DEFAULT_PDFIUM_WASM_URL;
-  }
-
-  onProgress?.({ percent: 10, phase: "downloading-wasm" });
-  const response = await fetch(wasmUrl);
-
-  if (!response.ok) {
-    throw new Error(`Failed to fetch WASM: ${response.status}`);
-  }
-
-  onProgress?.({ percent: 30, phase: "parsing-wasm" });
-  return await response.arrayBuffer();
+  return initPromise;
 }
 
 /**
@@ -126,30 +73,18 @@ async function fetchWasm(
  * has resolved.
  */
 export function getEngineInstances(): EngineInstances | null {
-  if (!engineInstance || !nativeInstance || !pdfiumModule) {
-    return null;
-  }
-
-  return {
-    engine: engineInstance,
-    native: nativeInstance,
-    pdfiumModule: pdfiumModule,
-  };
+  return instances;
 }
 
 /** Check if the engine is initialized. */
 export function isEngineInitialized(): boolean {
-  return (
-    engineInstance !== null && nativeInstance !== null && pdfiumModule !== null
-  );
+  return instances !== null;
 }
 
 /**
  * Reset the engine (for testing or reinitialization)
  */
 export function resetEngine() {
-  engineInstance = null;
-  nativeInstance = null;
-  pdfiumModule = null;
+  instances = null;
   initPromise = null;
 }

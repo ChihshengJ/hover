@@ -27,7 +27,7 @@ import type {
   PdfMetadataObject,
   PdfAnnotationObject,
 } from "@embedpdf/models";
-import type { WrappedPdfiumModule } from "@embedpdf/pdfium";
+import type { PdfiumBindings } from "../pdf/pdfium_module.js";
 import type { DocEventName } from "./doc_events.js";
 import type { PdfiumDocumentHandle } from "../pdf/text_extractor.js";
 import type {
@@ -159,7 +159,7 @@ export class PDFDocumentModel {
     };
 
     reportProgress(5, "initializing engine");
-    const { engine, native, pdfiumModule } = await initPdfiumEngine((p) => {
+    const { engine, native, bindings } = await initPdfiumEngine((p) => {
       const mapped = 5 + Math.round(p.percent * 0.15);
       reportProgress(mapped, p.phase);
     });
@@ -182,7 +182,7 @@ export class PDFDocumentModel {
         .toPromise();
 
       reportProgress(35, "setting up text extraction engine");
-      this.#setupLowLevelAccess(pdfiumModule);
+      this.#setupLowLevelAccess(bindings);
       this.pdfData = null;
 
       reportProgress(40, "processing");
@@ -249,13 +249,13 @@ export class PDFDocumentModel {
     }
   }
 
-  #setupLowLevelAccess(pdfiumModule: WrappedPdfiumModule | null) {
-    if (!this.pdfData || !pdfiumModule) return;
+  #setupLowLevelAccess(bindings: PdfiumBindings | null) {
+    if (!this.pdfData || !bindings) return;
 
     try {
-      const factory = new PdfiumDocumentFactory(pdfiumModule);
+      const factory = new PdfiumDocumentFactory(bindings);
       this.lowLevelHandle = factory.loadFromBuffer(this.pdfData);
-      // this.imageExtractor = new PdfiumImageExtractor(pdfiumModule);
+      // this.imageExtractor = new PdfiumImageExtractor(bindings);
     } catch (error) {
       console.error("[Doc] Error setting up low-level access:", error);
     }

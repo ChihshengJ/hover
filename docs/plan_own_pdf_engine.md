@@ -144,7 +144,10 @@ marked CC BY. Record each paper's source URL and licence next to it.
 | 1 × scanned paper with an invisible OCR layer    | Paper     | Render mode 3 text, visible-text boxes, text gamma skipping the scan                                                                     |
 | 1 × one of the above, annotated in Preview or Acrobat | Paper | Annotations made by another app: highlight, ink, sticky note. The only real test of the rect orientation `normalizeAnnotationRects` guesses at |
 | The four existing `marketing/List of Papers/` files | Paper  | Already used by the analysis fixtures; `rotate example.pdf` covers `/Rotate`                                                             |
-| Rotated, CropBox ≠ MediaBox, form fields, encrypted, truncated | Generated | Page sizes (phase 2), form drawing during rendering (phase 3), and the error path that must still close the document. Made by a script (`qpdf` or `pypdf`) from a one-page CC BY source, a few KB each |
+| Rotated, CropBox ≠ MediaBox, form fields, encrypted, truncated | Generated | Page sizes (phase 2), form drawing during rendering (phase 3), and the error path that must still close the document. Made by `scripts/make_edge_pdfs.py` (pypdf) from synthetic pages, a few KB each |
+
+The files live in `test/pdfs/`. `test/pdfs/SOURCES.md` lists each paper's
+source, licence and SHA-256, and what each generated file covers.
 
 If one of the PDFs that originally broke embedPDF's text conversion has a
 licence that allows committing it, add it. It is the most direct regression

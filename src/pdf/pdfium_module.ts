@@ -62,8 +62,29 @@ export interface PdfiumFunctions {
     flags: number,
   ): void;
 
+  /**
+   * `matrix` is an `FS_MATRIX` (six f32: a b c d e f) applied after the
+   * page's own top-left-origin display matrix; `clip` an `FS_RECTF` (four
+   * f32: left top right bottom) in device pixels.
+   */
+  FPDF_RenderPageBitmapWithMatrix(
+    bitmap: number,
+    page: number,
+    matrix: number,
+    clip: number,
+    flags: number,
+  ): void;
+
   // fpdfview.h: bitmaps
   FPDFBitmap_Create(width: number, height: number, alpha: number): number;
+  /** Wraps `firstScan` (caller-owned) rather than allocating. */
+  FPDFBitmap_CreateEx(
+    width: number,
+    height: number,
+    format: number,
+    firstScan: number,
+    stride: number,
+  ): number;
   FPDFBitmap_Destroy(bitmap: number): void;
   FPDFBitmap_FillRect(
     bitmap: number,
@@ -214,7 +235,9 @@ const FUNCTION_NAMES: Record<keyof PdfiumFunctions, true> = {
   FPDFPage_GetRotation: true,
   FPDF_PageToDevice: true,
   FPDF_RenderPageBitmap: true,
+  FPDF_RenderPageBitmapWithMatrix: true,
   FPDFBitmap_Create: true,
+  FPDFBitmap_CreateEx: true,
   FPDFBitmap_Destroy: true,
   FPDFBitmap_FillRect: true,
   FPDFBitmap_GetBuffer: true,

@@ -3,8 +3,8 @@ import {
   getSharedCitationPopup,
 } from "../ui/controls/citation_popup.js";
 import { getSharedImageModal } from "../ui/controls/image_modal.js";
+import { renderPage, renderRect } from "../pdf/renderer.js";
 
-import type { PdfPageObject } from "@embedpdf/models";
 import type { PDFDocumentModel } from "../model/doc.js";
 import type { TextSelectionManager } from "./text_manager.js";
 import type { TextLine } from "../analysis/text_index.js";
@@ -66,7 +66,7 @@ export class PageView {
   annotationLayer: HTMLElement;
 
   endOfContent: HTMLElement | null = null;
-  page: PdfPageObject | null = null;
+  page: PdfPage | null = null;
   textSlices: TextLine[] | null = null;
   /**
    * Bumped whenever a render starts or is invalidated. A render captures the
@@ -162,7 +162,7 @@ export class PageView {
 
   #getPage() {
     if (!this.page) {
-      this.page = this.doc.enginePage(this.pageNumber);
+      this.page = this.doc.getPage(this.pageNumber);
     }
     return this.page;
   }
@@ -213,9 +213,9 @@ export class PageView {
       return;
     }
 
-    const { native, pdfDoc } = this.doc;
-    if (!native || !pdfDoc) {
-      console.error(`[PageView] Engine not initialized`);
+    const pdf = this.doc.document;
+    if (!pdf) {
+      console.error(`[PageView] No document open`);
       return;
     }
 
@@ -234,12 +234,7 @@ export class PageView {
         this.textSlices = this.doc.textIndex?.getPageLines(this.pageNumber);
       }
 
-      const pageData = await native
-        .renderPageRaw(pdfDoc, page, {
-          scaleFactor: renderScale,
-          withAnnotations: false,
-        })
-        .toPromise();
+      const pageData = renderPage(pdf, page.index, renderScale);
 
       // Anything that invalidated this page while PDFium was working — a
       // release, a relayout, a re-render — has already bumped the generation.
@@ -288,7 +283,7 @@ export class PageView {
    * Rebuild the overlay layers — links, citations, cross-refs and the text
    * layer — for the page's current CSS size.
    */
-  #renderOverlays(page: PdfPageObject) {
+  #renderOverlays(page: PdfPage) {
     const cssWidth = parseFloat(this.canvas.style.width);
     const cssHeight = parseFloat(this.canvas.style.height);
     const textScale = cssWidth / page.size.width;
@@ -332,8 +327,8 @@ export class PageView {
     this.scale = requestedScale;
 
     const page = this.#getPage();
-    const { native, pdfDoc } = this.doc;
-    if (!page || !native || !pdfDoc) return;
+    const pdf = this.doc.document;
+    if (!page || !pdf) return;
 
     // The scale the uncapped base would render at (§5's larger axis), so the
     // region's device px are the ones a full render would have put there.
@@ -348,20 +343,12 @@ export class PageView {
       }
 
       // PDFium's rect is in page points, top-left origin.
-      const pageData = await native
-        .renderPageRect(
-          pdfDoc,
-          page,
-          {
-            origin: { x: region.left / scale, y: region.top / scale },
-            size: {
-              width: (region.right - region.left) / scale,
-              height: (region.bottom - region.top) / scale,
-            },
-          },
-          { scaleFactor: scale, withAnnotations: false },
-        )
-        .toPromise();
+      const pageData = renderRect(pdf, page.index, scale, {
+        x: region.left / scale,
+        y: region.top / scale,
+        width: (region.right - region.left) / scale,
+        height: (region.bottom - region.top) / scale,
+      });
 
       if (generation !== this.#detailGeneration) return;
 
@@ -457,7 +444,7 @@ export class PageView {
     return true;
   }
 
-  #buildTextLayer(page: PdfPageObject, scale: number, pageHeight: number) {
+  #buildTextLayer(page: PdfPage, scale: number, pageHeight: number) {
     if (!this.textSlices || this.textSlices.length === 0) return;
 
     const fragment = document.createDocumentFragment();
@@ -576,7 +563,7 @@ export class PageView {
   // ============================================
 
   #renderUrlLinks(
-    page: PdfPageObject,
+    page: PdfPage,
     scale: number,
     cssWidth: number,
     cssHeight: number,
@@ -657,7 +644,7 @@ export class PageView {
   // ============================================
 
   #renderCitationOverlays(
-    page: PdfPageObject,
+    page: PdfPage,
     scale: number,
     cssWidth: number,
     cssHeight: number,
@@ -728,7 +715,7 @@ export class PageView {
   // ============================================
 
   #renderCrossRefOverlays(
-    page: PdfPageObject,
+    page: PdfPage,
     scale: number,
     cssWidth: number,
     cssHeight: number,

@@ -45,6 +45,13 @@ export class PdfOpenError extends Error {
   }
 }
 
+/**
+ * How many loaded pages a document keeps. Loading parses the page's content
+ * (1–4 ms on the fixture papers), and the viewer renders the same few pages
+ * again on every zoom. The engine kept 10 too.
+ */
+const LOADED_PAGE_LIMIT = 10;
+
 /** The Info keys `PdfMetadata` carries beyond the standard ones. */
 const CUSTOM_META_KEYS = ["DOI", "License", "arXivID", "PTEX.Fullbanner"] as const;
 
@@ -76,6 +83,8 @@ export class PdfiumDocument {
   #fileLength: number;
   #pages: PdfPage[];
   #rotations = new Map<number, number>();
+  /** Loaded page pointers by index, least recently used first. */
+  #loaded = new Map<number, number>();
 
   private constructor(
     pdfium: PdfiumBindings,
@@ -195,12 +204,41 @@ export class PdfiumDocument {
     let rotation = this.#rotations.get(index);
     if (rotation === undefined) {
       rotation =
-        this.ffi.withPage(this.#docPtr, index, ({ pagePtr }) =>
+        this.withLoadedPage(index, (pagePtr) =>
           this.#pdfium.FPDFPage_GetRotation(pagePtr),
         ) ?? 0;
       this.#rotations.set(index, rotation);
     }
     return rotation;
+  }
+
+  /**
+   * Run `fn` with the page loaded, from the document's cache of recently used
+   * pages. The pointer is only good inside `fn`: the next page loaded may
+   * evict it.
+   *
+   * Text extraction doesn't use this. It loads and closes its own page, with
+   * a text page on top.
+   *
+   * @param index 0-based
+   * @returns null when the page can't be loaded
+   */
+  withLoadedPage<T>(index: number, fn: (pagePtr: number) => T): T | null {
+    let pagePtr = this.#loaded.get(index);
+    if (pagePtr) {
+      this.#loaded.delete(index);
+    } else {
+      if (!this.#docPtr || index < 0 || index >= this.#pages.length) return null;
+      pagePtr = this.#pdfium.FPDF_LoadPage(this.#docPtr, index);
+      if (!pagePtr) return null;
+      for (const [oldest, oldPtr] of this.#loaded) {
+        if (this.#loaded.size < LOADED_PAGE_LIMIT) break;
+        this.#pdfium.FPDF_ClosePage(oldPtr);
+        this.#loaded.delete(oldest);
+      }
+    }
+    this.#loaded.set(index, pagePtr);
+    return fn(pagePtr);
   }
 
   /** An Info dictionary entry; null when it is absent or empty. */
@@ -268,6 +306,10 @@ export class PdfiumDocument {
 
   /** Close the document and free its file buffer. Safe to call twice. */
   close() {
+    for (const pagePtr of this.#loaded.values()) {
+      this.#pdfium.FPDF_ClosePage(pagePtr);
+    }
+    this.#loaded.clear();
     if (this.#docPtr) {
       this.#pdfium.FPDF_CloseDocument(this.#docPtr);
       this.#docPtr = 0;

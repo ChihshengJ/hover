@@ -3,9 +3,10 @@
  * `@embedpdf/engines` with the options the viewer passes
  * (`viewer/page.ts`: `withAnnotations: false`, no forms).
  *
- * Snapshots hold `{ width, height, sha256 }` rather than pixels. Phase 3's
- * renderer must reproduce them byte for byte; a mismatch means some choice of
- * the engine's has not been ported yet, not that the golden needs updating.
+ * Snapshots hold `{ width, height, sha256 }` rather than pixels. Hover's own
+ * renderer (`src/pdf/renderer.ts`) must reproduce them byte for byte; a
+ * mismatch means some choice of the engine's has not been ported, not that
+ * the golden needs updating.
  *
  *   HOVER_DUMP_RENDERS=/some/dir bun test test/engine/render.test.ts
  *
@@ -19,6 +20,8 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { deflateSync } from "node:zlib";
 
+import { PdfiumDocument } from "../../src/pdf/document.js";
+import { renderPage, renderRect } from "../../src/pdf/renderer.js";
 import { fixturePdfs, loadPdfium, type FixturePdf } from "../support/pdfium.js";
 
 const DUMP_DIR = process.env.HOVER_DUMP_RENDERS || null;
@@ -99,7 +102,16 @@ function dump(fixture: FixturePdf, name: string, raster: Raster) {
 
 // --- Recording -------------------------------------------------------------
 
-async function recordRenders(fixture: FixturePdf) {
+/** One way to render: the engine's, or Hover's renderer. */
+interface Renderer {
+  pageCount: number;
+  pageSize(index: number): { width: number; height: number };
+  page(index: number, scale: number): Promise<Raster>;
+  rect(index: number, scale: number, rect: Rect): Promise<Raster>;
+  close(): Promise<void>;
+}
+
+async function engineRenderer(fixture: FixturePdf): Promise<Renderer> {
   const { native, engine } = await loadPdfium();
   const pdfDoc = await engine
     .openDocumentBuffer({
@@ -107,46 +119,79 @@ async function recordRenders(fixture: FixturePdf) {
       content: fixture.bytes.slice().buffer,
     })
     .toPromise();
+  // The options `viewer/page.ts` passed.
+  const options = (scaleFactor: number) => ({ scaleFactor, withAnnotations: false });
+  return {
+    pageCount: pdfDoc.pages.length,
+    pageSize: (index) => pdfDoc.pages[index].size,
+    page: (index, scale) =>
+      native.renderPageRaw(pdfDoc, pdfDoc.pages[index], options(scale)).toPromise(),
+    rect: (index, scale, { x, y, width, height }) =>
+      native
+        .renderPageRect(
+          pdfDoc,
+          pdfDoc.pages[index],
+          { origin: { x, y }, size: { width, height } },
+          options(scale),
+        )
+        .toPromise(),
+    close: () => engine.closeDocument(pdfDoc).toPromise().then(() => {}),
+  };
+}
 
+async function hoverRenderer(fixture: FixturePdf): Promise<Renderer> {
+  const { bindings } = await loadPdfium();
+  const document = PdfiumDocument.open(bindings, fixture.bytes);
+  return {
+    pageCount: document.pageCount,
+    pageSize: (index) => document.page(index)!.size,
+    page: async (index, scale) => renderPage(document, index, scale),
+    rect: async (index, scale, rect) => renderRect(document, index, scale, rect),
+    close: async () => document.close(),
+  };
+}
+
+/** Every render the baseline covers, by name, in a fixed order. */
+async function recordRenders(
+  fixture: FixturePdf,
+  open: (fixture: FixturePdf) => Promise<Renderer>,
+  onRaster: (name: string, raster: Raster) => void = () => {},
+) {
+  const renderer = await open(fixture);
   try {
     // The generated files are small and each page exercises something
     // different; for the papers, the first two pages are enough.
-    const pages =
-      fixture.group === "generated" ? pdfDoc.pages : pdfDoc.pages.slice(0, 2);
+    const pageCount =
+      fixture.group === "generated"
+        ? renderer.pageCount
+        : Math.min(2, renderer.pageCount);
     const out: Record<string, ReturnType<typeof digest>> = {};
+    const record = (name: string, raster: Raster) => {
+      out[name] = digest(raster);
+      onRaster(name, raster);
+    };
 
-    for (const page of pages) {
-      for (const scaleFactor of SCALES) {
-        const raster = await native
-          .renderPageRaw(pdfDoc, page, { scaleFactor, withAnnotations: false })
-          .toPromise();
-        const name = `p${page.index}@${scaleFactor}`;
-        out[name] = digest(raster);
-        dump(fixture, name, raster);
+    for (let index = 0; index < pageCount; index++) {
+      for (const scale of SCALES) {
+        record(`p${index}@${scale}`, await renderer.page(index, scale));
       }
     }
 
     // The detail-region path: the middle third of page 1, at the zoom where
     // the viewer would switch to it.
-    const first = pdfDoc.pages[0];
-    const { width, height } = first.size;
-    const rect = {
-      origin: { x: width / 3, y: height / 3 },
-      size: { width: width / 3, height: height / 3 },
-    };
-    const raster = await native
-      .renderPageRect(pdfDoc, first, rect, {
-        scaleFactor: RECT_SCALE,
-        withAnnotations: false,
-      })
-      .toPromise();
-    const name = `p0-rect@${RECT_SCALE}`;
-    out[name] = digest(raster);
-    dump(fixture, name, raster);
-
+    const { width, height } = renderer.pageSize(0);
+    record(
+      `p0-rect@${RECT_SCALE}`,
+      await renderer.rect(0, RECT_SCALE, {
+        x: width / 3,
+        y: height / 3,
+        width: width / 3,
+        height: height / 3,
+      }),
+    );
     return out;
   } finally {
-    await engine.closeDocument(pdfDoc).toPromise();
+    await renderer.close();
   }
 }
 
@@ -154,7 +199,34 @@ for (const fixture of fixturePdfs()) {
   if (UNOPENABLE.has(fixture.slug)) continue;
   describe(`${fixture.group}/${fixture.slug}`, () => {
     test("renders", async () => {
-      expect(await recordRenders(fixture)).toMatchSnapshot();
+      expect(
+        await recordRenders(fixture, engineRenderer, (name, raster) =>
+          dump(fixture, name, raster),
+        ),
+      ).toMatchSnapshot();
+    });
+    test("Hover's renderer paints the same bytes", async () => {
+      expect(await recordRenders(fixture, hoverRenderer)).toEqual(
+        await recordRenders(fixture, engineRenderer),
+      );
     });
   });
 }
+
+describe("PdfiumDocument page cache", () => {
+  test("renders the same after its page was evicted and reloaded", async () => {
+    const fixture = fixturePdfs().find((f) => f.slug === "arxiv-cvpr-convnext")!;
+    const { bindings } = await loadPdfium();
+    const document = PdfiumDocument.open(bindings, fixture.bytes);
+    try {
+      const first = digest(renderPage(document, 0, 1));
+      // More pages than the cache holds, so page 0 is closed in between.
+      for (let index = 1; index < document.pageCount; index++) {
+        renderPage(document, index, 0.25);
+      }
+      expect(digest(renderPage(document, 0, 1))).toEqual(first);
+    } finally {
+      document.close();
+    }
+  });
+});

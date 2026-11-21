@@ -5,7 +5,8 @@ same PDF in macOS Preview or Chrome's built-in viewer. This document records
 what causes it, what does _not_ cause it, and the fix we intend to propose
 upstream to EmbedPDF.
 
-Investigated against `@embedpdf/engines` / `@embedpdf/pdfium` `2.15.0` and the
+Investigated against `@embedpdf/engines` / `@embedpdf/pdfium` `2.15.0` (Hover
+now uses only the latter, through its own bindings) and the
 EmbedPDF PDFium fork (`embedpdf/runtime`) at `72c5eb114`. PDFium source
 references are to that fork; they name the function so they survive drift.
 
@@ -30,15 +31,18 @@ references are to that fork; they name the function so they survive drift.
 ## 2. What Hover does today
 
 `PageView.render()` (`src/viewer/page.ts`) calls
-`native.renderPageRaw(pdfDoc, page, { scaleFactor, withAnnotations: false })`.
-
-In `@embedpdf/engines`, `renderRectEncoded` makes these choices:
+`renderPage(document, index, scale)` from `src/pdf/renderer.ts`. That is
+Hover's own port of `@embedpdf/engines`' `renderRectEncoded`, which the viewer
+used until Hover took over its PDFium layer, and it makes the same choices,
+byte for byte:
 
 - It allocates a **BGRA** bitmap (`FPDFBitmap_CreateEx(..., 4, ...)`) filled
   with opaque white.
-- It hard-codes `flags = 16` (`FPDF_REVERSE_BYTE_ORDER`), adding `FPDF_ANNOT`
-  only when annotations are requested.
-- Callers cannot pass other render flags.
+- It renders with `FPDF_RenderPageBitmapWithMatrix` and `flags = 16`
+  (`FPDF_REVERSE_BYTE_ORDER`), never `FPDF_ANNOT`.
+- The flags are Hover's own now (`RENDER_FLAGS` in `renderer.ts`), so a render
+  option of the kind §5 proposes no longer needs an engine release to reach
+  Hover; it needs only the wasm build to have it.
 
 The wasm itself (`@embedpdf/pdfium/dist/pdfium.wasm`) is built with these GN
 settings:
@@ -252,8 +256,10 @@ complement in the same spot.
 1. An opt-in render option that applies size-dependent outline emboldening
    (and/or a coverage gamma) to FreeType-rendered glyphs in
    `CFX_Face::RenderGlyph`.
-2. A way to pass it through `renderPageRaw` / `renderRectEncoded` in
-   `@embedpdf/engines`. Render flags are hard-coded there today.
+2. For other EmbedPDF users, a way to pass it through `renderPageRaw` /
+   `renderRectEncoded` in `@embedpdf/engines`, where render flags are
+   hard-coded. Hover doesn't need this any more: it calls PDFium's render
+   functions itself (§2).
 
 If upstream declines, we could carry the patch on our own build of the fork.
 That means owning a depot_tools/emsdk build and rebuilding the wasm and its

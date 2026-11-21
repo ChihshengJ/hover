@@ -1,32 +1,24 @@
 /**
- * Phase 0 baseline: Hover's annotations through a save and a reload, recorded
- * from the real `PDFDocumentModel` and `AnnotationStore` over
- * `@embedpdf/engines`.
+ * Hover's annotations through a save and a reload, through the real
+ * `PDFDocumentModel` and `AnnotationStore`.
  *
  * Two kinds of snapshot:
  *
  * - the app model after reloading the saved file (`RatioRect`s, colour names,
- *   comments, strokes). Phases 4 and 5 must keep these exactly;
+ *   comments, strokes). First recorded over `@embedpdf/engines`; Hover's own
+ *   reader and writer reproduce it exactly;
  * - what the save wrote into each annotation dict, read from the raw bytes.
- *   Phase 5 changes these on purpose (`/CA`, `/T`, `/Contents`) and nothing
- *   else.
+ *   These changed once, on purpose, when Hover started writing annotations
+ *   itself (docs/plan_own_pdf_engine.md phase 5).
  */
 
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 
 import { PDFDocumentModel } from "../../src/model/doc.js";
-import { primePdfiumWasm } from "../../src/pdf/pdfium_init.js";
+import { primePdfiumWasm } from "../../src/pdf/pdfium_module.js";
 import type { Annotation, AnnotationInput } from "../../src/model/annotation_data.js";
-import { PdfiumDocument } from "../../src/pdf/document.js";
-import { readPageAnnotations } from "../../src/pdf/annotation_reader.js";
-import {
-  fixturePdfs,
-  loadPdfium,
-  pdfiumWasmBytes,
-  round,
-} from "../support/pdfium.js";
+import { fixturePdfs, pdfiumWasmBytes, round } from "../support/pdfium.js";
 import { annotationDicts } from "../support/pdf_scan.js";
-import { engineMarkup, expectSameMarkup } from "../support/engine_annotations.js";
 
 /** The subtypes Hover writes: highlight, underline, ink, and the comment note. */
 const HOVER_SUBTYPES = ["/Highlight", "/Underline", "/Ink", "/Text"];
@@ -72,34 +64,6 @@ function snapshotSavedFile(bytes: Uint8Array): string {
   return annotationDicts(bytes, HOVER_SUBTYPES)
     .map((summary) => JSON.stringify(summary))
     .join("\n");
-}
-
-/**
- * Read `bytes` with Hover's annotation reader and with the engine, and expect
- * every markup annotation to come out the same. Returns how many it compared.
- */
-async function expectReaderMatchesEngine(bytes: Uint8Array): Promise<number> {
-  const { bindings, engine } = await loadPdfium();
-  const pdfDoc = await engine
-    .openDocumentBuffer({ id: `reader-${open.length}`, content: bytes.slice().buffer })
-    .toPromise();
-  const document = PdfiumDocument.open(bindings, bytes);
-  let compared = 0;
-  try {
-    for (const page of pdfDoc.pages) {
-      const theirs = engineMarkup(
-        await engine.getPageAnnotations(pdfDoc, page).toPromise(),
-      );
-      const ours = readPageAnnotations(document, page.index).markup;
-      expect(ours.length).toBe(theirs.length);
-      theirs.forEach((annot, i) => expectSameMarkup(annot, ours[i]));
-      compared += ours.length;
-    }
-  } finally {
-    document.close();
-    await engine.closeDocument(pdfDoc).toPromise();
-  }
-  return compared;
 }
 
 const HIGHLIGHT: AnnotationInput = {
@@ -239,11 +203,6 @@ describe("papers/arxiv-cvpr-convnext round trip", () => {
 describe("papers/hover-0.10-annotated", () => {
   const legacy = () => fixtureBytes("hover-0-10-annotated");
 
-  test("Hover's reader reads the engine's markup like the engine", async () => {
-    // Highlight, its note, underline, ink, and the two halves of the last one.
-    expect(await expectReaderMatchesEngine(legacy())).toBe(6);
-  });
-
   test("loads as it was saved: comment, rotation, the two-page highlight", async () => {
     expect(snapshotModel(await load(legacy()))).toMatchSnapshot();
   });
@@ -307,7 +266,4 @@ describe("papers/annotated", () => {
     expect(snapshotSavedFile(fixtureBytes("annotated"))).toMatchSnapshot();
   });
 
-  test("Hover's reader reads Preview's markup like the engine", async () => {
-    expect(await expectReaderMatchesEngine(fixtureBytes("annotated"))).toBe(6);
-  });
 });

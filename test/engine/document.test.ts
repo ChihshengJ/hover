@@ -1,24 +1,19 @@
 /**
- * Phase 0 baseline: what the document model reads out of each fixture PDF,
- * recorded from `@embedpdf/engines` exactly as `PDFDocumentModel.load()` asks
- * for it (`docs/plan_own_pdf_engine.md`).
+ * What Hover reads out of each fixture PDF: page geometry, metadata, the
+ * outline, named destinations, links and markup.
  *
- * Every later phase moves one of these reads onto Hover's own PDFium layer
- * and must leave this snapshot as it is. A diff here is a behaviour change, not
- * a snapshot to update.
- *
- * While the engine is still here, each fixture also checks that Hover's
- * `PdfiumDocument` reads the same thing the engine does.
+ * First recorded from `@embedpdf/engines` (docs/plan_own_pdf_engine.md phase
+ * 0); every read was then moved onto Hover's own layer against that record,
+ * and the record now comes from Hover's layer. A diff here is a behaviour
+ * change, not a snapshot to update.
  */
 
 import { describe, expect, test } from "bun:test";
 
 import { PdfiumDocument, PdfOpenError } from "../../src/pdf/document.js";
 import { readPageAnnotations } from "../../src/pdf/annotation_reader.js";
-import { engineLinks, readerLinks } from "../support/engine_annotations.js";
-import type { PdfiumBindings } from "../../src/pdf/pdfium_module.js";
-import { normalizeAnnotationRects } from "../support/engine_annotations.js";
 import { collectNamedDestinations } from "../../src/analysis/outline_builder.js";
+import type { PdfiumBindings } from "../../src/pdf/pdfium_module.js";
 import {
   fixturePdfs,
   loadPdfium,
@@ -32,19 +27,6 @@ const OPEN_ERRORS: Record<string, number> = {
   truncated: 3, // FPDF_ERR_FORMAT
   "not-a-pdf": 3, // FPDF_ERR_FORMAT
 };
-
-/** Drop every `id` key: the engine mints UUIDs per run. */
-function stripIds(value: unknown): unknown {
-  if (Array.isArray(value)) return value.map(stripIds);
-  if (value && typeof value === "object" && !(value instanceof Date)) {
-    const out: Record<string, unknown> = {};
-    for (const [k, v] of Object.entries(value)) {
-      if (k !== "id") out[k] = stripIds(v);
-    }
-    return out;
-  }
-  return value;
-}
 
 /**
  * One compact JSON line per page, bookmark, destination and annotation.
@@ -75,119 +57,44 @@ function toLines(record: Record<string, unknown>): string {
 }
 
 async function recordDocument(fixture: FixturePdf, password?: string) {
-  const { bindings, native, engine } = await loadPdfium();
-  const pdfDoc = await engine
-    .openDocumentBuffer(
-      { id: `doc-${fixture.slug}`, content: fixture.bytes.slice().buffer },
-      password ? { password } : undefined,
-    )
-    .toPromise();
+  const { bindings } = await loadPdfium();
   const document = PdfiumDocument.open(bindings, fixture.bytes, password);
-
   try {
-    const metadata = await native.getMetadata(pdfDoc).toPromise();
-    const { bookmarks = [] } = await native.getBookmarks(pdfDoc).toPromise();
-    const namedDests = collectNamedDestinations(bookmarks);
-
-    const annotations: Record<string, unknown[]> = {};
-    for (const page of pdfDoc.pages) {
-      const annots = await engine.getPageAnnotations(pdfDoc, page).toPromise();
-      normalizeAnnotationRects(document, page.index, annots);
-      if (annots.length > 0) annotations[`p${page.index}`] = annots;
+    const bookmarks = document.bookmarks();
+    const links: Record<string, unknown[]> = {};
+    const markup: Record<string, unknown[]> = {};
+    for (const page of document.pages) {
+      // Keyed `p<index>` so each line says which page it is on.
+      const read = readPageAnnotations(document, page.index);
+      if (read.links.length > 0) links[`p${page.index}`] = read.links;
+      if (read.markup.length > 0) markup[`p${page.index}`] = read.markup;
     }
 
     // Through JSON first, so dates become ISO strings before rounding.
     const record = JSON.parse(
       JSON.stringify({
-        pageCount: pdfDoc.pages.length,
-        pages: pdfDoc.pages.map((p) => ({ size: p.size, rotation: p.rotation })),
-        metadata,
+        pageCount: document.pageCount,
+        pages: document.pages.map((p) => ({
+          size: p.size,
+          rotation: document.pageRotation(p.index),
+        })),
+        metadata: document.metadata(),
         bookmarks,
-        namedDests: [...namedDests],
-        // Keyed `p<index>` so each annotation line says which page it is on.
-        annotations,
+        namedDests: [...collectNamedDestinations(bookmarks)],
+        links,
+        markup,
       }),
     );
-    return toLines(round(stripIds(record)) as Record<string, unknown>);
+    return toLines(round(record) as Record<string, unknown>);
   } finally {
     document.close();
-    await engine.closeDocument(pdfDoc).toPromise();
-  }
-}
-
-/**
- * The engine's metadata as `PdfMetadata` would hold it: absent and empty
- * entries both null, and only the custom keys Hover reads.
- */
-function expectedMetadata(engine: Record<string, any>) {
-  const custom: Record<string, string> = {};
-  for (const key of ["DOI", "License", "arXivID", "PTEX.Fullbanner"]) {
-    if (engine.custom?.[key]) custom[key] = engine.custom[key];
-  }
-  const text = (key: string) => engine[key] || null;
-  return {
-    title: text("title"),
-    author: text("author"),
-    subject: text("subject"),
-    keywords: text("keywords"),
-    producer: text("producer"),
-    creator: text("creator"),
-    creationDate: engine.creationDate?.toISOString() ?? null,
-    modificationDate: engine.modificationDate?.toISOString() ?? null,
-    custom,
-  };
-}
-
-/** Hover's document reads, next to the engine's for the same file. */
-async function compareWithEngine(fixture: FixturePdf, password?: string) {
-  const { bindings, native, engine } = await loadPdfium();
-  const pdfDoc = await engine
-    .openDocumentBuffer(
-      { id: `cmp-${fixture.slug}`, content: fixture.bytes.slice().buffer },
-      password ? { password } : undefined,
-    )
-    .toPromise();
-  const document = PdfiumDocument.open(bindings, fixture.bytes, password);
-  try {
-    expect(document.pageCount).toBe(pdfDoc.pages.length);
-    expect(
-      document.pages.map((p) => ({
-        size: p.size,
-        rotation: document.pageRotation(p.index),
-      })),
-    ).toEqual(pdfDoc.pages.map((p) => ({ size: p.size, rotation: p.rotation })));
-
-    const metadata = document.metadata();
-    expect({
-      ...metadata,
-      creationDate: metadata.creationDate?.toISOString() ?? null,
-      modificationDate: metadata.modificationDate?.toISOString() ?? null,
-    }).toEqual(expectedMetadata(await native.getMetadata(pdfDoc).toPromise()));
-
-    // As strings: the analysis fixtures serialise bookmarks, so key order
-    // matters as much as values.
-    const { bookmarks = [] } = await native.getBookmarks(pdfDoc).toPromise();
-    expect(JSON.stringify(document.bookmarks())).toBe(JSON.stringify(bookmarks));
-
-    expect(document.fileBytes()).toEqual(fixture.bytes);
-
-    for (const page of pdfDoc.pages) {
-      const annots = await engine.getPageAnnotations(pdfDoc, page).toPromise();
-      normalizeAnnotationRects(document, page.index, annots);
-      expect(readerLinks(readPageAnnotations(document, page.index).links)).toEqual(
-        engineLinks(annots),
-      );
-    }
-  } finally {
-    document.close();
-    await engine.closeDocument(pdfDoc).toPromise();
   }
 }
 
 /**
  * Fixtures whose Info dictionary PDFium drops on save. It rebuilt their
  * cross-reference table by scanning, and the rebuilt trailer has no `/Info`.
- * The engine's save drops it too (same output, byte for byte in length).
+ * `@embedpdf/engines`' save dropped it too.
  */
 const SAVE_LOSES_INFO = new Set(["bad-startxref"]);
 
@@ -242,29 +149,14 @@ function trackAllocations(bindings: PdfiumBindings) {
   return { bindings: tracked, live };
 }
 
-async function openError(fixture: FixturePdf): Promise<number | null> {
-  const { engine } = await loadPdfium();
-  try {
-    const doc = await engine
-      .openDocumentBuffer({
-        id: `err-${fixture.slug}`,
-        content: fixture.bytes.slice().buffer,
-      })
-      .toPromise();
-    await engine.closeDocument(doc).toPromise();
-    return null;
-  } catch (error) {
-    return (error as { reason?: { code?: number } }).reason?.code ?? -1;
-  }
+function encrypted(): FixturePdf {
+  return fixturePdfs().find((f) => f.slug === "encrypted-user-password")!;
 }
 
 for (const fixture of fixturePdfs()) {
   describe(`${fixture.group}/${fixture.slug}`, () => {
     if (fixture.slug in OPEN_ERRORS) {
-      test("refuses to open", async () => {
-        expect(await openError(fixture)).toBe(OPEN_ERRORS[fixture.slug]);
-      });
-      test("PdfiumDocument refuses it the same way, and frees the file", async () => {
+      test("refuses to open, and frees the file", async () => {
         const { bindings, live } = trackAllocations((await loadPdfium()).bindings);
         let error: unknown = null;
         try {
@@ -281,10 +173,7 @@ for (const fixture of fixturePdfs()) {
     test("document", async () => {
       expect(await recordDocument(fixture)).toMatchSnapshot();
     });
-    test("PdfiumDocument reads what the engine reads", async () => {
-      await compareWithEngine(fixture);
-    });
-    test("PdfiumDocument saves an untouched copy that reads the same", async () => {
+    test("saves an untouched copy that reads the same", async () => {
       await expectUntouchedSaveReadsTheSame(fixture);
     });
   });
@@ -292,35 +181,20 @@ for (const fixture of fixturePdfs()) {
 
 describe("generated/encrypted-user-password", () => {
   test("opens with the user password", async () => {
-    const fixture = fixturePdfs().find(
-      (f) => f.slug === "encrypted-user-password",
-    )!;
-    expect(await recordDocument(fixture, "hover-user")).toMatchSnapshot();
+    expect(await recordDocument(encrypted(), "hover-user")).toMatchSnapshot();
   });
 
-  test("PdfiumDocument reads what the engine reads", async () => {
-    const fixture = fixturePdfs().find(
-      (f) => f.slug === "encrypted-user-password",
-    )!;
-    await compareWithEngine(fixture, "hover-user");
+  test("saves an untouched copy that reads the same", async () => {
+    await expectUntouchedSaveReadsTheSame(encrypted(), "hover-user");
   });
 
-  test("PdfiumDocument saves an untouched copy that reads the same", async () => {
-    const fixture = fixturePdfs().find(
-      (f) => f.slug === "encrypted-user-password",
-    )!;
-    await expectUntouchedSaveReadsTheSame(fixture, "hover-user");
-  });
-
-  test("PdfiumDocument gives back every allocation on close", async () => {
-    const fixture = fixturePdfs().find(
-      (f) => f.slug === "encrypted-user-password",
-    )!;
+  test("gives back every allocation on close", async () => {
     const { bindings, live } = trackAllocations((await loadPdfium()).bindings);
-    const document = PdfiumDocument.open(bindings, fixture.bytes, "hover-user");
+    const document = PdfiumDocument.open(bindings, encrypted().bytes, "hover-user");
     document.metadata();
     document.bookmarks();
     document.extractPageText(0);
+    readPageAnnotations(document, 0);
     document.close();
     expect(live.size).toBe(0);
   });

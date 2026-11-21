@@ -473,7 +473,7 @@ export class FileMenu {
    */
   async #print() {
     const docModel = this.wm.document;
-    if (!docModel?.pdfDoc) return;
+    if (!docModel?.document) return;
 
     if (docModel.hasAnnotations()) {
       openPrintModal(docModel, (msg: string) => this.#showToast(msg));
@@ -493,7 +493,7 @@ export class FileMenu {
     if (this.isFetchingCitation) return;
 
     const docModel = this.wm.document;
-    if (!docModel?.pdfDoc) {
+    if (!docModel?.document) {
       this.#showToast("No document loaded");
       return;
     }

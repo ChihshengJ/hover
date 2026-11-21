@@ -16,8 +16,8 @@ Everything below is derived from the code as of `0.10.4`. File references are
 | **Drain**            | Read-and-delete the pending record. Destructive by design (`consumePendingPdf`).                             |
 | **Pending store**    | IndexedDB `hover-pending-pdf` / store `data` / key `"pending"`. One record, overwritten each time.           |
 | **Viewer**           | `index.html` + `src/main.ts`, running on the extension origin.                                               |
-| **Engine doc**       | The `PdfDocumentObject` owned by `@embedpdf/engines`' `PdfEngine`.                                           |
-| **Low-level handle** | A _second_, independent `FPDF_LoadMemDocument` handle (`PdfiumDocumentHandle`) used for raw text extraction. |
+| **Document**         | The one open PDF: `PdfiumDocument` (`src/pdf/document.ts`), over Hover's own PDFium bindings.                |
+| **Bindings**         | `PdfiumBindings` (`src/pdf/pdfium_module.ts`): every PDFium function Hover calls, on one shared wasm module. |
 
 The single contract every entry point converges on is the `PendingRecord`:
 
@@ -45,14 +45,14 @@ and the trail graph. Here is every place bytes or state live:
 | Store             | Backend                                        | Key(s)                                                      | Lifetime                             | Holds                                       |
 | ----------------- | ---------------------------------------------- | ----------------------------------------------------------- | ------------------------------------ | ------------------------------------------- |
 | Pending PDF       | IndexedDB `hover-pending-pdf`                  | `"pending"`                                                 | Until the next viewer load drains it | `PendingRecord` (ArrayBuffer)               |
-| Engine doc        | PDFium WASM heap                               | —                                                           | Tab lifetime                         | Parsed document + annotation edits          |
+| Document          | PDFium WASM heap                               | —                                                           | Tab lifetime                         | Parsed document + annotation edits          |
 | Low-level handle  | PDFium WASM heap (`filePtr`, `docPtr`)         | —                                                           | Tab lifetime                         | A second copy of the same bytes             |
-| Rendered pixels   | `<canvas>` 2D contexts                         | per `PageView`                                              | Until re-render/scroll               | `ImageData` from `renderPageRaw`            |
+| Rendered pixels   | `<canvas>` 2D contexts                         | per `PageView`                                              | Until re-render/scroll               | `ImageData` from `renderPage`               |
 | Extension prefs   | `chrome.storage.local`                         | `hoverEnabled`, onboarding key, `hover-pending-connections` | Permanent                            | Toggles, trail hand-offs                    |
 | Config            | `chrome.storage.local` + `localStorage` mirror | per-setting                                                 | Permanent                            | Theme, wallpaper, night-mode                |
 | Onboarding detour | `sessionStorage`                               | `INTENDED_URL_KEY`                                          | Tab session                          | The URL you actually wanted on first launch |
 | Trails            | IndexedDB `hover-trails`                       | per trail                                                   | Permanent (capped at 8)              | Reading-graph nodes                         |
-| Saved output      | User's filesystem                              | —                                                           | Permanent                            | `saveAsCopy()` bytes via `<a download>`     |
+| Saved output      | User's filesystem                              | —                                                           | Permanent                            | `document.save()` bytes via `<a download>`  |
 
 > **The PDF file itself is never persisted by Hover.** The pending record is
 > consumed on first read, and the in-memory document dies with the tab.
@@ -237,46 +237,42 @@ empty, which is an error.
 
 ## 4. From bytes to an open document
 
-`PDFDocumentModel.load(arrayBuffer)` (`src/model/doc.ts`). Note that the bytes
-end up loaded into PDFium **twice**, on purpose:
+`PDFDocumentModel.load(arrayBuffer)` (`src/model/doc.ts`) opens the bytes in
+PDFium **once**, as a `PdfiumDocument`, and every later read and write goes
+through it:
 
 ```mermaid
 flowchart LR
     AB["ArrayBuffer<br/>(PendingRecord.data)"] --> U8["this.pdfData = new Uint8Array(ab)"]
+    U8 --> OPEN["PdfiumDocument.open()<br/>allocBytes → FPDF_LoadMemDocument<br/>page sizes via FPDF_GetPageSizeByIndexF"]
+    OPEN --> DOC["this.document<br/>{ docPtr, filePtr, pages, extractor }"]
+    U8 -.->|"this.pdfData = null"| GC["JS-side buffer released —<br/>one copy remains in the WASM heap"]
 
-    U8 --> E1["engine.openDocumentBuffer()<br/>id: doc-&lt;Date.now()&gt;"]
-    E1 --> ENG["PdfDocumentObject<br/>(pages, sizes, annotations)<br/>— the writable document"]
-
-    U8 --> L1["PdfiumDocumentFactory.loadFromBuffer()<br/>allocBytes → FPDF_LoadMemDocument"]
-    L1 --> LLH["PdfiumDocumentHandle<br/>{ docPtr, filePtr, extractor }<br/>— raw text/geometry, read-only"]
-
-    U8 -.->|"this.pdfData = null<br/>after low-level setup"| GC["JS-side buffer released —<br/>two copies remain in WASM heap"]
-
-    ENG --> DIMS["pageDimensions[]"]
-    ENG --> BM["bookmarks[] → allNamedDests"]
-    ENG --> ANN["AnnotationStore.loadFromDocument()"]
-    ANN --> URLS["analysis.urlsByPage = indexUrls(...)"]
+    DOC --> DIMS["pageDimensions[]"]
+    DOC --> BM["bookmarks() → allNamedDests"]
+    DOC --> ANN["AnnotationStore.loadFromDocument()<br/>readPageAnnotations(): links + markup"]
+    ANN --> URLS["analysis.urlsByPage = indexUrls(links)"]
 ```
 
-The WASM module itself (`pdfium.wasm`) is fetched once per page and memoised in
-module scope by `initPdfiumEngine()` — from `chrome.runtime.getURL("pdfium.wasm")`
-in a packaged extension, falling back to the CDN URL in dev (and hard-failing
-under `__LOCAL_WASM_ONLY__` for store builds).
+A file PDFium refuses fails here with a `PdfOpenError` carrying
+`FPDF_GetLastError()`'s code (`password`, `format`, …), and the heap copy is
+freed. `filePtr` is otherwise owned by the document — PDFium keeps reading the
+buffer for the document's life — and is freed in `PdfiumDocument.close()`.
 
-**Why two handles?** The `PdfEngine` is the mutable, annotation-aware view; the
-low-level handle drives `PdfiumTextExtractor` for character-level text and
-geometry that the high-level API doesn't expose. `filePtr` is owned by the
-handle — PDFium keeps referencing the buffer for the document's life — and is
-freed only in `PdfiumDocumentHandle.close()`.
+The WASM module itself (`pdfium.wasm`) is fetched once per page and memoised by
+`initPdfium()` (`src/pdf/pdfium_module.ts`) — from
+`chrome.runtime.getURL("pdfium.wasm")` in a packaged extension, falling back to
+the CDN URL in dev (and hard-failing under `__LOCAL_WASM_ONLY__` for store
+builds). `@embedpdf/pdfium` supplies only that Emscripten build; Hover calls
+its raw `FPDF_*` exports through `PdfiumBindings`.
 
 ### Load progress budget
 
 `load()` reports a fixed percentage budget through `onProgress`, mapped to user-
 facing strings by `STATUS_MESSAGES` in `main.ts`:
 
-`5 initializing engine` → `5–20 WASM init` → `20–25 parsing` → `35 text
-extraction setup` → `40 page dimensions` → `45 bookmarks` → `80 annotations` →
-`95 complete`.
+`5 initializing engine` → `5–20 WASM init` → `20 parsing` → `40 page
+dimensions` → `45 bookmarks` → `80 annotations` → `95 complete`.
 
 ### Indexing, after first paint
 
@@ -300,7 +296,10 @@ already-rendered document.
 
 `PageView.render()` (`src/viewer/page.ts`) is the per-page read path:
 
-1. `native.renderPageRaw(pdfDoc, page, { scaleFactor, withAnnotations: false })`
+1. `renderPage(document, index, scale)` (`src/pdf/renderer.ts`): a white BGRA
+   bitmap, `FPDF_RenderPageBitmapWithMatrix` with `FPDF_REVERSE_BYTE_ORDER`
+   so it comes out RGBA, no `FPDF_ANNOT`. The document keeps its 10 most
+   recently loaded pages, so a re-render on zoom doesn't re-parse the page.
 2. On macOS, darken the text in the raster (`applyTextGamma`, see
    `docs/text_rendering.md` §6).
 3. Wrap the result in `new ImageData(...)` and `ctx.putImageData()` onto the
@@ -347,7 +346,7 @@ square of the zoom: a Letter page at devicePixelRatio 2 is 5.6 M px at scale
   the limit with its aspect kept. The canvas's CSS box is the full size, so a
   capped store is stretched to fill it, a little soft.
 - **Detail.** `PageView.renderDetail(region)` renders just `region` — whole
-  device px of the full-resolution raster — with `renderPageRect`, into a
+  device px of the full-resolution raster — with `renderRect`, into a
   second canvas (`canvas.page-detail`) placed over the base at the region's
   spot. It lives inside `.page-rotate-inner`, so the region is cut in
   unrotated page space (`unrotate`) and the rotation transform places it.
@@ -370,24 +369,28 @@ square of the zoom: a Letter page at devicePixelRatio 2 is 5.6 M px at scale
 - `layoutPages` drops every region, as it was cut for the old layout; so does
   a page leaving the observer's range, or being released.
 
-Note `withAnnotations: false` — **Hover's own annotations are never baked into
-the rendered raster.** They are drawn as separate SVG/canvas layers
+Note there is no `FPDF_ANNOT` — **annotations are never baked into the rendered
+raster.** Hover's own are drawn as separate SVG/canvas layers
 (`annotation_svg_layer.ts`, `drawing_canvas_layer.ts`), which is what makes them
-interactive and re-styleable without a re-render.
+interactive and re-styleable without a re-render. Nothing renders the saved
+document with `FPDF_ANNOT` either: building a page's annotation list makes
+PDFium stamp its private `/PDFIUM_HasGeneratedAP` on every annotation there.
 
 ---
 
 ## 6. Modify: annotations
 
 `AnnotationStore` (`src/model/annotation_data.ts`) maintains a deliberate
-two-vocabulary split:
+two-vocabulary split, translating through `pdf/annotation_reader.ts` and
+`pdf/annotation_writer.ts`:
 
-|          | App model                                            | Engine model                             |
-| -------- | ---------------------------------------------------- | ---------------------------------------- |
-| Geometry | `RatioRect` — fractions of the page, origin top-left | PDF units, origin bottom-left            |
-| Colour   | Names (`yellow`, `red`, …)                           | Hex, nearest-match on the way back       |
-| Identity | `crypto.randomUUID()`                                | PDFium-assigned id                       |
-| Comments | A `comment` field on the annotation                  | A **separate `TEXT` annotation**, linked |
+|          | App model                                            | PDF                                                                 |
+| -------- | ---------------------------------------------------- | ------------------------------------------------------------------- |
+| Geometry | `RatioRect` — fractions of the page, origin top-left | Page points: `/QuadPoints`, `/InkList`, `/Rect` (`page_frame.ts`)   |
+| Colour   | Names (`yellow`, `red`, …)                           | `/C` and Hover's appearance stream; nearest name on the way back    |
+| Identity | `crypto.randomUUID()`                                | The same id as `/NM`, on each page's part of the annotation         |
+| Comments | A `comment` field on the annotation                  | The first page's part's `/Contents`                                 |
+| Rotation | `rotation`, applied when drawing                     | None: a turned drawing is saved as turned points, and loads at 0    |
 
 Ratios rather than points is what lets the same annotation render correctly at
 any zoom without recomputation.
@@ -397,39 +400,51 @@ any zoom without recomputation.
     participant UI as AnnotationManager / toolbars
     participant AS as AnnotationStore
     participant IDX as annotationsByPage
-    participant ENG as PdfEngine (WASM)
+    participant W as annotation_writer (WASM)
     participant SUB as Subscribers (panes, layers)
 
     UI->>AS: addAnnotation({type, color, pageRanges, strokes, comment})
     AS->>AS: id = randomUUID(), createdAt/updatedAt = now
     AS->>AS: annotations.set(id, annotation)
     AS->>IDX: addToPageIndex per pageRange
-    AS->>ENG: createInEngine → createPageAnnotation()
-    ENG-->>AS: pdfId → annotationIdToPdfId
-    opt comment present
-        AS->>ENG: createPageAnnotation(TEXT) → linkedComments
-    end
+    AS->>W: createAnnotation per page, /NM = id
     AS->>SUB: notify(ANNOTATION_ADDED)
 
     UI->>AS: updateAnnotation(id, updates)
     AS->>AS: mutate in place, updatedAt = now
-    alt pageRanges moved to different pages
+    alt type changed, or moved to different pages
         AS->>IDX: remove from old pages, add to new
-        Note over AS,ENG: engine keys off page — delete + recreate,<br/>cannot update in place
+        AS->>W: removeAnnotation on old pages, createAnnotation on new
+    else
+        AS->>W: updateAnnotation in place (found by /NM)
     end
-    AS->>ENG: updateInEngine(...)
     AS->>SUB: notify(ANNOTATION_UPDATED)
 
     UI->>AS: deleteAnnotation(id)
-    AS->>ENG: removePageAnnotation() (+ linked comment)
+    AS->>W: removeAnnotation per page
     AS->>IDX: removeFromPageIndex
     AS->>AS: annotations.delete(id)
     AS->>SUB: notify(ANNOTATION_DELETED)
 ```
 
+What the writer puts in the file, and what it leaves alone:
+
+- Each part gets `/Rect`, `/QuadPoints` or `/InkList`, `/C` and `/CA` (via
+  `FPDFAnnot_SetColor`; 0.5 for highlights), `/F` Print, `/NM`, `/M`, and
+  `/Contents` only when there is a comment. Never `/T`, and never an empty
+  `/Contents`: PDFKit readers (Preview, Skim) show that as a blank note.
+- The appearance stream is Hover's own (`FPDFAnnot_SetAP`), so highlights are
+  drawn at 50% with a Normal blend. PDFium can generate one, but only for a
+  whole page at a time, stamping its private key on every annotation there.
+- Only the annotation being written is touched. Updates happen in place, so
+  keys Hover doesn't write survive; PDFium can't drop a quad or a key, so
+  fewer segments or a cleared comment recreate the annotation instead. An
+  annotation that came without `/NM` is found by its subtype and rect, and
+  gets Hover's id the first time it is edited.
+
 Two consequences worth being explicit about:
 
-- **Edits mutate the in-WASM engine document immediately.** There is no separate
+- **Edits mutate the in-WASM document immediately.** There is no separate
   annotation database — the PDFium document _is_ the store of record while the
   tab is alive.
 - **Nothing is persisted until the user saves.** Close the tab and every
@@ -437,11 +452,13 @@ Two consequences worth being explicit about:
   not wired to any durable sink.
 
 Annotations already present in the incoming PDF are read back at load by
-`loadFromDocument()`, which walks every page, calls `normalizeAnnotationRects`,
-keeps the raw objects in `nativeAnnotationsByPage` (used for URL indexing and
-rendering), and translates recognised markup types into the app model — then
-`#linkTextAnnotationsToMarkup` re-pairs orphan TEXT annotations with the markup
-they comment on.
+`loadFromDocument()`: `readPageAnnotations()` gives each page's links (kept in
+`nativeAnnotationsByPage` for URL indexing and the analysis pipeline) and its
+markup, which is translated into the app model. Parts with the same `/NM` on
+different pages become one annotation again. Sticky notes are paired with the
+markup they comment on — through `/EPDFCustom` for files saved by Hover 0.10,
+otherwise the nearest uncommented markup — and such a note is removed when
+its comment is edited, since the comment then lives in `/Contents`.
 
 ---
 
@@ -449,11 +466,12 @@ they comment on.
 
 All three are in `file_menu.ts`:
 
-- **Save** — `docModel.saveWithAnnotations()` → `engine.saveAsCopy(pdfDoc)` →
+- **Save** — `docModel.saveWithAnnotations()` → `document.save()`
+  (`FPDF_SaveAsCopy`, a whole new file rather than an incremental update) →
   `new Blob([...], {type:"application/pdf"})` → object URL → synthetic
   `<a download>` click → `revokeObjectURL` after 1s. Filename is
   `document.title` minus a `" - Hover PDF"` suffix, plus `.pdf`.
-- **Print** — same `saveAsCopy` bytes, but mounted into a hidden 0×0 iframe,
+- **Print** — same saved bytes, but mounted into a hidden 0×0 iframe,
   `contentWindow.print()`, then torn down. Falls back to `window.print()` on
   error, which prints the _viewer chrome_ rather than the annotated document.
 - **View original** — sends `BYPASS_NEXT` (background holds the URL in
@@ -474,7 +492,7 @@ stateDiagram-v2
     Loaded --> Indexed: buildIndex()
     Indexed --> Dirty: annotation CRUD<br/>(mutates WASM doc)
     Dirty --> Indexed: (no distinction tracked)
-    Indexed --> Exported: saveAsCopy() → Blob → download
+    Indexed --> Exported: document.save() → Blob → download
     Exported --> Indexed: document stays open
 
     Indexed --> Gone: tab close / navigation / reload
@@ -498,13 +516,13 @@ Three distinct "destroy" events, only one of which is code Hover runs:
 2. **Stale trail connections are purged** on `onInstalled`/`onStartup`, older
    than 10 minutes.
 3. **The document is explicitly closed only on the failure path.**
-   `PDFDocumentModel.close()` — `FPDF_CloseDocument`, free `filePtr`, close the
-   engine document, clear the analysis and text index — is called from
+   `PDFDocumentModel.close()` — close the cached pages, `FPDF_CloseDocument`,
+   free `filePtr`, clear the analysis and text index — is called from
    `loadPdf`'s `catch` (and from `runOnboarding`'s, for the tutorial model) via
    the `closeQuietly()` helper in `main.ts`. That path matters because the error
    screen **leaves the tab open**: without it, a failure anywhere after
    `load()` — `constructViewer`, `buildIndex`, `getDocumentTitle` — would strand
-   two PDFium documents in the WASM heap for as long as the user left the failed
+   the PDFium document in the WASM heap for as long as the user left the failed
    tab around.
 
    On the success path nothing calls it, and nothing needs to: the tab going

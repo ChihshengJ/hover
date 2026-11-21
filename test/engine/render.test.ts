@@ -1,12 +1,10 @@
 /**
- * Phase 0 baseline: what PDFium paints for each fixture, recorded through
- * `@embedpdf/engines` with the options the viewer passes
- * (`viewer/page.ts`: `withAnnotations: false`, no forms).
+ * What `src/pdf/renderer.ts` paints for each fixture, as the viewer asks for
+ * it. First recorded through `@embedpdf/engines`; Hover's renderer
+ * reproduces those goldens byte for byte.
  *
- * Snapshots hold `{ width, height, sha256 }` rather than pixels. Hover's own
- * renderer (`src/pdf/renderer.ts`) must reproduce them byte for byte; a
- * mismatch means some choice of the engine's has not been ported, not that
- * the golden needs updating.
+ * Snapshots hold `{ width, height, sha256 }` rather than pixels. A mismatch
+ * means rendering changed, not that the golden needs updating.
  *
  *   HOVER_DUMP_RENDERS=/some/dir bun test test/engine/render.test.ts
  *
@@ -70,7 +68,7 @@ function pngChunk(type: string, body: Uint8Array): Buffer {
   return out;
 }
 
-/** The raster is RGBA, as the engine hands it to `ImageData`. */
+/** The raster is RGBA, ready for `ImageData`. */
 function encodePng({ data, width, height }: Raster): Buffer {
   const header = Buffer.alloc(13);
   header.writeUInt32BE(width, 0);
@@ -102,41 +100,13 @@ function dump(fixture: FixturePdf, name: string, raster: Raster) {
 
 // --- Recording -------------------------------------------------------------
 
-/** One way to render: the engine's, or Hover's renderer. */
+/** What `recordRenders` drives. */
 interface Renderer {
   pageCount: number;
   pageSize(index: number): { width: number; height: number };
   page(index: number, scale: number): Promise<Raster>;
   rect(index: number, scale: number, rect: Rect): Promise<Raster>;
   close(): Promise<void>;
-}
-
-async function engineRenderer(fixture: FixturePdf): Promise<Renderer> {
-  const { native, engine } = await loadPdfium();
-  const pdfDoc = await engine
-    .openDocumentBuffer({
-      id: `render-${fixture.slug}`,
-      content: fixture.bytes.slice().buffer,
-    })
-    .toPromise();
-  // The options `viewer/page.ts` passed.
-  const options = (scaleFactor: number) => ({ scaleFactor, withAnnotations: false });
-  return {
-    pageCount: pdfDoc.pages.length,
-    pageSize: (index) => pdfDoc.pages[index].size,
-    page: (index, scale) =>
-      native.renderPageRaw(pdfDoc, pdfDoc.pages[index], options(scale)).toPromise(),
-    rect: (index, scale, { x, y, width, height }) =>
-      native
-        .renderPageRect(
-          pdfDoc,
-          pdfDoc.pages[index],
-          { origin: { x, y }, size: { width, height } },
-          options(scale),
-        )
-        .toPromise(),
-    close: () => engine.closeDocument(pdfDoc).toPromise().then(() => {}),
-  };
 }
 
 async function hoverRenderer(fixture: FixturePdf): Promise<Renderer> {
@@ -200,15 +170,10 @@ for (const fixture of fixturePdfs()) {
   describe(`${fixture.group}/${fixture.slug}`, () => {
     test("renders", async () => {
       expect(
-        await recordRenders(fixture, engineRenderer, (name, raster) =>
+        await recordRenders(fixture, hoverRenderer, (name, raster) =>
           dump(fixture, name, raster),
         ),
       ).toMatchSnapshot();
-    });
-    test("Hover's renderer paints the same bytes", async () => {
-      expect(await recordRenders(fixture, hoverRenderer)).toEqual(
-        await recordRenders(fixture, engineRenderer),
-      );
     });
   });
 }

@@ -1,5 +1,6 @@
 import { SearchBar } from "./search_bar.js";
 import { SearchHighlightLayer } from "./search_highlight_layer.js";
+import { searchPage } from "../../../pdf/search.js";
 
 import type { ViewerPane } from "../../../viewer/viewpane.js";
 import type { SplitWindowManager } from "../../../viewer/window_manager.js";
@@ -200,39 +201,21 @@ export class SearchController {
   ): Promise<Array<{ id: string; pageNumber: number; rects: Array<Rect> }>> {
     if (!query.trim() || query.length < 2) return [];
 
-    const { native, pdfDoc } = this.#doc;
-    if (!native || !pdfDoc) return [];
+    const document = this.#doc.document;
+    if (!document) return [];
 
     const matches = [];
     let matchId = 0;
 
     for (let pageNum = fromPage; pageNum <= toPage; pageNum++) {
-      const page = pdfDoc.pages[pageNum - 1];
-      if (!page) continue;
-
       try {
-        // Use PDFium's native search. The 4th argument is PDFium's MatchFlag
-        // bitmask; 0 (None) is case-insensitive substring search, which is what
-        // this omitted argument was already coercing to.
-        const pageMatches = await native
-          .searchInPage(pdfDoc, page, query, 0)
-          .toPromise();
-
-        for (const match of pageMatches) {
-          const rects = match.rects;
-          if (!rects || rects.length === 0) continue;
-          const pageHeight = page.size.height;
-          const convertedRects = rects.map((rect) => ({
-            x: rect.origin.x,
-            y: rect.origin.y, // Convert to top-left origin
-            width: rect.size.width,
-            height: rect.size.height,
-          }));
-
+        // Case-insensitive substring search, PDFium's default.
+        for (const match of searchPage(document, pageNum - 1, query)) {
+          if (match.rects.length === 0) continue;
           matches.push({
             id: `match-${matchId++}`,
             pageNumber: pageNum,
-            rects: convertedRects,
+            rects: match.rects,
           });
         }
       } catch (error) {

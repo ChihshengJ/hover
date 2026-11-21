@@ -1,4 +1,4 @@
-import { initPdfiumEngine } from "../pdf/pdfium_init.js";
+import { initPdfium } from "../pdf/pdfium_module.js";
 import { DocumentTextIndex } from "../analysis/text_index.js";
 import {
   findBoundingAnchors,
@@ -19,8 +19,6 @@ import { collectNamedDestinations } from "../analysis/outline_builder.js";
 import { AnnotationStore } from "./annotation_data.js";
 import { DocEvent } from "./doc_events.js";
 
-import type { PdfEngine, PdfiumNative } from "@embedpdf/engines/pdfium";
-import type { PdfDocumentObject } from "@embedpdf/models";
 import type { DocEventName } from "./doc_events.js";
 import type {
   ReferenceAnchor,
@@ -60,9 +58,6 @@ export interface ReferenceSectionBounds {
 }
 
 export class PDFDocumentModel {
-  engine: PdfEngine | null = null;
-  native: PdfiumNative | null = null;
-  pdfDoc: PdfDocumentObject | null = null;
   allNamedDests = new Map<string, NamedDestination>();
 
   /**
@@ -89,7 +84,7 @@ export class PDFDocumentModel {
   textIndex: DocumentTextIndex | null = null;
 
   pdfData: Uint8Array | null = null;
-  /** The document as Hover reads it, opened from the same bytes as `pdfDoc`. */
+  /** The open PDF. */
   document: PdfiumDocument | null = null;
   /** getPageTextBoxes results, by 0-based page index. */
   #textBoxes = new Map<number, Float32Array>();
@@ -140,7 +135,7 @@ export class PDFDocumentModel {
   async load(
     arrayBuffer: ArrayBuffer,
     onProgress?: (p: LoadProgress) => void,
-  ): Promise<PdfDocumentObject> {
+  ): Promise<PdfiumDocument> {
     if (!(arrayBuffer instanceof ArrayBuffer)) {
       throw new Error("PDFDocumentModel.load() requires an ArrayBuffer");
     }
@@ -152,30 +147,16 @@ export class PDFDocumentModel {
     };
 
     reportProgress(5, "initializing engine");
-    const { engine, native, bindings } = await initPdfiumEngine((p) => {
+    const bindings = await initPdfium((p) => {
       const mapped = 5 + Math.round(p.percent * 0.15);
       reportProgress(mapped, p.phase);
     });
 
-    this.engine = engine;
-    this.native = native;
-
     try {
       reportProgress(20, "parsing");
       this.pdfData = new Uint8Array(arrayBuffer);
-      // Opened first, so a file PDFium refuses fails with a PdfOpenError.
+      // Throws a PdfOpenError for a file PDFium refuses.
       this.document = PdfiumDocument.open(bindings, this.pdfData);
-
-      reportProgress(25, "parsing");
-      this.pdfDoc = await this.engine
-        .openDocumentBuffer({
-          id: `doc-${Date.now()}`,
-          // The engine does `new Uint8Array(file.content)`, so a typed array
-          // works, but PdfFileContent is declared as ArrayBuffer.
-          content: this.pdfData as unknown as ArrayBuffer,
-        })
-        .toPromise();
-
       this.pdfData = null;
 
       reportProgress(40, "processing");
@@ -189,14 +170,10 @@ export class PDFDocumentModel {
       // start rendering long before `buildIndex()` runs.
       this.analysis.urlsByPage = indexUrls(this.nativeAnnotationsByPage);
       reportProgress(95, "complete");
-      return this.pdfDoc;
+      return this.document;
     } catch (error) {
       console.error("Error loading PDF:", error);
-      // Refused by the engine after Hover opened it: don't keep half a load.
-      if (!this.pdfDoc) {
-        this.document?.close();
-        this.document = null;
-      }
+      this.pdfData = null;
       throw error;
     }
   }
@@ -507,15 +484,6 @@ export class PDFDocumentModel {
       // this.imageExtractor = null;
     }
 
-    if (this.pdfDoc && this.engine) {
-      try {
-        await this.engine.closeDocument(this.pdfDoc).toPromise();
-      } catch (error) {
-        console.warn("[Doc] Error closing document:", error);
-      }
-    }
-
-    this.pdfDoc = null;
     this.bookmarks = [];
     this.annotationStore.clear();
     this.analysis.destroy();

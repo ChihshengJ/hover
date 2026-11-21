@@ -37,25 +37,6 @@ import type { OutlineItem } from "../../analysis/outline_builder.js";
 import type { Annotation } from "../../model/annotation_data.js";
 
 /**
- * A PDF destination resolved to a page and a position on it, or `null` when it
- * could not be resolved — cached either way, so a bad dest is only chased once.
- */
-/** One laid-out glyph run, for matching a link annotation to the text under it. */
-interface SpatialTextItem {
-  str: string;
-  x: number;
-  y: number;
-  width: number;
-  height: number;
-}
-
-export type ResolvedDestination = {
-  /** 0-based. */
-  pageIndex: number;
-  left: number;
-  top: number;
-} | null;
-/**
  * What the tree needs from the toolbar that hosts it. `getPane` is a getter
  * because the active pane changes with every split and focus change, and
  * `getBallCenterY` because the toolbar ball moves as the user drags it.
@@ -170,11 +151,6 @@ export class NavigationTree {
     if (docOutline && docOutline.length > 0) {
       this.tree = this.#convertOutlineToTreeNodes(docOutline);
       this.flatSections = this.#flattenSections(this.tree);
-
-      const destCache = this.#buildDestCacheFromOutline(docOutline);
-      const figureTableItems =
-        await this.#extractFigureTableAnnotations(destCache);
-      this.#insertFiguresIntoTree(figureTableItems);
     }
     this.treeBuilt = true;
   }
@@ -183,31 +159,9 @@ export class NavigationTree {
    * Cache page dimensions from the document model
    */
   async #cachePageDimensions() {
-    // Use cached dimensions from PDFDocumentModel if available
-    if (this.doc.pageDimensions && this.doc.pageDimensions.length > 0) {
-      this.pageDimensions = this.doc.pageDimensions;
-      return;
-    }
-
-    // Fallback: compute dimensions ourselves
-    // FIXME(pdfium-migration): PDF.js API on a PDFium document. `numPages`,
-    // `getPage`, `getViewport`, `getAnnotations`, `getTextContent`,
-    // `getDestination` and `getPageIndex` do not exist on PdfDocumentObject, so
-    // everything below is dead — it reads `undefined` and silently yields
-    // nothing. Typed loosely so checkJs can pass; the code still needs porting.
-    const pdfDoc: any = this.doc.pdfDoc;
-    if (!pdfDoc) return;
-
-    this.pageDimensions = [];
-    for (let i = 1; i <= pdfDoc.numPages; i++) {
-      const page = await pdfDoc.getPage(i);
-      const viewport = page.getViewport({ scale: 1 });
-      this.pageDimensions.push({
-        width: viewport.width,
-        height: viewport.height,
-      });
-    }
+    this.pageDimensions = this.doc.pageDimensions ?? [];
   }
+
 
   /**
    * Get page height for a given page index
@@ -299,76 +253,7 @@ export class NavigationTree {
     }));
   }
 
-  async #resolveDestination(
-    dest: unknown,
-    cache: Map<string, ResolvedDestination>,
-  ): Promise<ResolvedDestination> {
-    if (!dest) return null;
 
-    const cacheKey = typeof dest === "string" ? dest : JSON.stringify(dest);
-    if (cache.has(cacheKey)) {
-      return cache.get(cacheKey);
-    }
-
-    // FIXME(pdfium-migration): see #cachePageDimensions — `getDestination` and
-    // `getPageIndex` below are PDF.js APIs that PdfDocumentObject does not have.
-    const pdfDoc: any = this.doc.pdfDoc;
-    const namedDests = this.doc.allNamedDests;
-
-    let explicitDest = dest;
-
-    if (typeof dest === "string") {
-      explicitDest = namedDests?.get(dest);
-      if (!explicitDest) {
-        try {
-          explicitDest = await pdfDoc.getDestination(dest);
-        } catch {
-          cache.set(cacheKey, null);
-          return null;
-        }
-      }
-    }
-
-    if (!Array.isArray(explicitDest)) {
-      cache.set(cacheKey, null);
-      return null;
-    }
-
-    const [ref, , left, top] = explicitDest;
-
-    try {
-      const pageIndex = await pdfDoc.getPageIndex(ref);
-      const result = { pageIndex, left: left ?? 0, top: top ?? 0 };
-      cache.set(cacheKey, result);
-      return result;
-    } catch {
-      cache.set(cacheKey, null);
-      return null;
-    }
-  }
-
-  /**
-   * Build a destination cache from pre-resolved outline items
-   * This avoids re-resolving destinations we've already computed
-   */
-  #buildDestCacheFromOutline(
-    outlineItems: OutlineItem[],
-  ): Map<string, ResolvedDestination> {
-    const cache = new Map<string, ResolvedDestination>();
-
-    const addToCache = (items: OutlineItem[]) => {
-      for (const item of items) {
-        // We can't recover the original dest key, but the cache will still
-        // be useful for any new destinations encountered during figure extraction
-        if (item.children.length > 0) {
-          addToCache(item.children);
-        }
-      }
-    };
-
-    addToCache(outlineItems);
-    return cache;
-  }
 
   /**
    * Flatten section nodes and sort by reading order
@@ -420,151 +305,9 @@ export class NavigationTree {
     return result;
   }
 
-  async #extractFigureTableAnnotations(
-    destCache: Map<string, ResolvedDestination>,
-  ) {
-    const items = [];
-    // FIXME(pdfium-migration): PDF.js API on a PDFium document. `numPages`,
-    // `getPage`, `getViewport`, `getAnnotations`, `getTextContent`,
-    // `getDestination` and `getPageIndex` do not exist on PdfDocumentObject, so
-    // everything below is dead — it reads `undefined` and silently yields
-    // nothing. Typed loosely so checkJs can pass; the code still needs porting.
-    const pdfDoc: any = this.doc.pdfDoc;
-    const numPages = pdfDoc.numPages;
-    const figurePattern = /^(fig(ure)?|table|tab)\.?\s*(\d+)/i;
-    const seen = new Set();
 
-    for (let pageNum = 1; pageNum <= numPages; pageNum++) {
-      const page = await pdfDoc.getPage(pageNum);
-      const [annotations, textContent] = await Promise.all([
-        page.getAnnotations({ intent: "display" }),
-        page.getTextContent(),
-      ]);
 
-      const textIndex = this.#buildTextSpatialIndex(textContent);
 
-      for (const annot of annotations) {
-        if (annot.subtype !== "Link" || !annot.dest) continue;
-
-        const linkText = this.#findAnnotationText(annot, textIndex);
-        if (!linkText) continue;
-
-        const match = linkText.match(figurePattern);
-        if (!match) continue;
-
-        const position = await this.#resolveDestination(annot.dest, destCache);
-        if (!position) continue;
-
-        const key = `${position.pageIndex}:${Math.round(position.top)}`;
-        if (seen.has(key)) continue;
-        seen.add(key);
-
-        const type = match[1].toLowerCase().startsWith("tab")
-          ? "table"
-          : "figure";
-
-        // Derive column from left position using detected column geometry
-        const columnIndex = this.#getColumnIndex(
-          position.pageIndex,
-          position.left,
-        );
-
-        const figureNode: TreeNode = {
-          id: crypto.randomUUID(),
-          title: linkText.trim(),
-          type,
-          pageIndex: position.pageIndex,
-          left: position.left,
-          top: position.top,
-          columnIndex: columnIndex,
-          children: [],
-          expanded: false,
-        };
-        items.push(figureNode);
-      }
-
-      page.cleanup();
-    }
-
-    // Sort by reading order: page → column → Y
-    items.sort((a, b) => {
-      if (a.pageIndex !== b.pageIndex) return a.pageIndex - b.pageIndex;
-
-      const colA = a.columnIndex ?? -1;
-      const colB = b.columnIndex ?? -1;
-
-      if (colA !== colB && colA !== -1 && colB !== -1) {
-        return colA - colB; // Earlier column first
-      }
-
-      return b.top - a.top; // Higher Y (top of page) first
-    });
-
-    return items;
-  }
-
-  #buildTextSpatialIndex(textContent: { items: any[] }): SpatialTextItem[] {
-    if (!textContent?.items) return [];
-
-    return textContent.items
-      .filter((item) => item.str && item.transform)
-      .map((item) => ({
-        str: item.str,
-        x: item.transform[4],
-        y: item.transform[5],
-        width: item.width || 0,
-        height: item.height || 10,
-      }));
-  }
-
-  #findAnnotationText(annot: any, textIndex: SpatialTextItem[]) {
-    if (!annot.rect || textIndex.length === 0) return null;
-
-    const [x1, y1, x2, y2] = annot.rect;
-    const left = Math.min(x1, x2);
-    const right = Math.max(x1, x2);
-    const bottom = Math.min(y1, y2);
-    const top = Math.max(y1, y2);
-
-    const matches: string[] = [];
-
-    for (const item of textIndex) {
-      const itemRight = item.x + item.width;
-      const itemTop = item.y + item.height;
-
-      if (
-        item.x < right &&
-        itemRight > left &&
-        item.y < top &&
-        itemTop > bottom
-      ) {
-        matches.push(item.str);
-      }
-    }
-
-    return matches.length > 0 ? matches.join(" ") : null;
-  }
-
-  #insertFiguresIntoTree(figureItems: TreeNode[]) {
-    if (figureItems.length === 0 || this.flatSections.length === 0) {
-      this.tree.push(...figureItems);
-      return;
-    }
-
-    for (const fig of figureItems) {
-      // Use the columnIndex already computed during extraction
-      const section = this.#findContainingSection(
-        fig.pageIndex,
-        fig.top,
-        fig.columnIndex,
-      );
-      if (section) {
-        section.children.push(fig);
-      } else {
-        this.tree.push(fig);
-      }
-    }
-  }
 
   /**
    * Find the section that contains the given position using column-aware reading order

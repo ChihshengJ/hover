@@ -1,18 +1,13 @@
 /**
- * PDFium for bun: one wasm instance and one engine, shared by every test file
- * and by `scripts/build_fixtures.ts`.
- *
- * The browser path (`src/pdf/pdfium_init.ts`) fetches the wasm from the
- * extension bundle; here it comes straight from the package, so nothing needs
- * Vite to have run first.
+ * PDFium for bun: the app's own shared instance (`initPdfium`), loaded from
+ * the package's wasm rather than fetched, for every test file and for
+ * `scripts/build_fixtures.ts`.
  */
 
 import { readFileSync, readdirSync } from "node:fs";
 import { basename, extname, join, relative } from "node:path";
 
-import { PdfiumNative, PdfEngine } from "@embedpdf/engines/pdfium";
-
-import { loadPdfiumModule } from "../../src/pdf/pdfium_module.js";
+import { initPdfium, primePdfiumWasm } from "../../src/pdf/pdfium_module.js";
 import type { PdfiumBindings } from "../../src/pdf/pdfium_module.js";
 
 const REPO_ROOT = join(import.meta.dir, "..", "..");
@@ -24,40 +19,19 @@ const WASM_PATH = join(
   "node_modules/@embedpdf/pdfium/dist/pdfium.wasm",
 );
 
-export interface PdfiumForTests {
-  bindings: PdfiumBindings;
-  native: PdfiumNative;
-  engine: PdfEngine;
-}
-
-let loading: Promise<PdfiumForTests> | null = null;
-
 /** The wasm bytes, for code that instantiates its own module. */
 export function pdfiumWasmBytes(): Uint8Array {
   return new Uint8Array(readFileSync(WASM_PATH));
 }
 
 /**
- * Load the wasm and build the engine once per process. Every caller gets the
- * same instance, so a test that leaks a document leaks it into the next test:
+ * The shared PDFium, loaded on first call. `PDFDocumentModel` gets the same
+ * instance, so a test that leaks a document leaks it into the next test:
  * close what you open.
  */
-export function loadPdfium(): Promise<PdfiumForTests> {
-  loading ??= (async () => {
-    // The same path the app takes (pdf/pdfium_init.ts), minus the fetch.
-    const { bindings, engineModule } = await loadPdfiumModule(pdfiumWasmBytes());
-    const native = new PdfiumNative(engineModule);
-    // `renderPageRaw` hands back raw pixels and never reaches the converter,
-    // and the browser converter wants a DOM. The option is required, so it is
-    // a stub that says so if anything does reach it.
-    const engine = new PdfEngine(native, {
-      imageConverter: () => {
-        throw new Error("test PDFium has no image converter");
-      },
-    });
-    return { bindings, native, engine };
-  })();
-  return loading;
+export async function loadPdfium(): Promise<{ bindings: PdfiumBindings }> {
+  primePdfiumWasm(pdfiumWasmBytes());
+  return { bindings: await initPdfium() };
 }
 
 /** `Nature paper example.pdf` → `nature-paper-example`. */

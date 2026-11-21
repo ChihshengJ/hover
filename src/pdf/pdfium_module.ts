@@ -8,16 +8,12 @@
  * `PdfiumBindings` lists every function Hover calls, so this file is also the
  * inventory of what Hover needs from PDFium.
  *
- * Until the engine is removed (`docs/plan_own_pdf_engine.md` phase 6), the same
- * instance is also handed to `@embedpdf/engines` in its wrapped form
- * (`engineModule`). This is the only file that imports `@embedpdf/pdfium`.
+ * The module is loaded once per page and shared (`initPdfium`). This is the
+ * only file that imports `@embedpdf/pdfium`, which Hover uses only for its
+ * Emscripten build of PDFium.
  */
 
 import { init } from "@embedpdf/pdfium";
-import type { WrappedPdfiumModule } from "@embedpdf/pdfium";
-
-/** The cwrap'd module `@embedpdf/engines` takes. Gone with the engine. */
-export type EngineModule = WrappedPdfiumModule;
 
 /**
  * Raw PDFium exports, by their C names. Every `FPDF_BOOL` comes back as 0 or 1,
@@ -147,6 +143,17 @@ export interface PdfiumFunctions {
     flags: number,
   ): number;
   FPDFText_GetTextObject(textPage: number, index: number): number;
+  /** `findWhat` is NUL-terminated UTF-16LE; `flags` PDFium's `FPDF_MATCH*`. */
+  FPDFText_FindStart(
+    textPage: number,
+    findWhat: number,
+    flags: number,
+    startIndex: number,
+  ): number;
+  FPDFText_FindNext(search: number): number;
+  FPDFText_GetSchResultIndex(search: number): number;
+  FPDFText_GetSchCount(search: number): number;
+  FPDFText_FindClose(search: number): void;
 
   // fpdf_edit.h: page objects
   FPDFPage_CountObjects(page: number): number;
@@ -362,6 +369,11 @@ const FUNCTION_NAMES: Record<keyof PdfiumFunctions, true> = {
   FPDFText_GetFontSize: true,
   FPDFText_GetFontInfo: true,
   FPDFText_GetTextObject: true,
+  FPDFText_FindStart: true,
+  FPDFText_FindNext: true,
+  FPDFText_GetSchResultIndex: true,
+  FPDFText_GetSchCount: true,
+  FPDFText_FindClose: true,
   FPDFPage_CountObjects: true,
   FPDFPage_GetObject: true,
   FPDFFormObj_CountObjects: true,
@@ -467,21 +479,52 @@ function initLibrary(pdfium: PdfiumBindings) {
   }
 }
 
-export interface LoadedPdfium {
-  bindings: PdfiumBindings;
-  /** The same instance, wrapped for `@embedpdf/engines`. */
-  engineModule: EngineModule;
-}
-
-/** Instantiate the wasm and initialise the PDFium library in it. */
+/**
+ * Instantiate the wasm and initialise the PDFium library in it. A fresh
+ * instance every call; the app goes through `initPdfium()` instead.
+ */
 export async function loadPdfiumModule(
   wasmBinary: ArrayBuffer | Uint8Array,
-): Promise<LoadedPdfium> {
+): Promise<PdfiumBindings> {
   // The declared type wants an ArrayBuffer; Emscripten takes any BufferSource.
-  const engineModule = await init({ wasmBinary: wasmBinary as ArrayBuffer });
-  const bindings = bind(engineModule.pdfium as unknown as EmscriptenModule);
+  // `init` also cwraps every export, which Hover doesn't use; `.pdfium` is
+  // the Emscripten module underneath.
+  const wrapped = await init({ wasmBinary: wasmBinary as ArrayBuffer });
+  const bindings = bind(wrapped.pdfium as unknown as EmscriptenModule);
   initLibrary(bindings);
-  return { bindings, engineModule };
+  return bindings;
+}
+
+let primedWasm: ArrayBuffer | Uint8Array | null = null;
+let loading: Promise<PdfiumBindings> | null = null;
+
+/**
+ * Hand `initPdfium()` the wasm bytes up front, so it skips resolving and
+ * fetching them. For bun tests, which have the package's copy on disk and no
+ * extension URL to fetch from; the app never calls it.
+ */
+export function primePdfiumWasm(bytes: ArrayBuffer | Uint8Array) {
+  primedWasm = bytes;
+}
+
+/** The app's PDFium: fetched and loaded on first call, shared after. */
+export function initPdfium(
+  onProgress?: (progress: { percent: number; phase: string }) => void,
+): Promise<PdfiumBindings> {
+  loading ??= (async () => {
+    try {
+      const wasmBinary = primedWasm ?? (await fetchPdfiumWasm(onProgress));
+      onProgress?.({ percent: 50, phase: "initializing-pdfium" });
+      const bindings = await loadPdfiumModule(wasmBinary);
+      onProgress?.({ percent: 100, phase: "ready" });
+      return bindings;
+    } catch (error) {
+      console.error("[PDFium] Failed to initialize:", error);
+      loading = null;
+      throw error;
+    }
+  })();
+  return loading;
 }
 
 /** Resolve the wasm URL, bundled copy first, and download it. */

@@ -155,62 +155,65 @@ test for that problem.
 
 #### What to record
 
-- [ ] **Render goldens.** For each fixture, record `renderPageRaw` output at
+- [x] **Render goldens.** For each fixture, record `renderPageRaw` output at
       two scales and one `renderPageRect` crop.
-- [ ] **Annotation round trip.** Create each of Highlight, Underline, Ink and
+- [x] **Annotation round trip.** Create each of Highlight, Underline, Ink and
       a linked Text comment through the current engine, then save, reload and
       read back. Record the app-model result: `RatioRect`s, colour names,
       comments, strokes.
-- [ ] **Link and bookmark snapshots.** Record the `nativeAnnotationsByPage`
+- [x] **Link and bookmark snapshots.** Record the `nativeAnnotationsByPage`
       link targets and `getBookmarks` output for the fixture set. The analysis
       fixtures (`test/analysis.test.ts`) already pin much of this indirectly.
-- [ ] **Saved-file checks.** For each annotation type, the saved bytes hold an
+- [x] **Saved-file checks.** For each annotation type, the saved bytes hold an
       `/AP`. Record which of `/CA`, `/T`, `/Contents`, `/NM`, `/M` and `/F`
       appear.
 
 ### Phase 1: Module and bindings
 
-- [ ] Create `pdfium_module.ts` and `PdfiumBindings`. Move the wasm URL and
+- [x] Create `pdfium_module.ts` and `PdfiumBindings`. Move the wasm URL and
       fetch logic out of `pdfium_init.ts`.
-- [ ] Replace `PDFiumExt_Init()` with `FPDF_InitLibraryWithConfig`, using
+- [x] Replace `PDFiumExt_Init()` with `FPDF_InitLibraryWithConfig`, using
       the config the shim builds today: version 3, no user font paths, no V8
       isolate or platform.
-- [ ] Switch the FFI string decoders to `TextDecoder`.
-- [ ] Move `pdfium_reader.ts`, `text_extractor.ts` and `image_extractor.ts`
+- [x] Switch the FFI string decoders to `TextDecoder`.
+- [x] Move `pdfium_reader.ts`, `text_extractor.ts` and `image_extractor.ts`
       onto `PdfiumBindings` rather than `WrappedPdfiumModule`.
-- [ ] Keep `initPdfiumEngine()`'s return shape while the engine still exists.
+- [x] Keep `initPdfiumEngine()`'s return shape while the engine still exists.
 
 **Exit:** `bun run check` passes. No file outside `pdfium_module.ts` imports
 `@embedpdf/pdfium`.
 
 ### Phase 2: One document
 
-- [ ] `PdfiumDocument` opens the bytes once. The engine doc is still opened
+- [x] `PdfiumDocument` opens the bytes once. The engine doc is still opened
       too, for now: annotations live there until phase 5.
-- [ ] **Page sizes.** The engine filled `pdfDoc.pages[i].size` through
+- [x] **Page sizes.** The engine filled `pdfDoc.pages[i].size` through
       `EPDF_GetPageSizeByIndexNormalized`. Confirm against the goldens whether
       that is the `/Rotate`-applied size. Then reproduce it with
       `FPDF_GetPageSizeByIndexF`, plus `FPDFPage_GetRotation` where needed.
       Every layout calculation depends on this, so test rotated pages
       explicitly.
-- [ ] Move metadata, bookmarks and named destinations to `PdfiumDocument`.
+      *Done:* `FPDF_GetPageSizeByIndexF` already applies `/Rotate`. Rotation
+      is read on demand (`pageRotation`), since standard PDFium needs a
+      loaded page for it and nothing in the app reads it.
+- [x] Move metadata, bookmarks and named destinations to `PdfiumDocument`.
       Match the Phase 0 snapshots exactly.
-- [ ] Delete the `getPageTextRects` fallback in `page_source.ts`.
+- [x] Delete the `getPageTextRects` fallback in `page_source.ts`.
 
 **Exit:** bookmark, outline and metadata snapshots match. The analysis tests
 pass.
 
 ### Phase 3: Rendering
 
-- [ ] Implement `renderer.ts` with exactly the engine's choices:
+- [x] Implement `renderer.ts` with exactly the engine's choices:
   - a BGRA bitmap (`FPDFBitmap_CreateEx(..., FPDFBitmap_BGRA, ...)`) filled
     with opaque white;
   - flags `FPDF_REVERSE_BYTE_ORDER` (16) only, with `withAnnotations: false`
     everywhere Hover renders;
   - the same rounding of raster size (`docs/pdf_lifecycle.md` §5).
-- [ ] Find out whether the engine called `FPDF_FFLDraw` when
+- [x] Find out whether the engine called `FPDF_FFLDraw` when
       `withAnnotations` is false. Match whatever the form-field golden shows.
-- [ ] Switch `PageView.render`, `PageView.renderDetail` and
+- [x] Switch `PageView.render`, `PageView.renderDetail` and
       `renderThumbnail` over.
 
 **Exit:** the render goldens match **byte for byte**. If they don't, the
@@ -221,19 +224,28 @@ is a separate follow-up.
 
 ### Phase 4: Reading annotations
 
-- [ ] Implement `annotation_reader.ts`:
+- [x] Implement `annotation_reader.ts`:
   - **Highlight and Underline:** attachment points become `segmentRects`.
   - **Ink:** `FPDFAnnot_GetInkListCount` / `GetInkListPath`.
   - **Text:** contents, rect and colour.
   - **Link:** `FPDFAnnot_GetLink`, then `FPDFLink_GetDest` → `FPDFDest_GetDestPageIndex` /
     `GetLocationInPage`, or `FPDFLink_GetAction` → `FPDFAction_GetURIPath`.
-- [ ] **Rects come straight from `FPDFAnnot_GetRect`**, normalized with
+- [x] **Rects come straight from `FPDFAnnot_GetRect`**, normalized with
       min/max. That removes the need for `normalizeAnnotationRects` and its
       five-annotation sample. Delete it.
-- [ ] Read colour with `FPDFAnnot_GetColor`, falling back to the `/C` array.
+      *Done, with one exception:* the page-level shift of links on pages whose
+      `/Rect`s run bottom-up is kept, so link positions didn't move. Only
+      `rotate example.pdf` triggers it; worth a look on its own.
+- [x] Read colour with `FPDFAnnot_GetColor`, falling back to the `/C` array.
       Read opacity with `FPDFAnnot_GetNumberValue(annot, "CA")`.
-- [ ] Switch `loadFromDocument` and `build_fixtures.ts` over. Regenerate
+      *Done differently:* `GetColor` fails on any annotation with an
+      appearance stream, and no standard call reads `/C`. The colour comes
+      from the appearance stream's paths, within 1 per channel of `/C`.
+- [x] Switch `loadFromDocument` and `build_fixtures.ts` over. Regenerate
       fixtures only if the diff is fully explained.
+      *Done in two steps:* links in phase 4, markup in phase 5 with the
+      writes, because the engine found annotations by an `/NM` its own read
+      assigned.
 
 **Exit:** the link and annotation snapshots match. The analysis fixtures are
 unchanged.
@@ -243,13 +255,13 @@ unchanged.
 This phase carries the most risk. Annotations and save move together, because
 the saved bytes must come from the document that holds the edits.
 
-- [ ] **Identity.** Write Hover's UUID as `/NM` with
+- [x] **Identity.** Write Hover's UUID as `/NM` with
       `FPDFAnnot_SetStringValue(annot, "NM", ...)`. Update and delete find the
       annotation by scanning the page for that `/NM`. This removes
       `#annotationIdToPdfId` and the PDFium-assigned ids. Annotations that came
       with the file have no Hover UUID, so read them with their index plus
       their existing `/NM` when present.
-- [ ] **Create:**
+- [x] **Create:**
   - `FPDFPage_CreateAnnot`
   - `FPDFAnnot_SetRect`
   - `FPDFAnnot_AppendAttachmentPoints` for each segment
@@ -260,9 +272,9 @@ the saved bytes must come from the document that holds the edits.
   - `/Contents` and `/T` **only when non-empty**. With that,
     `annotation_export.ts`, its call in `saveWithAnnotations` and
     `test/annotation_export.test.ts` are deleted.
-- [ ] **Update:** move and recolour in place. A change of page is still
+- [x] **Update:** move and recolour in place. A change of page is still
       delete-and-recreate (`docs/pdf_lifecycle.md` §6).
-- [ ] **Opacity, an open decision.** Highlights are written today at opacity
+- [x] **Opacity, an open decision.** Highlights are written today at opacity
       0.5. **Standard PDFium has no number setter** (`FPDFAnnot_SetNumberValue`
       doesn't exist; checked against the `chromium/8165` headers), so `/CA`
       can't be written with the standard API. Choose one of these, using the
@@ -284,11 +296,11 @@ the saved bytes must come from the document that holds the edits.
     is fixed at a Normal blend, so highlights show at 50% Normal rather than
     Multiply in other viewers. Hover's own viewer draws highlights itself
     and is unchanged.
-- [ ] **Appearance streams.** Check that the saved file has `/AP` for every
+- [x] **Appearance streams.** Check that the saved file has `/AP` for every
       created annotation, in Preview, Acrobat and Chrome. If PDFium doesn't
       generate one on save for some type, generate it with `FPDFAnnot_SetAP`
       for that type only.
-- [ ] **Save:**
+- [x] **Save:**
   - `FPDF_SaveAsCopy(doc, writer, FPDF_NO_INCREMENTAL)`;
   - the writer is a struct `{ version: 1, WriteBlock }`, where `WriteBlock` is
     an `addFunction` callback (signature `"iiii"`) that appends
@@ -298,23 +310,45 @@ the saved bytes must come from the document that holds the edits.
 **Exit:** the round-trip tests match Phase 0. A saved highlight opens without
 a blank note in Preview and Skim. Manual check in Acrobat and Chrome.
 
+*Also decided in phase 5 (2026-11-21):*
+
+- **Only annotations Hover writes are touched.** Nothing renders the saved
+  document with `FPDF_ANNOT`; region select moved to `renderer.ts` for this.
+- **A comment lives only in the markup's `/Contents`**, on the first page's
+  part. No separate `/Text` note. Notes from Hover 0.10 files still load
+  through `/EPDFCustom` and are removed when their comment is edited.
+- **A turned drawing is saved as turned points** and loads at rotation 0.
+  Hover 0.10 never kept the angle: the engine dropped `rotation` from
+  `/EPDFCustom` on write.
+- **Parts with one `/NM` on several pages load as one annotation.** Before,
+  the last page's part replaced the others.
+- `FPDFPage_CreateAnnot` writes the annotation dict directly into `/Annots`;
+  the spec wants an indirect reference. Check it in the §6 manual pass.
+- `test/pdfs/papers/hover-0.10-annotated.pdf` is a file saved by the engine-
+  based Hover, for the compatibility tests.
+
 ### Phase 6: Remove the engine
 
-- [ ] Remove `@embedpdf/engines` from `package.json`. This also drops the
+- [x] Remove `@embedpdf/engines` from `package.json`. This also drops the
       `@embedpdf/models` and `@embedpdf/fonts-*` transitive packages. Hover
       never passed `fontFallback`, so the font packages were never loaded, and
       rendering is unchanged.
-- [ ] Remove `engine`, `native` and `pdfDoc` from `PDFDocumentModel` and
+- [x] Remove `engine`, `native` and `pdfDoc` from `PDFDocumentModel` and
       `EngineInstances`.
-- [ ] Update `scripts/build_fixtures.ts` and the `scripts/check_layering.mjs`
+- [x] Update `scripts/build_fixtures.ts` and the `scripts/check_layering.mjs`
       allowlist.
-- [ ] Update `docs/pdf_lifecycle.md`:
+- [x] Update `docs/pdf_lifecycle.md`:
   - §0 vocabulary: drop "Engine doc" and "Low-level handle";
   - §4: one load, not two;
   - §5, §6 and §7: the new call names.
-- [ ] Update `docs/text_rendering.md` §2, since flags are now Hover's choice.
-- [ ] Check: `grep -rE "EPDF|PDFiumExt|@embedpdf/(engines|models)" src scripts`
+- [x] Update `docs/text_rendering.md` §2, since flags are now Hover's choice.
+- [x] Check: `grep -rE "EPDF|PDFiumExt|@embedpdf/(engines|models)" src scripts`
       returns nothing.
+      *Done, with intended hits left:* no imports. What remains is comments
+      crediting the engine code that was ported, and the reading of
+      `/EPDFCustom` so files saved by Hover 0.10 keep their comment links.
+      Also found and ported in phase 6: the search bar used the engine's
+      `searchInPage` (now `src/pdf/search.ts`, identical results).
 
 **Exit:** `bun run check` passes, all three browser builds load a PDF, and the
 manual pass in §6 is clean.

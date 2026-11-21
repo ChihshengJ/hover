@@ -331,10 +331,12 @@ export class FileMenu {
 
   #activateButton() {
     this.container.classList.add("active");
+    this.goo.setActive(true);
   }
 
   #deactivateButton() {
     this.container.classList.remove("active");
+    this.goo.setActive(false);
   }
 
   #toggleMenu() {

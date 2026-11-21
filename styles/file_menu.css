@@ -88,47 +88,24 @@
   pointer-events: auto;
 }
 
-/* Every visible background mass, under ONE drop-shadow so button + card cast a
-   single shadow: ::before = the button pill on hover, the SVG = the card fused
-   to the button (a smooth-min union traced in JS, not a url() goo filter).
-   Nothing in here may run a compositor animation (transform/opacity
-   transitions): WebKit would lift it onto its own layer, outside the filter. */
+/* Every visible background mass: hover pill and card as one metaball, traced
+   in JS from the same blur-threshold field a url() goo filter computes, and
+   painted with its shadows into a canvas (see file_menu_goo.ts for why not
+   CSS filters). The canvas reads its look from these properties; each shadow
+   is `<x> <y> <blur> <color>`, the first painted on top as in a filter chain. */
 .file-menu-goo-layer {
   position: absolute;
   inset: 0;
   z-index: 0;
   pointer-events: none !important;
-  filter: drop-shadow(0 0 5px rgba(0, 0, 0, 0.4))
-    drop-shadow(-1px -1px 1px rgba(255, 255, 255, 0.2));
+  --file-menu-goo-fill: var(--bg-secondary);
+  --file-menu-goo-shadow-1: 0 0 5px rgba(0, 0, 0, 0.4);
+  --file-menu-goo-shadow-2: -1px -1px 1px rgba(255, 255, 255, 0.2);
 }
 
-/* Button pill — fades in on hover/active to match the button footprint. */
-.file-menu-goo-layer::before {
-  content: "";
+.file-menu-goo-canvas {
   position: absolute;
-  bottom: 0;
-  right: 0;
-  width: 40px;
-  height: 40px;
-  border-radius: var(--radius-xl);
-  background: transparent;
-  transition: background var(--transition-bounce);
-}
-
-.file-menu-container.active .file-menu-goo-layer::before {
-  background: var(--bg-secondary);
-}
-
-.file-menu-goo-shape {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  overflow: visible;
-}
-
-.file-menu-goo-shape path {
-  fill: var(--bg-secondary);
+  pointer-events: none;
 }
 
 /* ===========================================
@@ -671,6 +648,6 @@ input[type="file"] {
    =========================================== */
 
 .night-mode .file-menu-goo-layer {
-  filter: drop-shadow(0 0 3px rgb(0, 0, 0, 0.5))
-    drop-shadow(-1px -1px 2px rgb(255, 255, 255, 0.1));
+  --file-menu-goo-shadow-1: 0 0 3px rgb(0, 0, 0, 0.5);
+  --file-menu-goo-shadow-2: -1px -1px 2px rgb(255, 255, 255, 0.1);
 }

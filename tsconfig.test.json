@@ -11,7 +11,9 @@
     "strict": true,
     "strictNullChecks": false,
     "noImplicitAny": true,
-    "types": ["bun"]
+    // `chrome` because annotations.test.ts drives the real PDFDocumentModel,
+    // whose import closure reaches pdf/pdfium_init.ts.
+    "types": ["bun", "chrome"]
   },
   "include": ["src/types/**/*", "test/**/*", "scripts/build_fixtures.ts"]
 }

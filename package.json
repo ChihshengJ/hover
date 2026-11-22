@@ -7,6 +7,8 @@
     "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.strict.json && tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.test.json",
     "test": "bun test",
     "fixtures": "bun scripts/build_fixtures.ts",
+    "pdfium:check": "bun scripts/vendor_pdfium.ts --check",
+    "pdfium:vendor": "bun scripts/vendor_pdfium.ts",
     "check:layers": "bun scripts/check_layering.mjs",
     "check": "bun run typecheck && bun run check:layers && bun run test",
     "build": "vite build",

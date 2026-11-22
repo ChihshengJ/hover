@@ -383,15 +383,32 @@ clean on all three browsers.
 
 ### Phase 6: Keeping it current
 
-- [ ] Write the update routine into the vendoring script's header:
-  1. bump the tag;
-  2. update the SHA-256;
-  3. run `bun run check` plus the goldens;
-  4. review the diffs;
-  5. ship.
-- [ ] **Cadence:** monthly, and on any PDFium security fix that affects
-      parsing. Hover opens untrusted PDFs from the web, so falling behind is
-      the risk this plan exists to remove.
+- [x] Write the update routine into the vendoring script's header
+      (`scripts/vendor_pdfium.ts`): check, set `TAG` and `SHA256`, vendor,
+      `bun run check`, review each failure, record the bump below, try the
+      built extension in all three browsers, ship.
+- [x] `bun run pdfium:check` lists the releases newer than the pin, with the
+      SHA-256 GitHub publishes for each `pdfium-wasm.tgz`. So the hash pinned
+      in the script comes from GitHub, not from the download it then checks.
+      (Phase 0's own hash of 8165 matches GitHub's.)
+- [x] `test/engine/pdfium_regressions.test.ts` guards the pin. It renders the
+      item 2 repro (`docs/pdfium_reports/open_rect_fill.pdf`) and expects
+      the open hairline solid. It passes on 8100 and fails on 8111, so a bump
+      can't cross item 2 unnoticed. Its header says what to do when it fails,
+      following the "security wins" policy.
+- [x] **Cadence:** monthly, and at once on any PDFium security fix that
+      affects parsing. Hover opens untrusted PDFs from the web, so falling
+      behind is the risk this plan exists to remove. The repo has no CI, so
+      nothing runs this on a schedule. The Chrome Releases blog lists
+      security fixes by component, PDFium included.
+
+#### Bump log
+
+One row per pin. "Goldens" names each changed snapshot and its reason.
+
+| Date | Release | Why | Goldens |
+| ---- | ------- | --- | ------- |
+| 2026-11-22 | `chromium/8100` | First pin. The last release before item 2; nothing newer is needed for security yet | 17 render hashes (item 1), 2 saved-dict `/CA` (item 4). See phase 4 |
 
 ## 4. Risks
 

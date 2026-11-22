@@ -195,20 +195,19 @@ Produces a \`dist/firefox/\` tree identical to the contents of the uploaded
 
 \`\`\`bash
 bun install --frozen-lockfile
-STORE_BUILD=1 bun run build:firefox
+bun run build:firefox
 \`\`\`
 
 The output is \`dist/firefox/\`.
 
 ## Notes for the reviewer
 
-- \`STORE_BUILD=1\` pins the PDF engine to the locally bundled WebAssembly
-  binary and strips the CDN URL that @embedpdf/pdfium would otherwise fall
-  back to, so the build loads no remote code.
+- The PDF engine is PDFium, compiled to WebAssembly, from \`vendor/pdfium/\`
+  (below). It loads only the \`pdfium.wasm\` packaged in the extension; the
+  build references no remote code.
 - \`public/pdfium.wasm\` is absent from this archive by design. It is copied
-  verbatim from \`node_modules/@embedpdf/pdfium/dist/pdfium.wasm\` during
-  \`bun install\` + build by the \`copy-wasm-to-public\` plugin in
-  \`vite.config.js\`; it is a third-party binary, not our source.
+  verbatim from \`vendor/pdfium/pdfium.wasm\` during the build by the
+  \`copy-wasm-to-public\` plugin in \`vite.config.js\`.
 - \`vendor/pdfium/\` is a third-party release, not our source: PDFium's
   WebAssembly build from bblanchon/pdfium-binaries \`${pdfium.tag}\`
   (${pdfium.url}, SHA-256 \`${pdfium.sha256}\`). \`scripts/vendor_pdfium.ts\`

@@ -290,53 +290,96 @@ exports. The app still runs on EmbedPDF.
 
 ### Phase 3: Switch the bindings
 
-- [ ] In `pdfium_module.ts`, add a second `PdfiumBindings` implementation
+- [x] In `pdfium_module.ts`, add a second `PdfiumBindings` implementation
       over the vendored module. Function calls become `Module._FPDF_X(...)`.
       Plan one already passes only pointers and numbers, so no string
       marshalling changes.
-- [ ] Add a build-time switch (`__PDFIUM_SOURCE__ = "embedpdf" | "upstream"`)
+- [x] Add a build-time switch (`__PDFIUM_SOURCE__ = "embedpdf" | "upstream"`)
       so both binaries can ship from one tree for a release cycle. Default to
       `embedpdf` until phase 4 passes.
-- [ ] Have `copy-wasm-to-public` in `vite.config.js` take `pdfium.wasm` from
+- [x] Have `copy-wasm-to-public` in `vite.config.js` take `pdfium.wasm` from
       `vendor/pdfium/` when the switch says `upstream` (moved from phase 2).
-- [ ] Make the FFI rely only on what both modules export: `_malloc`, `_free`,
+- [x] Make the FFI rely only on what both modules export: `_malloc`, `_free`,
       `HEAPU8`, `HEAP32`, `HEAPU32`, `HEAPF32`, `HEAPF64`, `addFunction` and
       `removeFunction`. Phase 0 found nothing else in use.
 
-### Phase 4: Review the differences
+**Done (2026-11-22).** The bindings needed no second implementation: one
+`bind()` serves both modules, and only `instantiate()` differs. Each source
+is a dynamic import on its own branch of `__PDFIUM_SOURCE__`, so a build
+bundles one glue (checked in the Chrome output: no EmbedPDF code in an
+upstream build, and the reverse). `PDFIUM_SOURCE` (default `embedpdf`) sets it
+for Vite, and for bun through `test/support/pdfium_source.ts`.
+`copy-wasm-to-public` now compares bytes, not sizes, and fails the build when
+the source's wasm is missing. Outside an extension, the upstream build loads
+`pdfium.wasm` from the page's own origin and never falls back to a CDN. The
+AMO notes name the source a store build used.
 
-Eight months of upstream PDFium (to the `chromium/8100` pin) will change some
-output. Phase 0 found two such changes on 8100: items 1 and 4. Each changed golden
-needs a recorded reason.
+- `PDFIUM_SOURCE=upstream bun test`: 128 of 147 pass. The 19 failures are
+  phase 4's goldens: 17 render hashes (item 1) and 2 saved-dict snapshots
+  (item 4). The default run passes all 147.
+- Real extension: both store builds were loaded unpacked into Chrome 157
+  (headless, through the DevTools protocol) and opened a fixture paper from a
+  local server. Both rendered it, with no console errors or warnings. Firefox
+  and Safari are still to try, in phase 4's manual pass.
 
-- [ ] **Render goldens.** Expect small anti-aliasing and font differences.
-      Review them visually, side by side. Text gamma (`text_gamma.ts`) is
-      fitted to the current raster, so re-check its §5 measurements on the
-      new binary.
-- [ ] **Text.** Re-run the analysis fixtures. A change in PDFium's character
-      list (ligatures, generated spaces, hyphen handling) moves character
-      indices, and the inline and citation extractors key off them. Rebuild
-      the fixtures with `bun run fixtures` only after the diffs are
-      understood.
-- [ ] **Annotations and save.** Run the round trip. Check the saved-file
-      `/AP`, blend mode and the absence of empty `/Contents` and `/T` in
-      Preview, Acrobat and Chrome again.
-- [ ] **Performance.** Compare first-page time and a full-document index on a
-      large paper. The binary is about 21% bigger, so check the extension's cold
-      start.
+Phase 4 removed the switch again with EmbedPDF, so of this phase only the
+single `bind()`, the source-free `copy-wasm-to-public` (byte comparison, hard
+failure) and the local-only wasm fetch remain.
 
-**Exit:** every changed golden has a reason. Plan one's manual pass (§6) is
-clean on all three browsers with `__PDFIUM_SOURCE__ = "upstream"`.
+### Phase 4: Review the differences and switch
 
-### Phase 5: Make it the default and remove EmbedPDF
+Merged with what was phase 5 (2026-11-22). The plan had been to ship one
+release with both binaries buildable and remove EmbedPDF in the next. That
+bought nothing git doesn't: reverting the switch commit brings EmbedPDF back.
+So phases 3–5 land as one commit, and the phase 3 switch existed only long
+enough to review the differences.
 
-- [ ] Ship one release with `upstream` as the default and `embedpdf` still
-      buildable.
-- [ ] Next release: remove `@embedpdf/pdfium`, the switch and the EmbedPDF
-      bindings.
-- [ ] Update `docs/pdf_lifecycle.md` (where the wasm comes from) and
-      `docs/text_rendering.md` (§2 build facts, §5 "upstream ask"). The ask
-      would now go to Google, or become our own patch (§5).
+Eight months of upstream PDFium (to the `chromium/8100` pin) changed some
+output. Each changed golden has its reason recorded here and in the test's
+header.
+
+- [x] **Render goldens: 17 re-recorded, reason item 1.** All 114 renders (both
+      scales and the rect render of every fixture page) were dumped on both
+      binaries and diffed: 106 differ, by at most 4 levels of 255, on at most
+      10% of a page's pixels, and none by more than 32. That is glyph
+      anti-aliasing and nothing structural. Width and height are unchanged;
+      only the hashes moved.
+- [x] **Text gamma.** Re-measured `docs/text_rendering.md` §4 on the new
+      binary: page 1 of the Nature paper gives ink 16.04 and 7,343 colour px,
+      the same as native macOS PDFium with native text off (EmbedPDF's was
+      16.03 / 7,336). With the curve applied, ink moves by under 0.1% on
+      three papers, so γ = 1.5 stands.
+- [x] **Text.** Unchanged. The document, outline, metadata, link and analysis
+      snapshots (39 entries) are identical on both binaries, so PDFium's
+      character lists didn't move and the fixtures need no rebuild.
+- [x] **Annotations and save: 2 re-recorded, reason item 4.** The saved
+      highlight's `/CA` is written `0.5019608`, not `0.50196081`. Nothing
+      else in the saved dicts changed: no `/BM`, no empty `/Contents` or `/T`.
+      The Preview, Acrobat and Chrome check is the manual pass below.
+- [x] **Performance.** No measurable change. Under bun, five runs each:
+      compile and init 13.4 ms on both; first page (load, render at 1.5×, text
+      boxes) 56–57 ms on ncomms and 88–90 ms on the Nature paper; the full
+      index 1.10 s and 0.37 s on both. In Chrome 157, page open to first
+      canvas of ncomms in the real extension, fresh profile each run: 1.10–1.73 s
+      on EmbedPDF and 1.11–1.72 s on upstream. The 0.8 MB larger wasm doesn't show.
+- [x] **Remove EmbedPDF:** the `@embedpdf/pdfium` dependency, the
+      `__PDFIUM_SOURCE__` switch, the CDN fallback in `fetchPdfiumWasm` (the
+      wasm now loads only from the extension, or the page's own origin in
+      dev), the `scrub-pdfium-cdn` and `dedupe-pdfium-wasm` Vite plugins, and
+      `STORE_BUILD` / `__LOCAL_WASM_ONLY__`, which only existed to keep the CDN
+      out of store builds (`build:store` is gone; `release` no longer sets
+      it).
+- [x] Update `docs/pdf_lifecycle.md` (where the wasm comes from) and
+      `docs/text_rendering.md` (§2 build facts, §4, §5's upstream ask, which
+      now goes to PDFium, with our own build as the fallback).
+- [ ] **Manual pass** (plan one §6) on Chrome, Firefox and Safari, plus the
+      saved-annotation check in Preview, Acrobat and Chrome. The user does
+      this.
+
+**Exit:** every changed golden has a reason (above), and the manual pass is
+clean on all three browsers.
+
+### Phase 5: merged into phase 4
 
 ### Phase 6: Keeping it current
 
@@ -359,7 +402,7 @@ clean on all three browsers with `__PDFIUM_SOURCE__ = "upstream"`.
 | Upstream text changes shift indices the analysis relies on   | Fixture diffs reviewed in phase 4; plan one already maps indices in one place (`text_extractor.ts`) |
 | Glue wrapping breaks on a future Emscripten version          | The vendoring script fails loudly; the SHA-256 pin means nothing changes without a deliberate bump |
 | bblanchon stops publishing wasm                              | Their build scripts are open source and run on GitHub Actions; §5 (b)   |
-| A binary about 21% larger slows cold start                         | Measured in phase 4; the wasm already loads once per tab                |
+| A binary about 21% larger slows cold start                         | Measured in phase 4: no measurable change                               |
 
 ## 5. If Phase 0 says no
 
@@ -372,5 +415,5 @@ clean on all three browsers with `__PDFIUM_SOURCE__ = "upstream"`.
   flags changed. It also makes a carried patch possible: the glyph-emboldening
   change in `docs/text_rendering.md` §5 (D). The cost is owning a
   depot_tools/emsdk build. Run it from CI, never from a laptop.
-- **(c) Stay on EmbedPDF's binary for now.** After plan one this is a
-  supported state, not a dead end. Re-check with each bblanchon release.
+- **(c) Stay on EmbedPDF's binary for now.** After plan one this was a
+  supported state, not a dead end. (Moot since phase 4 removed it.)

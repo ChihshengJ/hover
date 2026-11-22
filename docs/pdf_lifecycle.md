@@ -261,10 +261,12 @@ buffer for the document's life — and is freed in `PdfiumDocument.close()`.
 
 The WASM module itself (`pdfium.wasm`) is fetched once per page and memoised by
 `initPdfium()` (`src/pdf/pdfium_module.ts`) — from
-`chrome.runtime.getURL("pdfium.wasm")` in a packaged extension, falling back to
-the CDN URL in dev (and hard-failing under `__LOCAL_WASM_ONLY__` for store
-builds). `@embedpdf/pdfium` supplies only that Emscripten build; Hover calls
-its raw `FPDF_*` exports through `PdfiumBindings`.
+`chrome.runtime.getURL("pdfium.wasm")` in a packaged extension, or from the
+page's own origin in dev; never from anywhere else. The binary and its
+Emscripten glue are bblanchon/pdfium-binaries' build of Google's PDFium,
+vendored in `vendor/pdfium/` (`scripts/vendor_pdfium.ts`); the build copies
+the wasm to the extension root. Hover calls its raw `FPDF_*` exports through
+`PdfiumBindings`.
 
 ### Load progress budget
 

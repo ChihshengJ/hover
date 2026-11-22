@@ -1,7 +1,10 @@
 /**
  * What `src/pdf/renderer.ts` paints for each fixture, as the viewer asks for
- * it. First recorded through `@embedpdf/engines`; Hover's renderer
- * reproduces those goldens byte for byte.
+ * it. First recorded through `@embedpdf/engines`, which Hover's renderer
+ * reproduced byte for byte. Re-recorded on the move to PDFium chromium/8100,
+ * whose glyph anti-aliasing differs by at most 4 levels on 2–10% of a text
+ * page's pixels, with nothing else changed (docs/plan_upstream_pdfium.md,
+ * phase 0 item 1).
  *
  * Snapshots hold `{ width, height, sha256 }` rather than pixels. A mismatch
  * means rendering changed, not that the golden needs updating.

@@ -3,12 +3,14 @@
 Findings behind issue #25: Hover's page text looks lighter and thinner than the
 same PDF in macOS Preview or Chrome's built-in viewer. This document records
 what causes it, what does _not_ cause it, and the fix we intend to propose
-upstream to EmbedPDF.
+upstream to PDFium.
 
-Investigated against `@embedpdf/engines` / `@embedpdf/pdfium` `2.15.0` (Hover
-now uses only the latter, through its own bindings) and the
+Investigated against `@embedpdf/engines` / `@embedpdf/pdfium` `2.15.0` and the
 EmbedPDF PDFium fork (`embedpdf/runtime`) at `72c5eb114`. PDFium source
 references are to that fork; they name the function so they survive drift.
+Since 2026-11 Hover runs Google's PDFium instead, from bblanchon/pdfium-binaries
+(`vendor/pdfium/`, docs/plan_upstream_pdfium.md). The findings hold on it, and
+§2, §4 and §6 note where it was re-measured.
 
 ---
 
@@ -44,15 +46,15 @@ byte for byte:
   option of the kind §5 proposes no longer needs an engine release to reach
   Hover; it needs only the wasm build to have it.
 
-The wasm itself (`@embedpdf/pdfium/dist/pdfium.wasm`) is built with these GN
-settings:
+The wasm itself (`vendor/pdfium/pdfium.wasm`) is built with the GN arguments
+in `vendor/pdfium/args.gn`:
 
-- `pdf_use_skia=false` for every target (`scripts/embedpdf-runtime/build-target.sh`).
-  The fork pulls in Skia only as a geometry-only stroker for redaction, and
-  patches Skia (`patches/embedpdf-runtime/skia/geometry-only-stroke.patch`) to
-  keep its renderer and font code out.
+- No `pdf_use_skia`, so it is off (PDFium's default): AGG renders everything.
 - `target_os="emscripten"`, so none of PDFium's Apple platform code exists in
   the binary.
+
+EmbedPDF's build, which Hover used before, was the same in both respects: its
+fork pulled Skia in only as a geometry-only stroker for redaction.
 
 ---
 
@@ -133,6 +135,11 @@ Each row renders page 1 of
 | BGRA   | `LCD_TEXT` | 16.03 | 7,336 (0 bytes differ) |
 | BGRx   | `LCD_TEXT` | 15.99 | 68,739    |
 
+**Our wasm since 2026-11** (bblanchon `chromium/8100`, Hover's renderer): BGRA
+default gives **16.04** ink and **7,343** colour px, the same as native macOS
+PDFium with native text off. Its glyph anti-aliasing differs from EmbedPDF's by
+at most 4 levels (docs/plan_upstream_pdfium.md, phase 0 item 1).
+
 Reading the tables:
 
 - **Native text is the whole effect.** On the Mac it adds ~12% ink to the
@@ -203,7 +210,7 @@ match BGRA, since the native-text path is Apple-only (not tested).
 | A. Gamma/dilation on the page bitmap (#25)   | no        | yes              | Small; darkens figures and images that already match      |
 | B. Skia build of PDFium                      | yes       | yes              | Very large, and ruled out: Skia isn't what makes it bold   |
 | C. Browser-drawn text (pdf.js style)         | yes       | follows OS       | Rewrite of text rendering                                  |
-| **D. Emboldening in PDFium's glyph rasterizer** | **yes** | **yes**          | Small C++ patch to the EmbedPDF fork                       |
+| **D. Emboldening in PDFium's glyph rasterizer** | **yes** | **yes**          | Small C++ patch to PDFium                                  |
 
 ### Interim fix: A, until upstream has D
 
@@ -226,6 +233,9 @@ pixel.
 
 - γ = 1.5 without dilation matches native ink, and has the lowest
   per-pixel error of the variants that match.
+- Re-checked on `chromium/8100` (2026-11-22): page ink with the curve
+  applied moves by under 0.1% from EmbedPDF's binary on three fixture papers
+  (Nature, ConvNeXt, Elsevier Alutiiq), so γ = 1.5 stands.
 - Dilation overshoots, and #25 measured it at ~34 ms a page.
 - Applied to the whole raster, the curve also darkened figures and images by
   ~11%. So it is confined to anti-aliased glyph edges inside text boxes (§6).
@@ -233,8 +243,7 @@ pixel.
   text, such as a pie wedge or a coloured header.
 - The pass costs ~7 ms on a 2× page (1.9 Mpx, ~540 word boxes). The boxes
   are read once per page and cached.
-- Migrating to EmbedPDF 3.x, with the glyph-level fix below, is the point to
-  replace it.
+- PDFium gaining the glyph-level fix below is the point to replace it.
 
 **D is the proposal.** CoreGraphics font smoothing is, in effect, a slight
 outline dilation at small sizes. PDFium already has the hook for this:
@@ -246,29 +255,22 @@ outline dilation at small sizes. PDFium already has the hook for this:
 - It would touch only glyphs and behave identically on every platform.
 - It would cost almost nothing, since glyph bitmaps are cached.
 
-Exposed as an opt-in render flag or option in `@embedpdf/engines`, this would
-help every EmbedPDF user on a Mac, not just Hover. A gamma table on glyph
+Exposed as an opt-in render flag, this would help every PDFium embedder whose
+build has no native text (wasm, or any non-Apple build), not just Hover. A gamma table on glyph
 coverage, which is how Skia darkens text, would be an alternative or a
 complement in the same spot.
 
-### Proposed upstream ask (`embedpdf/runtime`)
+### Proposed upstream ask (PDFium)
 
-1. An opt-in render option that applies size-dependent outline emboldening
-   (and/or a coverage gamma) to FreeType-rendered glyphs in
-   `CFX_Face::RenderGlyph`.
-2. For other EmbedPDF users, a way to pass it through `renderPageRaw` /
-   `renderRectEncoded` in `@embedpdf/engines`, where render flags are
-   hard-coded. Hover doesn't need this any more: it calls PDFium's render
-   functions itself (§2).
+An opt-in render flag that applies size-dependent outline emboldening (and/or
+a coverage gamma) to FreeType-rendered glyphs in `CFX_Face::RenderGlyph`.
+Hover passes its own render flags (§2), so it would need only a release of
+bblanchon/pdfium-binaries built after the change.
 
-If upstream declines, we could carry the patch on our own build of the fork.
-That means owning a depot_tools/emsdk build and rebuilding the wasm and its
-Emscripten JS on every EmbedPDF update. EmbedPDF's main branch is now
-3.0.0-next, with the runtime published as `@embedpdf/engine-runtime-wasm32`;
-v2 lives on their `v2` branch, which still gets backported fixes (2.15.1). The
-3.x runtime package accepts a locally built runtime
-(`pdf-runtime-build.local.json`), which would make a carried patch easier to
-maintain there than on v2.
+If PDFium declines, we could carry the patch on our own build. That means
+owning a depot_tools/emsdk build of PDFium, which bblanchon's build scripts
+(open source, run on GitHub Actions) make tractable, and rebuilding on every
+bump (docs/plan_upstream_pdfium.md, "If Phase 0 says no").
 
 ---
 

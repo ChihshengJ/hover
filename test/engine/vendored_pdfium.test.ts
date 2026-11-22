@@ -1,9 +1,8 @@
 /**
  * The PDFium build in `vendor/pdfium/` (scripts/vendor_pdfium.ts): that it is
  * the release `source.json` names, and that the wrapped glue instantiates and
- * opens a PDF through the raw exports. The app doesn't use it yet; the whole
- * suite runs on it once the bindings switch over
- * (docs/plan_upstream_pdfium.md phase 3).
+ * opens a PDF through the raw exports, independently of the app's own
+ * loader (`pdfium_module.ts`), which the rest of the suite goes through.
  */
 
 import { describe, expect, test } from "bun:test";

@@ -1,19 +1,20 @@
 /**
  * The PDFium wasm module, and the one typed surface Hover calls it through.
  *
- * `@embedpdf/pdfium` ships the Emscripten build and wraps every export in
- * `cwrap`, converting strings and booleans on the way. Hover calls the raw
- * exports instead (`_FPDF_*`), with the C signatures as they are: pointers and
- * `FPDF_BOOL`s are numbers, strings are heap pointers the caller allocates.
- * `PdfiumBindings` lists every function Hover calls, so this file is also the
- * inventory of what Hover needs from PDFium.
+ * Hover calls the module's raw exports (`_FPDF_*`), with the C signatures as
+ * they are: pointers and `FPDF_BOOL`s are numbers, strings are heap pointers
+ * the caller allocates. `PdfiumBindings` lists every function Hover calls, so
+ * this file is also the inventory of what Hover needs from PDFium.
  *
- * The module is loaded once per page and shared (`initPdfium`). This is the
- * only file that imports `@embedpdf/pdfium`, which Hover uses only for its
- * Emscripten build of PDFium.
+ * The module is bblanchon/pdfium-binaries' Emscripten build of PDFium,
+ * vendored in `vendor/pdfium/` with its glue wrapped as an ES module
+ * (scripts/vendor_pdfium.ts). Its release is pinned there. This is the only
+ * file that imports it.
+ *
+ * The module is loaded once per page and shared (`initPdfium`).
  */
 
-import { init } from "@embedpdf/pdfium";
+import createPdfium from "../../vendor/pdfium/pdfium.mjs";
 
 /**
  * Raw PDFium exports, by their C names. Every `FPDF_BOOL` comes back as 0 or 1,
@@ -430,7 +431,10 @@ const FUNCTION_NAMES: Record<keyof PdfiumFunctions, true> = {
   FPDFLink_GetAction: true,
 };
 
-/** The Emscripten module object, as far as this file reads it. */
+/**
+ * The Emscripten module object, as far as this file reads it. Nothing else of
+ * it is used anywhere (no `ccall`, `cwrap` or string helpers).
+ */
 type EmscriptenModule = Record<string, unknown> & PdfiumRuntime & {
   _malloc(size: number): number;
   _free(ptr: number): void;
@@ -463,8 +467,8 @@ function bind(em: EmscriptenModule): PdfiumBindings {
  *   unsigned int m_v8EmbedderSlot; void* m_pPlatform;
  *
  * five 4-byte fields on wasm32, all zero but the version. No user font paths,
- * no V8. This replaces `@embedpdf/pdfium`'s `PDFiumExt_Init`; renders of every
- * fixture are byte-identical either way.
+ * no V8. (It replaced `@embedpdf/pdfium`'s `PDFiumExt_Init`, with renders of
+ * every fixture byte-identical either way.)
  */
 function initLibrary(pdfium: PdfiumBindings) {
   const CONFIG_BYTES = 20;
@@ -486,11 +490,8 @@ function initLibrary(pdfium: PdfiumBindings) {
 export async function loadPdfiumModule(
   wasmBinary: ArrayBuffer | Uint8Array,
 ): Promise<PdfiumBindings> {
-  // The declared type wants an ArrayBuffer; Emscripten takes any BufferSource.
-  // `init` also cwraps every export, which Hover doesn't use; `.pdfium` is
-  // the Emscripten module underneath.
-  const wrapped = await init({ wasmBinary: wasmBinary as ArrayBuffer });
-  const bindings = bind(wrapped.pdfium as unknown as EmscriptenModule);
+  const em = (await createPdfium({ wasmBinary })) as EmscriptenModule;
+  const bindings = bind(em);
   initLibrary(bindings);
   return bindings;
 }
@@ -500,7 +501,7 @@ let loading: Promise<PdfiumBindings> | null = null;
 
 /**
  * Hand `initPdfium()` the wasm bytes up front, so it skips resolving and
- * fetching them. For bun tests, which have the package's copy on disk and no
+ * fetching them. For bun tests, which have the vendored copy on disk and no
  * extension URL to fetch from; the app never calls it.
  */
 export function primePdfiumWasm(bytes: ArrayBuffer | Uint8Array) {
@@ -527,27 +528,22 @@ export function initPdfium(
   return loading;
 }
 
-/** Resolve the wasm URL, bundled copy first, and download it. */
+/**
+ * Download `pdfium.wasm`: the copy packaged with the extension, or, outside
+ * one (the Vite dev server), the copy `copy-wasm-to-public` puts on the page's
+ * own origin. Never from anywhere else.
+ */
 export async function fetchPdfiumWasm(
   onProgress?: (progress: { percent: number; phase: string }) => void,
 ): Promise<ArrayBuffer> {
   onProgress?.({ percent: 5, phase: "loading-wasm" });
-  let wasmUrl: string | undefined;
+  let wasmUrl = "pdfium.wasm";
   if (typeof chrome !== "undefined" && chrome.runtime?.getURL) {
     try {
       wasmUrl = chrome.runtime.getURL("pdfium.wasm");
     } catch {
-      // Not a packaged extension context — fall through to the CDN URL.
+      // Not a packaged extension context: the page's own origin.
     }
-  }
-  if (!wasmUrl) {
-    if (__LOCAL_WASM_ONLY__) {
-      throw new Error(
-        "[PDFium] Local pdfium.wasm not resolvable; STORE_BUILD requires the bundled asset",
-      );
-    }
-    const { DEFAULT_PDFIUM_WASM_URL } = await import("@embedpdf/pdfium");
-    wasmUrl = DEFAULT_PDFIUM_WASM_URL;
   }
 
   onProgress?.({ percent: 10, phase: "downloading-wasm" });

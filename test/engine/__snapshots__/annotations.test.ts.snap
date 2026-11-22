@@ -8,10 +8,10 @@ exports[`papers/arxiv-cvpr-convnext round trip created, saved and reloaded 1`] =
 `;
 
 exports[`papers/arxiv-cvpr-convnext round trip created: saved annotation dicts 1`] = `
-"{"subtype":"/Highlight","keys":["/AP","/CA","/NM","/M","/F"],"empty":[],"apMultiply":false,"ca":0.50196081,"direct":true}
+"{"subtype":"/Highlight","keys":["/AP","/CA","/NM","/M","/F"],"empty":[],"apMultiply":false,"ca":0.5019608,"direct":true}
 {"subtype":"/Underline","keys":["/AP","/CA","/NM","/M","/F"],"empty":[],"apMultiply":false,"ca":1,"direct":true}
 {"subtype":"/Ink","keys":["/AP","/CA","/NM","/M","/F"],"empty":[],"apMultiply":false,"ca":1,"direct":true}
-{"subtype":"/Highlight","keys":["/AP","/CA","/Contents","/NM","/M","/F"],"empty":[],"apMultiply":false,"ca":0.50196081,"direct":true}"
+{"subtype":"/Highlight","keys":["/AP","/CA","/Contents","/NM","/M","/F"],"empty":[],"apMultiply":false,"ca":0.5019608,"direct":true}"
 `;
 
 exports[`papers/arxiv-cvpr-convnext round trip moved, recoloured, deleted, saved and reloaded 1`] = `
@@ -21,9 +21,16 @@ exports[`papers/arxiv-cvpr-convnext round trip moved, recoloured, deleted, saved
 `;
 
 exports[`papers/arxiv-cvpr-convnext round trip edited: saved annotation dicts 1`] = `
-"{"subtype":"/Highlight","keys":["/AP","/CA","/NM","/M","/F"],"empty":[],"apMultiply":false,"ca":0.50196081,"direct":true}
+"{"subtype":"/Highlight","keys":["/AP","/CA","/NM","/M","/F"],"empty":[],"apMultiply":false,"ca":0.5019608,"direct":true}
 {"subtype":"/Underline","keys":["/AP","/CA","/NM","/M","/F"],"empty":[],"apMultiply":false,"ca":1,"direct":true}
-{"subtype":"/Highlight","keys":["/AP","/CA","/Contents","/NM","/M","/F"],"empty":[],"apMultiply":false,"ca":0.50196081,"direct":true}"
+{"subtype":"/Highlight","keys":["/AP","/CA","/Contents","/NM","/M","/F"],"empty":[],"apMultiply":false,"ca":0.5019608,"direct":true}"
+`;
+
+exports[`papers/hover-0.10-annotated loads as it was saved: comment, rotation, the two-page highlight 1`] = `
+"{"type":"highlight","color":"yellow","pageRanges":[{"pageNumber":1,"rects":[{"leftRatio":0.1,"topRatio":0.3,"widthRatio":0.35,"heightRatio":0.012},{"leftRatio":0.1,"topRatio":0.315,"widthRatio":0.3,"heightRatio":0.012}],"text":""}],"comment":"Saved by Hover 0.10"}
+{"type":"underline","color":"green","pageRanges":[{"pageNumber":1,"rects":[{"leftRatio":0.55,"topRatio":0.4,"widthRatio":0.35,"heightRatio":0.012}],"text":""}],"comment":null}
+{"type":"drawing","color":"red","pageRanges":[{"pageNumber":2,"rects":[{"leftRatio":0.2,"topRatio":0.3,"widthRatio":0.2,"heightRatio":0.05}],"text":""}],"strokes":[{"points":[{"x":0.2,"y":0.3},{"x":0.3,"y":0.35},{"x":0.4,"y":0.32}],"strokeWidth":0.004}],"rotation":0,"comment":null}
+{"type":"highlight","color":"blue","pageRanges":[{"pageNumber":3,"rects":[{"leftRatio":0.5,"topRatio":0.9,"widthRatio":0.4,"heightRatio":0.012}],"text":""},{"pageNumber":4,"rects":[{"leftRatio":0.08,"topRatio":0.08,"widthRatio":0.4,"heightRatio":0.012}],"text":""}],"comment":null}"
 `;
 
 exports[`papers/annotated Preview's annotations as the store reads them 1`] = `
@@ -41,11 +48,4 @@ exports[`papers/annotated Preview's annotation dicts 1`] = `
 {"subtype":"/Text","keys":["/AP","/T","/Contents","/M","/F"],"empty":[],"apMultiply":false}
 {"subtype":"/Highlight","keys":["/AP","/T","/Contents","/M","/F"],"empty":[],"apMultiply":true}
 {"subtype":"/Highlight","keys":["/AP","/T","/Contents","/M","/F"],"empty":[],"apMultiply":true}"
-`;
-
-exports[`papers/hover-0.10-annotated loads as it was saved: comment, rotation, the two-page highlight 1`] = `
-"{"type":"highlight","color":"yellow","pageRanges":[{"pageNumber":1,"rects":[{"leftRatio":0.1,"topRatio":0.3,"widthRatio":0.35,"heightRatio":0.012},{"leftRatio":0.1,"topRatio":0.315,"widthRatio":0.3,"heightRatio":0.012}],"text":""}],"comment":"Saved by Hover 0.10"}
-{"type":"underline","color":"green","pageRanges":[{"pageNumber":1,"rects":[{"leftRatio":0.55,"topRatio":0.4,"widthRatio":0.35,"heightRatio":0.012}],"text":""}],"comment":null}
-{"type":"drawing","color":"red","pageRanges":[{"pageNumber":2,"rects":[{"leftRatio":0.2,"topRatio":0.3,"widthRatio":0.2,"heightRatio":0.05}],"text":""}],"strokes":[{"points":[{"x":0.2,"y":0.3},{"x":0.3,"y":0.35},{"x":0.4,"y":0.32}],"strokeWidth":0.004}],"rotation":0,"comment":null}
-{"type":"highlight","color":"blue","pageRanges":[{"pageNumber":3,"rects":[{"leftRatio":0.5,"topRatio":0.9,"widthRatio":0.4,"heightRatio":0.012}],"text":""},{"pageNumber":4,"rects":[{"leftRatio":0.08,"topRatio":0.08,"widthRatio":0.4,"heightRatio":0.012}],"text":""}],"comment":null}"
 `;

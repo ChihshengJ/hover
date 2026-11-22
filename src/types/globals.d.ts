@@ -8,9 +8,6 @@ declare const __APP_VERSION__: string;
 /** Build target: "chrome" | "firefox" | "safari". */
 declare const __TARGET__: string;
 
-/** True in store builds, where the remote pdfium CDN fallback is scrubbed. */
-declare const __LOCAL_WASM_ONLY__: boolean;
-
 // DOM expando properties. src/page.js hangs analysis records straight off the
 // overlay elements it creates. docs/architecture_plan.md Phase 7 replaces these
 // with WeakMaps; until then they are declared so checkJs can see them.

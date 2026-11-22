@@ -8,8 +8,10 @@
  *   comments, strokes). First recorded over `@embedpdf/engines`; Hover's own
  *   reader and writer reproduce it exactly;
  * - what the save wrote into each annotation dict, read from the raw bytes.
- *   These changed once, on purpose, when Hover started writing annotations
- *   itself (docs/plan_own_pdf_engine.md phase 5).
+ *   These changed on purpose when Hover started writing annotations itself
+ *   (docs/plan_own_pdf_engine.md phase 5), and on the move to PDFium
+ *   chromium/8100, which writes `/CA` with shortest round-trip digits
+ *   (docs/plan_upstream_pdfium.md, phase 0 item 4).
  */
 
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";

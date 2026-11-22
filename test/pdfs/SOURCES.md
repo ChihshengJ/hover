@@ -28,8 +28,8 @@ the version of record for both.
 
 ### What each paper covers
 
-Notes on file structure, from pypdf and the current engine (`@embedpdf/pdfium`
-2.15.0):
+Notes on file structure, from pypdf and the engine at the time
+(`@embedpdf/pdfium` 2.15.0):
 
 - **`arxiv-acl-adaptive-retrieval.pdf`**: 19 pages, A4, pdfTeX 1.40.25.
   Type 1 fonts (Nimbus Roman, CM, SFTT) **with** ToUnicode. 151 named

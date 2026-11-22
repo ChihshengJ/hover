@@ -1,6 +1,6 @@
 /**
  * PDFium for bun: the app's own shared instance (`initPdfium`), loaded from
- * the package's wasm rather than fetched, for every test file and for
+ * the vendored wasm rather than fetched, for every test file and for
  * `scripts/build_fixtures.ts`.
  */
 
@@ -12,12 +12,9 @@ import type { PdfiumBindings } from "../../src/pdf/pdfium_module.js";
 
 const REPO_ROOT = join(import.meta.dir, "..", "..");
 
-// The package's own copy, not `public/pdfium.wasm`: that one is gitignored and
+// The vendored copy, not `public/pdfium.wasm`: that one is gitignored and
 // only appears once Vite has run.
-const WASM_PATH = join(
-  REPO_ROOT,
-  "node_modules/@embedpdf/pdfium/dist/pdfium.wasm",
-);
+const WASM_PATH = join(REPO_ROOT, "vendor/pdfium/pdfium.wasm");
 
 /** The wasm bytes, for code that instantiates its own module. */
 export function pdfiumWasmBytes(): Uint8Array {

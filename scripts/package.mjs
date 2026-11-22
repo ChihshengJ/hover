@@ -179,6 +179,7 @@ function packageSource(version) {
 
 function buildInstructions(version) {
   const bun = execFileSync("bun", ["--version"], { encoding: "utf8" }).trim();
+  const pdfium = JSON.parse(readFileSync("vendor/pdfium/source.json", "utf8"));
   return `# Build instructions — Hover PDF ${version} (Firefox)
 
 Produces a \`dist/firefox/\` tree identical to the contents of the uploaded
@@ -208,6 +209,14 @@ The output is \`dist/firefox/\`.
   verbatim from \`node_modules/@embedpdf/pdfium/dist/pdfium.wasm\` during
   \`bun install\` + build by the \`copy-wasm-to-public\` plugin in
   \`vite.config.js\`; it is a third-party binary, not our source.
+- \`vendor/pdfium/\` is a third-party release, not our source: PDFium's
+  WebAssembly build from bblanchon/pdfium-binaries \`${pdfium.tag}\`
+  (${pdfium.url}, SHA-256 \`${pdfium.sha256}\`). \`scripts/vendor_pdfium.ts\`
+  downloads it, checks that hash, and writes the directory: \`pdfium.wasm\`
+  unchanged (SHA-256 \`${pdfium.wasmSha256}\`), and the release's generated,
+  minified Emscripten glue (\`lib/pdfium.js\`) wrapped unchanged inside an ES
+  module factory as \`pdfium.mjs\`. Re-running the script reproduces it.
+  Its licences ship in the extension under \`licenses/pdfium/\`.
 - The screenshots and demo GIFs referenced by README.md are omitted; they are
   listing media, not build inputs, so some image links in README.md will not
   resolve. The images the extension itself ships are under \`public/assets/\`.

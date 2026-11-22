@@ -3,6 +3,7 @@ import { resolve } from "path";
 import { pruneJunk } from "./scripts/clean_junk.mjs";
 import {
   copyFileSync,
+  cpSync,
   existsSync,
   readFileSync,
   statSync,
@@ -149,6 +150,22 @@ export default defineConfig({
           JSON.stringify(merged, null, 2) + "\n",
         );
         console.log(`[vite] Emitted ${TARGET} manifest to ${OUT_DIR}/`);
+      },
+    },
+    {
+      // PDFium's licence and those of the libraries built into it, plus the
+      // pdfium-binaries project's own, from the vendored release
+      // (scripts/vendor_pdfium.ts). @embedpdf/pdfium's build carries the
+      // same libraries.
+      name: "copy-pdfium-licences",
+      closeBundle() {
+        const vendor = resolve(__dirname, "vendor/pdfium");
+        const dest = resolve(__dirname, OUT_DIR, "licenses/pdfium");
+        cpSync(resolve(vendor, "licenses"), dest, { recursive: true });
+        copyFileSync(
+          resolve(vendor, "LICENSE"),
+          resolve(dest, "pdfium-binaries.txt"),
+        );
       },
     },
     {

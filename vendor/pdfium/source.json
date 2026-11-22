@@ -1,0 +1,6 @@
+{
+  "tag": "chromium/8100",
+  "url": "https://github.com/bblanchon/pdfium-binaries/releases/download/chromium/8100/pdfium-wasm.tgz",
+  "sha256": "0d68fef9aca2c69f20717c697f90f4fcb7d66a7a30307ad527769d18707394c8",
+  "wasmSha256": "3a44a7c5c6fb007bac1bd4175c813acb565e5386490c0da708c027f78e0e43b8"
+}

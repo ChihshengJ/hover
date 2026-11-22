@@ -253,7 +253,7 @@ saves by structure, never byte for byte.
 
 The glue isn't an ES module and isn't on npm, so Hover vendors it.
 
-- [ ] Write `scripts/vendor_pdfium.ts`. It:
+- [x] Write `scripts/vendor_pdfium.ts`. It:
   1. downloads a **pinned** release tag (`chromium/NNNN`);
   2. checks the tarball's SHA-256 against a value committed in the script;
   3. wraps `lib/pdfium.js` into an ES module factory
@@ -263,16 +263,30 @@ The glue isn't an ES module and isn't on npm, so Hover vendors it.
      `process`, `require`, `module` and `__dirname` must be shadowed;
   4. copies `pdfium.wasm`, the wrapped glue, `VERSION`, `args.gn` and
      `licenses/` into `vendor/pdfium/`.
-- [ ] Commit `vendor/pdfium/` so builds don't depend on the network. Store
+
+  It also checks that the release's `VERSION` matches the tag, writes the
+  bblanchon `LICENSE`, a `pdfium.d.mts` for the factory, a README and a
+  `source.json` with the provenance, and replaces the directory only once
+  all of it is staged.
+- [x] Commit `vendor/pdfium/` so builds don't depend on the network. Store
       builds already refuse the CDN (`__LOCAL_WASM_ONLY__`). The repo grows
       by about 5 MB per bump (about 65 MB a year at a monthly cadence). That
       was accepted over Git LFS or downloading at build time (2026-11-22).
-- [ ] Copy `pdfium.wasm` into each browser build (today it comes from
-      `@embedpdf/pdfium`), and the licence files into the extension's
-      licences folder.
-- [ ] **Firefox AMO.** The glue is generated, minified code. Note its origin
-      (release URL and SHA-256) and the vendoring script in the reviewer notes
-      before the first submission.
+- [x] Copy the licence files into each browser build, under
+      `licenses/pdfium/` (`copy-pdfium-licences` in `vite.config.js`).
+- [ ] Copy the vendored `pdfium.wasm` into each browser build (today it comes
+      from `@embedpdf/pdfium`). Moved to phase 3: the root `pdfium.wasm`
+      must match the glue that's bundled, which the source switch decides.
+- [x] **Firefox AMO.** The glue is generated, minified code. Its origin
+      (release URL and SHA-256) and the vendoring script are in the reviewer
+      notes (`buildInstructions()` in `scripts/package.mjs`, read from
+      `vendor/pdfium/source.json`).
+
+**Done (2026-11-22).** `vendor/pdfium/` holds `chromium/8100`, and its
+`pdfium.wasm` is byte-identical to the one phase 0 tested.
+`test/engine/vendored_pdfium.test.ts` checks the wasm against `source.json`,
+then instantiates the wrapped glue and opens a fixture through the raw
+exports. The app still runs on EmbedPDF.
 
 ### Phase 3: Switch the bindings
 
@@ -283,6 +297,8 @@ The glue isn't an ES module and isn't on npm, so Hover vendors it.
 - [ ] Add a build-time switch (`__PDFIUM_SOURCE__ = "embedpdf" | "upstream"`)
       so both binaries can ship from one tree for a release cycle. Default to
       `embedpdf` until phase 4 passes.
+- [ ] Have `copy-wasm-to-public` in `vite.config.js` take `pdfium.wasm` from
+      `vendor/pdfium/` when the switch says `upstream` (moved from phase 2).
 - [ ] Make the FFI rely only on what both modules export: `_malloc`, `_free`,
       `HEAPU8`, `HEAP32`, `HEAPU32`, `HEAPF32`, `HEAPF64`, `addFunction` and
       `removeFunction`. Phase 0 found nothing else in use.

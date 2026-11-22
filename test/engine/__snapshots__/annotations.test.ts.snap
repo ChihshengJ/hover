@@ -9,8 +9,8 @@ exports[`papers/arxiv-cvpr-convnext round trip created, saved and reloaded 1`] =
 
 exports[`papers/arxiv-cvpr-convnext round trip created: saved annotation dicts 1`] = `
 "{"subtype":"/Highlight","keys":["/AP","/CA","/NM","/M","/F"],"empty":[],"apMultiply":false,"ca":0.5019608,"direct":true}
-{"subtype":"/Underline","keys":["/AP","/CA","/NM","/M","/F"],"empty":[],"apMultiply":false,"ca":1,"direct":true}
-{"subtype":"/Ink","keys":["/AP","/CA","/NM","/M","/F"],"empty":[],"apMultiply":false,"ca":1,"direct":true}
+{"subtype":"/Underline","keys":["/AP","/CA","/NM","/M","/F"],"empty":[],"apMultiply":false,"ca":0.99607843,"direct":true}
+{"subtype":"/Ink","keys":["/AP","/CA","/NM","/M","/F"],"empty":[],"apMultiply":false,"ca":0.99607843,"direct":true}
 {"subtype":"/Highlight","keys":["/AP","/CA","/Contents","/NM","/M","/F"],"empty":[],"apMultiply":false,"ca":0.5019608,"direct":true}"
 `;
 
@@ -22,7 +22,7 @@ exports[`papers/arxiv-cvpr-convnext round trip moved, recoloured, deleted, saved
 
 exports[`papers/arxiv-cvpr-convnext round trip edited: saved annotation dicts 1`] = `
 "{"subtype":"/Highlight","keys":["/AP","/CA","/NM","/M","/F"],"empty":[],"apMultiply":false,"ca":0.5019608,"direct":true}
-{"subtype":"/Underline","keys":["/AP","/CA","/NM","/M","/F"],"empty":[],"apMultiply":false,"ca":1,"direct":true}
+{"subtype":"/Underline","keys":["/AP","/CA","/NM","/M","/F"],"empty":[],"apMultiply":false,"ca":0.99607843,"direct":true}
 {"subtype":"/Highlight","keys":["/AP","/CA","/Contents","/NM","/M","/F"],"empty":[],"apMultiply":false,"ca":0.5019608,"direct":true}"
 `;
 

@@ -68,6 +68,8 @@ const COLOR_TYPE = 0;
 const AP_NORMAL = 0;
 /** `FPDF_ANNOT_FLAG_PRINT`: without it, viewers show it on screen only. */
 const FLAG_PRINT = 4;
+/** The highest `/CA` written, out of 255: see `writeFields`. */
+const MAX_ALPHA = 254;
 /** An underline's line width, as PDFium draws its own. */
 const UNDERLINE_WIDTH = 1;
 
@@ -245,7 +247,11 @@ function writeFields(
   }
 
   const [r, g, b] = rgb(w.color);
-  const alpha = Math.max(0, Math.min(255, Math.round(w.opacity * 255)));
+  // At most 254 (/CA 0.996), never 255. SetAP gives the appearance stream a
+  // /Resources dictionary only when /CA < 1, and Preview (PDFKit) mis-draws
+  // a stream without one: it takes the last operand of `r g b RG` as a grey,
+  // so blue ink comes out pale grey and red nearly black. 0.4% is invisible.
+  const alpha = Math.max(0, Math.min(MAX_ALPHA, Math.round(w.opacity * 255)));
   if (!pdfium.FPDFAnnot_SetColor(annot, COLOR_TYPE, r, g, b, alpha)) {
     throw new Error(`PDFium refused the colour of ${w.name}`);
   }
@@ -402,4 +408,60 @@ export function updateAnnotation(
     createAnnotation(document, pageIndex, w);
   }
   return true;
+}
+
+/**
+ * PDFium's `FPDF_ANNOT_*` subtypes of the PDF's markup annotations (PDF 32000
+ * 12.5.6.2) plus `/Popup`, which only ever belongs to one: what a reader
+ * means by annotations. Links, form fields and the rest are the document's
+ * own and stay.
+ */
+const MARKUP_SUBTYPES = new Set([
+  1, // Text
+  3, // FreeText
+  4, // Line
+  5, // Square
+  6, // Circle
+  7, // Polygon
+  8, // PolyLine
+  9, // Highlight
+  10, // Underline
+  11, // Squiggly
+  12, // StrikeOut
+  13, // Stamp
+  14, // Caret
+  15, // Ink
+  16, // Popup
+  17, // FileAttachment
+  18, // Sound
+  28, // Redact
+]);
+
+/**
+ * Remove every markup annotation (`MARKUP_SUBTYPES`) from every page of
+ * `document`, which should be a copy (`PdfiumDocument.openCopy()`): this is
+ * what the open document is never written with. Returns how many were removed.
+ */
+export function removeAllMarkup(document: PdfiumDocument): number {
+  const pdfium = document.pdfium;
+  let removed = 0;
+  for (let pageIndex = 0; pageIndex < document.pageCount; pageIndex++) {
+    onPage(document, pageIndex, (pagePtr) => {
+      // Backwards, so a removal doesn't shift the indices still to visit.
+      for (let i = pdfium.FPDFPage_GetAnnotCount(pagePtr) - 1; i >= 0; i--) {
+        const annot = pdfium.FPDFPage_GetAnnot(pagePtr, i);
+        if (!annot) continue;
+        let subtype: number;
+        try {
+          subtype = pdfium.FPDFAnnot_GetSubtype(annot);
+        } finally {
+          pdfium.FPDFPage_CloseAnnot(annot);
+        }
+        if (MARKUP_SUBTYPES.has(subtype) && pdfium.FPDFPage_RemoveAnnot(pagePtr, i)) {
+          removed++;
+        }
+      }
+    });
+  }
+  return removed;
 }

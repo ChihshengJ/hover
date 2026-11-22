@@ -11,7 +11,10 @@
  *   These changed on purpose when Hover started writing annotations itself
  *   (docs/plan_own_pdf_engine.md phase 5), and on the move to PDFium
  *   chromium/8100, which writes `/CA` with shortest round-trip digits
- *   (docs/plan_upstream_pdfium.md, phase 0 item 4).
+ *   (docs/plan_upstream_pdfium.md, phase 0 item 4). Opaque underlines and
+ *   ink then went from `/CA 1` to 254/255, so their appearance gets the
+ *   `/Resources` Preview needs to draw it in the right colour
+ *   (`MAX_ALPHA` in annotation_writer.ts).
  */
 
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
@@ -269,6 +272,28 @@ describe("papers/annotated", () => {
     expect(snapshotSavedFile(fixtureBytes("annotated"))).toMatchSnapshot();
   });
 
+  test("a copy without annotations has neither the file's nor the user's; links stay", async () => {
+    const doc = await load(fixtureBytes("annotated"));
+    await doc.addAnnotation(structuredClone(UNDERLINE));
+    const links = (d: PDFDocumentModel) =>
+      Array.from({ length: d.document!.pageCount }, (_, i) =>
+        readPageAnnotations(d.document!, i).links.length,
+      );
+
+    const clean = doc.saveWithoutAnnotations();
+    expect(annotationDicts(clean, [...HOVER_SUBTYPES, "/Popup"])).toEqual([]);
+    const reloaded = await load(clean);
+    expect(reloaded.getAllAnnotations()).toEqual([]);
+    expect(links(reloaded)).toEqual(links(doc));
+    // The user's annotation is still there for the annotated copy.
+    expect(annotationDicts(await doc.saveWithAnnotations(), ["/Underline"]).length).toBe(2);
+  });
+
+  test("a file with no annotations comes back as it was opened", async () => {
+    const bytes = fixtureBytes("arxiv-cvpr-convnext");
+    const doc = await load(bytes);
+    expect(Buffer.from(doc.saveWithoutAnnotations()).equals(Buffer.from(bytes))).toBe(true);
+  });
 });
 
 /**

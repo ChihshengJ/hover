@@ -6,6 +6,7 @@ import {
   matchCitationToReference,
 } from "../analysis/reference_builder.js";
 import { PdfiumDocument } from "../pdf/document.js";
+import { removeAllMarkup } from "../pdf/annotation_writer.js";
 import {
   createPdfPageSource,
   createRawPageTextSource,
@@ -408,12 +409,27 @@ export class PDFDocumentModel {
     }
   }
 
-  /** The file as it was opened, before any annotation was added or removed. */
-  saveOriginal(): Uint8Array<ArrayBuffer> {
-    // PDFium still holds the file the document was opened from, so the
-    // original needs no copy of its own until it's asked for.
+  /**
+   * The file with no annotations at all: neither the user's nor those it was
+   * opened with (`removeAllMarkup`; links and form fields stay). A file that
+   * had none comes back byte for byte as it was opened.
+   */
+  saveWithoutAnnotations(): Uint8Array<ArrayBuffer> {
     if (!this.document) throw new Error("No PDF document loaded");
-    return this.document.fileBytes() as Uint8Array<ArrayBuffer>;
+    let copy: PdfiumDocument | null = null;
+    try {
+      copy = this.document.openCopy();
+      if (removeAllMarkup(copy) === 0) {
+        // PDFium still holds the file the document was opened from.
+        return this.document.fileBytes() as Uint8Array<ArrayBuffer>;
+      }
+      return copy.save();
+    } catch (error) {
+      console.error("Error saving document:", error);
+      throw error;
+    } finally {
+      copy?.close();
+    }
   }
 
   // ============================================================================

@@ -99,7 +99,8 @@ function expectReadBack(markup: NativeMarkup | undefined, w: MarkupWrite) {
     expect(markup!.strokeWidth).toBeCloseTo(w.strokeWidth, 3);
   } else {
     expect(round(markup!.segments)).toEqual(round(w.segments));
-    expect(markup!.opacity).toBeCloseTo(Math.round(w.opacity * 255) / 255, 6);
+    // Never above 254/255: see `MAX_ALPHA` in annotation_writer.ts.
+    expect(markup!.opacity).toBeCloseTo(Math.min(254, Math.round(w.opacity * 255)) / 255, 6);
   }
 }
 
@@ -111,6 +112,8 @@ function expectCleanFile(bytes: Uint8Array) {
   for (const dict of annotationDicts(bytes, MARKUP_SUBTYPES)) {
     expect(dict.keys).toContain("/AP");
     expect(dict.empty).toEqual([]);
+    // Preview draws an appearance without /Resources in the wrong colours.
+    expect(dict.apWithoutResources).toBeUndefined();
   }
 }
 

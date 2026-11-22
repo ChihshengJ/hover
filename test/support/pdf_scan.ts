@@ -222,6 +222,11 @@ export interface AnnotationDictSummary {
   /** `/CA`, when present. */
   ca?: number;
   /**
+   * Set when the normal appearance stream has no `/Resources`, which Preview
+   * draws in the wrong colours (`annotation_writer.ts`, `MAX_ALPHA`).
+   */
+  apWithoutResources?: true;
+  /**
    * Set when the dict sits directly inside `/Annots` rather than being an
    * object of its own, as PDFium's `FPDFPage_CreateAnnot` writes it. Absent
    * for an indirect one.
@@ -285,6 +290,10 @@ export function annotationDicts(
     };
     const ca = resolve(objects, dict.get("/CA"));
     if (typeof ca === "number") summary.ca = ca;
+    const normalStream = resolve(objects, normal);
+    if (isDict(normalStream) && !normalStream.has("/Resources")) {
+      summary.apWithoutResources = true;
+    }
     if (direct) summary.direct = true;
     out.push(summary);
   }

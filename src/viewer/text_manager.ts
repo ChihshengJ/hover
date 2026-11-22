@@ -450,13 +450,16 @@ export class TextSelectionManager {
           })
           .filter((rect) => {
             const isExist = rect.width > 0 && rect.height > 0;
-            // Get rid of the Arxiv banner and page numbers
-            const isNearEdge =
-              rect.top < layerRect.height * 0.07 ||
+            // Get rid of the arXiv banner, running heads and page numbers:
+            // rects lying wholly in a margin band. Wholly, not starting in
+            // it: body text can start inside the band (Elsevier's left
+            // column is at 33 pt of 595, under 6%), and dropping rects by
+            // their left edge dropped every unindented line of it.
+            const inMargin =
+              rect.top + rect.height < layerRect.height * 0.07 ||
               rect.top > layerRect.height * 0.92 ||
-              rect.left < layerRect.width * 0.06;
-            if (isExist && !isNearEdge) return true;
-            return false;
+              rect.left + rect.width < layerRect.width * 0.06;
+            return isExist && !inMargin;
           });
 
         rects = this.#mergeRects(rects);

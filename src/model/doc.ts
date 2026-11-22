@@ -388,14 +388,23 @@ export class PDFDocumentModel {
   // Document Saving
   // ============================================================================
 
-  /** The file with the user's annotations in it, as a whole new PDF. */
+  /**
+   * The file with the user's annotations in it, as a whole new PDF. The
+   * annotations are written into a fresh copy of the file as opened, never
+   * into the open document (see `AnnotationStore.writeChanges`).
+   */
   async saveWithAnnotations(): Promise<Uint8Array<ArrayBuffer>> {
     if (!this.document) throw new Error("No PDF document loaded");
+    let copy: PdfiumDocument | null = null;
     try {
-      return this.document.save();
+      copy = this.document.openCopy();
+      this.annotationStore.writeChanges(copy);
+      return copy.save();
     } catch (error) {
       console.error("Error saving document:", error);
       throw error;
+    } finally {
+      copy?.close();
     }
   }
 

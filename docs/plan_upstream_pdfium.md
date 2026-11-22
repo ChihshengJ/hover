@@ -240,6 +240,15 @@ appearance-stream leak on today's binary, so it comes first and lands as its own
 (the release where item 5 appears), and `annotation_writer.ts` has no caller
 outside the save path.
 
+**Done (2026-11-22).** `AnnotationStore.writeChanges()` is the only path
+to the writer, and `saveWithAnnotations()` is its only caller, with the copy
+from `PdfiumDocument.openCopy()`. 145 pass on EmbedPDF, and the existing
+snapshots are unchanged. On 8165 and 8100, the new tests pass; the only
+failures are the dict snapshots for items 3 and 4, which get new goldens in
+phase 4. Before this change, four of the new tests failed on 8165.
+Upstream PDFium gives every save a fresh trailer `/ID`, so the tests compare
+saves by structure, never byte for byte.
+
 ### Phase 2: Vendoring
 
 The glue isn't an ES module and isn't on npm, so Hover vendors it.

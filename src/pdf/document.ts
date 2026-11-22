@@ -84,6 +84,7 @@ export class PdfiumDocument {
   #docPtr: number;
   #filePtr: number;
   #fileLength: number;
+  #password: string | null;
   #pages: PdfPage[];
   #rotations = new Map<number, number>();
   /** Loaded page pointers by index, least recently used first. */
@@ -95,6 +96,7 @@ export class PdfiumDocument {
     docPtr: number,
     filePtr: number,
     fileLength: number,
+    password: string | null,
     pages: PdfPage[],
   ) {
     this.#pdfium = pdfium;
@@ -102,6 +104,7 @@ export class PdfiumDocument {
     this.#docPtr = docPtr;
     this.#filePtr = filePtr;
     this.#fileLength = fileLength;
+    this.#password = password;
     this.#pages = pages;
   }
 
@@ -135,6 +138,7 @@ export class PdfiumDocument {
         docPtr,
         filePtr,
         bytes.length,
+        password,
         pages,
       );
     } catch (error) {
@@ -326,6 +330,17 @@ export class PdfiumDocument {
   fileBytes(): Uint8Array {
     if (!this.#filePtr) throw new Error("Document is closed");
     return this.ffi.bytes(this.#filePtr, this.#fileLength).slice();
+  }
+
+  /**
+   * A second, independent document over the same original bytes and
+   * password: its own heap copy of the file, its own parse, its own pages.
+   * Nothing done to one is seen by the other. The caller closes it.
+   *
+   * @throws PdfOpenError
+   */
+  openCopy(): PdfiumDocument {
+    return PdfiumDocument.open(this.#pdfium, this.fileBytes(), this.#password);
   }
 
   /** @param pageIndex 0-based */

@@ -10,6 +10,14 @@
  *
  * In the file, an annotation is one PDF annotation per page it covers, each
  * with the app's id as its `/NM`. Its comment is the first one's `/Contents`.
+ *
+ * Edits never touch the open document. The store remembers what the file held
+ * when it was loaded and which annotations changed since, and each save writes
+ * that net change into a fresh copy of the file (`writeChanges`). Writing an
+ * edit through to the open document instead would leave garbage in the saved
+ * file: PDFium writes every object created since load, even one a later edit
+ * removed, so a deleted comment's text and every replaced appearance stream
+ * would still be in the bytes (docs/plan_upstream_pdfium.md, phase 0 item 5).
  */
 
 import { DocEvent } from "./doc_events.js";
@@ -23,6 +31,7 @@ import type {
   MarkupWrite,
   UnnamedLocator,
 } from "../pdf/annotation_writer.js";
+import type { PdfiumDocument } from "../pdf/document.js";
 import type { PDFDocumentModel } from "./doc.js";
 
 /** One colour from the palette the UI offers. */
@@ -174,29 +183,62 @@ function rotatePoints(points: Point[][], degrees: number): Point[][] {
   );
 }
 
-/** Where an annotation that came without `/NM` is, until Hover names it. */
+/** Where an annotation that came without `/NM` is in the file as loaded. */
 interface Unnamed {
   /** 0-based. */
   pageIndex: number;
   locator: UnnamedLocator;
 }
 
+/** A sticky note in the file as loaded that a markup's comment came from. */
+interface LinkedNote {
+  /** 0-based. */
+  pageIndex: number;
+  name: string | null;
+  rect: PdfBox;
+}
+
+/** What the file as loaded holds for one annotation. */
+interface Loaded {
+  type: AnnotationType;
+  /** 1-based, in `pageRanges` order. */
+  pages: number[];
+}
+
 export class AnnotationStore {
   #doc: PDFDocumentModel;
 
+  // Everything below up to `annotations` describes the file as loaded, which
+  // every save starts from, so none of it changes until the next load.
+
+  /** App id → the annotation's type and pages in the file as loaded. */
+  #loaded = new Map<string, Loaded>();
+
   /**
-   * App id → where to find the annotation in the file while it has no `/NM`
-   * (it came with the file). Dropped once a write gives it one.
+   * App id → where to find the annotation in the file as loaded, for one that
+   * has no `/NM` there. The first save that writes it gives it one, but the
+   * next save starts from the file as loaded again.
    */
   #unnamed = new Map<string, Unnamed>();
 
   /**
    * App id → the sticky note its comment was loaded from: one Hover wrote
-   * before comments moved into `/Contents`, or a note found next to it. It is
-   * removed when the comment changes, since the comment now lives in the
-   * markup's own `/Contents`.
+   * before comments moved into `/Contents`, or a note found next to it. Moved
+   * to `#droppedNotes` when the comment changes, since the comment then lives
+   * in the markup's own `/Contents`.
    */
-  #linkedNotes = new Map<string, { pageIndex: number; name: string | null; rect: PdfBox }>();
+  #linkedNotes = new Map<string, LinkedNote>();
+
+  // The change since load, which each save writes.
+
+  /** Annotations created or edited since load, in the order first touched. */
+  #dirty = new Set<string>();
+
+  /** Loaded annotations the user deleted. */
+  #deleted = new Set<string>();
+
+  /** Loaded sticky notes whose comment moved into the markup or went away. */
+  #droppedNotes: LinkedNote[] = [];
 
   annotations = new Map<string, Annotation>();
 
@@ -246,6 +288,12 @@ export class AnnotationStore {
     }
 
     this.#linkNotesToMarkup(notes);
+    for (const annotation of this.annotations.values()) {
+      this.#loaded.set(annotation.id, {
+        type: annotation.type,
+        pages: annotation.pageRanges.map((pr) => pr.pageNumber),
+      });
+    }
 
     if (this.annotations.size > 0) {
       this.#doc.notify(DocEvent.ANNOTATIONS_IMPORTED, {
@@ -300,7 +348,7 @@ export class AnnotationStore {
     for (const pr of annotation.pageRanges) {
       this.#addToPageIndex(id, pr.pageNumber);
     }
-    this.#create(annotation);
+    this.#dirty.add(id);
 
     this.#doc.notify(DocEvent.ANNOTATION_ADDED, { annotation });
     return annotation;
@@ -314,7 +362,6 @@ export class AnnotationStore {
     if (!annotation) return null;
 
     const oldComment = annotation.comment;
-    const oldType = annotation.type;
     const oldPages = annotation.pageRanges.map((pr) => pr.pageNumber);
     if (updates.color !== undefined) annotation.color = updates.color;
     if (updates.type !== undefined) annotation.type = updates.type;
@@ -325,8 +372,8 @@ export class AnnotationStore {
     if (updates.rotation !== undefined) annotation.rotation = updates.rotation;
     annotation.updatedAt = new Date().toISOString();
 
-    // A drawing dragged across a page boundary changes pages. The page index
-    // and the file both key off the page, so neither can be updated in place.
+    // A drawing dragged across a page boundary changes pages, and the page
+    // index keys off the page.
     const newPages = annotation.pageRanges.map((pr) => pr.pageNumber);
     const movedPages = !samePages(oldPages, newPages);
     if (movedPages) {
@@ -338,11 +385,8 @@ export class AnnotationStore {
       }
     }
 
-    if (annotation.comment !== oldComment) this.#removeLinkedNote(id);
-    this.#update(
-      annotation,
-      oldType !== annotation.type || movedPages ? oldPages : null,
-    );
+    if (annotation.comment !== oldComment) this.#dropLinkedNote(id);
+    this.#dirty.add(id);
     this.#doc.notify(DocEvent.ANNOTATION_UPDATED, { annotation });
     return annotation;
   }
@@ -351,8 +395,10 @@ export class AnnotationStore {
     const annotation = this.annotations.get(id);
     if (!annotation) return false;
 
-    this.#remove(annotation, annotation.pageRanges.map((pr) => pr.pageNumber));
-    this.#removeLinkedNote(id);
+    // One created since load leaves nothing in the file to remove.
+    this.#dirty.delete(id);
+    if (this.#loaded.has(id)) this.#deleted.add(id);
+    this.#dropLinkedNote(id);
 
     for (const pr of annotation.pageRanges) {
       this.#removeFromPageIndex(id, pr.pageNumber);
@@ -370,8 +416,8 @@ export class AnnotationStore {
     annotation.comment = null;
     annotation.updatedAt = new Date().toISOString();
 
-    this.#removeLinkedNote(id);
-    this.#update(annotation, null);
+    this.#dropLinkedNote(id);
+    this.#dirty.add(id);
 
     this.#doc.notify(DocEvent.ANNOTATION_UPDATED, { annotation });
     return true;
@@ -413,8 +459,19 @@ export class AnnotationStore {
     this.annotations.clear();
     this.annotationsByPage.clear();
     this.nativeAnnotationsByPage.clear();
+    this.#loaded.clear();
     this.#unnamed.clear();
     this.#linkedNotes.clear();
+    this.#dirty.clear();
+    this.#deleted.clear();
+    this.#droppedNotes = [];
+  }
+
+  #dropLinkedNote(id: string) {
+    const note = this.#linkedNotes.get(id);
+    if (!note) return;
+    this.#linkedNotes.delete(id);
+    this.#droppedNotes.push(note);
   }
 
   // ============================================
@@ -640,15 +697,61 @@ export class AnnotationStore {
     return writes;
   }
 
-  /** The locator for `id` on a page, while it still has no `/NM`. */
+  /**
+   * Write the change since load into `document`, a fresh copy of the file as
+   * loaded (`PdfiumDocument.openCopy()`), ready for it to be saved. The open
+   * document is never written to.
+   *
+   * Every annotation is written at most once into a copy that never removes
+   * it, so no object PDFium creates here can be left unreferenced. What is
+   * removed (deleted annotations, dropped notes, replaced appearance streams)
+   * comes from the file, and PDFium leaves out those once nothing refers to
+   * them. Nothing here is cleared: the next save starts from the file as
+   * loaded again and needs the whole change.
+   *
+   * A part that fails to write is logged and skipped, so the rest still save.
+   */
+  writeChanges(document: PdfiumDocument) {
+    for (const id of this.#deleted) {
+      this.#remove(document, id, this.#loaded.get(id)!.pages);
+    }
+    for (const note of this.#droppedNotes) {
+      try {
+        removeAnnotation(
+          document,
+          note.pageIndex,
+          note.name ?? "",
+          note.name ? null : { subtype: "text", rect: note.rect },
+        );
+      } catch (error) {
+        console.warn("[AnnotationStore] Error removing comment note:", error);
+      }
+    }
+    for (const id of this.#dirty) {
+      const annotation = this.annotations.get(id);
+      if (!annotation) continue;
+      const loaded = this.#loaded.get(id);
+      const pages = annotation.pageRanges.map((pr) => pr.pageNumber);
+      if (!loaded) {
+        this.#create(document, annotation);
+      } else if (loaded.type !== annotation.type || !samePages(loaded.pages, pages)) {
+        // Its parts in the file are keyed by page and subtype, so they can't
+        // be rewritten in place.
+        this.#remove(document, id, loaded.pages);
+        this.#create(document, annotation);
+      } else {
+        this.#update(document, annotation);
+      }
+    }
+  }
+
+  /** The locator for `id` on a page, when it has no `/NM` in the file. */
   #locatorFor(id: string, pageIndex: number): UnnamedLocator | null {
     const unnamed = this.#unnamed.get(id);
     return unnamed?.pageIndex === pageIndex ? unnamed.locator : null;
   }
 
-  #create(annotation: Annotation) {
-    const document = this.#doc.document;
-    if (!document) return;
+  #create(document: PdfiumDocument, annotation: Annotation) {
     for (const [pageIndex, write] of this.#writesFor(annotation)) {
       try {
         createAnnotation(document, pageIndex, write);
@@ -658,25 +761,14 @@ export class AnnotationStore {
     }
   }
 
-  /**
-   * Bring the file in line with `annotation`. When it changed type or pages
-   * (`oldPages`), its old parts are removed and new ones written.
-   */
-  #update(annotation: Annotation, oldPages: number[] | null) {
-    const document = this.#doc.document;
-    if (!document) return;
-    if (oldPages) {
-      this.#remove(annotation, oldPages);
-      this.#create(annotation);
-      return;
-    }
+  /** Rewrite the file's parts of `annotation` in place. */
+  #update(document: PdfiumDocument, annotation: Annotation) {
     for (const [pageIndex, write] of this.#writesFor(annotation)) {
       try {
         const locator = this.#locatorFor(annotation.id, pageIndex);
         if (!updateAnnotation(document, pageIndex, write, locator)) {
           createAnnotation(document, pageIndex, write);
         }
-        if (locator) this.#unnamed.delete(annotation.id);
       } catch (error) {
         console.warn("[AnnotationStore] Error updating annotation:", error);
       }
@@ -684,38 +776,18 @@ export class AnnotationStore {
   }
 
   /** Remove the annotation's parts on `pages` (1-based) from the file. */
-  #remove(annotation: Annotation, pages: number[]) {
-    const document = this.#doc.document;
-    if (!document) return;
+  #remove(document: PdfiumDocument, id: string, pages: number[]) {
     for (const pageNumber of pages) {
       try {
         removeAnnotation(
           document,
           pageNumber - 1,
-          annotation.id,
-          this.#locatorFor(annotation.id, pageNumber - 1),
+          id,
+          this.#locatorFor(id, pageNumber - 1),
         );
       } catch (error) {
         console.warn("[AnnotationStore] Error removing annotation:", error);
       }
-    }
-    this.#unnamed.delete(annotation.id);
-  }
-
-  #removeLinkedNote(id: string) {
-    const note = this.#linkedNotes.get(id);
-    const document = this.#doc.document;
-    if (!note || !document) return;
-    this.#linkedNotes.delete(id);
-    try {
-      removeAnnotation(
-        document,
-        note.pageIndex,
-        note.name ?? "",
-        note.name ? null : { subtype: "text", rect: note.rect },
-      );
-    } catch (error) {
-      console.warn("[AnnotationStore] Error removing comment note:", error);
     }
   }
 }

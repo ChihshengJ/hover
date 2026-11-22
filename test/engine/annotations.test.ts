@@ -17,8 +17,9 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { PDFDocumentModel } from "../../src/model/doc.js";
 import { primePdfiumWasm } from "../../src/pdf/pdfium_module.js";
 import type { Annotation, AnnotationInput } from "../../src/model/annotation_data.js";
+import { readPageAnnotations } from "../../src/pdf/annotation_reader.js";
 import { fixturePdfs, pdfiumWasmBytes, round } from "../support/pdfium.js";
-import { annotationDicts } from "../support/pdf_scan.js";
+import { annotationDicts, scanObjects } from "../support/pdf_scan.js";
 
 /** The subtypes Hover writes: highlight, underline, ink, and the comment note. */
 const HOVER_SUBTYPES = ["/Highlight", "/Underline", "/Ink", "/Text"];
@@ -266,4 +267,122 @@ describe("papers/annotated", () => {
     expect(snapshotSavedFile(fixtureBytes("annotated"))).toMatchSnapshot();
   });
 
+});
+
+/**
+ * Edits stay in the store, and each save writes the net change into a fresh
+ * copy of the file as loaded (docs/plan_upstream_pdfium.md phase 1). Written
+ * through to the open document, an annotation created and then removed stays
+ * in the saved file on PDFium chromium/8165 and later, `/Contents` included,
+ * and every in-place edit leaves its old appearance stream behind on any
+ * PDFium.
+ */
+describe("annotations are written only on save", () => {
+  const SECRET = "Deleted before saving";
+
+  /** Whether `text` is anywhere in the bytes, as PDFDocEncoding or UTF-16BE. */
+  function contains(bytes: Uint8Array, text: string): boolean {
+    const latin1 = Buffer.from(bytes).toString("latin1");
+    const utf16be = [...text].map((c) => `\0${c}`).join("");
+    return latin1.includes(text) || latin1.includes(utf16be);
+  }
+
+  test("a deleted comment's text is not in the saved bytes", async () => {
+    const withSecret = { ...structuredClone(COMMENTED), comment: SECRET };
+
+    // Created, then deleted.
+    const deleted = await load(fixtureBytes("arxiv-cvpr-convnext"));
+    const a = await deleted.addAnnotation(structuredClone(withSecret));
+    await deleted.deleteAnnotation(a.id);
+    expect(contains(await deleted.saveWithAnnotations(), SECRET)).toBe(false);
+
+    // Created, then its comment cleared, which once meant remove and
+    // recreate, since PDFium has no call to drop `/Contents`.
+    const cleared = await load(fixtureBytes("arxiv-cvpr-convnext"));
+    const b = await cleared.addAnnotation(structuredClone(withSecret));
+    await cleared.deleteAnnotationComment(b.id);
+    const clearedBytes = await cleared.saveWithAnnotations();
+    expect(contains(clearedBytes, SECRET)).toBe(false);
+    expect(annotationDicts(clearedBytes, ["/Highlight"]).length).toBe(1);
+
+    // Saved, reopened, then deleted.
+    const withComment = await load(fixtureBytes("arxiv-cvpr-convnext"));
+    await withComment.addAnnotation(structuredClone(withSecret));
+    const reopened = await load(await withComment.saveWithAnnotations());
+    const c = reopened.getAllAnnotations().find((x) => x.comment === SECRET)!;
+    await reopened.deleteAnnotation(c.id);
+    expect(contains(await reopened.saveWithAnnotations(), SECRET)).toBe(false);
+  });
+
+  test("any number of in-place edits save one appearance stream", async () => {
+    const original = await load(fixtureBytes("arxiv-cvpr-convnext"));
+    await original.addAnnotation(structuredClone(HIGHLIGHT));
+    const bytes = await original.saveWithAnnotations();
+
+    const objectCount = async (edits: number) => {
+      const doc = await load(bytes);
+      const { id } = doc.getAllAnnotations()[0];
+      const colors = ["red", "blue", "green"] as const;
+      for (let i = 0; i < edits; i++) {
+        await doc.updateAnnotation(id, { color: colors[i % colors.length] });
+      }
+      return scanObjects(await doc.saveWithAnnotations()).size;
+    };
+    expect(await objectCount(5)).toBe(await objectCount(1));
+  });
+
+  test("creating and deleting before saving leaves the file's annotations as loaded", async () => {
+    const untouched = await load(fixtureBytes("annotated"));
+    const plain = await untouched.saveWithAnnotations();
+
+    const doc = await load(fixtureBytes("annotated"));
+    const { id } = await doc.addAnnotation(structuredClone(HIGHLIGHT));
+    await doc.updateAnnotation(id, { comment: SECRET });
+    await doc.deleteAnnotation(id);
+    const saved = await doc.saveWithAnnotations();
+
+    // Not byte for byte: newer PDFium gives every save a fresh trailer `/ID`.
+    expect(contains(saved, SECRET)).toBe(false);
+    expect(scanObjects(saved).size).toBe(scanObjects(plain).size);
+    expect(snapshotSavedFile(saved)).toBe(snapshotSavedFile(fixtureBytes("annotated")));
+  });
+
+  test("each of two saves in one session is right, and the open document is never written", async () => {
+    const doc = await load(fixtureBytes("arxiv-cvpr-convnext"));
+    const liveCount = () => readPageAnnotations(doc.document!, 0).markup.length;
+    const before = liveCount();
+
+    const highlight = await doc.addAnnotation(structuredClone(HIGHLIGHT));
+    const first = await doc.saveWithAnnotations();
+
+    await doc.updateAnnotation(highlight.id, { color: "red", comment: "Second" });
+    const underline = await doc.addAnnotation(structuredClone(UNDERLINE));
+    const second = await doc.saveWithAnnotations();
+
+    await doc.deleteAnnotation(highlight.id);
+    const third = await doc.saveWithAnnotations();
+
+    expect(liveCount()).toBe(before);
+
+    const one = await load(first);
+    expect(one.getAllAnnotations().map((a) => [a.id, a.color, a.comment])).toEqual([
+      [highlight.id, "yellow", null],
+    ]);
+
+    const two = await load(second);
+    expect(
+      two.getAllAnnotations().map((a) => [a.id, a.color, a.comment]).sort(),
+    ).toEqual(
+      [
+        [highlight.id, "red", "Second"],
+        [underline.id, "green", null],
+      ].sort(),
+    );
+    expect(annotationDicts(second, ["/Highlight"]).length).toBe(1);
+
+    const three = await load(third);
+    expect(three.getAllAnnotations().map((a) => a.id)).toEqual([underline.id]);
+    expect(annotationDicts(third, ["/Highlight"])).toEqual([]);
+    expect(contains(third, "Second")).toBe(false);
+  });
 });

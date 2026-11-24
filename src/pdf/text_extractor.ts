@@ -4,17 +4,17 @@
  *   pdfium_reader.js      — faithful PDFium reads, no interpretation
  *   layout_heuristics.js  — word grouping and rule detection, no PDFium
  *
- * This file wires them together and owns the document lifecycle. Behaviour that
- * belongs to one of the two layers should be changed there, not here.
+ * This file wires them together; `document.ts` owns the document lifecycle.
+ * Behaviour that belongs to one of the two layers should be changed there,
+ * not here.
  */
 
-import { PdfiumFFI } from "./pdfium_ffi.js";
 import { PdfiumPageReader } from "./pdfium_reader.js";
 import {
   groupCharsIntoRuns,
   isRuleLikeBounds,
 } from "../analysis/layout_heuristics.js";
-import type { WrappedPdfiumModule } from "@embedpdf/pdfium";
+import type { PdfiumBindings } from "./pdfium_module.js";
 
 /** One text run with its geometry and font, as DocumentTextIndex consumes it. */
 export interface TextSlice {
@@ -36,7 +36,7 @@ export interface PageTextResult {
   pageIndex: number;
   /** Complete page text. */
   fullText: string;
-  /** Text slices with position information (matches getPageTextRects format). */
+  /** Positioned text runs (`groupCharsIntoRuns`), with each run's font. */
   textSlices: TextSlice[];
   /** Page width in PDF units. */
   pageWidth: number;
@@ -55,8 +55,8 @@ export interface PagePathsResult {
 export class PdfiumTextExtractor {
   #reader: PdfiumPageReader = null;
 
-  constructor(pdfiumModule: WrappedPdfiumModule) {
-    this.#reader = new PdfiumPageReader(pdfiumModule);
+  constructor(pdfium: PdfiumBindings) {
+    this.#reader = new PdfiumPageReader(pdfium);
   }
 
   get reader(): PdfiumPageReader {
@@ -212,8 +212,8 @@ export class PdfiumTextExtractor {
   // ============================================================================
 
   /**
-   * Extract text from a page with proper UTF-16LE handling
-   * Returns data in a format compatible with getPageTextRects
+   * Extract a page's full text and its positioned slices (`TextSlice`),
+   * decoded from UTF-16LE.
    *
    * @param pageIndex 0-based page index
    */
@@ -322,145 +322,5 @@ export class PdfiumTextExtractor {
         },
       };
     });
-  }
-}
-
-export class PdfiumDocumentHandle {
-  #pdfium: WrappedPdfiumModule = null;
-  #docPtr: number = null;
-  #filePtr: number = null;
-  #fileLength = 0;
-  #extractor: PdfiumTextExtractor = null;
-
-  /**
-   * @param docPtr Document pointer
-   * @param filePtr File buffer pointer, freed in close()
-   * @param fileLength Byte length of the file buffer
-   */
-  constructor(
-    pdfiumModule: WrappedPdfiumModule,
-    docPtr: number,
-    filePtr: number,
-    fileLength: number,
-  ) {
-    this.#pdfium = pdfiumModule;
-    this.#docPtr = docPtr;
-    this.#filePtr = filePtr;
-    this.#fileLength = fileLength;
-    this.#extractor = new PdfiumTextExtractor(pdfiumModule);
-  }
-
-  get pdfium() {
-    return this.#pdfium;
-  }
-
-  get docPtr() {
-    return this.#docPtr;
-  }
-
-  get extractor() {
-    return this.#extractor;
-  }
-
-  /**
-   * A copy of the file this handle was opened from. PDFium only ever reads the
-   * buffer it loads from, so these are the original bytes for as long as the
-   * handle is open.
-   */
-  fileBytes(): Uint8Array {
-    if (!this.#filePtr) throw new Error("Document handle is closed");
-    return this.#extractor.reader.ffi
-      .bytes(this.#filePtr, this.#fileLength)
-      .slice();
-  }
-
-  /**
-   * Extract text from a page.
-   * @param pageIndex 0-based page index
-   */
-  extractPageText(pageIndex: number): PageTextResult {
-    return this.#extractor.extractPageText(this.#docPtr, pageIndex);
-  }
-
-  /**
-   * Extract path objects from a page.
-   * @param pageIndex 0-based page index
-   */
-  extractPagePaths(pageIndex: number): PagePathsResult {
-    return this.#extractor.extractPagePaths(this.#docPtr, pageIndex);
-  }
-
-  /** Visible-text boxes for a 0-based page. */
-  extractTextBoxes(pageIndex: number): Float32Array {
-    return this.#extractor.extractTextBoxes(this.#docPtr, pageIndex);
-  }
-
-  /** Get page count. */
-  getPageCount(): number {
-    return this.#pdfium.FPDF_GetPageCount(this.#docPtr);
-  }
-
-  /**
-   * Close the document and free resources
-   */
-  close() {
-    if (this.#docPtr) {
-      this.#pdfium.FPDF_CloseDocument(this.#docPtr);
-      this.#docPtr = null;
-    }
-    if (this.#filePtr) {
-      this.#extractor.reader.ffi.free(this.#filePtr);
-      this.#filePtr = null;
-    }
-    this.#extractor.dispose();
-  }
-}
-
-/**
- * Factory to create low-level document handles from PDF data
- *
- * Usage:
- *   const factory = new PdfiumDocumentFactory(pdfiumModule);
- *   const handle = factory.loadFromBuffer(pdfData);
- *   const text = handle.extractPageText(0);
- *   handle.close();
- */
-export class PdfiumDocumentFactory {
-  #pdfium: WrappedPdfiumModule = null;
-
-  /** Owns the file buffer allocation, which happens before a handle exists. */
-  #ffi: PdfiumFFI = null;
-
-  constructor(pdfiumModule: WrappedPdfiumModule) {
-    this.#pdfium = pdfiumModule;
-    this.#ffi = new PdfiumFFI(pdfiumModule);
-  }
-
-  /** Load document from a Uint8Array buffer. */
-  loadFromBuffer(
-    pdfData: Uint8Array,
-    password: string | null = null,
-  ): PdfiumDocumentHandle {
-    const pdfium = this.#pdfium;
-
-    // PDFium keeps referencing this buffer for the life of the document, so it
-    // is owned by the handle and freed in close() rather than here.
-    const filePtr = this.#ffi.allocBytes(pdfData);
-
-    // PDFium takes a NUL pointer for "no password"; the binding types the
-    // parameter as string, so the 0 has to be cast rather than passed through.
-    const docPtr = pdfium.FPDF_LoadMemDocument(
-      filePtr,
-      pdfData.length,
-      password ? password : (0 as unknown as string),
-    );
-
-    if (!docPtr) {
-      this.#ffi.free(filePtr);
-      const error = pdfium.FPDF_GetLastError();
-      throw new Error(`Failed to load PDF: error code ${error}`);
-    }
-
-    return new PdfiumDocumentHandle(pdfium, docPtr, filePtr, pdfData.length);
   }
 }

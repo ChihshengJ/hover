@@ -150,7 +150,7 @@ async function openDialog(
     overlay.querySelectorAll<HTMLButtonElement>(".share-tab"),
   );
 
-  const files: Partial<Record<"annotated" | "original", Promise<File>>> = {};
+  const files: Partial<Record<"annotated" | "clean", Promise<File>>> = {};
   // A tab's onShow runs inside the switch's relayout and may relayout itself;
   // the outer animation already covers that change.
   let relayingOut = false;
@@ -173,11 +173,11 @@ async function openDialog(
     fileName,
     includeAnnotations: Config.get("export_include_annotations"),
     getFile: (annotated) => {
-      const key = annotated ? "annotated" : "original";
+      const key = annotated ? "annotated" : "clean";
       return (files[key] ??= (async () => {
         const data = annotated
           ? await doc.saveWithAnnotations()
-          : doc.saveOriginal();
+          : doc.saveWithoutAnnotations();
         return new File([data], fileName, { type: "application/pdf" });
       })().catch((error) => {
         delete files[key]; // Let the next attempt retry

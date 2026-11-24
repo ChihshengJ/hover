@@ -25,7 +25,7 @@ It intentionally keeps only the most essential reading features, but aims to mak
 by introducing a **carefully designed UI system** for desktop reading based on a single ball-shaped controller.
 Every action and command revolves around the single controller, and everything irrelevant to reading fades into the background.
 
-The project is built with Vanilla JS and is dependent on [Embed PDF](https://www.embedpdf.com/)'s engine and Pdfium.
+The project is built with Vanilla JS and renders PDFs with [PDFium](https://pdfium.googlesource.com/pdfium/), compiled to WebAssembly by [pdfium-binaries](https://github.com/bblanchon/pdfium-binaries).
 
 <small>\*A significant portion of the codebase was developed with AI assistance; however, the author has 100% audited the code.</small>
 

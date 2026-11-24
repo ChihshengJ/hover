@@ -3,9 +3,9 @@ import { resolve } from "path";
 import { pruneJunk } from "./scripts/clean_junk.mjs";
 import {
   copyFileSync,
+  cpSync,
   existsSync,
   readFileSync,
-  statSync,
   writeFileSync,
 } from "fs";
 
@@ -13,7 +13,6 @@ const manifest = JSON.parse(
   readFileSync(resolve(__dirname, "manifest.json"), "utf8"),
 );
 const APP_VERSION = manifest.version;
-const STORE_BUILD = process.env.STORE_BUILD === "1";
 
 // Build target: chrome (default) | firefox | safari.
 // manifest.json is the Chrome base; manifests/<target>.json is deep-merged
@@ -50,7 +49,6 @@ export default defineConfig({
   root: ".",
   define: {
     __APP_VERSION__: JSON.stringify(APP_VERSION),
-    __LOCAL_WASM_ONLY__: JSON.stringify(STORE_BUILD),
     __TARGET__: JSON.stringify(TARGET),
   },
   build: {
@@ -93,37 +91,6 @@ export default defineConfig({
       },
     },
     {
-      // In store builds, scrub the remote CDN URL baked into
-      // @embedpdf/pdfium so reviewers don't flag it as remote code.
-      name: "scrub-pdfium-cdn",
-      enforce: "pre",
-      transform(code, id) {
-        if (!STORE_BUILD) return null;
-        if (!id.includes("@embedpdf/pdfium")) return null;
-        if (!code.includes("cdn.jsdelivr.net")) return null;
-        return code.replace(
-          /['"]https?:\/\/cdn\.jsdelivr\.net\/[^'"]*pdfium[^'"]*['"]/g,
-          '""',
-        );
-      },
-    },
-    {
-      // @embedpdf/pdfium resolves its binary with
-      // `new URL('pdfium.wasm', import.meta.url)`, which makes Vite emit a
-      // second 4.6 MB copy into assets/ on top of the one we ship at the
-      // extension root, which is redundant.
-      name: "dedupe-pdfium-wasm",
-      enforce: "pre",
-      transform(code, id) {
-        if (!id.includes("@embedpdf/pdfium")) return null;
-        if (!code.includes("new URL('pdfium.wasm'")) return null;
-        return code.replace(
-          /new URL\('pdfium\.wasm',\s*import\.meta\.url\)\.href/g,
-          "'pdfium.wasm'",
-        );
-      },
-    },
-    {
       // public/ picks up .DS_Store from Finder and Vite copies it verbatim
       // into dist/, where AMO's validator flags it. Drop it every build so
       // the output directory is submission-clean without a manual pass.
@@ -152,36 +119,37 @@ export default defineConfig({
       },
     },
     {
+      // PDFium's licence and those of the libraries built into it, plus the
+      // pdfium-binaries project's own, from the vendored release
+      // (scripts/vendor_pdfium.ts).
+      name: "copy-pdfium-licences",
+      closeBundle() {
+        const vendor = resolve(__dirname, "vendor/pdfium");
+        const dest = resolve(__dirname, OUT_DIR, "licenses/pdfium");
+        cpSync(resolve(vendor, "licenses"), dest, { recursive: true });
+        copyFileSync(
+          resolve(vendor, "LICENSE"),
+          resolve(dest, "pdfium-binaries.txt"),
+        );
+      },
+    },
+    {
       name: "copy-wasm-to-public",
       buildStart() {
-        const wasmSrc = resolve(
-          __dirname,
-          "node_modules/@embedpdf/pdfium/dist/pdfium.wasm",
-        );
+        const wasmSrc = resolve(__dirname, "vendor/pdfium/pdfium.wasm");
         const wasmDest = resolve(__dirname, "public/pdfium.wasm");
 
-        if (!existsSync(wasmSrc)) return;
-
-        // public/pdfium.wasm is gitignored and must track the installed
-        // @embedpdf/pdfium exactly. Copying only when it is absent silently
-        // ships a stale binary against newer JS glue after a version bump, so
-        // compare sizes and re-copy whenever they diverge.
-        let stale = true;
-        if (existsSync(wasmDest)) {
-          try {
-            stale = statSync(wasmSrc).size !== statSync(wasmDest).size;
-          } catch (err) {
-            console.warn("Could not stat pdfium.wasm:", err.message);
-          }
+        if (!existsSync(wasmSrc)) {
+          this.error("No vendor/pdfium/pdfium.wasm: run scripts/vendor_pdfium.ts");
         }
-        if (!stale) return;
 
-        try {
-          copyFileSync(wasmSrc, wasmDest);
-          console.log("[vite] Copied pdfium.wasm to public/");
-        } catch (err) {
-          console.warn("Could not copy pdfium.wasm:", err.message);
-        }
+        // public/pdfium.wasm is gitignored and must match the bundled glue
+        // exactly: after a release bump, a stale copy would load against the
+        // wrong glue. So compare the bytes and re-copy whenever they differ.
+        const src = readFileSync(wasmSrc);
+        if (existsSync(wasmDest) && src.equals(readFileSync(wasmDest))) return;
+        copyFileSync(wasmSrc, wasmDest);
+        console.log("[vite] Copied vendor/pdfium/pdfium.wasm to public/");
       },
     },
   ],

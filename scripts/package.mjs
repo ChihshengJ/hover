@@ -179,6 +179,7 @@ function packageSource(version) {
 
 function buildInstructions(version) {
   const bun = execFileSync("bun", ["--version"], { encoding: "utf8" }).trim();
+  const pdfium = JSON.parse(readFileSync("vendor/pdfium/source.json", "utf8"));
   return `# Build instructions — Hover PDF ${version} (Firefox)
 
 Produces a \`dist/firefox/\` tree identical to the contents of the uploaded
@@ -194,20 +195,27 @@ Produces a \`dist/firefox/\` tree identical to the contents of the uploaded
 
 \`\`\`bash
 bun install --frozen-lockfile
-STORE_BUILD=1 bun run build:firefox
+bun run build:firefox
 \`\`\`
 
 The output is \`dist/firefox/\`.
 
 ## Notes for the reviewer
 
-- \`STORE_BUILD=1\` pins the PDF engine to the locally bundled WebAssembly
-  binary and strips the CDN URL that @embedpdf/pdfium would otherwise fall
-  back to, so the build loads no remote code.
+- The PDF engine is PDFium, compiled to WebAssembly, from \`vendor/pdfium/\`
+  (below). It loads only the \`pdfium.wasm\` packaged in the extension; the
+  build references no remote code.
 - \`public/pdfium.wasm\` is absent from this archive by design. It is copied
-  verbatim from \`node_modules/@embedpdf/pdfium/dist/pdfium.wasm\` during
-  \`bun install\` + build by the \`copy-wasm-to-public\` plugin in
-  \`vite.config.js\`; it is a third-party binary, not our source.
+  verbatim from \`vendor/pdfium/pdfium.wasm\` during the build by the
+  \`copy-wasm-to-public\` plugin in \`vite.config.js\`.
+- \`vendor/pdfium/\` is a third-party release, not our source: PDFium's
+  WebAssembly build from bblanchon/pdfium-binaries \`${pdfium.tag}\`
+  (${pdfium.url}, SHA-256 \`${pdfium.sha256}\`). \`scripts/vendor_pdfium.ts\`
+  downloads it, checks that hash, and writes the directory: \`pdfium.wasm\`
+  unchanged (SHA-256 \`${pdfium.wasmSha256}\`), and the release's generated,
+  minified Emscripten glue (\`lib/pdfium.js\`) wrapped unchanged inside an ES
+  module factory as \`pdfium.mjs\`. Re-running the script reproduces it.
+  Its licences ship in the extension under \`licenses/pdfium/\`.
 - The screenshots and demo GIFs referenced by README.md are omitted; they are
   listing media, not build inputs, so some image links in README.md will not
   resolve. The images the extension itself ships are under \`public/assets/\`.

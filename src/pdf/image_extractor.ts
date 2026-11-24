@@ -24,7 +24,7 @@
  */
 
 import { PAGEOBJ, PdfiumFFI } from "./pdfium_ffi.js";
-import type { WrappedPdfiumModule } from "@embedpdf/pdfium";
+import type { PdfiumBindings } from "./pdfium_module.js";
 import type { ObjectBounds } from "./pdfium_reader.js";
 
 export interface ImageObjectInfo {
@@ -46,12 +46,12 @@ const BITMAP_FORMAT_BGRX = 3;
 const BITMAP_FORMAT_BGRA = 4;
 
 export class PdfiumImageExtractor {
-  #pdfium: WrappedPdfiumModule;
+  #pdfium: PdfiumBindings;
   #ffi: PdfiumFFI;
 
-  constructor(pdfiumModule: WrappedPdfiumModule) {
-    this.#pdfium = pdfiumModule;
-    this.#ffi = new PdfiumFFI(pdfiumModule);
+  constructor(pdfium: PdfiumBindings) {
+    this.#pdfium = pdfium;
+    this.#ffi = new PdfiumFFI(pdfium);
   }
 
   /**

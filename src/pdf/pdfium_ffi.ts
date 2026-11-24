@@ -7,7 +7,11 @@
  * once per character — tens of thousands of allocator round-trips per page.
  */
 
-import type { WrappedPdfiumModule } from "@embedpdf/pdfium";
+import type { PdfiumBindings } from "./pdfium_module.js";
+
+const UTF16LE = new TextDecoder("utf-16le");
+const UTF8 = new TextDecoder("utf-8");
+const UTF8_ENCODER = new TextEncoder();
 
 /**
  * PDFium page-object types, as returned by FPDFPageObj_GetType. Same values as
@@ -25,20 +29,6 @@ export const PAGEOBJ = Object.freeze({
 });
 
 /**
- * Emscripten's typed heap views. `@embedpdf/pdfium` types its module object as
- * `PdfiumModule & PdfiumRuntimeMethods`, and `PdfiumRuntimeMethods` only
- * declares the handful of runtime helpers the wrapper re-exports — the HEAP*
- * views are always present at runtime but absent from that type.
- */
-export interface PdfiumHeaps {
-  HEAPF64: Float64Array;
-  HEAPF32: Float32Array;
-  HEAP32: Int32Array;
-  HEAPU32: Uint32Array;
-  HEAPU8: Uint8Array;
-}
-
-/**
  * Size of the persistent out-parameter scratch block. The widest single use is
  * four f64 slots (32 bytes); the rest is headroom for nested frames, which
  * throw rather than silently overrun.
@@ -46,7 +36,7 @@ export interface PdfiumHeaps {
 const SCRATCH_BYTES = 128;
 
 export class PdfiumFFI {
-  #pdfium: WrappedPdfiumModule;
+  #pdfium: PdfiumBindings;
 
   /** Lazily allocated scratch block for out-parameters. */
   #scratchPtr = 0;
@@ -57,11 +47,11 @@ export class PdfiumFFI {
   /** Nesting depth of active frames; slots() requires > 0. */
   #frameDepth = 0;
 
-  constructor(pdfiumModule: WrappedPdfiumModule) {
-    this.#pdfium = pdfiumModule;
+  constructor(pdfium: PdfiumBindings) {
+    this.#pdfium = pdfium;
   }
 
-  get module(): WrappedPdfiumModule {
+  get pdfium(): PdfiumBindings {
     return this.#pdfium;
   }
 
@@ -151,14 +141,46 @@ export class PdfiumFFI {
    *
    */
   withBuffer<T>(bytes: number, fn: (ptr: number) => T): T {
-    const ptr = this.#pdfium.pdfium.wasmExports.malloc(bytes);
+    const ptr = this.#pdfium.malloc(bytes);
     if (!ptr) throw new Error(`PDFium malloc(${bytes}) failed`);
 
     try {
       return fn(ptr);
     } finally {
-      this.#pdfium.pdfium.wasmExports.free(ptr);
+      this.#pdfium.free(ptr);
     }
+  }
+
+  /**
+   * Run `fn` with `text` as a NUL-terminated UTF-8 string on the heap, or with
+   * a null pointer for null, and free it after.
+   */
+  withCString<T>(text: string | null, fn: (ptr: number) => T): T {
+    if (text === null) return fn(0);
+    const encoded = UTF8_ENCODER.encode(text);
+    return this.withBuffer(encoded.length + 1, (ptr) => {
+      this.writeBytes(encoded, ptr);
+      this.#pdfium.HEAPU8[ptr + encoded.length] = 0;
+      return fn(ptr);
+    });
+  }
+
+  /**
+   * Run `fn` with `text` as a NUL-terminated UTF-16LE string on the heap
+   * (PDFium's `FPDF_WIDESTRING`), and free it after.
+   */
+  withWideString<T>(text: string, fn: (ptr: number) => T): T {
+    return this.withBuffer((text.length + 1) * 2, (ptr) => {
+      const heap = this.#pdfium.HEAPU8;
+      for (let i = 0; i < text.length; i++) {
+        const unit = text.charCodeAt(i);
+        heap[ptr + i * 2] = unit & 0xff;
+        heap[ptr + i * 2 + 1] = unit >> 8;
+      }
+      heap[ptr + text.length * 2] = 0;
+      heap[ptr + text.length * 2 + 1] = 0;
+      return fn(ptr);
+    });
   }
 
   // ==========================================================================
@@ -193,7 +215,7 @@ export class PdfiumFFI {
       throw new Error("PdfiumFFI.slots() must be called inside frame()");
     }
     if (!this.#scratchPtr) {
-      this.#scratchPtr = this.#pdfium.pdfium.wasmExports.malloc(SCRATCH_BYTES);
+      this.#scratchPtr = this.#pdfium.malloc(SCRATCH_BYTES);
       if (!this.#scratchPtr) throw new Error("PDFium scratch allocation failed");
     }
 
@@ -263,36 +285,42 @@ export class PdfiumFFI {
   // Heap readers
   // ==========================================================================
 
-  get #heap(): PdfiumHeaps {
-    return this.#pdfium.pdfium as unknown as PdfiumHeaps;
-  }
-
   f64(ptr: number): number {
-    return this.#heap.HEAPF64[ptr >> 3];
+    return this.#pdfium.HEAPF64[ptr >> 3];
   }
 
   f32(ptr: number): number {
-    return this.#heap.HEAPF32[ptr >> 2];
+    return this.#pdfium.HEAPF32[ptr >> 2];
   }
 
   i32(ptr: number): number {
-    return this.#heap.HEAP32[ptr >> 2];
+    return this.#pdfium.HEAP32[ptr >> 2];
   }
 
   u32(ptr: number): number {
-    return this.#heap.HEAPU32[ptr >> 2];
+    return this.#pdfium.HEAPU32[ptr >> 2];
   }
 
   /**
-   * Decode a NUL-terminated UTF-16 string. Only safe when the producing PDFium
-   * call actually writes a terminator; see PdfiumPageReader#readText.
+   * Decode a NUL-terminated UTF-16LE string. Only safe when the producing
+   * PDFium call actually writes a terminator; see PdfiumPageReader#readText.
+   *
+   * A lone surrogate decodes to U+FFFD. Emscripten's `UTF16ToString`, used
+   * before, kept it for strings of 16 units or fewer and replaced it in longer
+   * ones.
    */
   utf16(ptr: number): string {
-    return this.#pdfium.pdfium.UTF16ToString(ptr);
+    const heap = this.#pdfium.HEAPU8;
+    let end = ptr;
+    while (end + 1 < heap.length && (heap[end] | heap[end + 1]) !== 0) end += 2;
+    return UTF16LE.decode(heap.subarray(ptr, end));
   }
 
+  /** Decode a NUL-terminated UTF-8 string. */
   utf8(ptr: number): string {
-    return this.#pdfium.pdfium.UTF8ToString(ptr);
+    const heap = this.#pdfium.HEAPU8;
+    const end = heap.indexOf(0, ptr);
+    return UTF8.decode(heap.subarray(ptr, end < 0 ? heap.length : end));
   }
 
   /**
@@ -300,7 +328,7 @@ export class PdfiumFFI {
    *
    */
   writeBytes(bytes: Uint8Array, ptr: number) {
-    this.#heap.HEAPU8.set(bytes, ptr);
+    this.#pdfium.HEAPU8.set(bytes, ptr);
   }
 
   /**
@@ -308,7 +336,7 @@ export class PdfiumFFI {
    * memory, so copy out of it before anything can grow or free the heap.
    */
   bytes(ptr: number, length: number): Uint8Array {
-    return this.#heap.HEAPU8.subarray(ptr, ptr + length);
+    return this.#pdfium.HEAPU8.subarray(ptr, ptr + length);
   }
 
   /**
@@ -316,7 +344,7 @@ export class PdfiumFFI {
    *
    */
   allocBytes(bytes: Uint8Array): number {
-    const ptr = this.#pdfium.pdfium.wasmExports.malloc(bytes.length);
+    const ptr = this.#pdfium.malloc(bytes.length);
     if (!ptr) throw new Error(`PDFium malloc(${bytes.length}) failed`);
     this.writeBytes(bytes, ptr);
     return ptr;
@@ -327,7 +355,7 @@ export class PdfiumFFI {
    *
    */
   free(ptr: number) {
-    if (ptr) this.#pdfium.pdfium.wasmExports.free(ptr);
+    if (ptr) this.#pdfium.free(ptr);
   }
 
   /**
@@ -341,7 +369,7 @@ export class PdfiumFFI {
       throw new Error("PdfiumFFI.dispose() called inside frame()");
     }
     if (this.#scratchPtr) {
-      this.#pdfium.pdfium.wasmExports.free(this.#scratchPtr);
+      this.#pdfium.free(this.#scratchPtr);
       this.#scratchPtr = 0;
       this.#scratchTop = 0;
     }

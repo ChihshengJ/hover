@@ -4,6 +4,7 @@
  */
 
 import { COLOR_NAME_TO_HEX } from "../../annotation/drawing/drawing_geometry.js";
+import { renderPage } from "../../../pdf/renderer.js";
 
 import type {
   Annotation,
@@ -41,13 +42,11 @@ export async function renderThumbnail(
   withAnnotations = true,
 ): Promise<HTMLCanvasElement | null> {
   const page = doc.getPage(pageNumber);
-  const { native, pdfDoc } = doc;
-  if (!page || !native || !pdfDoc) return null;
+  const pdf = doc.document;
+  if (!page || !pdf) return null;
 
-  const scaleFactor = (cssHeight * window.devicePixelRatio) / page.size.height;
-  const image = await native
-    .renderPageRaw(pdfDoc, page, { scaleFactor, withAnnotations: false })
-    .toPromise();
+  const scale = (cssHeight * window.devicePixelRatio) / page.size.height;
+  const image = renderPage(pdf, page.index, scale);
 
   const canvas = document.createElement("canvas");
   canvas.width = image.width;

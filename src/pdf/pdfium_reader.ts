@@ -7,7 +7,7 @@
  */
 
 import { PAGEOBJ, PdfiumFFI } from "./pdfium_ffi.js";
-import type { WrappedPdfiumModule } from "@embedpdf/pdfium";
+import type { PdfiumBindings } from "./pdfium_module.js";
 import type {
   CharBox,
   CharRecord,
@@ -22,17 +22,17 @@ export interface ObjectBounds {
 }
 
 export class PdfiumPageReader {
-  #pdfium: WrappedPdfiumModule;
+  #pdfium: PdfiumBindings;
   #ffi: PdfiumFFI;
 
   /**
    * @param ffi share one when several readers use a module
    */
   constructor(
-    pdfiumModule: WrappedPdfiumModule,
-    ffi: PdfiumFFI = new PdfiumFFI(pdfiumModule),
+    pdfium: PdfiumBindings,
+    ffi: PdfiumFFI = new PdfiumFFI(pdfium),
   ) {
-    this.#pdfium = pdfiumModule;
+    this.#pdfium = pdfium;
     this.#ffi = ffi;
   }
 
@@ -85,13 +85,12 @@ export class PdfiumPageReader {
    * Decode a UTF-16 character range from an open text page.
    *
    * FPDFText_GetText writes at most `count` UTF-16 units plus a NUL, so the
-   * buffer is sized count + 1 and UTF16ToString has a terminator to stop at.
+   * buffer is sized count + 1 and `PdfiumFFI#utf16` has a terminator to stop
+   * at.
    *
-   * Deliberately not upstream's approach: @embedpdf/engines decodes via
-   * FPDFText_GetBoundedText with buflen equal to the text length, which writes
-   * no terminator, so UTF16ToString reads past the buffer. Don't "simplify"
-   * this back.
-   *
+   * Don't switch to FPDFText_GetBoundedText with buflen equal to the text
+   * length (as @embedpdf/engines did): it writes no terminator, so the
+   * NUL-scanning decoder would read past the buffer.
    */
   readText(
     textPagePtr: number,

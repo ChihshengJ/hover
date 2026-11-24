@@ -1,12 +1,12 @@
-import { initPdfiumEngine } from "../pdf/pdfium_init.js";
+import { initPdfium } from "../pdf/pdfium_module.js";
 import { DocumentTextIndex } from "../analysis/text_index.js";
 import {
   findBoundingAnchors,
   findReferenceByIndex,
   matchCitationToReference,
 } from "../analysis/reference_builder.js";
-import { PdfiumDocumentFactory } from "../pdf/text_extractor.js";
-import { stripEmptyAnnotationNotes } from "../pdf/annotation_export.js";
+import { PdfiumDocument } from "../pdf/document.js";
+import { removeAllMarkup } from "../pdf/annotation_writer.js";
 import {
   createPdfPageSource,
   createRawPageTextSource,
@@ -20,16 +20,7 @@ import { collectNamedDestinations } from "../analysis/outline_builder.js";
 import { AnnotationStore } from "./annotation_data.js";
 import { DocEvent } from "./doc_events.js";
 
-import type { PdfEngine, PdfiumNative } from "@embedpdf/engines/pdfium";
-import type {
-  PdfDocumentObject,
-  PdfPageObject,
-  PdfMetadataObject,
-  PdfAnnotationObject,
-} from "@embedpdf/models";
-import type { WrappedPdfiumModule } from "@embedpdf/pdfium";
 import type { DocEventName } from "./doc_events.js";
-import type { PdfiumDocumentHandle } from "../pdf/text_extractor.js";
 import type {
   ReferenceAnchor,
   ReferenceIndex,
@@ -68,16 +59,13 @@ export interface ReferenceSectionBounds {
 }
 
 export class PDFDocumentModel {
-  engine: PdfEngine | null = null;
-  native: PdfiumNative | null = null;
-  pdfDoc: PdfDocumentObject | null = null;
   allNamedDests = new Map<string, NamedDestination>();
 
   /**
    * The document's own bookmark tree, fetched once at load. Both the named
    * destination map and the outline builder read it.
    */
-  bookmarks: any[] = [];
+  bookmarks: PdfBookmark[] = [];
 
   pageDimensions: Array<{ width: number; height: number }> = [];
 
@@ -97,14 +85,15 @@ export class PDFDocumentModel {
   textIndex: DocumentTextIndex | null = null;
 
   pdfData: Uint8Array | null = null;
-  lowLevelHandle: PdfiumDocumentHandle | null = null;
+  /** The open PDF. */
+  document: PdfiumDocument | null = null;
   /** getPageTextBoxes results, by 0-based page index. */
   #textBoxes = new Map<number, Float32Array>();
   // imageExtractor: PdfiumImageExtractor | null = null;
 
   indexingState: "pending" | "running" | "complete" = "pending";
 
-  get nativeAnnotationsByPage(): Map<number, PdfAnnotationObject[]> {
+  get nativeAnnotationsByPage(): Map<number, NativeLink[]> {
     return this.annotationStore.nativeAnnotationsByPage;
   }
 
@@ -147,7 +136,7 @@ export class PDFDocumentModel {
   async load(
     arrayBuffer: ArrayBuffer,
     onProgress?: (p: LoadProgress) => void,
-  ): Promise<PdfDocumentObject> {
+  ): Promise<PdfiumDocument> {
     if (!(arrayBuffer instanceof ArrayBuffer)) {
       throw new Error("PDFDocumentModel.load() requires an ArrayBuffer");
     }
@@ -159,46 +148,33 @@ export class PDFDocumentModel {
     };
 
     reportProgress(5, "initializing engine");
-    const { engine, native, pdfiumModule } = await initPdfiumEngine((p) => {
+    const bindings = await initPdfium((p) => {
       const mapped = 5 + Math.round(p.percent * 0.15);
       reportProgress(mapped, p.phase);
     });
 
-    this.engine = engine;
-    this.native = native;
-
     try {
       reportProgress(20, "parsing");
       this.pdfData = new Uint8Array(arrayBuffer);
-
-      reportProgress(25, "parsing");
-      this.pdfDoc = await this.engine
-        .openDocumentBuffer({
-          id: `doc-${Date.now()}`,
-          // The engine does `new Uint8Array(file.content)`, so a typed array
-          // works, but PdfFileContent is declared as ArrayBuffer.
-          content: this.pdfData as unknown as ArrayBuffer,
-        })
-        .toPromise();
-
-      reportProgress(35, "setting up text extraction engine");
-      this.#setupLowLevelAccess(pdfiumModule);
+      // Throws a PdfOpenError for a file PDFium refuses.
+      this.document = PdfiumDocument.open(bindings, this.pdfData);
       this.pdfData = null;
 
       reportProgress(40, "processing");
-      await this.#cachePageDimensions();
+      this.#cachePageDimensions();
 
       reportProgress(45, "loading bookmarks");
-      await this.#loadBookmarksAndDestinations();
+      this.#loadBookmarksAndDestinations();
       reportProgress(80, "loading annotations");
       await this.annotationStore.loadFromDocument();
       // URLs are the one analysis product that needs no text index, and pages
       // start rendering long before `buildIndex()` runs.
       this.analysis.urlsByPage = indexUrls(this.nativeAnnotationsByPage);
       reportProgress(95, "complete");
-      return this.pdfDoc;
+      return this.document;
     } catch (error) {
       console.error("Error loading PDF:", error);
+      this.pdfData = null;
       throw error;
     }
   }
@@ -216,15 +192,11 @@ export class PDFDocumentModel {
     try {
       reportProgress(10, "indexing text");
       this.textIndex = new DocumentTextIndex(
-        createPdfPageSource({
-          pdfDoc: this.pdfDoc,
-          native: this.native,
-          lowLevelHandle: this.lowLevelHandle,
-        }),
+        createPdfPageSource({ document: this.document }),
       );
       await this.textIndex.build();
 
-      // if (this.imageExtractor && this.lowLevelHandle) {
+      // if (this.imageExtractor && this.document) {
       //   this.#scanImages();
       // }
 
@@ -233,9 +205,7 @@ export class PDFDocumentModel {
         nativeAnnotationsByPage: this.nativeAnnotationsByPage,
         bookmarks: this.bookmarks,
         allNamedDests: this.allNamedDests,
-        pageTextSource: this.lowLevelHandle
-          ? createRawPageTextSource(this.lowLevelHandle)
-          : null,
+        pageTextSource: createRawPageTextSource(this.document),
         onProgress: reportProgress,
       });
 
@@ -249,38 +219,20 @@ export class PDFDocumentModel {
     }
   }
 
-  #setupLowLevelAccess(pdfiumModule: WrappedPdfiumModule | null) {
-    if (!this.pdfData || !pdfiumModule) return;
-
-    try {
-      const factory = new PdfiumDocumentFactory(pdfiumModule);
-      this.lowLevelHandle = factory.loadFromBuffer(this.pdfData);
-      // this.imageExtractor = new PdfiumImageExtractor(pdfiumModule);
-    } catch (error) {
-      console.error("[Doc] Error setting up low-level access:", error);
-    }
+  #cachePageDimensions() {
+    this.pageDimensions = (this.document?.pages ?? []).map((page) => ({
+      width: page.size.width,
+      height: page.size.height,
+    }));
   }
 
-  async #cachePageDimensions() {
-    this.pageDimensions = [];
-    if (!this.pdfDoc?.pages) return;
-
-    for (const page of this.pdfDoc.pages) {
-      this.pageDimensions.push({
-        width: page.size.width,
-        height: page.size.height,
-      });
-    }
-  }
-
-  async #loadBookmarksAndDestinations() {
+  #loadBookmarksAndDestinations() {
     this.allNamedDests = new Map();
     this.bookmarks = [];
-    if (!this.pdfDoc || !this.native) return;
+    if (!this.document) return;
 
     try {
-      const bookmarks = await this.native.getBookmarks(this.pdfDoc).toPromise();
-      this.bookmarks = bookmarks.bookmarks || [];
+      this.bookmarks = this.document.bookmarks();
       this.allNamedDests = collectNamedDestinations(this.bookmarks);
     } catch (error) {
       console.warn("[Doc] Error loading bookmarks:", error);
@@ -292,12 +244,11 @@ export class PDFDocumentModel {
   // ============================================================================
 
   get numPages() {
-    return this.pdfDoc?.pages?.length || 0;
+    return this.document?.pageCount || 0;
   }
 
-  getPage(pageNumber: number): PdfPageObject | null {
-    if (!this.pdfDoc?.pages) return null;
-    return this.pdfDoc.pages[pageNumber - 1] || null;
+  getPage(pageNumber: number): PdfPage | null {
+    return this.document?.page(pageNumber - 1) ?? null;
   }
 
   getPageDimensions(
@@ -311,10 +262,9 @@ export class PDFDocumentModel {
   // ============================================================================
 
   async getDocumentTitle(): Promise<string | null> {
-    if (this.pdfDoc && this.native) {
+    if (this.document) {
       try {
-        const metadata = await this.native.getMetadata(this.pdfDoc).toPromise();
-        const metadataTitle = metadata?.title?.trim();
+        const metadataTitle = this.document.metadata().title?.trim();
         const detectedTitle = this.detectedMetadata?.title;
         const useDetected =
           detectedTitle &&
@@ -327,8 +277,9 @@ export class PDFDocumentModel {
     return this.detectedMetadata?.title || null;
   }
 
-  async getMetadata(): Promise<PdfMetadataObject> {
-    return await this.native.getMetadata(this.pdfDoc).toPromise();
+  async getMetadata(): Promise<PdfMetadata> {
+    if (!this.document) throw new Error("No PDF document loaded");
+    return this.document.metadata();
   }
 
   resolveDestination(destName: string): NamedDestination | null {
@@ -336,15 +287,15 @@ export class PDFDocumentModel {
   }
 
   /**
-   * Cached visible-text boxes for a page; null without a low-level handle.
+   * Cached visible-text boxes for a page; null with no document open.
    *
    * @param pageIndex 0-based
    */
   getPageTextBoxes(pageIndex: number): Float32Array | null {
-    if (!this.lowLevelHandle) return null;
+    if (!this.document) return null;
     let boxes = this.#textBoxes.get(pageIndex);
     if (!boxes) {
-      boxes = this.lowLevelHandle.extractTextBoxes(pageIndex);
+      boxes = this.document.extractTextBoxes(pageIndex);
       this.#textBoxes.set(pageIndex, boxes);
     }
     return boxes;
@@ -438,29 +389,47 @@ export class PDFDocumentModel {
   // Document Saving
   // ============================================================================
 
-  async saveWithAnnotations() {
-    if (!this.pdfDoc || !this.engine) {
-      throw new Error("No PDF document loaded");
-    }
-
+  /**
+   * The file with the user's annotations in it, as a whole new PDF. The
+   * annotations are written into a fresh copy of the file as opened, never
+   * into the open document (see `AnnotationStore.writeChanges`).
+   */
+  async saveWithAnnotations(): Promise<Uint8Array<ArrayBuffer>> {
+    if (!this.document) throw new Error("No PDF document loaded");
+    let copy: PdfiumDocument | null = null;
     try {
-      const bytes = await this.engine.saveAsCopy(this.pdfDoc).toPromise();
-      // Without this, Preview and Skim show a blank note on every highlight.
-      // TODO(embedpdf v3): drop with the move off engines 2.x; see
-      // pdf/annotation_export.ts.
-      return stripEmptyAnnotationNotes(new Uint8Array(bytes));
+      copy = this.document.openCopy();
+      this.annotationStore.writeChanges(copy);
+      return copy.save();
     } catch (error) {
       console.error("Error saving document:", error);
       throw error;
+    } finally {
+      copy?.close();
     }
   }
 
-  /** The file as it was opened, before any annotation was added or removed. */
-  saveOriginal(): Uint8Array<ArrayBuffer> {
-    // The text pipeline's handle still holds the file it was opened from, so
-    // the original needs no copy of its own until it's asked for.
-    if (!this.lowLevelHandle) throw new Error("No PDF document loaded");
-    return this.lowLevelHandle.fileBytes() as Uint8Array<ArrayBuffer>;
+  /**
+   * The file with no annotations at all: neither the user's nor those it was
+   * opened with (`removeAllMarkup`; links and form fields stay). A file that
+   * had none comes back byte for byte as it was opened.
+   */
+  saveWithoutAnnotations(): Uint8Array<ArrayBuffer> {
+    if (!this.document) throw new Error("No PDF document loaded");
+    let copy: PdfiumDocument | null = null;
+    try {
+      copy = this.document.openCopy();
+      if (removeAllMarkup(copy) === 0) {
+        // PDFium still holds the file the document was opened from.
+        return this.document.fileBytes() as Uint8Array<ArrayBuffer>;
+      }
+      return copy.save();
+    } catch (error) {
+      console.error("Error saving document:", error);
+      throw error;
+    } finally {
+      copy?.close();
+    }
   }
 
   // ============================================================================
@@ -515,7 +484,7 @@ export class PDFDocumentModel {
   // Parked along with `imageExtractor` / `imagesByPage` and the call site in
   // #buildIndex(); it was the only live half left of that feature.
   // #scanImages() {
-  //   const docPtr = this.lowLevelHandle.docPtr;
+  //   const docPtr = this.document.docPtr;
   //   for (let i = 0; i < this.numPages; i++) {
   //     const { images } = this.imageExtractor.getPageImageInfos(docPtr, i);
   //     if (images.length > 0) {
@@ -533,22 +502,13 @@ export class PDFDocumentModel {
   // ============================================================================
 
   async close() {
-    if (this.lowLevelHandle) {
-      this.lowLevelHandle.close();
-      this.lowLevelHandle = null;
+    if (this.document) {
+      this.document.close();
+      this.document = null;
       this.#textBoxes.clear();
       // this.imageExtractor = null;
     }
 
-    if (this.pdfDoc && this.engine) {
-      try {
-        await this.engine.closeDocument(this.pdfDoc).toPromise();
-      } catch (error) {
-        console.warn("[Doc] Error closing document:", error);
-      }
-    }
-
-    this.pdfDoc = null;
     this.bookmarks = [];
     this.annotationStore.clear();
     this.analysis.destroy();

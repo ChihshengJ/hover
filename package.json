@@ -7,6 +7,8 @@
     "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.strict.json && tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.test.json",
     "test": "bun test",
     "fixtures": "bun scripts/build_fixtures.ts",
+    "pdfium:check": "bun scripts/vendor_pdfium.ts --check",
+    "pdfium:vendor": "bun scripts/vendor_pdfium.ts",
     "check:layers": "bun scripts/check_layering.mjs",
     "check": "bun run typecheck && bun run check:layers && bun run test",
     "build": "vite build",
@@ -14,9 +16,8 @@
     "build:firefox": "TARGET=firefox vite build",
     "build:safari": "TARGET=safari vite build && bash scripts/build_safari.sh",
     "build:all": "bun run build:chrome && bun run build:firefox && bun run build:safari",
-    "build:store": "STORE_BUILD=1 bun run build:all",
     "package": "bun run build:all && bun scripts/package.mjs",
-    "release": "bun run check && STORE_BUILD=1 bun run build:chrome && STORE_BUILD=1 bun run build:firefox && bun scripts/package.mjs",
+    "release": "bun run check && bun run build:chrome && bun run build:firefox && bun scripts/package.mjs",
     "watch:chrome": "TARGET=chrome vite build --watch",
     "dev:firefox": "bun run build:firefox && web-ext run --source-dir dist/firefox --firefox-profile '/Users/zs_jin/Library/Application Support/Firefox/profiles/bncnexsu.default-release' & TARGET=firefox vite build --watch",
     "lint:firefox": "web-ext lint --source-dir dist/firefox",
@@ -30,8 +31,6 @@
     "web-ext": "^10.3.0"
   },
   "dependencies": {
-    "@embedpdf/engines": "^2.15.0",
-    "@embedpdf/pdfium": "^2.15.0",
     "@leeoniya/ufuzzy": "^1.0.19"
   }
 }

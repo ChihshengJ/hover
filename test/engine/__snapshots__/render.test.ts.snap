@@ -1,0 +1,661 @@
+// Bun Snapshot v1, https://bun.sh/docs/test/snapshots
+
+exports[`generated/bad-startxref renders 1`] = `
+{
+  "p0-rect@4": {
+    "height": 1056,
+    "sha256": "9aa01187f3484e2d9de97fc7f94ae914323c7384cee27ee6a570e693a5d28c56",
+    "width": 816,
+  },
+  "p0@1": {
+    "height": 792,
+    "sha256": "55f4a400435ae181865d5f91087d90aa21777e39b689a2516ae8569c9dd0ae30",
+    "width": 612,
+  },
+  "p0@2.5": {
+    "height": 1980,
+    "sha256": "19a98db5addc980d21537cfaf758c2c38e9e6d03bf6c03e09bd5db092614ff4c",
+    "width": 1530,
+  },
+  "p1@1": {
+    "height": 612,
+    "sha256": "6bf8fa97026baa2f7e432dc3320c618498bbd2c050f792d9fc406faf3de44b89",
+    "width": 792,
+  },
+  "p1@2.5": {
+    "height": 1530,
+    "sha256": "2838491ff99a72b26245fa83888979954f44229cb5531c238686e9168bc294f7",
+    "width": 1980,
+  },
+  "p2@1": {
+    "height": 792,
+    "sha256": "6cd4c34375b4a687b8892a6c2be251ceeab502f56e9a4cbe9748a642cdd3a1a4",
+    "width": 612,
+  },
+  "p2@2.5": {
+    "height": 1980,
+    "sha256": "c74e8dbf189b3f1f0f783d5a0f656b66dc5969775164409dac1cf35d5ed6683e",
+    "width": 1530,
+  },
+  "p3@1": {
+    "height": 612,
+    "sha256": "f83c0915d223145f0ea8b3f44ce6e164563c167908098491a71eb44727cae8bb",
+    "width": 792,
+  },
+  "p3@2.5": {
+    "height": 1530,
+    "sha256": "0947d28a3a21a2247bdddda4367762ac13b266e43924f63fd825701f30d949d1",
+    "width": 1980,
+  },
+  "p4@1": {
+    "height": 612,
+    "sha256": "1f26b85ef76f1fae6a522be41a394e50bd6dfe25e3aacd6f6f9fd767123f1b90",
+    "width": 792,
+  },
+  "p4@2.5": {
+    "height": 1530,
+    "sha256": "3299915c3db6513a26ccf046022411736cca2945bdf059b5e308bfae10db263b",
+    "width": 1980,
+  },
+  "p5@1": {
+    "height": 612,
+    "sha256": "eff75a02eff374454b8c225051a955f261c26ec18a08b1a9cd6b4371e64e2794",
+    "width": 792,
+  },
+  "p5@2.5": {
+    "height": 1530,
+    "sha256": "654165b45069b4aefad4d0e1447a3f2a1e8c5ddf91c758afed90e1b56e9cfba5",
+    "width": 1980,
+  },
+}
+`;
+
+exports[`generated/boxes renders 1`] = `
+{
+  "p0-rect@4": {
+    "height": 864,
+    "sha256": "2261c8158bdd9d6c41ecacc45cd5360524beae2ac029a4859d01b55438ce703a",
+    "width": 624,
+  },
+  "p0@1": {
+    "height": 648,
+    "sha256": "8d020b972a9a868978c71ae9270883ad715a52887adc18e64a57bc108d983766",
+    "width": 468,
+  },
+  "p0@2.5": {
+    "height": 1620,
+    "sha256": "f761ec90a2d5dfe79297027ba0ecc8d0279ab2fb33fa46b34679e960469e1199",
+    "width": 1170,
+  },
+  "p1@1": {
+    "height": 792,
+    "sha256": "093eeaf7d00917fa96b34861488225ee991d55c702cfa6d8fe8be4b9d8811e07",
+    "width": 612,
+  },
+  "p1@2.5": {
+    "height": 1980,
+    "sha256": "115ec4d45653a91ac543a07b9db14883414d6611b18d9e205d4e549da07cbd67",
+    "width": 1530,
+  },
+  "p2@1": {
+    "height": 792,
+    "sha256": "d04fb44c08ed385e7dd8c2c1662ce333e070ecd690b60fdf7b72ea4671fae2fa",
+    "width": 612,
+  },
+  "p2@2.5": {
+    "height": 1980,
+    "sha256": "a27a66dbb463701708d3a34fa38f86f5d1cafff3fc5886568ed5c99ece41a174",
+    "width": 1530,
+  },
+  "p3@1": {
+    "height": 468,
+    "sha256": "1aa7cb3cfa9ec0cb3d9e8b1a6682a0adb940e6904ec15db85ae126e08987707c",
+    "width": 576,
+  },
+  "p3@2.5": {
+    "height": 1170,
+    "sha256": "825d167b901864f86c90187fcc8c5a0c19b255a0e1f828c6fa1f0bf0271458e4",
+    "width": 1440,
+  },
+  "p4@1": {
+    "height": 595,
+    "sha256": "4ad7107ccb43c2f0fb90243b947800168ecaeef19dfd6ba6c490cfce1fd7c64f",
+    "width": 842,
+  },
+  "p4@2.5": {
+    "height": 1488,
+    "sha256": "c77ea680ec3a29013a647867412d44c0edc6c58849a28c4c36a9b9fc6f58b8c8",
+    "width": 2105,
+  },
+  "p5@1": {
+    "height": 792,
+    "sha256": "5cb54962e80d7aecd18d41567fa91de1affdb7a30449fcaa69dc08ad45bd191a",
+    "width": 612,
+  },
+  "p5@2.5": {
+    "height": 1980,
+    "sha256": "2ef228c33f34abd0d528c9670b014e91c4d6b9e40107eed41d6b2ffe51239582",
+    "width": 1530,
+  },
+  "p6@1": {
+    "height": 792,
+    "sha256": "5dff3922f8ab64ac48c6672cfdff6658a65028c77a1299c32c15e6da86a37158",
+    "width": 612,
+  },
+  "p6@2.5": {
+    "height": 1980,
+    "sha256": "4b53f133cee1090b3d65f138af8a719957ca2c184a4450a8c4739074b450f9bc",
+    "width": 1530,
+  },
+}
+`;
+
+exports[`generated/encrypted-owner-only renders 1`] = `
+{
+  "p0-rect@4": {
+    "height": 1056,
+    "sha256": "9aa01187f3484e2d9de97fc7f94ae914323c7384cee27ee6a570e693a5d28c56",
+    "width": 816,
+  },
+  "p0@1": {
+    "height": 792,
+    "sha256": "2a1e10932be4dabe4e5ba92ba9415d52d140ccfe7dc24ca3a37140ea9e1dbcfd",
+    "width": 612,
+  },
+  "p0@2.5": {
+    "height": 1980,
+    "sha256": "2f95402f846870c92debb8814c124de0750e57be37b9865651994cff132bf463",
+    "width": 1530,
+  },
+  "p1@1": {
+    "height": 792,
+    "sha256": "002fe607893be3538f57ae365864b08285c63eb65071fe18e058dfa739b8957f",
+    "width": 612,
+  },
+  "p1@2.5": {
+    "height": 1980,
+    "sha256": "03cd4f4204b67d4fd8883267f0f5248d7b264a2d26fe51f2ba35529a0269a362",
+    "width": 1530,
+  },
+}
+`;
+
+exports[`generated/forms renders 1`] = `
+{
+  "p0-rect@4": {
+    "height": 1056,
+    "sha256": "9aa01187f3484e2d9de97fc7f94ae914323c7384cee27ee6a570e693a5d28c56",
+    "width": 816,
+  },
+  "p0@1": {
+    "height": 792,
+    "sha256": "7e56211393aa359a4b6ad894e9406c55ae6826506705d29fd5468a2f72f1b3d3",
+    "width": 612,
+  },
+  "p0@2.5": {
+    "height": 1980,
+    "sha256": "c475614f9bea031ac6f3f35112bd0026c78336343c8b704f4112e06e0a4774f7",
+    "width": 1530,
+  },
+}
+`;
+
+exports[`generated/rotated renders 1`] = `
+{
+  "p0-rect@4": {
+    "height": 1056,
+    "sha256": "9aa01187f3484e2d9de97fc7f94ae914323c7384cee27ee6a570e693a5d28c56",
+    "width": 816,
+  },
+  "p0@1": {
+    "height": 792,
+    "sha256": "55f4a400435ae181865d5f91087d90aa21777e39b689a2516ae8569c9dd0ae30",
+    "width": 612,
+  },
+  "p0@2.5": {
+    "height": 1980,
+    "sha256": "19a98db5addc980d21537cfaf758c2c38e9e6d03bf6c03e09bd5db092614ff4c",
+    "width": 1530,
+  },
+  "p1@1": {
+    "height": 612,
+    "sha256": "6bf8fa97026baa2f7e432dc3320c618498bbd2c050f792d9fc406faf3de44b89",
+    "width": 792,
+  },
+  "p1@2.5": {
+    "height": 1530,
+    "sha256": "2838491ff99a72b26245fa83888979954f44229cb5531c238686e9168bc294f7",
+    "width": 1980,
+  },
+  "p2@1": {
+    "height": 792,
+    "sha256": "6cd4c34375b4a687b8892a6c2be251ceeab502f56e9a4cbe9748a642cdd3a1a4",
+    "width": 612,
+  },
+  "p2@2.5": {
+    "height": 1980,
+    "sha256": "c74e8dbf189b3f1f0f783d5a0f656b66dc5969775164409dac1cf35d5ed6683e",
+    "width": 1530,
+  },
+  "p3@1": {
+    "height": 612,
+    "sha256": "f83c0915d223145f0ea8b3f44ce6e164563c167908098491a71eb44727cae8bb",
+    "width": 792,
+  },
+  "p3@2.5": {
+    "height": 1530,
+    "sha256": "0947d28a3a21a2247bdddda4367762ac13b266e43924f63fd825701f30d949d1",
+    "width": 1980,
+  },
+  "p4@1": {
+    "height": 612,
+    "sha256": "1f26b85ef76f1fae6a522be41a394e50bd6dfe25e3aacd6f6f9fd767123f1b90",
+    "width": 792,
+  },
+  "p4@2.5": {
+    "height": 1530,
+    "sha256": "3299915c3db6513a26ccf046022411736cca2945bdf059b5e308bfae10db263b",
+    "width": 1980,
+  },
+  "p5@1": {
+    "height": 612,
+    "sha256": "eff75a02eff374454b8c225051a955f261c26ec18a08b1a9cd6b4371e64e2794",
+    "width": 792,
+  },
+  "p5@2.5": {
+    "height": 1530,
+    "sha256": "654165b45069b4aefad4d0e1447a3f2a1e8c5ddf91c758afed90e1b56e9cfba5",
+    "width": 1980,
+  },
+}
+`;
+
+exports[`papers/annotated renders 1`] = `
+{
+  "p0-rect@4": {
+    "height": 1056,
+    "sha256": "95cdeb7c6c56399fb7d5aaa839a5621a2870f1e23f1c1073caa9fa00af22e7fd",
+    "width": 816,
+  },
+  "p0@1": {
+    "height": 792,
+    "sha256": "2829752db7a65220fd0fb7cd16a5201e6f1953fdc358abb0969eb437342d5e15",
+    "width": 612,
+  },
+  "p0@2.5": {
+    "height": 1980,
+    "sha256": "eb26060af4bf7543ab5f64fada42c7d691d264baf4b20c494e894c6ac6b3a496",
+    "width": 1530,
+  },
+  "p1@1": {
+    "height": 792,
+    "sha256": "d7be53f7583e1d647e2dbf8c458a1f7330a8d284f78ee3b224f31aca1a4c9e58",
+    "width": 612,
+  },
+  "p1@2.5": {
+    "height": 1980,
+    "sha256": "71a9fed7d15b7d85f971e2df457409c00c8f5483188dd910a2249b874bab656e",
+    "width": 1530,
+  },
+}
+`;
+
+exports[`papers/arxiv-acl-adaptive-retrieval renders 1`] = `
+{
+  "p0-rect@4": {
+    "height": 1123,
+    "sha256": "5c617ac7acc32a008dda2732d31168cf5c3f2db43c4bcb3e5d1329fa05ba0b85",
+    "width": 794,
+  },
+  "p0@1": {
+    "height": 842,
+    "sha256": "a01572edb521bd4b334ec57da4ff4c495a8a44a8afe8ed6a95c46bddb3818dec",
+    "width": 595,
+  },
+  "p0@2.5": {
+    "height": 2105,
+    "sha256": "d04461e673d61e746e4cbae04b410c06b839fe1709f33fd544f95aa78f33dbd3",
+    "width": 1488,
+  },
+  "p1@1": {
+    "height": 842,
+    "sha256": "ea2f15162449f72c59bbf66d52412590c3b8d974c89057f10ee6eec6f88e1331",
+    "width": 595,
+  },
+  "p1@2.5": {
+    "height": 2105,
+    "sha256": "f551f5b797eccf55517f156fef126e522d5c6947d999705384e8c83abecb0eac",
+    "width": 1488,
+  },
+}
+`;
+
+exports[`papers/arxiv-cvpr-convnext renders 1`] = `
+{
+  "p0-rect@4": {
+    "height": 1056,
+    "sha256": "95cdeb7c6c56399fb7d5aaa839a5621a2870f1e23f1c1073caa9fa00af22e7fd",
+    "width": 816,
+  },
+  "p0@1": {
+    "height": 792,
+    "sha256": "2829752db7a65220fd0fb7cd16a5201e6f1953fdc358abb0969eb437342d5e15",
+    "width": 612,
+  },
+  "p0@2.5": {
+    "height": 1980,
+    "sha256": "eb26060af4bf7543ab5f64fada42c7d691d264baf4b20c494e894c6ac6b3a496",
+    "width": 1530,
+  },
+  "p1@1": {
+    "height": 792,
+    "sha256": "d7be53f7583e1d647e2dbf8c458a1f7330a8d284f78ee3b224f31aca1a4c9e58",
+    "width": 612,
+  },
+  "p1@2.5": {
+    "height": 1980,
+    "sha256": "71a9fed7d15b7d85f971e2df457409c00c8f5483188dd910a2249b874bab656e",
+    "width": 1530,
+  },
+}
+`;
+
+exports[`papers/elsevier-anbehav-wolves-dogs renders 1`] = `
+{
+  "p0-rect@4": {
+    "height": 1058,
+    "sha256": "eeac5a0c9943f8658569c40f384ea3fe7bfd689e411298fdf73b2a867051d27b",
+    "width": 794,
+  },
+  "p0@1": {
+    "height": 794,
+    "sha256": "bceb28b568068a4ab9ea98a790a478057221b4a44cbf1ba2fcb8f8a5946ac4db",
+    "width": 595,
+  },
+  "p0@2.5": {
+    "height": 1984,
+    "sha256": "0defd0765a196d9fd5d68ffd74aad4329159bf55a337741827de8d731401bbdd",
+    "width": 1488,
+  },
+  "p1@1": {
+    "height": 794,
+    "sha256": "d1833d8dd14d00d165f52d209f623fd6d456fb927316243039af9db2bc880c23",
+    "width": 595,
+  },
+  "p1@2.5": {
+    "height": 1984,
+    "sha256": "23b888abf886fdbc387a4f0cb8fff554238c08848be4dea881516b0e0bf45e4c",
+    "width": 1488,
+  },
+}
+`;
+
+exports[`papers/elsevier-jphon-alutiiq-prosody renders 1`] = `
+{
+  "p0-rect@4": {
+    "height": 1058,
+    "sha256": "0cf386e419ec0ee10c719062adaf17d3d2e230e9c7eab5a361dacbf1de8dd0fd",
+    "width": 794,
+  },
+  "p0@1": {
+    "height": 794,
+    "sha256": "941cc04a10d0f8100231c7e1ba7df0c36ae4f28d18f287bb323a8ef51a3c3c11",
+    "width": 595,
+  },
+  "p0@2.5": {
+    "height": 1984,
+    "sha256": "f625e7152692e5aa770f876419aca836ca452c2145961d2670c105ef330c6d1a",
+    "width": 1488,
+  },
+  "p1@1": {
+    "height": 794,
+    "sha256": "51f185126359ff4ce3e619090a971f8083bcdeea6ad6141d60b852057a45073e",
+    "width": 595,
+  },
+  "p1@2.5": {
+    "height": 1984,
+    "sha256": "edf98b6a9677e6d7b1185b6a109f4b435447f5589416ceb7652ef8365c01caae",
+    "width": 1488,
+  },
+}
+`;
+
+exports[`papers/hover-0-10-annotated renders 1`] = `
+{
+  "p0-rect@4": {
+    "height": 1056,
+    "sha256": "95cdeb7c6c56399fb7d5aaa839a5621a2870f1e23f1c1073caa9fa00af22e7fd",
+    "width": 816,
+  },
+  "p0@1": {
+    "height": 792,
+    "sha256": "2829752db7a65220fd0fb7cd16a5201e6f1953fdc358abb0969eb437342d5e15",
+    "width": 612,
+  },
+  "p0@2.5": {
+    "height": 1980,
+    "sha256": "eb26060af4bf7543ab5f64fada42c7d691d264baf4b20c494e894c6ac6b3a496",
+    "width": 1530,
+  },
+  "p1@1": {
+    "height": 792,
+    "sha256": "d7be53f7583e1d647e2dbf8c458a1f7330a8d284f78ee3b224f31aca1a4c9e58",
+    "width": 612,
+  },
+  "p1@2.5": {
+    "height": 1980,
+    "sha256": "71a9fed7d15b7d85f971e2df457409c00c8f5483188dd910a2249b874bab656e",
+    "width": 1530,
+  },
+}
+`;
+
+exports[`papers/jnlp-llama-mimi-ja renders 1`] = `
+{
+  "p0-rect@4": {
+    "height": 971,
+    "sha256": "6ec8eb388cd7e3d7bd44369e9694fd8cfbca6f372aa0e841ccf2d1418dc9cfdd",
+    "width": 688,
+  },
+  "p0@1": {
+    "height": 729,
+    "sha256": "9b9ae598b9d146716034bc171720b6429ea20fff34899cd64a4e313aad96cf03",
+    "width": 516,
+  },
+  "p0@2.5": {
+    "height": 1821,
+    "sha256": "530d550ddaf5c6dcb8c2d2f88a9854dd856eb43217a3fd2a00f2bca62123f2a0",
+    "width": 1290,
+  },
+  "p1@1": {
+    "height": 729,
+    "sha256": "423e52085b8f1039061dc2dd29125a7e006685634b570772694d104f259a6b1b",
+    "width": 516,
+  },
+  "p1@2.5": {
+    "height": 1821,
+    "sha256": "6ff5c03e157bb30a931cbf0dfa01e303b84bbacc54e40d851b12bbdffec48614",
+    "width": 1290,
+  },
+}
+`;
+
+exports[`papers/naca-tn-3241-scan renders 1`] = `
+{
+  "p0-rect@4": {
+    "height": 1060,
+    "sha256": "e991a5be334ed732bfd656cb7a32331f3e613a55a211b8f47cbfff2255a63c69",
+    "width": 819,
+  },
+  "p0@1": {
+    "height": 795,
+    "sha256": "05665e0c948ba6e1d2cdda089369ab14e1f873e3a13b61373ad9d641155d323e",
+    "width": 614,
+  },
+  "p0@2.5": {
+    "height": 1988,
+    "sha256": "58dac6a3d5113ea112c961d893b8a234c6e2e28effad3998c58ef40c01a9fdc1",
+    "width": 1535,
+  },
+  "p1@1": {
+    "height": 803,
+    "sha256": "db40b642b7061643e40ddf01c47597ea192659b991e73df6837b8daf396782bb",
+    "width": 622,
+  },
+  "p1@2.5": {
+    "height": 2008,
+    "sha256": "4e491e42975e6c5e4c31c620e70cc8d96d502694daaaa535ea64458cdff4bb2c",
+    "width": 1555,
+  },
+}
+`;
+
+exports[`papers/ncomms-oxide-ion-conduction renders 1`] = `
+{
+  "p0-rect@4": {
+    "height": 1054,
+    "sha256": "f241d0cee03356f866da860dd758c437e94e5c5bc22aee4bb9679ea34a10fe28",
+    "width": 794,
+  },
+  "p0@1": {
+    "height": 791,
+    "sha256": "eee132524587a61421720ade8ad2d9f64683337809439a9f60640df956bd3507",
+    "width": 595,
+  },
+  "p0@2.5": {
+    "height": 1977,
+    "sha256": "666cbe8003dd8998c91e1b34670b148ecb6547f3d38b461d0b8347eb03ae554e",
+    "width": 1488,
+  },
+  "p1@1": {
+    "height": 791,
+    "sha256": "87a00cee2a8a0817f89a460a3a15651d968ce1fc28c98601e2e8a49f1f2c2172",
+    "width": 595,
+  },
+  "p1@2.5": {
+    "height": 1977,
+    "sha256": "ea00f42dda959f9061c4f9d12a3301a19aa122f58693c2bc8b98b56608fc800d",
+    "width": 1488,
+  },
+}
+`;
+
+exports[`marketing/nature-paper-example renders 1`] = `
+{
+  "p0-rect@4": {
+    "height": 1054,
+    "sha256": "8a6af068d3095c3493083806d807ed8501a4434ccb2626bbb22bf12cbda56f4b",
+    "width": 794,
+  },
+  "p0@1": {
+    "height": 791,
+    "sha256": "9aeeb8e4f83c4b35ef260e907b8fd9dda744a609a145ff6554027a39d721cb44",
+    "width": 595,
+  },
+  "p0@2.5": {
+    "height": 1977,
+    "sha256": "df1049e73f440e344cfde7988fd3e76b4c5e187f35733f5d87808f7f0ae60089",
+    "width": 1488,
+  },
+  "p1@1": {
+    "height": 791,
+    "sha256": "79b0c6922c618ef3d3433499e3a514109f973c3160e0f4f1f3c6694c592914dc",
+    "width": 595,
+  },
+  "p1@2.5": {
+    "height": 1977,
+    "sha256": "056bc1ff98c5668ab6e9409e7afd51296b874540b8894e55ead75dbad38cafbf",
+    "width": 1488,
+  },
+}
+`;
+
+exports[`marketing/range-example-19-20 renders 1`] = `
+{
+  "p0-rect@4": {
+    "height": 1056,
+    "sha256": "95428e4dcc3191e13070083150a846ecba8744871f0f6ab63cdf9ee14bf60d27",
+    "width": 816,
+  },
+  "p0@1": {
+    "height": 792,
+    "sha256": "972331f12ad1e2bb99e4473ecf991c81373c8b1b001a5859ac2db08891daf3bf",
+    "width": 612,
+  },
+  "p0@2.5": {
+    "height": 1980,
+    "sha256": "71bae8ae441d43fbbe429dda6be337af61a8d6d710a01f3316191b3ca98ec2ff",
+    "width": 1530,
+  },
+  "p1@1": {
+    "height": 792,
+    "sha256": "d57820553c7aed81a410406e8fa77484cb50c70e6cb08a70744333f4caae5f54",
+    "width": 612,
+  },
+  "p1@2.5": {
+    "height": 1980,
+    "sha256": "6425025114e0b1693dd10d1847e792cd01cc83b2961bc1f09ebb6c66ce3bc56b",
+    "width": 1530,
+  },
+}
+`;
+
+exports[`marketing/no-internal-example renders 1`] = `
+{
+  "p0-rect@4": {
+    "height": 1123,
+    "sha256": "726a44ff10131becbf69b0810b36af3d1b75c0cf6caf511c15d7de984851c1ff",
+    "width": 794,
+  },
+  "p0@1": {
+    "height": 842,
+    "sha256": "49706030c27ed5c49bb76bc385ec6c5f15237ab5c237b9019a3c253c39b6392f",
+    "width": 595,
+  },
+  "p0@2.5": {
+    "height": 2105,
+    "sha256": "028e67ac104b4db7a8fa145404bc02cf11ca7808b78be7290a9de1e7c917fb76",
+    "width": 1488,
+  },
+  "p1@1": {
+    "height": 842,
+    "sha256": "63164865bdacbc46153b96f0bf03fb0a00230c490361b132cdcf65e59476615e",
+    "width": 595,
+  },
+  "p1@2.5": {
+    "height": 2105,
+    "sha256": "77ae36282f891af47e426601c2286a556ccf8c23ef01d24e25bc8fd38dda43d1",
+    "width": 1488,
+  },
+}
+`;
+
+exports[`marketing/rotate-example renders 1`] = `
+{
+  "p0-rect@4": {
+    "height": 864,
+    "sha256": "3047d921d264e325b98f19ecde66e9127bf0f0dfff5a5a1b588ca53da67427fb",
+    "width": 576,
+  },
+  "p0@1": {
+    "height": 648,
+    "sha256": "22e64c4b06ea3cce8cb57318d7d2551b5b60853bdd18af2318e03fb02a2e3d06",
+    "width": 432,
+  },
+  "p0@2.5": {
+    "height": 1620,
+    "sha256": "6b6f39242a9ccd86ac47a4feb98b8c5d5f0a2ddc5197edd1d5edfe76c4798ec9",
+    "width": 1080,
+  },
+  "p1@1": {
+    "height": 648,
+    "sha256": "9d704b2d169e6a71d0c0504accd888102923fac03301781c870dfbfa6fe8177d",
+    "width": 432,
+  },
+  "p1@2.5": {
+    "height": 1620,
+    "sha256": "4000324649170cdd205d7a9cfbcdf1d77ee6d605b3203b12564b49d61ebfbc05",
+    "width": 1080,
+  },
+}
+`;

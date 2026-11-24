@@ -85,13 +85,12 @@ export class PdfiumPageReader {
    * Decode a UTF-16 character range from an open text page.
    *
    * FPDFText_GetText writes at most `count` UTF-16 units plus a NUL, so the
-   * buffer is sized count + 1 and UTF16ToString has a terminator to stop at.
+   * buffer is sized count + 1 and `PdfiumFFI#utf16` has a terminator to stop
+   * at.
    *
-   * Deliberately not upstream's approach: @embedpdf/engines decodes via
-   * FPDFText_GetBoundedText with buflen equal to the text length, which writes
-   * no terminator, so UTF16ToString reads past the buffer. Don't "simplify"
-   * this back.
-   *
+   * Don't switch to FPDFText_GetBoundedText with buflen equal to the text
+   * length (as @embedpdf/engines did): it writes no terminator, so the
+   * NUL-scanning decoder would read past the buffer.
    */
   readText(
     textPagePtr: number,

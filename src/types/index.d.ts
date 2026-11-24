@@ -25,7 +25,9 @@ interface Point {
 }
 
 /**
- * PDFium's rect shape, as it comes off `@embedpdf/models` annotations.
+ * The `{ origin, size }` rect shape PDFium-derived records carry (annotation
+ * and link rects from `annotation_reader.ts`, text slices), with both halves
+ * optional for loosely typed input. See `PdfBox` for the strict form.
  * Convert with `rectFromPdfium()` from `src/analysis/geometry.js` rather than
  * reading `.origin` / `.size` at the use site.
  */

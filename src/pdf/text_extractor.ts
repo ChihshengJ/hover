@@ -36,7 +36,7 @@ export interface PageTextResult {
   pageIndex: number;
   /** Complete page text. */
   fullText: string;
-  /** Text slices with position information (matches getPageTextRects format). */
+  /** Positioned text runs (`groupCharsIntoRuns`), with each run's font. */
   textSlices: TextSlice[];
   /** Page width in PDF units. */
   pageWidth: number;
@@ -212,8 +212,8 @@ export class PdfiumTextExtractor {
   // ============================================================================
 
   /**
-   * Extract text from a page with proper UTF-16LE handling
-   * Returns data in a format compatible with getPageTextRects
+   * Extract a page's full text and its positioned slices (`TextSlice`),
+   * decoded from UTF-16LE.
    *
    * @param pageIndex 0-based page index
    */
